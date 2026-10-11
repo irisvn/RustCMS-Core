@@ -4,3 +4,5 @@
 .env
 node_modules/
 /docs/book
+.idea/
+.codex/

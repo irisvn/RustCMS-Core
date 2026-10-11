@@ -9,8 +9,8 @@ repository.workspace = true
 
 [features]
 default = ["sqlite"]
-sqlite = ["sea-orm/sqlx-sqlite"]
-postgres = ["sea-orm/sqlx-postgres"]
+sqlite = ["rustcms-core/sqlite"]
+postgres = ["rustcms-core/postgres"]
 
 [dependencies]
 rustcms-core.workspace = true
@@ -25,6 +25,7 @@ rust_decimal.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+rustcms-testing.workspace = true
 tokio.workspace = true
 insta.workspace = true
 proptest.workspace = true

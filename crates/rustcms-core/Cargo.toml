@@ -1,19 +1,44 @@
 [package]
 name = "rustcms-core"
-description = "Core primitives of the rustcms framework: errors, config, app builder."
+description = "Core of the rustcms framework: config, app builder, HTTP stack, console, errors."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+sqlite = ["sea-orm/sqlx-sqlite", "sea-orm-migration/sqlx-sqlite"]
+postgres = ["sea-orm/sqlx-postgres", "sea-orm-migration/sqlx-postgres"]
+
 [dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
 axum.workspace = true
+base64.workspace = true
+chrono.workspace = true
+clap.workspace = true
+dotenvy.workspace = true
+figment.workspace = true
+http-body-util.workspace = true
+ipnet.workspace = true
+rand.workspace = true
+sea-orm.workspace = true
+sea-orm-migration.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
 tracing.workspace = true
-sea-orm.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+figment = { workspace = true, features = ["test"] }
+tempfile.workspace = true
 
 [lints]
 workspace = true

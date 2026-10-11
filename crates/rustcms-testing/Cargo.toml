@@ -1,0 +1,28 @@
+[package]
+name = "rustcms-testing"
+description = "Testing helpers for rustcms applications: isolated databases, HTTP client, factories."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+rustcms-core = { workspace = true, features = ["sqlite", "postgres"] }
+sea-orm = { workspace = true, features = ["sqlx-sqlite", "sqlx-postgres"] }
+sea-orm-migration.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+figment.workspace = true
+http-body-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tower.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+tokio = { workspace = true, features = ["time"] }
+
+[lints]
+workspace = true

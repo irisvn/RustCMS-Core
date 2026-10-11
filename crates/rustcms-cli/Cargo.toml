@@ -1,0 +1,31 @@
+[package]
+name = "rustcms-cli"
+description = "The `rustcms` command: create apps, generate code, run app commands."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "rustcms"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+rustcms-core.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+include_dir.workspace = true
+minijinja.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates = "3"
+tempfile.workspace = true
+
+[lints]
+workspace = true

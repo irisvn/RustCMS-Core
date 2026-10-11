@@ -1,0 +1,11 @@
+use rustcms::axum::http::StatusCode;
+use rustcms_testing::{TestApp, TestDb, db_test};
+use serde_json::json;
+use {{ crate_name }}::{app, migrations::Migrator};
+
+db_test!(health_and_ping, migrate = Migrator, |db: TestDb| async move {
+    let app = TestApp::new(app::build, db).await;
+    app.get("/health").await.assert_status(StatusCode::OK).assert_json("/database", json!("ok"));
+    app.get("/api/v1/ping").await.assert_status(StatusCode::OK).assert_json("/pong", json!(true));
+    app.get("/missing").await.assert_status(StatusCode::NOT_FOUND).assert_json("/code", json!("not_found"));
+});

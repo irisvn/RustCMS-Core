@@ -1,0 +1,3 @@
+fn main() -> std::process::ExitCode {
+    rustcms::Console::<{{ crate_name }}::migrations::Migrator>::new({{ crate_name }}::app::build).run_blocking()
+}

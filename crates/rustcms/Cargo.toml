@@ -1,0 +1,24 @@
+[package]
+name = "rustcms"
+description = "A Laravel- and Filament-inspired framework for admin panels and headless CMS backends."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["sqlite", "postgres"]
+sqlite = ["rustcms-core/sqlite", "rustcms-admin/sqlite"]
+postgres = ["rustcms-core/postgres", "rustcms-admin/postgres"]
+
+[dependencies]
+rustcms-core.workspace = true
+rustcms-admin.workspace = true
+rustcms-migration.workspace = true
+axum.workspace = true
+sea-orm-migration.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

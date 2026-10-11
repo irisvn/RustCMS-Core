@@ -1,12 +1,13 @@
 //! M0 go/no-go: the generic engine over real SeaORM entities, on SQLite and PostgreSQL.
 //!
-//! PostgreSQL runs when `RUSTCMS_TEST_PG` holds an admin URL
-//! (e.g. `postgres://postgres:postgres@localhost:55432/postgres`); each test gets its own database.
+//! PostgreSQL runs when `RUSTCMS_TEST_PG` holds an admin URL (see `justfile`);
+//! each test gets its own database.
 
 mod support;
 
 use rustcms_admin::{Data, FilterOp, ListQuery};
 use rustcms_core::AppError;
+use rustcms_testing::{TestDb, db_test};
 use serde_json::{Value, json};
 use support::{Fixture, PrincipalExt, admin, editor};
 
@@ -21,7 +22,8 @@ fn field_errors(err: AppError) -> Vec<(String, Vec<String>)> {
     }
 }
 
-db_test!(db_generated_key_and_list_controls, |fx: Fixture| async move {
+db_test!(db_generated_key_and_list_controls, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
     let ctx = fx.ctx(admin());
     let categories = fx.resource("categories");
     for (name, slug) in [("News", "news"), ("Art", "art"), ("Sport", "sport")] {
@@ -43,7 +45,8 @@ db_test!(db_generated_key_and_list_controls, |fx: Fixture| async move {
     assert_eq!(field_errors(categories.list(&ctx, &query).await.unwrap_err())[0].0, "sort");
 });
 
-db_test!(unique_constraint_maps_to_field_error, |fx: Fixture| async move {
+db_test!(unique_constraint_maps_to_field_error, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
     let ctx = fx.ctx(admin());
     let categories = fx.resource("categories");
     categories.create(&ctx, data(json!({"name": "News", "slug": "news"}))).await.unwrap();
@@ -51,7 +54,8 @@ db_test!(unique_constraint_maps_to_field_error, |fx: Fixture| async move {
     assert_eq!(field_errors(err), vec![("slug".to_owned(), vec!["has already been taken".to_owned()])]);
 });
 
-db_test!(app_generated_key_hooks_and_wire_format, |fx: Fixture| async move {
+db_test!(app_generated_key_hooks_and_wire_format, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
     let ctx = fx.ctx(editor("7"));
     let category = fx.seed_category("News").await;
     let posts = fx.resource("posts");
@@ -83,7 +87,8 @@ db_test!(app_generated_key_hooks_and_wire_format, |fx: Fixture| async move {
     assert_eq!(field_errors(err)[0].0, "price", "decimal must be a string");
 });
 
-db_test!(field_write_permissions, |fx: Fixture| async move {
+db_test!(field_write_permissions, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
     let ctx = fx.ctx(editor("7"));
     let posts = fx.resource("posts");
     let post = posts.create(&ctx, data(json!({"title": "Draft"}))).await.unwrap();
@@ -97,7 +102,8 @@ db_test!(field_write_permissions, |fx: Fixture| async move {
     assert_eq!(updated.data["title"], json!("Draft"), "PATCH keeps other fields");
 });
 
-db_test!(scope_hides_other_owners_records, |fx: Fixture| async move {
+db_test!(scope_hides_other_owners_records, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
     let posts = fx.resource("posts");
     let mine = posts.create(&fx.ctx(editor("7")), data(json!({"title": "Mine"}))).await.unwrap();
     let theirs = posts.create(&fx.ctx(editor("8")), data(json!({"title": "Theirs"}))).await.unwrap();
@@ -113,7 +119,8 @@ db_test!(scope_hides_other_owners_records, |fx: Fixture| async move {
     assert_eq!(posts.list(&admin_ctx, &ListQuery::default()).await.unwrap().meta.total, 1);
 });
 
-db_test!(relationships_respect_target_scope, |fx: Fixture| async move {
+db_test!(relationships_respect_target_scope, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
     let hidden = fx.seed_category("Hidden budget").await;
     let ctx = fx.ctx(editor("7"));
     let posts = fx.resource("posts");
@@ -135,7 +142,8 @@ db_test!(relationships_respect_target_scope, |fx: Fixture| async move {
     assert_eq!(posts.find(&as_owner, &post.key).await.unwrap().labels["category_id"], format!("#{hidden}"));
 });
 
-db_test!(bulk_action_reports_each_record, |fx: Fixture| async move {
+db_test!(bulk_action_reports_each_record, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
     let posts = fx.resource("posts");
     let ctx = fx.ctx(editor("7").with(&["posts.publish"]));
     let open = posts.create(&ctx, data(json!({"title": "Open"}))).await.unwrap();
@@ -157,7 +165,8 @@ db_test!(bulk_action_reports_each_record, |fx: Fixture| async move {
     assert_eq!(field_errors(posts.run_action(&ctx, "publish", &too_many, Data::new()).await.unwrap_err())[0].0, "keys");
 });
 
-db_test!(natural_key_and_transactional_hooks, |fx: Fixture| async move {
+db_test!(natural_key_and_transactional_hooks, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
     let ctx = fx.ctx(admin());
     let tags = fx.resource("tags");
     let tag = tags.create(&ctx, data(json!({"slug": "rust", "label": "Rust"}))).await.unwrap();
@@ -171,7 +180,8 @@ db_test!(natural_key_and_transactional_hooks, |fx: Fixture| async move {
     assert!(matches!(tags.find(&ctx, "boom").await, Err(AppError::NotFound)));
 });
 
-db_test!(filters_are_whitelisted_and_bounded, |fx: Fixture| async move {
+db_test!(filters_are_whitelisted_and_bounded, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
     let ctx = fx.ctx(admin());
     let posts = fx.resource("posts");
     posts.create(&ctx, data(json!({"title": "a"}))).await.unwrap();
@@ -191,7 +201,8 @@ db_test!(filters_are_whitelisted_and_bounded, |fx: Fixture| async move {
     assert_eq!(field_errors(posts.list(&ctx, &query).await.unwrap_err())[0].0, "category_id", "typed values");
 });
 
-db_test!(deny_by_default, |fx: Fixture| async move {
+db_test!(deny_by_default, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
     let nobody = fx.ctx(editor("9").without_all());
     let posts = fx.resource("posts");
     assert!(matches!(posts.list(&nobody, &ListQuery::default()).await, Err(AppError::Forbidden)));

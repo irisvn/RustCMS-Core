@@ -1,0 +1,5 @@
+//! demo: a rustcms application.
+
+pub mod app;
+pub mod migrations;
+pub mod models;

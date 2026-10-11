@@ -58,6 +58,9 @@ impl ValidationErrors {
 /// Internal details (database messages, panics) are logged, never rendered.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    /// 400: malformed request (e.g. invalid JSON).
+    #[error("bad request: {0}")]
+    BadRequest(String),
     /// 401: no valid credential.
     #[error("unauthenticated")]
     Unauthenticated,
@@ -67,6 +70,9 @@ pub enum AppError {
     /// 404: resource or record not found (also used for records outside the user's scope).
     #[error("not found")]
     NotFound,
+    /// 405: route exists but not for this method.
+    #[error("method not allowed")]
+    MethodNotAllowed,
     /// 413: request body exceeds the configured limit.
     #[error("payload too large")]
     PayloadTooLarge,
@@ -87,9 +93,11 @@ impl AppError {
     /// HTTP status for this error.
     pub fn status(&self) -> StatusCode {
         match self {
+            Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::Unauthenticated => StatusCode::UNAUTHORIZED,
             Self::Forbidden => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
+            Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -99,9 +107,11 @@ impl AppError {
     /// Stable machine-readable code.
     pub fn code(&self) -> &'static str {
         match self {
+            Self::BadRequest(_) => "bad_request",
             Self::Unauthenticated => "unauthenticated",
             Self::Forbidden => "forbidden",
             Self::NotFound => "not_found",
+            Self::MethodNotAllowed => "method_not_allowed",
             Self::PayloadTooLarge => "payload_too_large",
             Self::Validation(_) => "validation_failed",
             Self::Internal(_) => "internal_error",
@@ -135,6 +145,8 @@ struct ErrorBody<'a> {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let message = match &self {
+            Self::BadRequest(detail) => detail.as_str(),
+            Self::MethodNotAllowed => "Method not allowed.",
             Self::Internal(detail) => {
                 tracing::error!(%detail, "internal error");
                 "Server error."

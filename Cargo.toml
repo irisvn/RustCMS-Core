@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "examples/demo"]
 
 [workspace.package]
 version = "0.1.0-alpha.0"
@@ -11,14 +11,32 @@ repository = "https://github.com/irisvn/rustcms"
 
 [workspace.dependencies]
 rustcms-core = { path = "crates/rustcms-core", version = "0.1.0-alpha.0" }
-rustcms-admin = { path = "crates/rustcms-admin", version = "0.1.0-alpha.0" }
+rustcms-admin = { path = "crates/rustcms-admin", version = "0.1.0-alpha.0", default-features = false }
+rustcms-migration = { path = "crates/rustcms-migration", version = "0.1.0-alpha.0" }
+rustcms-testing = { path = "crates/rustcms-testing", version = "0.1.0-alpha.0" }
 
 # Pinned: SeaORM API churns between majors (see docs/adr/0001).
 sea-orm = { version = "=2.0.4", default-features = false, features = [
     "macros", "runtime-tokio-rustls", "with-chrono", "with-uuid", "with-rust_decimal", "with-json",
 ] }
-axum = "0.8.9"
-tokio = { version = "1.53", features = ["macros", "rt-multi-thread"] }
+sea-orm-migration = { version = "=2.0.4", default-features = false, features = ["runtime-tokio-rustls"] }
+axum = { version = "0.8.9", features = ["macros"] }
+tower = { version = "0.5.3", features = ["util"] }
+tower-http = { version = "0.7.1", features = ["trace", "request-id", "timeout", "limit", "util"] }
+http-body-util = "0.1"
+figment = { version = "0.10.19", features = ["toml", "env"] }
+dotenvy = "0.15.7"
+clap = { version = "4.6", features = ["derive", "string"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
+ipnet = { version = "2.12", features = ["serde"] }
+base64 = "0.23"
+rand = "0.10"
+anyhow = "1.0"
+minijinja = { version = "3.0", features = ["serde"] }
+include_dir = "0.7.4"
+assert_cmd = "2.2"
+tempfile = "3.27"
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "net", "signal"] }
 async-trait = "0.1.92"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

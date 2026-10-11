@@ -1,0 +1,21 @@
+use rustcms::migration::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    /// Schema change and migration record commit together, also on SQLite
+    /// (whose default is no transaction), so a failed run can be retried.
+    fn use_transaction(&self) -> Option<bool> {
+        Some(true)
+    }
+
+    async fn up(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+        todo!("{{ name }}: write the migration")
+    }
+
+    async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+        todo!("{{ name }}: undo the migration")
+    }
+}

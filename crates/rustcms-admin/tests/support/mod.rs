@@ -5,9 +5,10 @@ use std::sync::Arc;
 
 use rustcms_admin::{Action, Ctx, Data, DynResource, Field, KeyStrategy, Policy, Registry, Resource, ResourceMeta};
 use rustcms_core::{AppError, AppResult, Principal};
+use rustcms_testing::TestDb;
 use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::Value as SqlValue;
-use sea_orm::{ActiveValue::Set, Database, DatabaseConnection, DatabaseTransaction, IntoActiveModel, Schema};
+use sea_orm::{ActiveValue::Set, DatabaseTransaction, IntoActiveModel, Schema};
 use serde_json::json;
 
 pub mod category {
@@ -220,49 +221,32 @@ impl PrincipalExt for Principal {
 }
 
 pub struct Fixture {
-    pub db: DatabaseConnection,
+    pub db: TestDb,
     registry: Arc<Registry>,
-    pg_cleanup: Option<(String, String)>,
 }
 
 impl Fixture {
-    pub async fn sqlite() -> Self {
-        let path = std::env::temp_dir().join(format!("rustcms-test-{}.db", Uuid::new_v4()));
-        let db = Database::connect(format!("sqlite://{}?mode=rwc", path.display())).await.expect("sqlite");
-        Self::prepare(db, None).await
-    }
-
-    /// `None` when `RUSTCMS_TEST_PG` is not set.
-    pub async fn postgres() -> Option<Self> {
-        let admin_url = std::env::var("RUSTCMS_TEST_PG").ok()?;
-        let name = format!("rustcms_t_{}", Uuid::new_v4().simple());
-        let admin_db = Database::connect(&admin_url).await.expect("postgres admin connection");
-        admin_db.execute_unprepared(&format!("CREATE DATABASE {name}")).await.expect("create database");
-        admin_db.close().await.ok();
-        let base = &admin_url[..admin_url.rfind('/').expect("url with database")];
-        let db = Database::connect(format!("{base}/{name}")).await.expect("postgres");
-        Some(Self::prepare(db, Some((admin_url, name))).await)
-    }
-
-    async fn prepare(db: DatabaseConnection, pg_cleanup: Option<(String, String)>) -> Self {
-        let schema = Schema::new(db.get_database_backend());
+    /// Creates the test tables on `db` and registers the resources.
+    pub async fn new(db: TestDb) -> Self {
+        let conn = db.conn();
+        let schema = Schema::new(conn.get_database_backend());
         for statement in [
             schema.create_table_from_entity(category::Entity),
             schema.create_table_from_entity(post::Entity),
             schema.create_table_from_entity(tag::Entity),
         ] {
-            db.execute(&statement).await.expect("create table");
+            conn.execute(&statement).await.expect("create table");
         }
         let registry = Registry::new()
             .register::<CategoryResource>()
             .register::<PostResource>()
             .register::<TagResource>()
             .finish();
-        Self { db, registry, pg_cleanup }
+        Self { db, registry }
     }
 
     pub fn ctx(&self, principal: Principal) -> Ctx {
-        Ctx { db: self.db.clone(), principal, registry: self.registry.clone() }
+        Ctx { db: self.db.conn().clone(), principal, registry: self.registry.clone() }
     }
 
     pub fn resource(&self, slug: &str) -> Arc<dyn DynResource> {
@@ -274,53 +258,4 @@ impl Fixture {
         let input = json!({"name": name, "slug": name.to_lowercase().replace(' ', "-")});
         self.resource("categories").create(&self.ctx(admin()), input.as_object().unwrap().clone()).await.unwrap().key
     }
-
-    /// Handle that closes the connection and drops the PostgreSQL test database.
-    pub fn cleanup(&self) -> Cleanup {
-        Cleanup { db: self.db.clone(), pg: self.pg_cleanup.clone() }
-    }
-}
-
-pub struct Cleanup {
-    db: DatabaseConnection,
-    pg: Option<(String, String)>,
-}
-
-impl Cleanup {
-    pub async fn run(self) {
-        self.db.close().await.ok();
-        if let Some((admin_url, name)) = self.pg {
-            let admin_db = Database::connect(&admin_url).await.expect("postgres admin connection");
-            admin_db.execute_unprepared(&format!("DROP DATABASE IF EXISTS {name}")).await.ok();
-        }
-    }
-}
-
-/// Declares a test that runs once on SQLite (temp file) and once on PostgreSQL.
-#[macro_export]
-macro_rules! db_test {
-    ($name:ident, $body:expr) => {
-        mod $name {
-            use super::*;
-
-            #[tokio::test]
-            async fn sqlite() {
-                let fixture = support::Fixture::sqlite().await;
-                let cleanup = fixture.cleanup();
-                ($body)(fixture).await;
-                cleanup.run().await;
-            }
-
-            #[tokio::test]
-            async fn postgres() {
-                let Some(fixture) = support::Fixture::postgres().await else {
-                    eprintln!("skipped: RUSTCMS_TEST_PG is not set");
-                    return;
-                };
-                let cleanup = fixture.cleanup();
-                ($body)(fixture).await;
-                cleanup.run().await;
-            }
-        }
-    };
 }
