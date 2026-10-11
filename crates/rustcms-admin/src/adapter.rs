@@ -699,7 +699,9 @@ impl<R: Resource> ResourceAdapter<R> {
         if !self.policy.allows(ctx, ability, Some(&Self::record(&model))).await {
             return Err(AppError::Forbidden);
         }
-        self.lock_rows(txn, std::slice::from_ref(&self.key_of(&model))).await?;
+        if self.lock_rows(txn, std::slice::from_ref(&self.key_of(&model))).await?.is_empty() {
+            return Err(AppError::NotFound);
+        }
         let model = self.find_model(ctx, txn, key).await?;
         if !self.policy.allows(ctx, ability, Some(&Self::record(&model))).await {
             return Err(AppError::Forbidden);
@@ -711,22 +713,20 @@ impl<R: Resource> ResourceAdapter<R> {
     /// `DISTINCT` do not interfere). Callers pass only keys already found in
     /// scope and authorized, then re-check after locking. SQLite write
     /// transactions already hold the database lock.
-    async fn lock_rows(&self, txn: &sea_orm::DatabaseTransaction, keys: &[String]) -> AppResult<()> {
+    ///
+    /// Returns the keys actually locked. A row deleted while waiting is skipped
+    /// by PostgreSQL, so callers must use only these keys: a replacement row
+    /// inserted under the same key afterwards is not locked.
+    async fn lock_rows(&self, txn: &sea_orm::DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>> {
         if txn.get_database_backend() != DbBackend::Postgres {
-            return Ok(());
+            return Ok(keys.iter().cloned().collect());
         }
         let values = self.decode_keys(keys)?;
-        if !values.is_empty() {
-            Entity::<R>::find()
-                .select_only()
-                .column(self.pk)
-                .filter(self.pk.is_in(values))
-                .lock_exclusive()
-                .into_json()
-                .all(txn)
-                .await?;
+        if values.is_empty() {
+            return Ok(HashSet::new());
         }
-        Ok(())
+        let locked = Entity::<R>::find().filter(self.pk.is_in(values)).lock_exclusive().all(txn).await?;
+        Ok(locked.iter().map(|m| self.key_of(m)).collect())
     }
 
     fn info(&self) -> ResourceInfo {
@@ -1191,9 +1191,12 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 outcome.denied.push(key);
             }
         }
-        self.lock_rows(&txn, &candidates).await?;
-        let mut allowed = Vec::new();
+        // Candidates are re-counted below; any not locked (deleted meanwhile)
+        // or gone on reload end up in `missing`.
         seen.retain(|k| !candidates.contains(k));
+        let locked = self.lock_rows(&txn, &candidates).await?;
+        candidates.retain(|k| locked.contains(k));
+        let mut allowed = Vec::new();
         for (model, record) in self.models_in_scope(&wctx, txn.as_ref(), &candidates).await? {
             let key = self.key_of(&model);
             seen.insert(key.clone());
