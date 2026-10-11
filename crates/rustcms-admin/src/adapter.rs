@@ -11,7 +11,7 @@ use sea_orm::sea_query::Value;
 use sea_orm::{
     ActiveModelBehavior, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, DbErr,
     EntityName, EntityTrait, IdenStatic, IntoActiveModel, Iterable, ModelTrait, Order, PaginatorTrait,
-    PrimaryKeyToColumn, QueryFilter, QueryOrder, SqlErr, TransactionTrait,
+    PrimaryKeyToColumn, QueryFilter, QueryOrder, SqlErr,
 };
 
 use crate::Data;
@@ -451,7 +451,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             return Err(AppError::Forbidden);
         }
         let input = self.accept_input(ctx, Operation::Create, input)?;
-        let txn = ctx.db.begin().await?;
+        let txn = rustcms_core::db::begin_write(&ctx.db).await?;
         self.check_relations(ctx, &txn, &input).await?;
         let data = R::mutate_before_create(ctx, &txn, input).await?;
 
@@ -475,7 +475,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
 
     async fn update(&self, ctx: &Ctx, key: &str, input: Data) -> AppResult<Envelope> {
         let input = self.accept_input(ctx, Operation::Update, input)?;
-        let txn = ctx.db.begin().await?;
+        let txn = rustcms_core::db::begin_write(&ctx.db).await?;
         let model = self.find_model(ctx, &txn, key).await?;
         if !self.policy.allows(ctx, ability::UPDATE, Some(&Self::record(&model))).await {
             return Err(AppError::Forbidden);
@@ -495,7 +495,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     }
 
     async fn delete(&self, ctx: &Ctx, key: &str) -> AppResult<()> {
-        let txn = ctx.db.begin().await?;
+        let txn = rustcms_core::db::begin_write(&ctx.db).await?;
         let model = self.find_model(ctx, &txn, key).await?;
         if !self.policy.allows(ctx, ability::DELETE, Some(&Self::record(&model))).await {
             return Err(AppError::Forbidden);
@@ -511,7 +511,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
 
     async fn run_action(&self, ctx: &Ctx, name: &str, keys: &[String], data: Data) -> AppResult<ActionOutcome> {
         let action = self.actions.iter().find(|a| a.name == name).ok_or(AppError::NotFound)?;
-        let txn = ctx.db.begin().await?;
+        let txn = rustcms_core::db::begin_write(&ctx.db).await?;
         let found = self.models_in_scope(ctx, &txn, keys).await?;
         let mut outcome = ActionOutcome::default();
         let mut allowed = Vec::new();

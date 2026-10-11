@@ -14,6 +14,13 @@
 - [Database & migrations](basics/database.md)
 - [Testing](basics/testing.md)
 
+# Security
+
+- [Authentication](security/authentication.md)
+- [Roles & permissions](security/authorization.md)
+- [Credential revocation](security/revocation.md)
+- [Production checklist](security/production.md)
+
 # Admin panel
 
 - [Resources](admin/resources.md)

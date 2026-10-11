@@ -76,6 +76,12 @@ pub enum AppError {
     /// 413: request body exceeds the configured limit.
     #[error("payload too large")]
     PayloadTooLarge,
+    /// 429: rate limit exceeded; retry after the given number of seconds.
+    #[error("too many requests")]
+    TooManyRequests {
+        /// Seconds until the limit resets (`Retry-After`).
+        retry_after: u64,
+    },
     /// 422: input rejected.
     #[error("validation failed")]
     Validation(ValidationErrors),
@@ -100,6 +106,7 @@ impl AppError {
             Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::TooManyRequests { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -114,6 +121,7 @@ impl AppError {
             Self::MethodNotAllowed => "method_not_allowed",
             Self::PayloadTooLarge => "payload_too_large",
             Self::Validation(_) => "validation_failed",
+            Self::TooManyRequests { .. } => "too_many_requests",
             Self::Internal(_) => "internal_error",
         }
     }
@@ -156,12 +164,17 @@ impl IntoResponse for AppError {
             Self::NotFound => "Not found.",
             Self::PayloadTooLarge => "Payload too large.",
             Self::Validation(_) => "The given data was invalid.",
+            Self::TooManyRequests { .. } => "Too many attempts. Please try again later.",
         };
         let (errors, form_errors) = match &self {
             Self::Validation(v) => (Some(&v.errors), Some(&v.form_errors)),
             _ => (None, None),
         };
         let body = ErrorBody { message, code: self.code(), errors, form_errors };
-        (self.status(), axum::Json(body)).into_response()
+        let mut response = (self.status(), axum::Json(body)).into_response();
+        if let Self::TooManyRequests { retry_after } = self {
+            response.headers_mut().insert(axum::http::header::RETRY_AFTER, retry_after.into());
+        }
+        response
     }
 }

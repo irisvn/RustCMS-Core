@@ -69,7 +69,8 @@ fn main() -> ExitCode {
         }
         Command::MakeMigration { name } => project::Project::find().and_then(|p| generate::make_migration(&p, &name)),
         Command::DocsCli => {
-            print!("{}", docs::markdown(&Cli::command(), &rustcms_core::console::command()));
+            let auth = clap::Command::new("auth").subcommands(rustcms_auth::commands::definitions());
+            print!("{}", docs::markdown(&Cli::command(), &rustcms_core::console::command(), &auth));
             Ok(ExitCode::SUCCESS)
         }
         Command::App(args) => project::Project::find().and_then(|p| p.forward(&args)),

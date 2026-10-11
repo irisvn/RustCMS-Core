@@ -84,7 +84,19 @@ pub trait ServiceProvider: Send + Sync + 'static {
     }
 }
 
+/// A console command contributed by a provider or the application
+/// (`make:user`, `permission:sync`, …). Runs with the booted application state.
+#[async_trait]
+pub trait AppCommand: Send + Sync + 'static {
+    /// Clap definition; its name is the command name.
+    fn definition(&self) -> clap::Command;
+
+    /// Executes the command.
+    async fn run(&self, state: &AppState, args: &clap::ArgMatches) -> anyhow::Result<()>;
+}
+
 pub(crate) type RouteFn = Box<dyn FnOnce(Router<AppState>) -> Router<AppState> + Send>;
+pub(crate) type MiddlewareFn = Box<dyn FnOnce(Router<AppState>, AppState) -> Router<AppState> + Send>;
 
 /// Assembles an [`App`].
 pub struct AppBuilder {
@@ -92,12 +104,21 @@ pub struct AppBuilder {
     services: ServiceMap,
     routes: Vec<RouteFn>,
     providers: Vec<Arc<dyn ServiceProvider>>,
+    commands: Vec<Arc<dyn AppCommand>>,
+    middleware: Vec<MiddlewareFn>,
 }
 
 impl AppBuilder {
     /// Starts from a loaded configuration.
     pub fn new(config: Config) -> Self {
-        Self { config, services: ServiceMap::default(), routes: Vec::new(), providers: Vec::new() }
+        Self {
+            config,
+            services: ServiceMap::default(),
+            routes: Vec::new(),
+            providers: Vec::new(),
+            commands: Vec::new(),
+            middleware: Vec::new(),
+        }
     }
 
     /// Configuration.
@@ -111,10 +132,36 @@ impl AppBuilder {
         self
     }
 
+    /// A service bound earlier (by this or another provider).
+    pub fn service<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
+        self.services.get()
+    }
+
+    /// Wraps every application route (not the 404 fallback) once all routes are added.
+    /// Runs inside the framework stack (request id, client IP, limits).
+    pub fn middleware(
+        &mut self,
+        wrap: impl FnOnce(Router<AppState>, AppState) -> Router<AppState> + Send + 'static,
+    ) -> &mut Self {
+        self.middleware.push(Box::new(wrap));
+        self
+    }
+
     /// Adds routes.
     pub fn routes(&mut self, routes: impl FnOnce(Router<AppState>) -> Router<AppState> + Send + 'static) -> &mut Self {
         self.routes.push(Box::new(routes));
         self
+    }
+
+    /// Adds a console command.
+    pub fn command(&mut self, command: impl AppCommand) -> &mut Self {
+        self.commands.push(Arc::new(command));
+        self
+    }
+
+    /// Console commands added so far.
+    pub fn commands(&self) -> Vec<Arc<dyn AppCommand>> {
+        self.commands.clone()
     }
 
     /// Registers a provider (its `register` runs immediately).
@@ -136,7 +183,7 @@ impl AppBuilder {
         for provider in &self.providers {
             provider.boot(&state).await?;
         }
-        let router = http::router(state.clone(), self.routes);
+        let router = http::router(state.clone(), self.routes, self.middleware);
         Ok(App { state, router })
     }
 }

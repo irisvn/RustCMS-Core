@@ -17,12 +17,18 @@ use sea_orm_migration::prelude::*;
 
 mod m20261011_000001_create_users_table;
 mod m20261011_000002_create_sessions_table;
+mod m20261012_000003_create_personal_access_tokens_table;
+mod m20261012_000004_create_rbac_tables;
+mod m20261012_000005_add_lineage_to_sessions;
 
 /// Framework migrations, in order.
 pub fn migrations() -> Vec<Box<dyn MigrationTrait>> {
     vec![
         Box::new(m20261011_000001_create_users_table::Migration),
         Box::new(m20261011_000002_create_sessions_table::Migration),
+        Box::new(m20261012_000003_create_personal_access_tokens_table::Migration),
+        Box::new(m20261012_000004_create_rbac_tables::Migration),
+        Box::new(m20261012_000005_add_lineage_to_sessions::Migration),
     ]
 }
 

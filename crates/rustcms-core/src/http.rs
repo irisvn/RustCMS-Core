@@ -19,7 +19,7 @@ use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, RequestId
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
-use crate::app::{AppState, RouteFn};
+use crate::app::{AppState, MiddlewareFn, RouteFn};
 use crate::error::AppError;
 
 const REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
@@ -139,12 +139,16 @@ async fn health(State(state): State<AppState>) -> (StatusCode, Json<Health>) {
     }
 }
 
-pub(crate) fn router(state: AppState, routes: Vec<RouteFn>) -> Router {
+pub(crate) fn router(state: AppState, routes: Vec<RouteFn>, middleware: Vec<MiddlewareFn>) -> Router {
     let http = state.config().http.clone();
-    let mut router = Router::new().route("/health", get(health));
+    let mut router = Router::new();
     for add in routes {
         router = add(router);
     }
+    for wrap in middleware {
+        router = wrap(router, state.clone());
+    }
+    let router = router.route("/health", get(health));
     router
         .fallback(|| async { AppError::NotFound })
         .method_not_allowed_fallback(|| async { AppError::MethodNotAllowed })

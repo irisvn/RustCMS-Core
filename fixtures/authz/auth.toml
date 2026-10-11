@@ -1,0 +1,115 @@
+# Authorization oracle for the auth routes, written by hand (not derived from code).
+# Actors:
+#   guest    anonymous browser with a CSRF token
+#   member   admin session, no permissions
+#   foreign  admin session sending a foreign Origin
+#   reader   API token of `reader` (api role posts.view, token abilities ["posts.view"])
+# A test fails when a route in `rustcms_auth::routes::routes` has no case here.
+
+[[case]]
+route = "GET /admin/api/auth/csrf"
+actor = "guest"
+status = 200
+
+[[case]]
+route = "POST /admin/api/auth/login"
+actor = "guest"
+body = '{"email": "member@example.test", "password": "wrong"}'
+status = 422
+
+[[case]]
+route = "POST /admin/api/auth/login"
+actor = "foreign"
+body = '{"email": "member@example.test", "password": "wrong"}'
+status = 403
+
+[[case]]
+route = "POST /admin/api/auth/logout"
+actor = "guest"
+status = 204
+
+[[case]]
+route = "POST /admin/api/auth/logout"
+actor = "foreign"
+status = 403
+
+[[case]]
+route = "GET /admin/api/auth/me"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/auth/me"
+actor = "member"
+status = 200
+
+[[case]]
+route = "GET /admin/api/auth/me"
+actor = "reader"
+status = 401
+
+[[case]]
+route = "POST /admin/api/auth/password"
+actor = "guest"
+body = '{"current_password": "wrong", "password": "new password 123", "password_confirmation": "new password 123"}'
+status = 401
+
+[[case]]
+route = "POST /admin/api/auth/password"
+actor = "member"
+body = '{"current_password": "wrong", "password": "new password 123", "password_confirmation": "new password 123"}'
+status = 422
+
+[[case]]
+route = "POST /admin/api/auth/password"
+actor = "foreign"
+body = '{"current_password": "wrong", "password": "new password 123", "password_confirmation": "new password 123"}'
+status = 403
+
+[[case]]
+route = "POST /admin/api/auth/logout-others"
+actor = "guest"
+body = '{"password": "wrong"}'
+status = 401
+
+[[case]]
+route = "POST /admin/api/auth/logout-others"
+actor = "member"
+body = '{"password": "wrong"}'
+status = 422
+
+[[case]]
+route = "POST /api/v1/auth/token"
+actor = "guest"
+body = '{"email": "member@example.test", "password": "wrong", "token_name": "x"}'
+status = 422
+
+[[case]]
+route = "DELETE /api/v1/auth/token"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "DELETE /api/v1/auth/token"
+actor = "member"
+status = 401
+
+[[case]]
+route = "DELETE /api/v1/auth/token"
+actor = "reader"
+status = 204
+
+[[case]]
+route = "GET /api/v1/auth/me"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /api/v1/auth/me"
+actor = "member"
+status = 401
+
+[[case]]
+route = "GET /api/v1/auth/me"
+actor = "reader"
+status = 200

@@ -36,12 +36,43 @@ db_test!(upgrade_keeps_existing_users, |db: TestDb| async move {
     assert_eq!(found, seeded, "upgrade preserves rows");
 });
 
+// M1 → M2: users created before the auth tables keep working; system roles are seeded.
+db_test!(upgrade_from_m1_adds_auth_tables, |db: TestDb| async move {
+    Migrator::up(db.conn(), Some(2)).await.unwrap();
+    let user = UserFactory::new().create(db.conn()).await;
+    Migrator::up(db.conn(), None).await.unwrap();
+
+    for table in [
+        "personal_access_tokens",
+        "permissions",
+        "roles",
+        "role_has_permissions",
+        "model_has_roles",
+        "model_has_permissions",
+    ] {
+        assert!(has_table(&db, table).await, "{table}");
+    }
+    assert_eq!(user::Entity::find_by_id(user.id).one(db.conn()).await.unwrap().unwrap(), user);
+    let roles = db
+        .conn()
+        .query_all_raw(sea_orm::Statement::from_string(
+            db.conn().get_database_backend(),
+            "SELECT name, guard_name FROM roles WHERE is_system = true AND is_privileged = true ORDER BY guard_name",
+        ))
+        .await
+        .unwrap();
+    let roles: Vec<(String, String)> =
+        roles.iter().map(|r| (r.try_get("", "name").unwrap(), r.try_get("", "guard_name").unwrap())).collect();
+    assert_eq!(roles, [("super_admin".into(), "admin".into()), ("super_admin".into(), "api".into())]);
+});
+
 db_test!(down_then_up_is_clean, |db: TestDb| async move {
     Migrator::up(db.conn(), None).await.unwrap();
     UserFactory::new().create(db.conn()).await;
     Migrator::down(db.conn(), None).await.unwrap();
-    assert!(!has_table(&db, "users").await);
-    assert!(!has_table(&db, "sessions").await);
+    for table in ["users", "sessions", "personal_access_tokens", "roles", "permissions", "model_has_roles"] {
+        assert!(!has_table(&db, table).await, "{table} dropped");
+    }
     Migrator::up(db.conn(), None).await.unwrap();
     assert!(user::Entity::find().all(db.conn()).await.unwrap().is_empty());
 });
@@ -129,7 +160,11 @@ db_test!(failed_migration_rolls_back_and_can_be_retried, |db: TestDb| async move
     assert!(failing::Migrator::up(db.conn(), None).await.is_err());
     assert!(!has_table(&db, "half_done").await, "partial schema change rolled back");
     let applied = failing::Migrator::get_applied_migrations(db.conn()).await.unwrap();
-    assert_eq!(applied.len(), 2, "framework migrations applied, failing one not recorded");
+    assert_eq!(
+        applied.len(),
+        rustcms_migration::migrations().len(),
+        "framework migrations applied, failing one not recorded"
+    );
 
     failing::FAIL.set(false);
     failing::Migrator::up(db.conn(), None).await.expect("retry succeeds");

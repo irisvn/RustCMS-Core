@@ -54,6 +54,9 @@ enum Command {
     /// Show applied and pending migrations
     #[command(name = "migrate:status")]
     MigrateStatus,
+    /// Commands registered by providers and the application (`make:user`, …)
+    #[command(external_subcommand)]
+    App(Vec<String>),
     /// Generate APP_KEY and write it to .env
     #[command(name = "key:generate")]
     KeyGenerate {
@@ -135,6 +138,21 @@ impl<M: MigratorTrait> Console<M> {
                     println!("{:<8} {}", format!("{:?}", migration.status()), migration.name());
                 }
                 Ok(())
+            }
+            Command::App(args) => {
+                let builder = (self.build)(config);
+                let name = args.first().map(String::as_str).unwrap_or_default();
+                let commands = builder.commands();
+                let Some(command) = commands.iter().find(|c| c.definition().get_name() == name) else {
+                    let known: Vec<String> = commands.iter().map(|c| c.definition().get_name().to_owned()).collect();
+                    bail!("unknown command `{name}`; application commands: {}", known.join(", "));
+                };
+                let matches = match command.definition().try_get_matches_from(&args) {
+                    Ok(matches) => matches,
+                    Err(err) => err.exit(),
+                };
+                let app = builder.build().await?;
+                command.run(app.state(), &matches).await
             }
             Command::KeyGenerate { .. } => unreachable!(),
         }

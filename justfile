@@ -19,6 +19,7 @@ features:
     cargo check -p rustcms-admin --no-default-features
     cargo check -p rustcms-admin --no-default-features --features sqlite
     cargo check -p rustcms-admin --no-default-features --features postgres
+    cargo check -p rustcms-auth
     cargo check -p rustcms --no-default-features --features sqlite
     cargo check -p rustcms --no-default-features --features postgres
 

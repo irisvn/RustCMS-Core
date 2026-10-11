@@ -1,0 +1,161 @@
+//! Console commands: `make:user`, `token:create`, `permission:sync`, `session:prune`.
+
+use anyhow::{Context, bail};
+use async_trait::async_trait;
+use chrono::{Duration, Utc};
+use clap::{Arg, ArgAction, ArgMatches, Command};
+use rustcms_core::models::user;
+use rustcms_core::{AppCommand, AppState};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+use crate::rbac::{Actor, NewUser, RbacService};
+use crate::secret::random_string;
+use crate::state::{ADMIN_GUARD, AuthState};
+
+fn auth(state: &AppState) -> anyhow::Result<std::sync::Arc<AuthState>> {
+    state.service::<AuthState>().context("AuthProvider is not registered")
+}
+
+fn arg<'a>(args: &'a ArgMatches, name: &str) -> Option<&'a String> {
+    args.get_one::<String>(name)
+}
+
+/// `make:user`: creates a user, optionally a super admin.
+pub struct MakeUser;
+
+#[async_trait]
+impl AppCommand for MakeUser {
+    fn definition(&self) -> Command {
+        Command::new("make:user")
+            .about("Create a user (prints a generated password if none is given)")
+            .arg(Arg::new("email").long("email").required(true).help("Sign-in email"))
+            .arg(Arg::new("name").long("name").required(true).help("Display name"))
+            .arg(Arg::new("password").long("password").help("Password (default: generated)"))
+            .arg(
+                Arg::new("super-admin")
+                    .long("super-admin")
+                    .action(ArgAction::SetTrue)
+                    .help("Grant the super_admin role"),
+            )
+            .arg(Arg::new("guard").long("guard").default_value(ADMIN_GUARD).help("Guard of the super_admin role"))
+    }
+
+    async fn run(&self, state: &AppState, args: &ArgMatches) -> anyhow::Result<()> {
+        let auth = auth(state)?;
+        let generated = arg(args, "password").is_none();
+        let password = arg(args, "password").cloned().unwrap_or_else(|| random_string(20));
+        if password.chars().count() < auth.config.password_min_length {
+            bail!("password must be at least {} characters", auth.config.password_min_length);
+        }
+        let new = NewUser {
+            name: arg(args, "name").map_or("", String::as_str),
+            email: arg(args, "email").map_or("", String::as_str),
+            password_hash: auth.passwords.hash(password.clone()).await?,
+            super_admin_guard: args
+                .get_flag("super-admin")
+                .then(|| arg(args, "guard").map_or(ADMIN_GUARD, String::as_str)),
+        };
+        // User and role assignment commit together: a failure leaves nothing behind.
+        let user =
+            RbacService::new(state.db(), &auth.resolver).create_user(Actor::System, new).await.map_err(describe)?;
+        println!("Created user #{} <{}>", user.id, user.email);
+        if generated {
+            println!("Password: {password}");
+        }
+        Ok(())
+    }
+}
+
+/// Validation messages as a readable console error.
+fn describe(err: rustcms_core::AppError) -> anyhow::Error {
+    match err {
+        rustcms_core::AppError::Validation(v) => {
+            let mut lines: Vec<String> =
+                v.errors.iter().map(|(field, messages)| format!("{field}: {}", messages.join(", "))).collect();
+            lines.extend(v.form_errors);
+            anyhow::anyhow!(lines.join("; "))
+        }
+        other => anyhow::anyhow!(other),
+    }
+}
+
+/// `token:create`: issues an API token.
+pub struct TokenCreate;
+
+#[async_trait]
+impl AppCommand for TokenCreate {
+    fn definition(&self) -> Command {
+        Command::new("token:create")
+            .about("Issue an API token for a user (printed once)")
+            .arg(Arg::new("email").long("email").required(true).help("Owner email"))
+            .arg(Arg::new("name").long("name").required(true).help("Token label"))
+            .arg(Arg::new("abilities").long("abilities").default_value("*").help("Comma-separated abilities"))
+            .arg(
+                Arg::new("expires-days")
+                    .long("expires-days")
+                    .value_parser(clap::value_parser!(u32))
+                    .help("Lifetime in days"),
+            )
+    }
+
+    async fn run(&self, state: &AppState, args: &ArgMatches) -> anyhow::Result<()> {
+        let email = arg(args, "email").map(|e| e.trim().to_lowercase()).unwrap_or_default();
+        let user = user::Entity::find()
+            .filter(user::Column::Email.eq(&email))
+            .one(state.db())
+            .await?
+            .with_context(|| format!("no user with email {email}"))?;
+        let abilities: Vec<String> = arg(args, "abilities")
+            .map(|a| a.split(',').map(str::trim).filter(|a| !a.is_empty()).map(str::to_owned).collect())
+            .unwrap_or_default();
+        let expires_at = args.get_one::<u32>("expires-days").map(|d| Utc::now() + Duration::days(i64::from(*d)));
+        let name = arg(args, "name").cloned().unwrap_or_default();
+        let issued = crate::tokens::issue(state.db(), user.id, &name, &abilities, expires_at).await?;
+        println!("{}", issued.plain_text);
+        Ok(())
+    }
+}
+
+/// `permission:sync`: creates declared permissions, marks undeclared ones orphaned.
+pub struct PermissionSync;
+
+#[async_trait]
+impl AppCommand for PermissionSync {
+    fn definition(&self) -> Command {
+        Command::new("permission:sync").about("Create declared permissions and mark undeclared ones orphaned")
+    }
+
+    async fn run(&self, state: &AppState, _: &ArgMatches) -> anyhow::Result<()> {
+        let auth = auth(state)?;
+        let report = RbacService::new(state.db(), &auth.resolver).sync_permissions(&auth.permissions.all()).await?;
+        println!("{} created, {} orphaned", report.created.len(), report.orphaned.len());
+        for name in &report.created {
+            println!("  + {name}");
+        }
+        for name in &report.orphaned {
+            println!("  ~ {name} (orphaned)");
+        }
+        Ok(())
+    }
+}
+
+/// `session:prune`: deletes expired sessions (also done hourly by `serve`).
+pub struct SessionPrune;
+
+#[async_trait]
+impl AppCommand for SessionPrune {
+    fn definition(&self) -> Command {
+        Command::new("session:prune").about("Delete expired admin sessions")
+    }
+
+    async fn run(&self, state: &AppState, _: &ArgMatches) -> anyhow::Result<()> {
+        let pruned = crate::session::prune_expired(state.db()).await?;
+        println!("{pruned} expired sessions deleted");
+        Ok(())
+    }
+}
+
+/// Clap definitions of every auth command (for `rustcms docs:cli`).
+pub fn definitions() -> Vec<Command> {
+    vec![MakeUser.definition(), TokenCreate.definition(), PermissionSync.definition(), SessionPrune.definition()]
+}

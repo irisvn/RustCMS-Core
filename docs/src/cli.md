@@ -90,3 +90,38 @@ Generate APP_KEY and write it to .env
 | `--show` | Print the key instead of writing .env |
 | `--force` | Replace an existing APP_KEY |
 
+## Auth commands
+
+Added by `AuthProvider` (registered in new applications).
+
+### `make:user`
+
+Create a user (prints a generated password if none is given)
+
+| Argument | Description |
+|---|---|
+| `--email` | Sign-in email |
+| `--name` | Display name |
+| `--password` | Password (default: generated) |
+| `--super-admin` | Grant the super_admin role |
+| `--guard` | Guard of the super_admin role (default: `admin`) |
+
+### `token:create`
+
+Issue an API token for a user (printed once)
+
+| Argument | Description |
+|---|---|
+| `--email` | Owner email |
+| `--name` | Token label |
+| `--abilities` | Comma-separated abilities (default: `*`) |
+| `--expires-days` | Lifetime in days |
+
+### `permission:sync`
+
+Create declared permissions and mark undeclared ones orphaned
+
+### `session:prune`
+
+Delete expired admin sessions
+

@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 rustcms-core = { workspace = true, features = ["sqlite", "postgres"] }
+rustcms-auth.workspace = true
 sea-orm = { workspace = true, features = ["sqlx-sqlite", "sqlx-postgres"] }
 sea-orm-migration.workspace = true
 async-trait.workspace = true

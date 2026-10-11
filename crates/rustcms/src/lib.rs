@@ -10,6 +10,9 @@ pub use rustcms_core::*;
 /// Admin panel engine (resources, fields, policies).
 pub use rustcms_admin as admin;
 
+/// Guards, sessions, tokens, roles and permissions.
+pub use rustcms_auth as auth;
+
 /// HTTP toolkit used by rustcms.
 pub use axum;
 
@@ -21,6 +24,7 @@ pub mod migration {
 
 /// Common imports for application code.
 pub mod prelude {
+    pub use crate::auth::{Auth, AuthProvider, MaybeAuth};
     pub use crate::{AppBuilder, AppError, AppResult, AppState, ClientIp, Config, Inject, Json, ServiceProvider};
     pub use axum::Router;
     pub use axum::extract::{Path, Query, State};

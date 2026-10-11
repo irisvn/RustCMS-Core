@@ -3,14 +3,17 @@
 //! - [`TestDb`]: an isolated database per test (SQLite temp file or PostgreSQL database),
 //! - [`db_test!`]: runs a test body on both databases,
 //! - [`TestApp`]: drives the full router (middleware included) without a socket,
+//! - [`TestClient`]: cookies, CSRF and bearer tokens (`acting_as`, `login_as`, `with_token`),
 //! - [`Factory`]: builds and inserts records.
 #![warn(missing_docs)]
 
 mod app;
+mod client;
 mod db;
 mod factory;
 
 pub use app::{TestApp, TestResponse, test_config};
+pub use client::TestClient;
 pub use db::{Backend, TestDb};
 pub use factory::{Factory, UserFactory};
 

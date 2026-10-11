@@ -15,6 +15,7 @@ postgres = ["rustcms-core/postgres", "rustcms-admin/postgres"]
 [dependencies]
 rustcms-core.workspace = true
 rustcms-admin.workspace = true
+rustcms-auth.workspace = true
 rustcms-migration.workspace = true
 axum.workspace = true
 sea-orm-migration.workspace = true

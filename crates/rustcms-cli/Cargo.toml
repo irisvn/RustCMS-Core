@@ -14,6 +14,7 @@ doc = false
 
 [dependencies]
 rustcms-core.workspace = true
+rustcms-auth.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
