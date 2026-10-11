@@ -14,6 +14,8 @@ postgres = ["rustcms-core/postgres"]
 
 [dependencies]
 rustcms-core.workspace = true
+rustcms-auth.workspace = true
+axum.workspace = true
 sea-orm.workspace = true
 async-trait.workspace = true
 serde.workspace = true
@@ -23,9 +25,13 @@ uuid.workspace = true
 chrono.workspace = true
 rust_decimal.workspace = true
 tracing.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
+chrono.workspace = true
 rustcms-testing.workspace = true
+rustcms-migration.workspace = true
+toml.workspace = true
 tokio.workspace = true
 insta.workspace = true
 proptest.workspace = true

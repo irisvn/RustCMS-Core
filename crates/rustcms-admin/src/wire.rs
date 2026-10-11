@@ -78,6 +78,34 @@ impl FieldKind {
         })
     }
 
+    /// Name used as `valueType` in schemas.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::F64 => "f64",
+            Self::Bool => "bool",
+            Self::Decimal => "decimal",
+            Self::Uuid => "uuid",
+            Self::Date => "date",
+            Self::LocalDateTime => "local_datetime",
+            Self::Instant => "instant",
+            Self::Json => "json",
+        }
+    }
+
+    /// Interprets a value that arrived as a query-string string: numbers and
+    /// booleans are parsed for kinds whose wire format is not a string.
+    pub fn from_query(self, value: &Json) -> Json {
+        match (self, value) {
+            (Self::I32 | Self::F64 | Self::Bool | Self::Json, Json::String(s)) => {
+                serde_json::from_str(s).unwrap_or_else(|_| value.clone())
+            }
+            _ => value.clone(),
+        }
+    }
+
     /// Typed SQL `NULL` values for this kind.
     ///
     /// Several are returned when the Rust field type is ambiguous (an `Instant`

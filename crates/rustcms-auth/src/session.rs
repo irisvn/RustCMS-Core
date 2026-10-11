@@ -28,6 +28,10 @@ use crate::state::AuthState;
 const TOKEN_LEN: usize = 43;
 /// Sliding expiry is written back at most once per this many seconds.
 const TOUCH_EVERY_SECS: i64 = 60;
+/// Longest wait for an optional sliding renewal.
+const RENEWAL_BUDGET: std::time::Duration = std::time::Duration::from_secs(2);
+/// Time kept before the request deadline to send the response.
+const RENEWAL_MARGIN: std::time::Duration = std::time::Duration::from_millis(250);
 /// Namespace of the per-lineage PostgreSQL advisory locks.
 const LINEAGE_LOCK_SPACE: i32 = 0x7365_7373;
 
@@ -229,12 +233,29 @@ pub(crate) async fn persist(
     {
         // Anonymous sessions keep their original expiry.
         let expires_at = if data.user_id.is_some() { expires_at } else { stored_expires_at.unwrap_or(expires_at) };
-        let renewed = entity::Entity::update_many()
+        let update = entity::Entity::update_many()
             .col_expr(entity::Column::Data, Expr::value(encode(&data)))
             .col_expr(entity::Column::ExpiresAt, Expr::value(expires_at))
             .filter(entity::Column::Id.eq(id))
-            .exec(db)
-            .await;
+            .exec(db);
+        let renewed = if changed {
+            update.await
+        } else {
+            // A pure renewal is optional: it never outlasts the request deadline
+            // (e.g. waiting on a locked row), so a committed write still answers.
+            let budget = rustcms_core::http::request_deadline()
+                .map_or(RENEWAL_BUDGET, |deadline| {
+                    deadline.saturating_duration_since(tokio::time::Instant::now()).saturating_sub(RENEWAL_MARGIN)
+                })
+                .min(RENEWAL_BUDGET);
+            match tokio::time::timeout(budget, update).await {
+                Ok(result) => result,
+                Err(_) => {
+                    tracing::warn!("session renewal timed out; keeping the response");
+                    return Ok(None);
+                }
+            }
+        };
         let renewed = match renewed {
             Ok(result) => result,
             Err(err) if !changed => {

@@ -27,6 +27,14 @@ pub mod ability {
 pub trait Policy: Send + Sync {
     /// Returns `true` to allow.
     async fn allows(&self, ctx: &Ctx, ability: &str, record: Option<&Data>) -> bool;
+
+    /// Whether `view` can differ between records. When `true` (the safe
+    /// default), lists check every record and never show (or count) denied ones,
+    /// which costs a scan of the matching rows. Return `false` when record
+    /// visibility is fully expressed by `Resource::scope()`.
+    fn view_depends_on_record(&self) -> bool {
+        true
+    }
 }
 
 /// Default policy: `{slug}.{ability}` must be granted to the user.
@@ -45,5 +53,9 @@ impl PermissionPolicy {
 impl Policy for PermissionPolicy {
     async fn allows(&self, ctx: &Ctx, ability: &str, _record: Option<&Data>) -> bool {
         ctx.can(&format!("{}.{}", self.slug, ability))
+    }
+
+    fn view_depends_on_record(&self) -> bool {
+        false
     }
 }

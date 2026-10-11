@@ -19,4 +19,5 @@ db_test!(admin_sign_in, migrate = Migrator, |db: TestDb| async move {
         .await
         .assert_status(StatusCode::OK)
         .assert_json("/user/email", json!("ada@example.test"));
+    browser.get("/admin/api/panel").await.assert_status(StatusCode::OK);
 });

@@ -14,6 +14,7 @@ use crate::action::Action;
 use crate::context::Ctx;
 use crate::field::Field;
 use crate::policy::{PermissionPolicy, Policy};
+use crate::ui::{Form, Table};
 
 /// SeaORM bounds the generic CRUD engine needs, written once.
 pub trait ResourceEntity:
@@ -53,6 +54,9 @@ pub struct ConstraintMap {
 #[derive(Clone)]
 pub struct ResourceMeta {
     pub(crate) label: String,
+    pub(crate) plural_label: Option<String>,
+    pub(crate) icon: Option<String>,
+    pub(crate) group: Option<String>,
     pub(crate) key: KeyStrategy,
     pub(crate) title_field: Option<String>,
     pub(crate) constraints: Vec<ConstraintMap>,
@@ -61,7 +65,15 @@ pub struct ResourceMeta {
 impl ResourceMeta {
     /// Creates metadata with a human label and a database-generated key.
     pub fn new(label: impl Into<String>) -> Self {
-        Self { label: label.into(), key: KeyStrategy::DbGenerated, title_field: None, constraints: Vec::new() }
+        Self {
+            label: label.into(),
+            plural_label: None,
+            icon: None,
+            group: None,
+            key: KeyStrategy::DbGenerated,
+            title_field: None,
+            constraints: Vec::new(),
+        }
     }
 
     /// Sets the primary key strategy.
@@ -91,6 +103,24 @@ impl ResourceMeta {
         self
     }
 
+    /// Plural label (default: label + "s").
+    pub fn plural(mut self, label: impl Into<String>) -> Self {
+        self.plural_label = Some(label.into());
+        self
+    }
+
+    /// Navigation icon.
+    pub fn icon(mut self, icon: impl Into<String>) -> Self {
+        self.icon = Some(icon.into());
+        self
+    }
+
+    /// Navigation group.
+    pub fn group(mut self, group: impl Into<String>) -> Self {
+        self.group = Some(group.into());
+        self
+    }
+
     /// Human label.
     pub fn label(&self) -> &str {
         &self.label
@@ -114,6 +144,16 @@ pub trait Resource: Send + Sync + 'static {
 
     /// Exposed fields. Columns not listed here are neither readable nor writable by clients.
     fn fields() -> Vec<Field>;
+
+    /// Form layout. Empty (the default): one input per field, by column type.
+    fn form() -> Form {
+        Form::default()
+    }
+
+    /// Table layout. Empty (the default): the first readable fields.
+    fn table() -> Table {
+        Table::default()
+    }
 
     /// Authorization policy. Defaults to [`PermissionPolicy`] (deny by default).
     fn policy() -> Arc<dyn Policy> {
@@ -200,6 +240,11 @@ pub struct ListQuery {
     /// Filters, combined with AND.
     #[serde(default)]
     pub filters: Vec<Filter>,
+    /// Filter values came from a URL query string, so they are all strings and
+    /// are interpreted by field type (`5`, `true`, comma-separated `in` lists).
+    /// JSON clients keep the strict wire format.
+    #[serde(skip)]
+    pub from_query_string: bool,
 }
 
 /// Request size limits (see plan §4). Exceeding one is a 422.

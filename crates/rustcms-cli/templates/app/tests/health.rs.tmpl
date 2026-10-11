@@ -15,4 +15,5 @@ db_test!(admin_sign_in, migrate = Migrator, |db: TestDb| async move {
     UserFactory::new().email("ada@example.test").password("secret password").create(app.state().db()).await;
     let browser = app.login_as("ada@example.test", "secret password").await;
     browser.get("/admin/api/auth/me").await.assert_status(StatusCode::OK).assert_json("/user/email", json!("ada@example.test"));
+    browser.get("/admin/api/panel").await.assert_status(StatusCode::OK);
 });

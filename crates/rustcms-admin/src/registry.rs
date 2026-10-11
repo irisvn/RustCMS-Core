@@ -12,6 +12,8 @@ use crate::action::ActionOutcome;
 use crate::adapter::ResourceAdapter;
 use crate::context::Ctx;
 use crate::resource::{Envelope, ListQuery, Page, Resource, ResourceMeta};
+use crate::schema::{ResourceInfo, ResourceSchema, SchemaOperation};
+use crate::ui::SelectOption;
 
 /// Object-safe view of a [`Resource`], used by the non-generic HTTP layer.
 #[async_trait]
@@ -22,6 +24,26 @@ pub trait DynResource: Send + Sync {
     fn meta(&self) -> &ResourceMeta;
     /// Slugs referenced by `belongs_to` fields.
     fn targets(&self) -> Vec<&'static str>;
+    /// Identity and navigation entry.
+    fn info(&self) -> ResourceInfo;
+    /// Whether the policy allows `ability` without a record (e.g. `view_any`, `create`).
+    async fn allows(&self, ctx: &Ctx, ability: &str) -> bool;
+    /// Permissions checked by the default policy (`{slug}.{ability}`), for `permission:sync`.
+    fn permissions(&self) -> Vec<String>;
+    /// Form and table for the current user; `key` selects a record for `edit`/`view`.
+    async fn schema(&self, ctx: &Ctx, op: SchemaOperation, key: Option<&str>) -> AppResult<ResourceSchema>;
+    /// `(key, title)` of visible records, by `keys` or matching `search` (at most 50).
+    async fn lookup(&self, ctx: &Ctx, search: Option<&str>, keys: &[String]) -> AppResult<Vec<(String, String)>>;
+    /// Options of the `belongs_to` field `field`, from the target resource;
+    /// `record` is the key of the record being edited or viewed, if any.
+    async fn options(
+        &self,
+        ctx: &Ctx,
+        field: &str,
+        search: Option<&str>,
+        keys: &[String],
+        record: Option<&str>,
+    ) -> AppResult<Vec<SelectOption>>;
     /// Lists records in scope.
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<Page>;
     /// Reads one record.
@@ -62,6 +84,13 @@ impl Registry {
         let previous = self.resources.insert(R::SLUG, Arc::new(adapter));
         assert!(previous.is_none(), "resource `{}` registered twice", R::SLUG);
         self
+    }
+
+    /// Every resource, in registration order of slugs.
+    pub fn all(&self) -> Vec<&Arc<dyn DynResource>> {
+        let mut all: Vec<_> = self.resources.values().collect();
+        all.sort_by_key(|r| r.slug());
+        all
     }
 
     /// Looks up a resource by slug.

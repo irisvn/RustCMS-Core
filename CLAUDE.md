@@ -12,3 +12,5 @@
 - Wire format (ADR 0003): i64/decimal as strings, decimals rescaled to column scale.
 - Auth: all RBAC writes go through `RbacService` (crates/rustcms-auth/src/rbac.rs); never write role/permission tables directly.
 - New auth routes must be added to `rustcms_auth::routes::routes` and to `fixtures/authz/auth.toml` (the oracle test fails otherwise).
+- Admin API routes are listed in `rustcms_admin::http::routes`; each needs a case in `fixtures/authz/admin.toml`.
+- `fixtures/contract/*.json` is the server↔SPA contract: regenerate with `UPDATE_CONTRACT=1 cargo test -p rustcms-admin` and review the diff.

@@ -35,6 +35,14 @@ Create a migration in `src/migrations`
 |---|---|
 | `<name>` | snake_case name; `create_<table>_table` generates a table skeleton |
 
+### `make:test`
+
+Create an integration test in `tests/`
+
+| Argument | Description |
+|---|---|
+| `<name>` | Test name in PascalCase, e.g. `PostAdminTest` |
+
 ### `docs:cli`
 
 Print the command reference as Markdown

@@ -29,10 +29,22 @@ type Handler<E> = Arc<
 ///
 /// Each record is authorized individually with the policy ability `ability`
 /// (default: the action name); denied records are reported, not processed.
+///
+/// Name the entity so the closure's parameter types are inferred:
+///
+/// ```rust,ignore
+/// Action::<post::Entity>::new("publish", |_ctx, _txn, _posts, _data| Box::pin(async move { Ok(()) }))
+/// ```
 pub struct Action<E: EntityTrait> {
     pub(crate) name: &'static str,
     pub(crate) ability: &'static str,
     pub(crate) handler: Handler<E>,
+    pub(crate) label: Option<String>,
+    pub(crate) bulk: bool,
+    pub(crate) confirm: Option<String>,
+    pub(crate) color: Option<String>,
+    pub(crate) icon: Option<String>,
+    pub(crate) required_permission: Option<&'static str>,
 }
 
 impl<E: EntityTrait> Action<E> {
@@ -44,7 +56,54 @@ impl<E: EntityTrait> Action<E> {
             + Sync
             + 'static,
     {
-        Self { name, ability: name, handler: Arc::new(handler) }
+        Self {
+            name,
+            ability: name,
+            handler: Arc::new(handler),
+            label: None,
+            bulk: false,
+            confirm: None,
+            color: None,
+            icon: None,
+            required_permission: None,
+        }
+    }
+
+    /// Refuses the action outright (403, and hides it from the schema) for users
+    /// without `permission`. Per-record policy checks still apply to the others.
+    pub fn requires_permission(mut self, permission: &'static str) -> Self {
+        self.required_permission = Some(permission);
+        self
+    }
+
+    /// Button label (default: the name, humanized).
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Also offered for selections of records.
+    pub fn bulk(mut self) -> Self {
+        self.bulk = true;
+        self
+    }
+
+    /// Asks this question before running.
+    pub fn requires_confirmation(mut self, question: impl Into<String>) -> Self {
+        self.confirm = Some(question.into());
+        self
+    }
+
+    /// Color (`primary`, `success`, `warning`, `danger`, `gray`).
+    pub fn color(mut self, color: impl Into<String>) -> Self {
+        self.color = Some(color.into());
+        self
+    }
+
+    /// Icon name.
+    pub fn icon(mut self, icon: impl Into<String>) -> Self {
+        self.icon = Some(icon.into());
+        self
     }
 
     /// Overrides the policy ability checked per record.

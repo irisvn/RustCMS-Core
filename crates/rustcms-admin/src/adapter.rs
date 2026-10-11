@@ -7,11 +7,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rustcms_core::{AppError, AppResult, ValidationErrors};
-use sea_orm::sea_query::Value;
+use sea_orm::sea_query::{Expr, Value};
 use sea_orm::{
-    ActiveModelBehavior, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, DbErr,
-    EntityName, EntityTrait, IdenStatic, IntoActiveModel, Iterable, ModelTrait, Order, PaginatorTrait,
-    PrimaryKeyToColumn, QueryFilter, QueryOrder, SqlErr,
+    ActiveModelBehavior, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, DbBackend,
+    DbErr, EntityName, EntityTrait, IdenStatic, IntoActiveModel, Iterable, ModelTrait, Order, PaginatorTrait,
+    PrimaryKeyToColumn, QueryFilter, QueryOrder, QuerySelect, SqlErr,
 };
 
 use crate::Data;
@@ -21,6 +21,11 @@ use crate::field::{Field, Operation};
 use crate::policy::{Policy, ability};
 use crate::registry::DynResource;
 use crate::resource::{Envelope, FilterOp, KeyStrategy, Limits, ListQuery, Page, PageMeta, Resource, ResourceMeta};
+use crate::schema::{
+    ActionSchema, BadgeColor, ColumnSchema, ComponentSchema, FilterSchema, FormSchema, InputSchema, LayoutSchema,
+    Relationship, ResourceInfo, ResourceSchema, Rule, SCHEMA_VERSION, SchemaOperation, TableSchema, VOCABULARY_VERSION,
+};
+use crate::ui::{Component, Form, Input, InputType, SelectOption, Table, TableColumn, humanize};
 use crate::wire::{FieldKind, encode, encode_column, encode_key};
 
 type Entity<R> = <R as Resource>::Entity;
@@ -46,6 +51,8 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     table: String,
     policy: Arc<dyn Policy>,
     actions: Vec<Action<Entity<R>>>,
+    form: Form,
+    table_ui: Table,
     limits: Limits,
     _resource: PhantomData<fn() -> R>,
 }
@@ -91,6 +98,48 @@ impl<R: Resource> ResourceAdapter<R> {
             }
         }
 
+        let form = Some(R::form()).filter(|f| !f.components.is_empty()).unwrap_or_else(|| auto_form(&fields, &columns));
+        for input in form.inputs() {
+            assert!(
+                seen.contains(input.name.as_str()),
+                "resource `{slug}`: form input `{}` is not a field",
+                input.name
+            );
+        }
+        let mut table_ui = R::table();
+        if table_ui.columns.is_empty() {
+            table_ui.columns = auto_columns(&fields, &columns);
+        }
+        let field = |name: &str| fields.iter().find(|f| f.name == name);
+        for column in &table_ui.columns {
+            assert!(field(&column.name).is_some(), "resource `{slug}`: table column `{}` is not a field", column.name);
+        }
+        for filter in &table_ui.filters {
+            assert!(
+                field(&filter.name).is_some_and(|f| f.filterable),
+                "resource `{slug}`: filter `{}` needs a `.filterable()` field",
+                filter.name
+            );
+        }
+        if let Some(sort) = &table_ui.default_sort {
+            let name = sort.trim_start_matches('-');
+            assert!(
+                field(name).is_some_and(|f| f.sortable),
+                "resource `{slug}`: default sort `{name}` needs a `.sortable()` field"
+            );
+        }
+        let actions = R::actions();
+        let mut action_names = HashSet::new();
+        for action in &actions {
+            assert!(action_names.insert(action.name), "resource `{slug}`: action `{}` declared twice", action.name);
+            assert!(
+                ![ability::VIEW_ANY, ability::VIEW, ability::CREATE, ability::UPDATE, ability::DELETE]
+                    .contains(&action.name),
+                "resource `{slug}`: action name `{}` is reserved for CRUD abilities",
+                action.name
+            );
+        }
+
         Self {
             table: Entity::<R>::default().table_name().to_owned(),
             meta,
@@ -100,7 +149,9 @@ impl<R: Resource> ResourceAdapter<R> {
             pk_name,
             pk_kind,
             policy: R::policy(),
-            actions: R::actions(),
+            actions,
+            form,
+            table_ui,
             limits: Limits::default(),
             _resource: PhantomData,
         }
@@ -179,6 +230,10 @@ impl<R: Resource> ResourceAdapter<R> {
                 }
             } else if let Err(e) = column.kind.decode(value) {
                 errors.add(name.as_str(), e.0);
+            } else if let (Some(max), Some(text)) = (field.max_length, value.as_str())
+                && text.chars().count() > max
+            {
+                errors.add(name.as_str(), format!("may not be longer than {max} characters"));
             }
         }
         if op == Operation::Create {
@@ -228,6 +283,14 @@ impl<R: Resource> ResourceAdapter<R> {
                 errors.add(name.as_str(), "is required");
                 continue;
             }
+            // Hooks may change values: limits hold for what is actually written.
+            let max_length = self.field(name).and_then(|f| f.max_length);
+            if let (Some(max), Some(text)) = (max_length, value.as_str())
+                && text.chars().count() > max
+            {
+                errors.add(name.as_str(), format!("may not be longer than {max} characters"));
+                continue;
+            }
             let candidates = match column.kind.decode(value) {
                 Ok(candidates) => candidates,
                 Err(e) => {
@@ -275,7 +338,15 @@ impl<R: Resource> ResourceAdapter<R> {
 
     async fn envelopes(&self, ctx: &Ctx, models: Vec<Model<R>>) -> AppResult<Vec<Envelope>> {
         let readable: Vec<&Field> = self.fields.iter().filter(|f| f.can_read(ctx)).collect();
-        let labels = self.labels(ctx, &readable, &models).await?;
+        // Labels are presentation: a failure (e.g. a related resource unavailable)
+        // must not fail the request, least of all after a committed write.
+        let labels = match self.labels(ctx, &readable, &models).await {
+            Ok(labels) => labels,
+            Err(err) => {
+                tracing::warn!(resource = R::SLUG, %err, "relationship labels unavailable");
+                vec![BTreeMap::new(); models.len()]
+            }
+        };
         let title_readable = self.meta.title_field.as_ref().filter(|t| readable.iter().any(|f| &f.name == *t));
         let mut out = Vec::with_capacity(models.len());
         for (model, labels) in models.iter().zip(labels) {
@@ -284,12 +355,24 @@ impl<R: Resource> ResourceAdapter<R> {
             for name in [ability::VIEW, ability::UPDATE, ability::DELETE] {
                 abilities.insert(name, self.policy.allows(ctx, name, Some(&record)).await);
             }
+            // Decided before action entries are added (their names cannot collide,
+            // see registration, but the view decision never depends on them).
+            let viewable = abilities[ability::VIEW];
+            for action in &self.actions {
+                abilities.insert(action.name, self.policy.allows(ctx, action.ability, Some(&record)).await);
+            }
+            // Every envelope (list, read, and the result of a write) carries data
+            // only if the user may view the record; blind writes get key and abilities.
             out.push(Envelope {
                 key: self.key_of(model),
-                title: title_readable.map(|t| title_text(&record[t.as_str()])),
+                title: title_readable.filter(|_| viewable).map(|t| title_text(&record[t.as_str()])),
                 abilities,
-                data: readable.iter().map(|f| (f.name.clone(), record[f.name.as_str()].clone())).collect(),
-                labels,
+                data: if viewable {
+                    readable.iter().map(|f| (f.name.clone(), record[f.name.as_str()].clone())).collect()
+                } else {
+                    Data::new()
+                },
+                labels: if viewable { labels } else { BTreeMap::new() },
             });
         }
         Ok(out)
@@ -336,8 +419,14 @@ impl<R: Resource> ResourceAdapter<R> {
                 errors.add("search", format!("may not be longer than {} characters", self.limits.search_len));
             } else {
                 let mut any = Condition::any();
+                let pattern = format!("%{}%", escape_like(search));
                 for field in self.fields.iter().filter(|f| f.searchable && f.can_read(ctx)) {
-                    any = any.add(self.column(&field.name).column.contains(search));
+                    any = any.add(search_match(
+                        ctx.db.get_database_backend(),
+                        self.column(&field.name).column,
+                        self.column(&field.name).kind,
+                        &pattern,
+                    ));
                 }
                 condition = condition.add(any);
             }
@@ -353,9 +442,20 @@ impl<R: Resource> ResourceAdapter<R> {
                 continue;
             }
             let column = self.column(name);
-            let decode = |v: &serde_json::Value| column.kind.decode(v).map(|mut c| c.swap_remove(0));
+            let decode = |v: &serde_json::Value| {
+                let value = if query.from_query_string { column.kind.from_query(v) } else { v.clone() };
+                column.kind.decode(&value).map(|mut c| c.swap_remove(0))
+            };
             let expr = if filter.op == FilterOp::In {
-                let items = filter.value.as_array().map(Vec::as_slice).unwrap_or_default();
+                // Query strings send `in` lists comma-separated.
+                let split: Vec<serde_json::Value>;
+                let items = match &filter.value {
+                    serde_json::Value::String(list) if query.from_query_string => {
+                        split = list.split(',').map(|v| serde_json::Value::String(v.trim().to_owned())).collect();
+                        split.as_slice()
+                    }
+                    other => other.as_array().map(Vec::as_slice).unwrap_or_default(),
+                };
                 if items.is_empty() || items.len() > self.limits.in_items {
                     errors.add(name, format!("must be a list of 1 to {} items", self.limits.in_items));
                     continue;
@@ -390,8 +490,386 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 }
 
+/// Case-insensitive `LIKE` on a table-qualified column (safe with joined scopes),
+/// cast to text so numeric, UUID or date title columns can be searched too.
+///
+/// Both sides are folded by the database's own `LOWER`, so an exact value always
+/// matches itself (SQLite folds ASCII only; PostgreSQL folds Unicode).
+fn search_match(backend: DbBackend, column: impl ColumnTrait, kind: FieldKind, pattern: &str) -> Expr {
+    let column = Expr::col(column.as_column_ref());
+    let pattern = Expr::val(pattern);
+    // sea-query substitutes the backend's own placeholder token in custom SQL.
+    match (backend, kind) {
+        (DbBackend::Postgres, _) => {
+            Expr::cust_with_exprs("LOWER(CAST($1 AS TEXT)) LIKE LOWER($2) ESCAPE '\\'", [column, pattern])
+        }
+        // SQLite stores UUIDs as 16-byte blobs: rebuild the canonical text form
+        // the wire format shows (`xxxxxxxx-xxxx-…`), so displayed values match.
+        (_, FieldKind::Uuid) => Expr::cust_with_exprs(
+            "LOWER(SUBSTR(HEX(?),1,8)||'-'||SUBSTR(HEX(?),9,4)||'-'||SUBSTR(HEX(?),13,4)||'-'||SUBSTR(HEX(?),17,4)||'-'||SUBSTR(HEX(?),21)) LIKE LOWER(?) ESCAPE '\\'",
+            [column.clone(), column.clone(), column.clone(), column.clone(), column, pattern],
+        ),
+        _ => Expr::cust_with_exprs("LOWER(CAST(? AS TEXT)) LIKE LOWER(?) ESCAPE '\\'", [column, pattern]),
+    }
+}
+
+/// Escapes `%`, `_` and `\\` for `LIKE … ESCAPE '\\'`.
+fn escape_like(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// One input per field, by column type.
+fn auto_form<C>(fields: &[Field], columns: &HashMap<String, ColumnInfo<C>>) -> Form {
+    let inputs = fields
+        .iter()
+        .filter(|f| !f.guarded)
+        .map(|f| {
+            let kind = if f.belongs_to.is_some() {
+                InputType::Select
+            } else {
+                match columns[&f.name].kind {
+                    FieldKind::I32 | FieldKind::I64 | FieldKind::F64 | FieldKind::Decimal => InputType::NumberInput,
+                    FieldKind::Bool => InputType::Toggle,
+                    FieldKind::Date => InputType::DatePicker,
+                    FieldKind::LocalDateTime | FieldKind::Instant => InputType::DateTimePicker,
+                    FieldKind::Json => InputType::Textarea,
+                    FieldKind::String | FieldKind::Uuid => InputType::TextInput,
+                }
+            };
+            Component::Input(Input::with_kind(&f.name, kind))
+        })
+        .collect();
+    Form::new().schema(inputs)
+}
+
+/// The first readable-by-default fields as columns.
+fn auto_columns<C>(fields: &[Field], columns: &HashMap<String, ColumnInfo<C>>) -> Vec<TableColumn> {
+    use crate::ui::{BooleanColumn, DateColumn, TextColumn};
+    fields
+        .iter()
+        .filter(|f| !f.guarded && columns[&f.name].kind != FieldKind::Json)
+        .take(6)
+        .map(|f| match columns[&f.name].kind {
+            FieldKind::Bool => BooleanColumn::make(&f.name),
+            FieldKind::Date | FieldKind::LocalDateTime | FieldKind::Instant => DateColumn::make(&f.name),
+            _ => TextColumn::make(&f.name),
+        })
+        .collect()
+}
+
 fn title_text(value: &serde_json::Value) -> String {
     value.as_str().map_or_else(|| value.to_string(), str::to_owned)
+}
+
+/// Page sizes offered by the table.
+const PER_PAGE_OPTIONS: [u64; 4] = [10, 25, 50, 100];
+/// Most options returned by one options lookup.
+const MAX_OPTIONS: u64 = 50;
+/// Time kept before the request deadline to send a committed write's response.
+const RESPONSE_MARGIN: std::time::Duration = std::time::Duration::from_millis(250);
+/// Longest wait for a written record's envelope before answering with its key
+/// alone (also bounded by the request deadline).
+const POST_COMMIT_HYDRATION: std::time::Duration = std::time::Duration::from_secs(2);
+/// Records loaded at a time while checking candidates (bounds memory by row size).
+const LOAD_CHUNK: usize = 100;
+/// Rows read per batch when a list checks records individually.
+const LIST_SCAN_BATCH: u64 = 100;
+/// Most matching rows a list checks individually before refusing.
+const MAX_LIST_SCAN: u64 = 10_000;
+/// Candidate batches read at most while filtering options by policy.
+const MAX_OPTION_BATCHES: u64 = 20;
+
+impl<R: Resource> ResourceAdapter<R> {
+    /// Keys of up to `batches` × `batch` rows of `select`, read in batches from
+    /// one snapshot (concurrent edits cannot shift rows between batches), which
+    /// is released before returning: policies and label lookups then run
+    /// without holding a connection. Rows keep the query's own projection, so
+    /// any `DISTINCT`/`ORDER BY` from `scope()` stays valid; only their keys are
+    /// kept, so memory is bounded by one batch. Returns the keys in order and
+    /// whether they are all the matching rows.
+    async fn read_candidate_keys(
+        &self,
+        db: &sea_orm::DatabaseConnection,
+        select: &sea_orm::Select<Entity<R>>,
+        batch: u64,
+        batches: u64,
+    ) -> AppResult<(Vec<String>, bool)> {
+        let snapshot = rustcms_core::db::begin_snapshot(db).await?;
+        let mut keys = Vec::new();
+        let mut complete = false;
+        for index in 0..batches {
+            let models = select.clone().limit(batch).offset(index * batch).all(&snapshot).await?;
+            let exhausted = (models.len() as u64) < batch;
+            keys.extend(models.iter().map(|model| self.key_of(model)));
+            if exhausted {
+                complete = true;
+                break;
+            }
+        }
+        if !complete {
+            // Exactly at the budget: one more row decides.
+            complete = select.clone().limit(1).offset(batches * batch).one(&snapshot).await?.is_none();
+        }
+        snapshot.commit().await?;
+        Ok((keys, complete))
+    }
+
+    /// The records of `chunk` (at most [`LOAD_CHUNK`] keys) that still match
+    /// `select` (scope, search, filters), in the given order, with their trusted
+    /// records. Keys deleted or no longer matching since they were read are
+    /// skipped, so results never include records outside the query.
+    async fn load_ordered(
+        &self,
+        ctx: &Ctx,
+        select: &sea_orm::Select<Entity<R>>,
+        chunk: &[String],
+    ) -> AppResult<Vec<(Model<R>, Data)>> {
+        let values = self.decode_keys(chunk)?;
+        let models = select.clone().filter(self.pk.is_in(values)).all(&ctx.db).await?;
+        let mut loaded: HashMap<String, (Model<R>, Data)> = models
+            .into_iter()
+            .map(|model| {
+                let record = Self::record(&model);
+                (self.key_of(&model), (model, record))
+            })
+            .collect();
+        Ok(chunk.iter().filter_map(|key| loaded.remove(key)).collect())
+    }
+
+    /// Envelope of a record whose write has committed. Building it must not
+    /// turn the committed write into an error (a retry would repeat it): on
+    /// failure, the key alone is returned, with no data.
+    async fn committed_envelope(&self, ctx: &Ctx, model: Model<R>) -> Envelope {
+        let key = self.key_of(&model);
+        // Bounded: a slow lookup must not let the HTTP timeout (or a client
+        // giving up) hide the committed key and invite a duplicating retry.
+        // Within the request's own deadline too (minus a margin to write the response).
+        let budget = rustcms_core::http::request_deadline().map_or(POST_COMMIT_HYDRATION, |deadline| {
+            deadline
+                .saturating_duration_since(tokio::time::Instant::now())
+                .saturating_sub(RESPONSE_MARGIN)
+                .min(POST_COMMIT_HYDRATION)
+        });
+        let hydrated = tokio::time::timeout(budget, self.envelopes(ctx, vec![model])).await;
+        match hydrated.unwrap_or_else(|_| Err(AppError::internal("post-commit hydration timed out"))) {
+            Ok(mut envelopes) => envelopes.remove(0),
+            Err(err) => {
+                tracing::warn!(resource = R::SLUG, %key, %err, "write committed; response without record data");
+                Envelope { key, title: None, abilities: BTreeMap::new(), data: Data::new(), labels: BTreeMap::new() }
+            }
+        }
+    }
+
+    /// Opens a write transaction and a context whose [`Ctx::conn`] is that
+    /// transaction, for policies and hooks.
+    async fn begin(&self, ctx: &Ctx) -> AppResult<(Arc<sea_orm::DatabaseTransaction>, Ctx)> {
+        let txn = Arc::new(rustcms_core::db::begin_write(&ctx.db).await?);
+        let wctx = ctx.within(txn.clone());
+        Ok((txn, wctx))
+    }
+
+    /// Commits a write opened with [`Self::begin`].
+    async fn commit(txn: Arc<sea_orm::DatabaseTransaction>, wctx: Ctx) -> AppResult<()> {
+        drop(wctx);
+        let txn = Arc::try_unwrap(txn)
+            .map_err(|_| AppError::internal(format!("`{}`: the write transaction is still in use", R::SLUG)))?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    /// The record `key` for a write with `ability`: found in scope and allowed
+    /// by the policy *before* locking (hidden or forbidden records are never
+    /// locked, and answer at once), then locked and checked again, so ownership
+    /// or tenancy changed meanwhile is seen.
+    async fn find_authorized_locked(
+        &self,
+        ctx: &Ctx,
+        txn: &sea_orm::DatabaseTransaction,
+        key: &str,
+        ability: &str,
+    ) -> AppResult<Model<R>> {
+        let model = self.find_model(ctx, txn, key).await?;
+        if !self.policy.allows(ctx, ability, Some(&Self::record(&model))).await {
+            return Err(AppError::Forbidden);
+        }
+        self.lock_rows(txn, std::slice::from_ref(&self.key_of(&model))).await?;
+        let model = self.find_model(ctx, txn, key).await?;
+        if !self.policy.allows(ctx, ability, Some(&Self::record(&model))).await {
+            return Err(AppError::Forbidden);
+        }
+        Ok(model)
+    }
+
+    /// Locks the rows of `keys` until commit, by primary key only (scope joins or
+    /// `DISTINCT` do not interfere). Callers pass only keys already found in
+    /// scope and authorized, then re-check after locking. SQLite write
+    /// transactions already hold the database lock.
+    async fn lock_rows(&self, txn: &sea_orm::DatabaseTransaction, keys: &[String]) -> AppResult<()> {
+        if txn.get_database_backend() != DbBackend::Postgres {
+            return Ok(());
+        }
+        let values = self.decode_keys(keys)?;
+        if !values.is_empty() {
+            Entity::<R>::find()
+                .select_only()
+                .column(self.pk)
+                .filter(self.pk.is_in(values))
+                .lock_exclusive()
+                .into_json()
+                .all(txn)
+                .await?;
+        }
+        Ok(())
+    }
+
+    fn info(&self) -> ResourceInfo {
+        ResourceInfo {
+            slug: R::SLUG,
+            label: self.meta.label.clone(),
+            plural_label: self.meta.plural_label.clone().unwrap_or_else(|| format!("{}s", self.meta.label)),
+            icon: self.meta.icon.clone(),
+            group: self.meta.group.clone(),
+            title_field: self.meta.title_field.clone(),
+        }
+    }
+
+    fn input_schema(&self, ctx: &Ctx, input: &Input, op: SchemaOperation) -> Option<InputSchema> {
+        let field = self.field(&input.name)?;
+        let is_key = input.name == self.pk_name;
+        let (include, disabled) = match op {
+            SchemaOperation::Create => {
+                let natural = is_key && matches!(self.meta.key, KeyStrategy::Natural);
+                (field.can_write(Operation::Create, ctx) && (!is_key || natural), false)
+            }
+            SchemaOperation::Edit => {
+                // Write-only fields (e.g. a password) stay editable without showing a value.
+                let writable = !is_key && field.can_write(Operation::Update, ctx);
+                (field.can_read(ctx) || writable, !writable)
+            }
+            SchemaOperation::View => (field.can_read(ctx), true),
+        };
+        if !include {
+            return None;
+        }
+        let write_only = !field.can_read(ctx);
+        let mut rules = Vec::new();
+        // Leaving a write-only input empty keeps the stored value: never required on edit.
+        if field.required && !disabled && !(write_only && op == SchemaOperation::Edit) {
+            rules.push(Rule::Required);
+        }
+        if let Some(max) = field.max_length {
+            rules.push(Rule::MaxLength { value: max });
+        }
+        Some(InputSchema {
+            kind: input.kind,
+            name: input.name.clone(),
+            label: input.label.clone().unwrap_or_else(|| field.display_label()),
+            value_type: self.column(&input.name).kind.name(),
+            disabled,
+            write_only,
+            rules,
+            column_span: input.column_span,
+            placeholder: input.placeholder.clone(),
+            help: input.help.clone(),
+            mode: input.mode,
+            options: input.options.clone(),
+            relationship: field.belongs_to.map(|resource| Relationship { resource }),
+        })
+    }
+
+    fn components(&self, ctx: &Ctx, components: &[Component], op: SchemaOperation) -> Vec<ComponentSchema> {
+        components
+            .iter()
+            .filter_map(|component| match component {
+                Component::Input(input) => self.input_schema(ctx, input, op).map(ComponentSchema::Input),
+                Component::Layout(layout) => {
+                    let children = self.components(ctx, &layout.children, op);
+                    (!children.is_empty()).then(|| {
+                        ComponentSchema::Layout(LayoutSchema {
+                            kind: layout.kind,
+                            label: layout.label.clone(),
+                            columns: layout.columns,
+                            components: children,
+                        })
+                    })
+                }
+            })
+            .collect()
+    }
+
+    async fn table_schema(&self, ctx: &Ctx) -> TableSchema {
+        let readable = |name: &str| self.field(name).is_some_and(|f| f.can_read(ctx));
+        let columns = self
+            .table_ui
+            .columns
+            .iter()
+            .filter(|c| readable(&c.name))
+            .map(|c| {
+                let field = self.field(&c.name).expect("validated at registration");
+                ColumnSchema {
+                    kind: c.kind,
+                    name: c.name.clone(),
+                    label: c.label.clone().unwrap_or_else(|| field.display_label()),
+                    value_type: self.column(&c.name).kind.name(),
+                    sortable: field.sortable,
+                    searchable: field.searchable,
+                    colors: c
+                        .colors
+                        .iter()
+                        .map(|(value, color)| BadgeColor { value: value.clone(), color: color.clone() })
+                        .collect(),
+                    relationship: field.belongs_to.map(|resource| Relationship { resource }),
+                }
+            })
+            .collect();
+        let filters = self
+            .table_ui
+            .filters
+            .iter()
+            .filter(|f| readable(&f.name))
+            .map(|f| {
+                let field = self.field(&f.name).expect("validated at registration");
+                FilterSchema {
+                    kind: f.kind,
+                    name: f.name.clone(),
+                    label: f.label.clone().unwrap_or_else(|| field.display_label()),
+                    value_type: self.column(&f.name).kind.name(),
+                    options: f.options.clone(),
+                    relationship: field.belongs_to.map(|resource| Relationship { resource }),
+                }
+            })
+            .collect();
+        let mut actions = Vec::new();
+        for action in &self.actions {
+            // Listed unless an explicit admission permission excludes the user;
+            // availability per record is in each envelope's `abilities`.
+            if action.required_permission.is_none_or(|p| ctx.can(p)) {
+                actions.push(ActionSchema {
+                    name: action.name,
+                    label: action.label.clone().unwrap_or_else(|| humanize(action.name)),
+                    bulk: action.bulk,
+                    confirm: action.confirm.clone(),
+                    color: action.color.clone(),
+                    icon: action.icon.clone(),
+                });
+            }
+        }
+        TableSchema {
+            columns,
+            filters,
+            default_sort: self.table_ui.default_sort.clone().filter(|s| readable(s.trim_start_matches('-'))),
+            per_page_options: PER_PAGE_OPTIONS.to_vec(),
+            searchable: self.fields.iter().any(|f| f.searchable && f.can_read(ctx)),
+            actions,
+        }
+    }
 }
 
 #[async_trait]
@@ -404,6 +882,149 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         &self.meta
     }
 
+    fn info(&self) -> ResourceInfo {
+        ResourceInfo::clone(&ResourceAdapter::info(self))
+    }
+
+    async fn allows(&self, ctx: &Ctx, ability: &str) -> bool {
+        self.policy.allows(ctx, ability, None).await
+    }
+
+    fn permissions(&self) -> Vec<String> {
+        let mut abilities: Vec<&str> =
+            vec![ability::VIEW_ANY, ability::VIEW, ability::CREATE, ability::UPDATE, ability::DELETE];
+        abilities.extend(self.actions.iter().map(|a| a.ability));
+        abilities.sort_unstable();
+        abilities.dedup();
+        let mut permissions: Vec<String> = abilities.into_iter().map(|a| format!("{}.{a}", R::SLUG)).collect();
+        // Explicit admission permissions are checked verbatim: declare them too.
+        permissions.extend(self.actions.iter().filter_map(|a| a.required_permission).map(str::to_owned));
+        permissions.sort_unstable();
+        permissions.dedup();
+        permissions
+    }
+
+    async fn schema(&self, ctx: &Ctx, op: SchemaOperation, key: Option<&str>) -> AppResult<ResourceSchema> {
+        let mut abilities = BTreeMap::new();
+        abilities.insert("viewAny", self.policy.allows(ctx, ability::VIEW_ANY, None).await);
+        abilities.insert("create", self.policy.allows(ctx, ability::CREATE, None).await);
+        if let Some(key) = key {
+            let record = Self::record(&self.find_model(ctx, &ctx.db, key).await?);
+            for name in [ability::VIEW, ability::UPDATE, ability::DELETE] {
+                abilities.insert(name, self.policy.allows(ctx, name, Some(&record)).await);
+            }
+        }
+        let allowed = match (op, key) {
+            (SchemaOperation::Create, _) => abilities["create"],
+            (SchemaOperation::Edit, Some(_)) => abilities[ability::UPDATE],
+            (SchemaOperation::View, Some(_)) => abilities[ability::VIEW],
+            (_, None) => abilities["viewAny"],
+        };
+        if !allowed {
+            return Err(AppError::Forbidden);
+        }
+        Ok(ResourceSchema {
+            schema_version: SCHEMA_VERSION,
+            vocabulary_version: VOCABULARY_VERSION,
+            resource: ResourceAdapter::info(self),
+            operation: op,
+            abilities,
+            form: FormSchema {
+                columns: self.form.columns,
+                components: self.components(ctx, &self.form.components, op),
+            },
+            table: self.table_schema(ctx).await,
+        })
+    }
+
+    async fn lookup(&self, ctx: &Ctx, search: Option<&str>, keys: &[String]) -> AppResult<Vec<(String, String)>> {
+        let Some(title) = &self.meta.title_field else { return Ok(Vec::new()) };
+        if !self.field(title).is_some_and(|f| f.can_read(ctx))
+            || !self.policy.allows(ctx, ability::VIEW_ANY, None).await
+        {
+            return Ok(Vec::new());
+        }
+        let title_column = self.column(title).column;
+        let mut select = R::scope(Entity::<R>::find(), ctx);
+        if !keys.is_empty() {
+            select = select.filter(self.pk.is_in(self.decode_keys(keys)?));
+        } else if let Some(search) = search.filter(|s| !s.is_empty()) {
+            if search.chars().count() > self.limits.search_len {
+                return Err(ValidationErrors::field("search", "is too long").into());
+            }
+            let pattern = format!("%{}%", escape_like(search));
+            let kind = self.column(title).kind;
+            select = select.filter(search_match(ctx.db.get_database_backend(), title_column, kind, &pattern));
+        }
+        // The policy may deny records the scope lets through: read in stable
+        // batches until enough authorized options are found (bounded work).
+        let select = select.order_by(title_column, Order::Asc).order_by(self.pk, Order::Asc);
+        let (keys, complete) = self.read_candidate_keys(&ctx.db, &select, MAX_OPTIONS, MAX_OPTION_BATCHES).await?;
+        let mut out = Vec::new();
+        'chunks: for chunk in keys.chunks(LOAD_CHUNK) {
+            for (model, record) in self.load_ordered(ctx, &select, chunk).await? {
+                if self.policy.allows(ctx, ability::VIEW, Some(&record)).await {
+                    out.push((self.key_of(&model), title_text(&record[title.as_str()])));
+                    if out.len() as u64 == MAX_OPTIONS {
+                        break 'chunks;
+                    }
+                }
+            }
+        }
+        if out.len() as u64 == MAX_OPTIONS || complete {
+            Ok(out)
+        } else {
+            // Budget spent before the candidates ran out: say so instead of
+            // returning a list that silently misses valid choices.
+            Err(ValidationErrors::field("search", "matches too many records to check; refine the search").into())
+        }
+    }
+
+    async fn options(
+        &self,
+        ctx: &Ctx,
+        field: &str,
+        search: Option<&str>,
+        keys: &[String],
+        record: Option<&str>,
+    ) -> AppResult<Vec<SelectOption>> {
+        let Some(field) = self.field(field) else { return Err(AppError::NotFound) };
+        let Some(target) = field.belongs_to else { return Err(AppError::NotFound) };
+        // Options exist to show or fill the field: allowed for any operation the
+        // user may perform with it. With `record` (an edit or view form), that
+        // record is loaded in scope and the policy decides on it, exactly as
+        // the form and the update itself do. The target's scope and policy
+        // still decide which records appear.
+        let usable = match record {
+            Some(key) => {
+                let record = Self::record(&self.find_model(ctx, &ctx.db, key).await?);
+                (field.can_write(Operation::Update, ctx)
+                    && self.policy.allows(ctx, ability::UPDATE, Some(&record)).await)
+                    || (field.can_read(ctx) && self.policy.allows(ctx, ability::VIEW, Some(&record)).await)
+            }
+            None => {
+                (field.can_read(ctx) && self.policy.allows(ctx, ability::VIEW_ANY, None).await)
+                    || (field.can_write(Operation::Create, ctx) && self.policy.allows(ctx, ability::CREATE, None).await)
+                    || (field.can_write(Operation::Update, ctx) && self.policy.allows(ctx, ability::UPDATE, None).await)
+            }
+        };
+        if !usable {
+            return Err(AppError::Forbidden);
+        }
+        if keys.len() > 100 {
+            return Err(ValidationErrors::field("keys", "may not have more than 100 items").into());
+        }
+        let target =
+            ctx.registry.get(target).ok_or_else(|| AppError::internal(format!("unknown resource `{target}`")))?;
+        let kind = self.column(&field.name).kind;
+        Ok(target
+            .lookup(ctx, search, keys)
+            .await?
+            .into_iter()
+            .map(|(key, label)| SelectOption { value: kind.from_query(&serde_json::Value::String(key)), label })
+            .collect())
+    }
+
     fn targets(&self) -> Vec<&'static str> {
         self.fields.iter().filter_map(|f| f.belongs_to).collect()
     }
@@ -414,6 +1035,11 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         }
         let per_page = query.per_page.unwrap_or(DEFAULT_PER_PAGE).clamp(1, self.limits.per_page);
         let page = query.page.unwrap_or(1).max(1);
+        // The SQL offset must fit (databases take a signed 64-bit offset).
+        let offset_fits = (page - 1).checked_mul(per_page).is_some_and(|offset| i64::try_from(offset).is_ok());
+        if !offset_fits {
+            return Err(ValidationErrors::field("page", "is too large").into());
+        }
 
         let mut errors = ValidationErrors::new();
         let mut select = R::scope(Entity::<R>::find(), ctx).filter(self.filter_condition(ctx, query, &mut errors));
@@ -429,12 +1055,51 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             }
         }
         errors.into_result()?;
-        let paginator = select.order_by(self.pk, Order::Asc).paginate(&ctx.db, per_page);
-        let totals = paginator.num_items_and_pages().await?;
-        let models = paginator.fetch_page(page - 1).await?;
+        let select = select.order_by(self.pk, Order::Asc);
+        if !self.policy.view_depends_on_record() {
+            // The same decision holds for every record: deny once, show nothing.
+            if !self.policy.allows(ctx, ability::VIEW, None).await {
+                return Ok(Page { data: Vec::new(), meta: PageMeta { page, per_page, total: 0, last_page: 1 } });
+            }
+            let paginator = select.paginate(&ctx.db, per_page);
+            let totals = paginator.num_items_and_pages().await?;
+            let models = paginator.fetch_page(page - 1).await?;
+            return Ok(Page {
+                data: self.envelopes(ctx, models).await?,
+                meta: PageMeta {
+                    page,
+                    per_page,
+                    total: totals.number_of_items,
+                    last_page: totals.number_of_pages.max(1),
+                },
+            });
+        }
+        // Record-dependent visibility: check every matching record, so denied
+        // ones are neither shown nor counted (bounded scan, fail closed).
+        let (keys, complete) =
+            self.read_candidate_keys(&ctx.db, &select, LIST_SCAN_BATCH, MAX_LIST_SCAN / LIST_SCAN_BATCH).await?;
+        if !complete {
+            let mut errors = ValidationErrors::new();
+            errors.add_form("Too many matching records to check individually; narrow the search or filters.");
+            return Err(errors.into());
+        }
+        let mut visible = Vec::new();
+        let mut total = 0u64;
+        let skip = (page - 1) * per_page;
+        // Only the page's rows are kept; the rest are counted and dropped.
+        for chunk in keys.chunks(LOAD_CHUNK) {
+            for (model, record) in self.load_ordered(ctx, &select, chunk).await? {
+                if self.policy.allows(ctx, ability::VIEW, Some(&record)).await {
+                    if total >= skip && (visible.len() as u64) < per_page {
+                        visible.push(model);
+                    }
+                    total += 1;
+                }
+            }
+        }
         Ok(Page {
-            data: self.envelopes(ctx, models).await?,
-            meta: PageMeta { page, per_page, total: totals.number_of_items, last_page: totals.number_of_pages.max(1) },
+            data: self.envelopes(ctx, visible).await?,
+            meta: PageMeta { page, per_page, total, last_page: total.div_ceil(per_page).max(1) },
         })
     }
 
@@ -451,9 +1116,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             return Err(AppError::Forbidden);
         }
         let input = self.accept_input(ctx, Operation::Create, input)?;
-        let txn = rustcms_core::db::begin_write(&ctx.db).await?;
-        self.check_relations(ctx, &txn, &input).await?;
-        let data = R::mutate_before_create(ctx, &txn, input).await?;
+        let (txn, wctx) = self.begin(ctx).await?;
+        self.check_relations(&wctx, &txn, &input).await?;
+        let data = R::mutate_before_create(&wctx, &txn, input).await?;
 
         let mut active = <<Entity<R> as EntityTrait>::ActiveModel as ActiveModelBehavior>::new();
         self.apply(&mut active, &data, Operation::Create)?;
@@ -467,59 +1132,72 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             }
             KeyStrategy::Natural => {}
         }
-        let model = active.insert(&txn).await.map_err(|e| self.map_db_err(e))?;
-        R::after_save(ctx, &txn, &model).await?;
-        txn.commit().await?;
-        Ok(self.envelopes(ctx, vec![model]).await?.remove(0))
+        let model = active.insert(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?;
+        R::after_save(&wctx, &txn, &model).await?;
+        Self::commit(txn, wctx).await?;
+        Ok(self.committed_envelope(ctx, model).await)
     }
 
     async fn update(&self, ctx: &Ctx, key: &str, input: Data) -> AppResult<Envelope> {
         let input = self.accept_input(ctx, Operation::Update, input)?;
-        let txn = rustcms_core::db::begin_write(&ctx.db).await?;
-        let model = self.find_model(ctx, &txn, key).await?;
-        if !self.policy.allows(ctx, ability::UPDATE, Some(&Self::record(&model))).await {
-            return Err(AppError::Forbidden);
-        }
-        self.check_relations(ctx, &txn, &input).await?;
-        let data = R::mutate_before_update(ctx, &txn, &model, input).await?;
+        let (txn, wctx) = self.begin(ctx).await?;
+        let model = self.find_authorized_locked(&wctx, &txn, key, ability::UPDATE).await?;
+        self.check_relations(&wctx, &txn, &input).await?;
+        let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
         let model = if data.is_empty() {
             model
         } else {
             let mut active = model.into_active_model();
             self.apply(&mut active, &data, Operation::Update)?;
-            active.update(&txn).await.map_err(|e| self.map_db_err(e))?
+            active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?
         };
-        R::after_save(ctx, &txn, &model).await?;
-        txn.commit().await?;
-        Ok(self.envelopes(ctx, vec![model]).await?.remove(0))
+        R::after_save(&wctx, &txn, &model).await?;
+        Self::commit(txn, wctx).await?;
+        Ok(self.committed_envelope(ctx, model).await)
     }
 
     async fn delete(&self, ctx: &Ctx, key: &str) -> AppResult<()> {
-        let txn = rustcms_core::db::begin_write(&ctx.db).await?;
-        let model = self.find_model(ctx, &txn, key).await?;
-        if !self.policy.allows(ctx, ability::DELETE, Some(&Self::record(&model))).await {
-            return Err(AppError::Forbidden);
-        }
+        let (txn, wctx) = self.begin(ctx).await?;
+        let model = self.find_authorized_locked(&wctx, &txn, key, ability::DELETE).await?;
         Entity::<R>::delete_many()
             .filter(self.pk.eq(model.get(self.pk)))
-            .exec(&txn)
+            .exec(txn.as_ref())
             .await
             .map_err(|e| self.map_db_err(e))?;
-        txn.commit().await?;
+        Self::commit(txn, wctx).await?;
         Ok(())
     }
 
     async fn run_action(&self, ctx: &Ctx, name: &str, keys: &[String], data: Data) -> AppResult<ActionOutcome> {
         let action = self.actions.iter().find(|a| a.name == name).ok_or(AppError::NotFound)?;
-        let txn = rustcms_core::db::begin_write(&ctx.db).await?;
-        let found = self.models_in_scope(ctx, &txn, keys).await?;
+        // Per-record policy checks are authoritative; an explicit admission
+        // permission, when declared, refuses outright before them.
+        if action.required_permission.is_some_and(|p| !ctx.can(p)) {
+            return Err(AppError::Forbidden);
+        }
+        let (txn, wctx) = self.begin(ctx).await?;
+        // Lock only records the user may act on, then re-read just those under
+        // the lock: a record that became visible meanwhile is never processed
+        // unlocked.
         let mut outcome = ActionOutcome::default();
-        let mut allowed = Vec::new();
+        let mut candidates = Vec::new();
         let mut seen = HashSet::new();
-        for (model, record) in found {
+        for (model, record) in self.models_in_scope(&wctx, txn.as_ref(), keys).await? {
             let key = self.key_of(&model);
             seen.insert(key.clone());
-            if self.policy.allows(ctx, action.ability, Some(&record)).await {
+            if self.policy.allows(&wctx, action.ability, Some(&record)).await {
+                candidates.push(key);
+            } else {
+                outcome.denied.push(key);
+            }
+        }
+        self.lock_rows(&txn, &candidates).await?;
+        let mut allowed = Vec::new();
+        seen.retain(|k| !candidates.contains(k));
+        for (model, record) in self.models_in_scope(&wctx, txn.as_ref(), &candidates).await? {
+            let key = self.key_of(&model);
+            seen.insert(key.clone());
+            if self.policy.allows(&wctx, action.ability, Some(&record)).await {
                 outcome.processed.push(key);
                 allowed.push(model);
             } else {
@@ -529,9 +1207,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         outcome.missing =
             keys.iter().filter(|k| !seen.contains(*k)).cloned().collect::<BTreeSet<_>>().into_iter().collect();
         if !allowed.is_empty() {
-            (action.handler)(ctx, &txn, allowed, data).await?;
+            (action.handler)(&wctx, txn.as_ref(), allowed, data).await?;
         }
-        txn.commit().await?;
+        Self::commit(txn, wctx).await?;
         outcome.processed.sort();
         outcome.denied.sort();
         Ok(outcome)

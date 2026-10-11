@@ -24,6 +24,7 @@ pub mod migration {
 
 /// Common imports for application code.
 pub mod prelude {
+    pub use crate::admin::AdminProvider;
     pub use crate::auth::{Auth, AuthProvider, MaybeAuth};
     pub use crate::{AppBuilder, AppError, AppResult, AppState, ClientIp, Config, Inject, Json, ServiceProvider};
     pub use axum::Router;

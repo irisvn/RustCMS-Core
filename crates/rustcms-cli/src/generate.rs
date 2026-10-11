@@ -13,6 +13,7 @@ use crate::scaffold::render;
 const MODEL: &str = include_str!("../templates/stubs/model.rs.tmpl");
 const MIGRATION_CREATE: &str = include_str!("../templates/stubs/migration_create.rs.tmpl");
 const MIGRATION_BLANK: &str = include_str!("../templates/stubs/migration_blank.rs.tmpl");
+const TEST: &str = include_str!("../templates/stubs/test.rs.tmpl");
 
 pub fn make_model(project: &Project, name: &str, migration: bool) -> anyhow::Result<ExitCode> {
     validate_model(name)?;
@@ -39,6 +40,16 @@ pub fn make_migration(project: &Project, name: &str) -> anyhow::Result<ExitCode>
     let index = dir.join("mod.rs");
     register(&index, "// rustcms:migration-mods", &format!("mod {module};"))?;
     register(&index, "// rustcms:migrations", &format!("Box::new({module}::Migration),"))?;
+    Ok(ExitCode::SUCCESS)
+}
+
+pub fn make_test(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
+    validate_model(name)?;
+    let module = snake_case(name);
+    let dir = project.root.join("tests");
+    std::fs::create_dir_all(&dir)?;
+    let contents = render(TEST, json!({ "name": module, "crate_name": project.package.replace('-', "_") }))?;
+    write_new(&dir.join(format!("{module}.rs")), &contents)?;
     Ok(ExitCode::SUCCESS)
 }
 
@@ -109,6 +120,17 @@ mod tests {
         assert!(migration.contains("enum BlogPosts"));
 
         assert!(make_model(&project, "BlogPost", false).is_err(), "never overwrites");
+    }
+
+    #[test]
+    fn test_stub_uses_the_crate_name() {
+        let (dir, project) = project();
+        let project = Project { package: "my-blog".into(), ..project };
+        make_test(&project, "PostAdminTest").unwrap();
+        let test = std::fs::read_to_string(dir.path().join("tests/post_admin_test.rs")).unwrap();
+        assert!(test.contains("use my_blog::{app, migrations::Migrator};"));
+        assert!(test.contains("db_test!(post_admin_test,"));
+        assert!(make_test(&project, "PostAdminTest").is_err(), "never overwrites");
     }
 
     #[test]

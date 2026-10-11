@@ -35,6 +35,8 @@ pub struct Field {
     pub(crate) searchable: bool,
     pub(crate) filterable: bool,
     pub(crate) belongs_to: Option<&'static str>,
+    pub(crate) max_length: Option<usize>,
+    pub(crate) label: Option<String>,
 }
 
 impl Field {
@@ -51,6 +53,8 @@ impl Field {
             searchable: false,
             filterable: false,
             belongs_to: None,
+            max_length: None,
+            label: None,
         }
     }
 
@@ -111,6 +115,23 @@ impl Field {
     pub fn belongs_to(mut self, slug: &'static str) -> Self {
         self.belongs_to = Some(slug);
         self
+    }
+
+    /// Maximum length in characters (strings), enforced on every write.
+    pub fn max_length(mut self, max: usize) -> Self {
+        self.max_length = Some(max);
+        self
+    }
+
+    /// Label used by generated forms and tables.
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Label, or the humanized name.
+    pub(crate) fn display_label(&self) -> String {
+        self.label.clone().unwrap_or_else(|| crate::ui::humanize(&self.name))
     }
 
     /// Whether the current user may read this field.

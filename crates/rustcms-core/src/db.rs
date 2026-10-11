@@ -1,8 +1,8 @@
 //! Database connection.
 
 use sea_orm::{
-    ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DatabaseTransaction, DbErr, SqliteTransactionMode,
-    TransactionOptions, TransactionTrait,
+    AccessMode, ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DatabaseTransaction, DbBackend, DbErr,
+    IsolationLevel, SqliteTransactionMode, TransactionOptions, TransactionTrait,
 };
 
 use crate::config::DatabaseConfig;
@@ -38,4 +38,15 @@ pub async fn begin_write(db: &DatabaseConnection) -> Result<DatabaseTransaction,
     let options =
         TransactionOptions { sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate), ..Default::default() };
     db.begin_with_options(options).await
+}
+
+/// Starts a read-only transaction whose reads all see one consistent snapshot,
+/// for multi-query scans (batched pagination): `REPEATABLE READ` on PostgreSQL;
+/// on SQLite (WAL) a read transaction keeps its snapshot from its first read.
+pub async fn begin_snapshot(db: &DatabaseConnection) -> Result<DatabaseTransaction, DbErr> {
+    if db.get_database_backend() == DbBackend::Postgres {
+        db.begin_with_config(Some(IsolationLevel::RepeatableRead), Some(AccessMode::ReadOnly)).await
+    } else {
+        db.begin().await
+    }
 }

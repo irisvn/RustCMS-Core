@@ -3,6 +3,8 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
+use tokio::time::Instant;
+
 use axum::Router;
 use axum::body::Body;
 use axum::extract::rejection::JsonRejection;
@@ -116,6 +118,21 @@ async fn limit_body(State(limit): State<usize>, req: Request, next: Next) -> Res
     response
 }
 
+tokio::task_local! {
+    static REQUEST_DEADLINE: Instant;
+}
+
+/// When the current request will be cut off by the request timeout (408), if
+/// called while serving one. Lets handlers finish optional work in time, e.g.
+/// answer with a committed record's key before the deadline.
+pub fn request_deadline() -> Option<Instant> {
+    REQUEST_DEADLINE.try_with(|deadline| *deadline).ok()
+}
+
+async fn with_deadline(State(timeout): State<Duration>, req: Request, next: Next) -> Response {
+    REQUEST_DEADLINE.scope(Instant::now() + timeout, next.run(req)).await
+}
+
 async fn client_ip(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     let peer =
         req.extensions().get::<ConnectInfo<SocketAddr>>().map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |c| c.0.ip());
@@ -154,6 +171,7 @@ pub(crate) fn router(state: AppState, routes: Vec<RouteFn>, middleware: Vec<Midd
         .method_not_allowed_fallback(|| async { AppError::MethodNotAllowed })
         .layer(DefaultBodyLimit::max(http.body_limit))
         .layer(middleware::from_fn_with_state(http.body_limit, limit_body))
+        .layer(middleware::from_fn_with_state(Duration::from_secs(http.timeout_secs), with_deadline))
         .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(http.timeout_secs)))
         .layer(middleware::from_fn_with_state(state.clone(), client_ip))
         .layer(PropagateRequestIdLayer::new(REQUEST_ID))

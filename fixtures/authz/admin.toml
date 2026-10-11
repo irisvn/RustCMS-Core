@@ -1,0 +1,221 @@
+# Authorization oracle for the admin API, written by hand (not derived from code).
+# Actors:
+#   guest    anonymous browser with a CSRF token
+#   member   admin session, no permissions
+#   editor   admin session: posts.{view_any,view,create,update,delete}, categories.{view_any,view}
+#   admin    admin session, super admin
+#   foreign  editor's session sending a foreign Origin
+#   token    API token of the super admin (abilities ["*"])
+# Placeholders: {own} a post of the editor, {spare} another post of the editor,
+#               {theirs} a post of the admin (outside the editor's scope).
+# `route` is the template from `rustcms_admin::http::routes`; every template needs a case.
+
+[[case]]
+route = "GET /admin/api/panel"
+path = "/admin/api/panel"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/panel"
+path = "/admin/api/panel"
+actor = "member"
+status = 200
+
+[[case]]
+route = "GET /admin/api/panel"
+path = "/admin/api/panel"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/schema"
+path = "/admin/api/resources/posts/schema?operation=create"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/schema"
+path = "/admin/api/resources/posts/schema?operation=create"
+actor = "editor"
+status = 200
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/schema"
+path = "/admin/api/resources/posts/schema?operation=edit&key={theirs}"
+actor = "editor"
+status = 404
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/schema"
+path = "/admin/api/resources/tags/schema?operation=create"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/posts/records"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/posts/records"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/posts/records"
+actor = "editor"
+status = 200
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/tags/records"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/posts/records"
+actor = "token"
+status = 401
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/posts/records"
+actor = "member"
+body = '{"title": "x"}'
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/posts/records"
+actor = "editor"
+body = '{"title": "x"}'
+status = 201
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/posts/records"
+actor = "editor"
+body = '{"title": "x", "author_id": "1"}'
+status = 422
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/posts/records"
+actor = "editor"
+body = '{"title": "x", "published": true}'
+status = 422
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/posts/records"
+actor = "foreign"
+body = '{"title": "x"}'
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/categories/records"
+actor = "editor"
+body = '{"name": "x", "slug": "x"}'
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/posts/records/{own}"
+actor = "editor"
+status = 200
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/posts/records/{theirs}"
+actor = "editor"
+status = 404
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/posts/records/{theirs}"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "PATCH /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/posts/records/{own}"
+actor = "editor"
+body = '{"title": "edited"}'
+status = 200
+
+[[case]]
+route = "PATCH /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/posts/records/{theirs}"
+actor = "editor"
+body = '{"title": "edited"}'
+status = 404
+
+[[case]]
+route = "PATCH /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/posts/records/{own}"
+actor = "member"
+body = '{"title": "edited"}'
+status = 404
+
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/posts/records/{theirs}"
+actor = "editor"
+status = 404
+
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/posts/records/{spare}"
+actor = "foreign"
+status = 403
+
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/posts/records/{spare}"
+actor = "editor"
+status = 204
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/actions/{action}"
+path = "/admin/api/resources/posts/actions/publish"
+actor = "editor"
+body = '{"keys": ["{own}"]}'
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/actions/{action}"
+path = "/admin/api/resources/posts/actions/publish"
+actor = "member"
+body = '{"keys": ["{own}"]}'
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/actions/{action}"
+path = "/admin/api/resources/posts/actions/publish"
+actor = "admin"
+body = '{"keys": ["{theirs}"]}'
+status = 200
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/fields/{field}/options"
+path = "/admin/api/resources/posts/fields/category_id/options"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/fields/{field}/options"
+path = "/admin/api/resources/posts/fields/category_id/options"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/fields/{field}/options"
+path = "/admin/api/resources/posts/fields/category_id/options"
+actor = "editor"
+status = 200

@@ -1,9 +1,15 @@
 //! Test entities, resources and per-test databases.
 #![allow(dead_code)]
 
+pub mod app;
+
 use std::sync::Arc;
 
-use rustcms_admin::{Action, Ctx, Data, DynResource, Field, KeyStrategy, Policy, Registry, Resource, ResourceMeta};
+use rustcms_admin::{
+    Action, BooleanColumn, Ctx, Data, DateColumn, DateTimePicker, DynResource, Field, Form, KeyStrategy, NumberInput,
+    Policy, Registry, Resource, ResourceMeta, Section, SelectFilter, SelectInput, Table, TernaryFilter, TextColumn,
+    TextInput, Toggle, components,
+};
 use rustcms_core::{AppError, AppResult, Principal};
 use rustcms_testing::TestDb;
 use sea_orm::entity::prelude::*;
@@ -90,8 +96,23 @@ impl Resource for CategoryResource {
         ]
     }
 
+    fn policy() -> Arc<dyn Policy> {
+        Arc::new(CategoryPolicy)
+    }
+
     fn scope(query: Select<category::Entity>, ctx: &Ctx) -> Select<category::Entity> {
         if ctx.can("categories.view_hidden") { query } else { query.filter(category::Column::Name.not_like("Hidden%")) }
+    }
+}
+
+/// Default permissions, but `secret-*` categories need `categories.view_secret`.
+pub struct CategoryPolicy;
+
+#[async_trait::async_trait]
+impl Policy for CategoryPolicy {
+    async fn allows(&self, ctx: &Ctx, ability: &str, record: Option<&Data>) -> bool {
+        let secret = record.is_some_and(|r| r["slug"].as_str().unwrap_or_default().starts_with("secret-"));
+        ctx.can(&format!("categories.{ability}")) && (!secret || ctx.can("categories.view_secret"))
     }
 }
 
@@ -100,7 +121,9 @@ pub struct PostPolicy;
 #[async_trait::async_trait]
 impl Policy for PostPolicy {
     async fn allows(&self, ctx: &Ctx, ability: &str, record: Option<&Data>) -> bool {
-        let granted = ctx.can(&format!("posts.{ability}"));
+        let owns = record.is_some_and(|r| r["author_id"].as_str() == Some(ctx.principal.id.as_str()));
+        let granted = ctx.can(&format!("posts.{ability}"))
+            || (matches!(ability, "update" | "view") && owns && ctx.can("posts.update_own"));
         match (ability, record) {
             ("publish", Some(r)) => granted && !r["title"].as_str().unwrap_or_default().starts_with("locked"),
             _ => granted,
@@ -121,7 +144,7 @@ impl Resource for PostResource {
 
     fn fields() -> Vec<Field> {
         vec![
-            Field::column(post::Column::Title).required().searchable().sortable(),
+            Field::column(post::Column::Title).required().searchable().sortable().max_length(120),
             Field::column(post::Column::CategoryId).belongs_to("categories").filterable(),
             Field::column(post::Column::AuthorId).guarded().readable(|_| true),
             Field::column(post::Column::Price),
@@ -131,6 +154,28 @@ impl Resource for PostResource {
                 .filterable(),
             Field::column(post::Column::PublishedAt),
         ]
+    }
+
+    fn form() -> Form {
+        Form::new().columns(2).schema(components![
+            Section::make("Content")
+                .schema(components![TextInput::make("title").placeholder("Title"), NumberInput::make("price")]),
+            SelectInput::make("category_id"),
+            Toggle::make("published"),
+            DateTimePicker::make("published_at"),
+        ])
+    }
+
+    fn table() -> Table {
+        Table::new()
+            .columns(vec![
+                TextColumn::make("title"),
+                TextColumn::make("category_id"),
+                BooleanColumn::make("published"),
+                DateColumn::make("published_at"),
+            ])
+            .filters(vec![TernaryFilter::make("published"), SelectFilter::make("category_id")])
+            .default_sort("-title")
     }
 
     fn policy() -> Arc<dyn Policy> {
@@ -146,20 +191,45 @@ impl Resource for PostResource {
     }
 
     fn actions() -> Vec<Action<post::Entity>> {
-        vec![Action::new("publish", |_ctx, txn, models: Vec<post::Model>, _data| {
-            Box::pin(async move {
-                for model in models {
-                    let mut active = model.into_active_model();
-                    active.published = Set(true);
-                    active.update(txn).await?;
-                }
-                Ok(())
+        vec![
+            Action::<post::Entity>::new("publish", |_ctx, txn, models, _data| {
+                Box::pin(async move {
+                    for model in models {
+                        let mut active = model.into_active_model();
+                        active.published = Set(true);
+                        active.update(txn).await?;
+                    }
+                    Ok(())
+                })
             })
-        })]
+            .label("Publish")
+            .bulk()
+            .requires_confirmation("Publish the selected posts?")
+            .requires_permission("posts.publish"),
+            // Owner-only: no admission permission, the policy decides per record.
+            Action::<post::Entity>::new("touch", |_ctx, txn, posts, _data| {
+                Box::pin(async move {
+                    for post in posts {
+                        let title = format!("{} (touched)", post.title);
+                        let mut active = post.into_active_model();
+                        active.title = Set(title);
+                        active.update(txn).await?;
+                    }
+                    Ok(())
+                })
+            })
+            .ability("update"),
+            Action::<post::Entity>::new("archive", |_ctx, _txn, _posts, _data| Box::pin(async move { Ok(()) }))
+                .ability("update")
+                .requires_permission("posts.archive"),
+        ]
     }
 
     async fn mutate_before_create(ctx: &Ctx, _txn: &DatabaseTransaction, mut data: Data) -> AppResult<Data> {
         data.insert("author_id".into(), json!(ctx.principal.id));
+        if data.get("title") == Some(&json!("expand")) {
+            data.insert("title".into(), json!("x".repeat(500)));
+        }
         Ok(data)
     }
 }
@@ -176,7 +246,20 @@ impl Resource for TagResource {
     }
 
     fn fields() -> Vec<Field> {
-        vec![Field::column(tag::Column::Slug).required(), Field::column(tag::Column::Label).required()]
+        vec![
+            Field::column(tag::Column::Slug).required().searchable(),
+            Field::column(tag::Column::Label).required().searchable(),
+        ]
+    }
+
+    /// With `tags.joined`, joins `categories`, which also has a `slug` column.
+    fn scope(query: Select<tag::Entity>, ctx: &Ctx) -> Select<tag::Entity> {
+        if !ctx.can("tags.joined") {
+            return query;
+        }
+        let relation: sea_orm::RelationDef =
+            tag::Entity::belongs_to(category::Entity).from(tag::Column::Slug).to(category::Column::Slug).into();
+        sea_orm::QuerySelect::join(query, sea_orm::JoinType::LeftJoin, relation)
     }
 
     async fn after_save(_ctx: &Ctx, _txn: &DatabaseTransaction, record: &tag::Model) -> AppResult<()> {
@@ -228,15 +311,7 @@ pub struct Fixture {
 impl Fixture {
     /// Creates the test tables on `db` and registers the resources.
     pub async fn new(db: TestDb) -> Self {
-        let conn = db.conn();
-        let schema = Schema::new(conn.get_database_backend());
-        for statement in [
-            schema.create_table_from_entity(category::Entity),
-            schema.create_table_from_entity(post::Entity),
-            schema.create_table_from_entity(tag::Entity),
-        ] {
-            conn.execute(&statement).await.expect("create table");
-        }
+        create_tables(db.conn()).await;
         let registry = Registry::new()
             .register::<CategoryResource>()
             .register::<PostResource>()
@@ -246,7 +321,7 @@ impl Fixture {
     }
 
     pub fn ctx(&self, principal: Principal) -> Ctx {
-        Ctx { db: self.db.conn().clone(), principal, registry: self.registry.clone() }
+        Ctx::new(self.db.conn().clone(), principal, self.registry.clone())
     }
 
     pub fn resource(&self, slug: &str) -> Arc<dyn DynResource> {
@@ -258,4 +333,31 @@ impl Fixture {
         let input = json!({"name": name, "slug": name.to_lowercase().replace(' ', "-")});
         self.resource("categories").create(&self.ctx(admin()), input.as_object().unwrap().clone()).await.unwrap().key
     }
+}
+
+/// Creates the test entities' tables.
+pub async fn create_tables(conn: &sea_orm::DatabaseConnection) {
+    let schema = Schema::new(conn.get_database_backend());
+    for statement in [
+        schema.create_table_from_entity(category::Entity),
+        schema.create_table_from_entity(post::Entity),
+        schema.create_table_from_entity(tag::Entity),
+    ] {
+        conn.execute(&statement).await.expect("create table");
+    }
+}
+
+/// Compares `actual` with `fixtures/contract/<name>`, the JSON contract shared
+/// with the admin SPA. `UPDATE_CONTRACT=1` rewrites the fixture.
+pub fn contract(name: &str, actual: &serde_json::Value) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/contract").join(name);
+    let rendered = serde_json::to_string_pretty(actual).unwrap() + "\n";
+    if std::env::var_os("UPDATE_CONTRACT").is_some() {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, rendered).unwrap();
+        return;
+    }
+    let expected = std::fs::read_to_string(&path)
+        .unwrap_or_else(|_| panic!("missing contract fixture {}; run with UPDATE_CONTRACT=1", path.display()));
+    assert_eq!(rendered, expected, "contract {name} changed; review and run with UPDATE_CONTRACT=1");
 }

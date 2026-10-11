@@ -41,3 +41,14 @@ impl Model {
         self.is_system || self.is_privileged
     }
 }
+
+/// Id of the system super-admin role of `guard` (seeded by the migrations).
+pub async fn super_admin_id<C: ConnectionTrait>(db: &C, guard: &str) -> Result<Option<i64>, DbErr> {
+    Ok(Entity::find()
+        .filter(Column::IsSystem.eq(true))
+        .filter(Column::Name.eq(SUPER_ADMIN))
+        .filter(Column::GuardName.eq(guard))
+        .one(db)
+        .await?
+        .map(|r| r.id))
+}

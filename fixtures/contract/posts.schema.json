@@ -1,0 +1,166 @@
+{
+  "abilities": {
+    "create": true,
+    "viewAny": true
+  },
+  "form": {
+    "columns": 2,
+    "components": [
+      {
+        "columns": 1,
+        "components": [
+          {
+            "columnSpan": 1,
+            "disabled": false,
+            "label": "Title",
+            "name": "title",
+            "placeholder": "Title",
+            "rules": [
+              {
+                "rule": "required"
+              },
+              {
+                "rule": "max_length",
+                "value": 120
+              }
+            ],
+            "type": "text_input",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "disabled": false,
+            "label": "Price",
+            "name": "price",
+            "rules": [],
+            "type": "number_input",
+            "valueType": "decimal"
+          }
+        ],
+        "label": "Content",
+        "type": "section"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Category",
+        "name": "category_id",
+        "relationship": {
+          "resource": "categories"
+        },
+        "rules": [],
+        "type": "select",
+        "valueType": "i32"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Published",
+        "name": "published",
+        "rules": [],
+        "type": "toggle",
+        "valueType": "bool"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Published at",
+        "name": "published_at",
+        "rules": [],
+        "type": "date_time_picker",
+        "valueType": "instant"
+      }
+    ]
+  },
+  "operation": "create",
+  "resource": {
+    "label": "Post",
+    "pluralLabel": "Posts",
+    "slug": "posts",
+    "titleField": "title"
+  },
+  "schemaVersion": 1,
+  "table": {
+    "actions": [
+      {
+        "bulk": true,
+        "confirm": "Publish the selected posts?",
+        "label": "Publish",
+        "name": "publish"
+      },
+      {
+        "bulk": false,
+        "label": "Touch",
+        "name": "touch"
+      },
+      {
+        "bulk": false,
+        "label": "Archive",
+        "name": "archive"
+      }
+    ],
+    "columns": [
+      {
+        "label": "Title",
+        "name": "title",
+        "searchable": true,
+        "sortable": true,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Category",
+        "name": "category_id",
+        "relationship": {
+          "resource": "categories"
+        },
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "i32"
+      },
+      {
+        "label": "Published",
+        "name": "published",
+        "searchable": false,
+        "sortable": false,
+        "type": "boolean",
+        "valueType": "bool"
+      },
+      {
+        "label": "Published at",
+        "name": "published_at",
+        "searchable": false,
+        "sortable": false,
+        "type": "date",
+        "valueType": "instant"
+      }
+    ],
+    "defaultSort": "-title",
+    "filters": [
+      {
+        "label": "Published",
+        "name": "published",
+        "type": "ternary",
+        "valueType": "bool"
+      },
+      {
+        "label": "Category",
+        "name": "category_id",
+        "relationship": {
+          "resource": "categories"
+        },
+        "type": "select",
+        "valueType": "i32"
+      }
+    ],
+    "perPageOptions": [
+      10,
+      25,
+      50,
+      100
+    ],
+    "searchable": true
+  },
+  "vocabularyVersion": 1
+}

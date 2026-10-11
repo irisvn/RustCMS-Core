@@ -50,6 +50,12 @@ enum Command {
         /// snake_case name; `create_<table>_table` generates a table skeleton
         name: String,
     },
+    /// Create an integration test in `tests/`
+    #[command(name = "make:test")]
+    MakeTest {
+        /// Test name in PascalCase, e.g. `PostAdminTest`
+        name: String,
+    },
     /// Print the command reference as Markdown
     #[command(name = "docs:cli")]
     DocsCli,
@@ -67,6 +73,7 @@ fn main() -> ExitCode {
         Command::MakeModel { name, migration } => {
             project::Project::find().and_then(|p| generate::make_model(&p, &name, migration))
         }
+        Command::MakeTest { name } => project::Project::find().and_then(|p| generate::make_test(&p, &name)),
         Command::MakeMigration { name } => project::Project::find().and_then(|p| generate::make_migration(&p, &name)),
         Command::DocsCli => {
             let auth = clap::Command::new("auth").subcommands(rustcms_auth::commands::definitions());

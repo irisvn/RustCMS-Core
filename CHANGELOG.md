@@ -7,6 +7,60 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- M3 resource engine: Filament-style builders (`TextInput`, `SelectInput`,
+  `Toggle`, …, `Section`, `Grid`, table columns and filters), action metadata
+  (`label`, `bulk`, `requires_confirmation`, …); versioned `ResourceSchema`
+  filtered by field permissions per operation; `AdminProvider` with the admin
+  API (`panel`, `schema`, records CRUD, actions, relationship options) behind
+  the admin guard; resource permissions declared for `permission:sync`;
+  `Field::max_length` / `label`; case-insensitive escaped search; typed
+  query-string filters; action ability required before per-record checks;
+  `make:test`; contract fixture `fixtures/contract/posts.schema.json`;
+  authorization oracle `fixtures/authz/admin.toml`.
+- New apps register `AdminProvider`.
+
+### Fixed (Codex review of M3)
+- Relationship options are available for every operation the user may perform
+  with the field (create/update, not only `view_any`); edit forms pass
+  `record=<key>` so record-level policies (ownership) decide on that record.
+- `max_length` is re-checked on the values hooks produce, before writing.
+- Search folds case with the database's `LOWER` on both sides (exact non-ASCII
+  text matches on SQLite) and uses table-qualified columns (safe with joined scopes).
+- Action names may not reuse CRUD ability names (`view`, `update`, …).
+- Record-checked lists and option lookups read all batches from one snapshot
+  (`db::begin_snapshot`); option lookups that exhaust their scan budget return a
+  422 instead of an incomplete list; search casts columns to text (numeric/UUID
+  titles on PostgreSQL).
+- Record-checked scans read only keys (bounded) in a snapshot, release it, then
+  load records 100 at a time in that order: memory does not grow with row size,
+  and policies or label lookups never wait on the scan's connection (works with
+  one connection and database-backed policies).
+  Key scans keep the query's own projection (100 rows per batch, only keys
+  retained), so `DISTINCT`/`ORDER BY` from `scope()` stay valid on PostgreSQL.
+  Reloaded records are re-checked against the full query (scope, search,
+  filters), so concurrent edits cannot slip non-matching records into results.
+- Search on UUID columns matches the displayed (hyphenated) form on SQLite.
+- A committed create/update is always reported as a success: relationship
+  labels are best effort, and a failing or slow envelope falls back to the key
+  alone, within 2 s and within the request's own deadline
+  (`http::request_deadline`).
+  Optional sliding session renewal is bounded the same way (skipped if it would
+  outlast the request).
+- Writes lock only target rows found in scope and allowed by the policy
+  (PostgreSQL `FOR UPDATE`), then re-check scope and policy under the lock, so
+  ownership changed concurrently is seen and hidden records are never locked; policies
+  and hooks query `Ctx::conn()`, which is the write's own transaction during
+  writes (no second connection needed, no deadlock with small pools).
+- Edit schemas keep write-only fields (writable, not readable) as empty,
+  `writeOnly` inputs; their values are never returned.
+- Envelopes carry data only when the user may view the record (blind updates
+  return key and abilities); page offsets are checked for overflow (422).
+- Lists exclude (and do not count) records a record-level policy denies `view`;
+  `Policy::view_depends_on_record` keeps SQL pagination for scope-only policies.
+- `permission:sync` declares action admission permissions; relationship options
+  skip policy-denied candidates instead of returning an empty first batch.
+- Actions are authorized per record; `Action::requires_permission` declares an
+  explicit admission permission instead of inferring it from `allows(…, None)`.
 - M2 auth (`rustcms-auth`): admin guard with server-side sessions (hashed ids,
   regeneration, sliding expiry, pruning), synchronizer CSRF + Origin allowlist;
   api guard with personal access tokens (`rcms_…`, hashed, abilities, expiry,
