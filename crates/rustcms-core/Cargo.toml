@@ -1,0 +1,19 @@
+[package]
+name = "rustcms-core"
+description = "Core primitives of the rustcms framework: errors, config, app builder."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+sea-orm.workspace = true
+
+[lints]
+workspace = true

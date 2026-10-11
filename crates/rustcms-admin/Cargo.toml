@@ -1,0 +1,33 @@
+[package]
+name = "rustcms-admin"
+description = "Filament-style admin panel engine for rustcms: resources, schema, generic CRUD."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["sqlite"]
+sqlite = ["sea-orm/sqlx-sqlite"]
+postgres = ["sea-orm/sqlx-postgres"]
+
+[dependencies]
+rustcms-core.workspace = true
+sea-orm.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+rust_decimal.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+insta.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

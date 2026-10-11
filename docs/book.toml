@@ -1,0 +1,8 @@
+[book]
+title = "rustcms"
+authors = ["irisvn"]
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/irisvn/rustcms"

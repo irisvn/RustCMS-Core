@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0-alpha.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/irisvn/rustcms"
+
+[workspace.dependencies]
+rustcms-core = { path = "crates/rustcms-core", version = "0.1.0-alpha.0" }
+rustcms-admin = { path = "crates/rustcms-admin", version = "0.1.0-alpha.0" }
+
+# Pinned: SeaORM API churns between majors (see docs/adr/0001).
+sea-orm = { version = "=2.0.4", default-features = false, features = [
+    "macros", "runtime-tokio-rustls", "with-chrono", "with-uuid", "with-rust_decimal", "with-json",
+] }
+axum = "0.8.9"
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread"] }
+async-trait = "0.1.92"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+uuid = { version = "1.28", features = ["v4", "v7", "serde"] }
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "serde"] }
+rust_decimal = "1.43"
+tracing = "0.1"
+insta = { version = "1.49", features = ["json"] }
+proptest = "1.12"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
