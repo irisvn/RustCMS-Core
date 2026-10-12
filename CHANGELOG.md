@@ -28,6 +28,8 @@ All notable changes are documented here. The format follows
   request is cancelled; deleting a role you hold is refused; stale-credential
   requests never renew or re-send their cookie; hashing budgets count successful
   hashes; id lists are deduplicated and chunked; rotation start/end across tabs.
+- `migrate:fresh` works on SQLite with foreign keys on (drops run on one
+  connection with `PRAGMA foreign_keys = OFF`).
 - Publishing: LICENSE-MIT / LICENSE-APACHE, crates.io metadata, internal
   dev-dependencies path-only (tests excluded from those packages);
   `just publish-check` packages and verifies every crate.

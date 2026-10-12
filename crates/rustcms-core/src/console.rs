@@ -7,6 +7,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, bail};
 use clap::{CommandFactory, Parser, Subcommand};
+use sea_orm::ConnectionTrait;
 use sea_orm_migration::MigratorTrait;
 
 use crate::app::AppBuilder;
@@ -129,7 +130,18 @@ impl<M: MigratorTrait> Console<M> {
             Command::MigrateRollback { step } => Ok(M::down(&connect(&config).await?, Some(step)).await?),
             Command::MigrateFresh { force } => {
                 guard_production(production, force)?;
-                Ok(M::fresh(&connect(&config).await?).await?)
+                let db = connect_single(&config).await?;
+                // SQLite checks foreign keys on DROP TABLE: dropping every table in
+                // any order needs them off (on the one connection used here).
+                let sqlite = db.get_database_backend() == sea_orm::DbBackend::Sqlite;
+                if sqlite {
+                    db.execute_unprepared("PRAGMA foreign_keys = OFF").await?;
+                }
+                let result = M::fresh(&db).await;
+                if sqlite {
+                    db.execute_unprepared("PRAGMA foreign_keys = ON").await?;
+                }
+                Ok(result?)
             }
             Command::MigrateRefresh { force } => {
                 guard_production(production, force)?;
@@ -169,6 +181,13 @@ impl<M: MigratorTrait> Console<M> {
             Command::KeyGenerate { .. } => unreachable!(),
         }
     }
+}
+
+/// One connection only, so per-connection settings (SQLite pragmas) apply to every statement.
+async fn connect_single(config: &Config) -> anyhow::Result<sea_orm::DatabaseConnection> {
+    let mut database = config.database.clone();
+    database.max_connections = 1;
+    crate::db::connect(&database).await.context("cannot connect to the database")
 }
 
 async fn connect(config: &Config) -> anyhow::Result<sea_orm::DatabaseConnection> {
