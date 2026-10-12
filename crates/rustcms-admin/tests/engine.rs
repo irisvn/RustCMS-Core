@@ -967,9 +967,111 @@ db_test!(ownership_changed_concurrently_is_seen_by_writes, |db: TestDb| async mo
     let posts2 = posts.clone();
     let key = post.key.clone();
     let update = tokio::spawn(async move { posts2.update(&owner, &key, data(json!({"title": "hijacked"}))).await });
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    wait_until_blocked(&fx, &transfer).await;
     transfer.commit().await.unwrap();
     assert!(matches!(update.await.unwrap(), Err(rustcms_core::AppError::NotFound)), "out of the old owner's scope now");
     let new_owner = fx.ctx(editor("8"));
     assert_eq!(posts.find(&new_owner, &post.key).await.unwrap().data["title"], json!("mine"));
+});
+
+/// Starts a write transaction running `pg`/`sqlite` SQL against the post `key`
+/// (left uncommitted, so writes to that row wait for it).
+async fn blocking_write(fx: &Fixture, key: &str, pg: &str, sqlite: &str) -> sea_orm::DatabaseTransaction {
+    use sea_orm::ConnectionTrait;
+    let txn = rustcms_core::db::begin_write(fx.db.conn()).await.unwrap();
+    let sql = match txn.get_database_backend() {
+        sea_orm::DbBackend::Postgres => pg.replace("{id}", &format!("'{key}'")),
+        _ => sqlite.replace("{id}", &format!("X'{}'", key.replace('-', ""))),
+    };
+    txn.execute_unprepared(&sql).await.unwrap();
+    txn
+}
+
+/// Waits until another session is blocked by `blocker` (PostgreSQL), so the
+/// race is exercised deterministically. SQLite writers serialize on the
+/// database lock and reach the same outcome whatever the timing.
+async fn wait_until_blocked(fx: &Fixture, blocker: &sea_orm::DatabaseTransaction) {
+    use sea_orm::{ConnectionTrait, Statement};
+    if blocker.get_database_backend() != sea_orm::DbBackend::Postgres {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        return;
+    }
+    let pid: i32 = blocker
+        .query_one_raw(Statement::from_string(sea_orm::DbBackend::Postgres, "SELECT pg_backend_pid() AS pid"))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "pid")
+        .unwrap();
+    let probe = format!("SELECT count(*)::int4 AS n FROM pg_stat_activity WHERE {pid} = ANY(pg_blocking_pids(pid))");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let row = fx
+            .db
+            .conn()
+            .query_one_raw(Statement::from_string(sea_orm::DbBackend::Postgres, probe.clone()))
+            .await
+            .unwrap()
+            .unwrap();
+        if row.try_get::<i32>("", "n").unwrap() > 0 {
+            return;
+        }
+        assert!(std::time::Instant::now() < deadline, "writer never blocked on the lock");
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
+db_test!(records_deleted_while_writes_wait_are_missing, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
+    let posts = fx.resource("posts");
+    let owner = fx.ctx(editor("7"));
+    let a = posts.create(&owner, data(json!({"title": "a"}))).await.unwrap();
+    let b = posts.create(&owner, data(json!({"title": "b"}))).await.unwrap();
+    let delete = "DELETE FROM posts WHERE id = {id}";
+
+    let blocker = blocking_write(&fx, &a.key, delete, delete).await;
+    let (posts2, ctx, key) = (posts.clone(), owner.clone(), a.key.clone());
+    let update = tokio::spawn(async move { posts2.update(&ctx, &key, data(json!({"title": "x"}))).await });
+    wait_until_blocked(&fx, &blocker).await;
+    blocker.commit().await.unwrap();
+    assert!(matches!(update.await.unwrap(), Err(rustcms_core::AppError::NotFound)));
+
+    let blocker = blocking_write(&fx, &b.key, delete, delete).await;
+    let (posts2, ctx, key) = (posts.clone(), owner.clone(), b.key.clone());
+    let action = tokio::spawn(async move { posts2.run_action(&ctx, "touch", &[key], Data::new()).await });
+    wait_until_blocked(&fx, &blocker).await;
+    blocker.commit().await.unwrap();
+    let outcome = action.await.unwrap().unwrap();
+    assert!(outcome.processed.is_empty() && outcome.denied.is_empty());
+    assert_eq!(outcome.missing, vec![b.key.clone()], "a vanished record is reported, not dropped");
+});
+
+db_test!(replacement_rows_inserted_while_writes_wait_are_not_written, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
+    if fx.db.conn().get_database_backend() != sea_orm::DbBackend::Postgres {
+        return; // SQLite writers hold the database lock: no row can be replaced meanwhile.
+    }
+    let posts = fx.resource("posts");
+    let owner = fx.ctx(editor("7"));
+    let post = posts.create(&owner, data(json!({"title": "old"}))).await.unwrap();
+    // Delete the row and insert a new one under the same key in one statement.
+    let replace = "WITH d AS (DELETE FROM posts WHERE id = {id} RETURNING *) \
+                   INSERT INTO posts SELECT * FROM d";
+
+    let blocker = blocking_write(&fx, &post.key, replace, "").await;
+    let (posts2, ctx, key) = (posts.clone(), owner.clone(), post.key.clone());
+    let update = tokio::spawn(async move { posts2.update(&ctx, &key, data(json!({"title": "x"}))).await });
+    wait_until_blocked(&fx, &blocker).await;
+    blocker.commit().await.unwrap();
+    assert!(matches!(update.await.unwrap(), Err(rustcms_core::AppError::NotFound)), "replacement not locked");
+
+    let blocker = blocking_write(&fx, &post.key, replace, "").await;
+    let (posts2, ctx, key) = (posts.clone(), owner.clone(), post.key.clone());
+    let action = tokio::spawn(async move { posts2.run_action(&ctx, "touch", &[key], Data::new()).await });
+    wait_until_blocked(&fx, &blocker).await;
+    blocker.commit().await.unwrap();
+    let outcome = action.await.unwrap().unwrap();
+    assert!(outcome.processed.is_empty());
+    assert_eq!(outcome.missing, vec![post.key.clone()]);
+    assert_eq!(posts.find(&owner, &post.key).await.unwrap().data["title"], json!("old"));
 });
