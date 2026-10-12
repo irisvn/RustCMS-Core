@@ -270,10 +270,12 @@ impl Default for Limits {
 
 /// A record as sent to clients.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Envelope {
     /// Encoded primary key.
     pub key: String,
     /// Record title, when the title field is readable.
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     /// Record-level abilities computed by the policy.
@@ -281,12 +283,14 @@ pub struct Envelope {
     /// Readable fields only.
     pub data: Data,
     /// Titles of related records for `belongs_to` fields (`#key` when not visible).
+    #[cfg_attr(feature = "ts", ts(as = "Option<BTreeMap<String, String>>", optional))]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
 }
 
 /// Pagination metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct PageMeta {
     /// Current page (1-based).
@@ -301,6 +305,7 @@ pub struct PageMeta {
 
 /// One page of records.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Page {
     /// Records.
     pub data: Vec<Envelope>,

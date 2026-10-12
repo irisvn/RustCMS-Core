@@ -15,6 +15,7 @@ mod provider;
 pub mod registry;
 pub mod resource;
 pub mod schema;
+pub mod spa;
 pub mod ui;
 pub mod wire;
 

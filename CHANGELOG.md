@@ -7,6 +7,23 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- M4 admin SPA (`admin-ui/`, React 19 + Vite + Tailwind + TanStack Router/Query):
+  sign-in, navigation, list (search, sort, filters, pagination, row and bulk
+  actions), create/edit/view forms rendering the whole 0.1 vocabulary, relationship
+  combobox; embedded in `rustcms-admin` (`assets/`, `rust-embed`) and served under
+  the admin path with a strict CSP and runtime `<base>`/config injection
+  (ADR 0006). Vitest + MSW unit/contract tests, Playwright E2E against the demo.
+- `InputSchema.nullable`; typed `PanelResponse` / `DataResponse`; TypeScript
+  bindings generated from the Rust DTOs (`ts` feature); server-generated
+  `fixtures/contract/kitchen-sink.*` covering every component and wire kind.
+- `AppError::CsrfMismatch` (403 `csrf_mismatch`) for missing/stale CSRF tokens.
+- Admin API responses are `Cache-Control: private, no-store`; unknown
+  `/admin/api/*` paths answer JSON 404 inside the admin stack.
+- `auth.admin_path` is validated and normalized (`/segment(/segment)*`; not `/`
+  or under `/api`).
+- Demo: categories and posts resources with an ownership policy, `demo:seed`.
+- `just dev`, `admin-build`, `test-ui`, `e2e`; CI jobs `test-ui`, `e2e`
+  (release binary run outside the checkout), assets/types drift checks, `npm audit`.
 - M3 resource engine: Filament-style builders (`TextInput`, `SelectInput`,
   `Toggle`, …, `Section`, `Grid`, table columns and filters), action metadata
   (`label`, `bulk`, `requires_confirmation`, …); versioned `ResourceSchema`

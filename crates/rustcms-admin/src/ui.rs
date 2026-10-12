@@ -19,6 +19,7 @@ use serde_json::Value as Json;
 
 /// Input types of the form vocabulary (`vocabularyVersion` 1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum InputType {
     /// Single-line text.
@@ -45,6 +46,7 @@ pub enum InputType {
 
 /// An option of a select, checkbox list or select filter.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SelectOption {
     /// Value in wire format.
     pub value: Json,
@@ -173,6 +175,7 @@ input_types! {
 
 /// Layout kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum LayoutType {
     /// Titled group.
@@ -296,6 +299,7 @@ impl Form {
 
 /// Column types of the table vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ColumnType {
     /// Plain text (also numbers, related titles).
@@ -363,6 +367,7 @@ column_types! {
 
 /// Filter types of the table vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum FilterType {
     /// One or more of the options (`in`).

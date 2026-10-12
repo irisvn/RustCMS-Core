@@ -6,3 +6,5 @@ node_modules/
 /docs/book
 .idea/
 .codex/
+/admin-ui/playwright-report/
+/admin-ui/test-results/

@@ -520,3 +520,51 @@ db_test!(blocked_session_renewal_does_not_hide_a_committed_write, |db: TestDb| a
     created.assert_status(StatusCode::CREATED).assert_json("/data/key", json!("s"));
     assert_eq!(support::tag::Entity::find().count(app.state().db()).await.unwrap(), 1);
 });
+
+db_test!(panel_pages_are_served_with_strict_headers, |db: TestDb| async move {
+    let (app, users): (TestApp, Users) = setup(db).await;
+    let anonymous = app.client();
+    for page in ["/admin", "/admin/", "/admin/r/posts", "/admin/r/posts/records/create%20me/edit"] {
+        let response = anonymous.get(page).await;
+        response.assert_status(StatusCode::OK);
+        assert_eq!(response.header("content-type").as_deref(), Some("text/html; charset=utf-8"), "{page}");
+        assert_eq!(response.header("cache-control").as_deref(), Some("no-store"));
+        assert_eq!(
+            response.header("content-security-policy").as_deref(),
+            Some(rustcms_admin::spa::CONTENT_SECURITY_POLICY)
+        );
+        assert_eq!(response.header("x-frame-options").as_deref(), Some("DENY"));
+        assert_eq!(response.header("x-content-type-options").as_deref(), Some("nosniff"));
+        let html = response.text();
+        assert!(
+            html.contains(r#"<base href="/admin/">"#) || html.contains("not built"),
+            "the shell carries the base path: {html}"
+        );
+    }
+
+    // The API never falls back to HTML, signed in or not, whatever the method.
+    let admin = app.acting_as(&users.admin).await;
+    for client in [&anonymous, &admin] {
+        for path in ["/admin/api", "/admin/api/", "/admin/api/nope", "/admin/api/resources/posts/nope/deeper"] {
+            let response = client.get(path).await;
+            response.assert_status(StatusCode::NOT_FOUND).assert_json("/code", json!("not_found"));
+            assert_eq!(response.header("cache-control").as_deref(), Some("private, no-store"), "{path}");
+        }
+    }
+    admin.post_json("/admin/api/nope", &json!({})).await.assert_status(StatusCode::NOT_FOUND);
+
+    // Assets never load or renew the session: no cookie on a public, cacheable response.
+    let asset = admin.get("/admin/assets/missing-0000.js").await;
+    assert_eq!(asset.header("set-cookie"), None);
+    // Pages that set the cookie (here: a new anonymous session) are never stored.
+    let first = app.client().get(&api(&app, "auth/csrf")).await;
+    assert!(first.header("set-cookie").is_some());
+    assert_eq!(first.header("cache-control").as_deref(), Some("private, no-store"));
+
+    // Missing assets are 404, not the shell; pages only answer GET/HEAD.
+    anonymous.get("/admin/assets/missing-0000.js").await.assert_status(StatusCode::NOT_FOUND);
+    admin.post_json("/admin/r/posts", &json!({})).await.assert_status(StatusCode::METHOD_NOT_ALLOWED);
+    admin.post_json("/admin", &json!({})).await.assert_status(StatusCode::METHOD_NOT_ALLOWED);
+    // Outside the admin path nothing changes.
+    anonymous.get("/administrator").await.assert_status(StatusCode::NOT_FOUND);
+});

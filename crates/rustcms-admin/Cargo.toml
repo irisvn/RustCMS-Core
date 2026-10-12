@@ -11,6 +11,8 @@ repository.workspace = true
 default = ["sqlite"]
 sqlite = ["rustcms-core/sqlite"]
 postgres = ["rustcms-core/postgres"]
+# TypeScript bindings of the schema DTOs for the admin SPA (`just generated`).
+ts = ["dep:ts-rs"]
 
 [dependencies]
 rustcms-core.workspace = true
@@ -26,6 +28,8 @@ chrono.workspace = true
 rust_decimal.workspace = true
 tracing.workspace = true
 tokio.workspace = true
+rust-embed.workspace = true
+ts-rs = { workspace = true, optional = true }
 
 [dev-dependencies]
 chrono.workspace = true

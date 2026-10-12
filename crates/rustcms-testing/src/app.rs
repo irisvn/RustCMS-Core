@@ -109,6 +109,16 @@ impl TestResponse {
             .unwrap_or_else(|e| panic!("body is not JSON ({e}): {}", String::from_utf8_lossy(&self.body)))
     }
 
+    /// A header value as text.
+    pub fn header(&self, name: &str) -> Option<String> {
+        self.headers.get(name).and_then(|v| v.to_str().ok()).map(str::to_owned)
+    }
+
+    /// Body as text.
+    pub fn text(&self) -> String {
+        String::from_utf8_lossy(&self.body).into_owned()
+    }
+
     /// Asserts the status code.
     #[track_caller]
     pub fn assert_status(&self, expected: StatusCode) -> &Self {

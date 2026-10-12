@@ -4,12 +4,13 @@ pg_url := env_var_or_default("RUSTCMS_TEST_PG", "postgres://postgres:postgres@lo
 default:
     @just --list
 
-# Everything CI runs, except the slow scaffold test (`just test-cli`).
-ci: lint features test-matrix doc generated
+# Everything CI runs, except the slow scaffold test (`just test-cli`) and `just e2e`.
+ci: lint features test-matrix doc generated test-ui
 
 lint:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings
+    cd admin-ui && npm run lint && npm run typecheck
 
 # Every supported feature combination compiles.
 features:
@@ -44,7 +45,34 @@ doc:
     cargo test --workspace --doc
     mdbook build docs
 
-# Generated files are up to date.
+# Generated files are up to date (CLI docs, TypeScript types, built admin assets).
 generated:
     cargo run -q -p rustcms-cli -- docs:cli > docs/src/cli.md
-    git diff --exit-code -- docs/src/cli.md
+    UPDATE_TYPES=1 cargo test -q -p rustcms-admin --features ts --test typescript
+    cd admin-ui && npm run build
+    test -z "$(git status --porcelain -- docs/src/cli.md admin-ui/src/api/types.gen.ts crates/rustcms-admin/assets fixtures)"
+
+# Admin SPA: install dependencies (Node 20+).
+admin-install:
+    cd admin-ui && npm ci
+
+# Build the admin SPA into crates/rustcms-admin/assets (commit the result).
+admin-build:
+    cd admin-ui && npm run build
+
+# Admin SPA unit tests (Vitest).
+test-ui:
+    cd admin-ui && npm test
+
+# Browser tests against the demo app (needs `npx playwright install chromium` once).
+e2e:
+    cargo build -p demo
+    cd admin-ui && npm run e2e
+
+# Rust server on :8000 and Vite on :5173 (open http://localhost:5173/admin/).
+dev:
+    #!/usr/bin/env sh
+    trap 'kill 0' EXIT
+    (cd examples/demo && RUSTCMS_AUTH__ADMIN_ORIGINS='["http://localhost:8000","http://localhost:5173"]' cargo run -- serve) &
+    (cd admin-ui && npm run dev) &
+    wait

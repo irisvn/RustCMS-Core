@@ -1,0 +1,225 @@
+//! Contract fixtures covering the whole vocabulary and every wire kind
+//! (`fixtures/contract/kitchen-sink.*.json`), shared with the admin SPA tests.
+//! Regenerate with `UPDATE_CONTRACT=1 cargo test -p rustcms-admin --test contract`.
+
+mod support;
+
+use std::sync::Arc;
+
+use rustcms_admin::*;
+use rustcms_testing::{TestDb, db_test};
+use sea_orm::{ConnectionTrait, Schema};
+use serde_json::json;
+use support::{CategoryResource, admin, category};
+
+pub mod gadget {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "gadgets")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub name: String,
+        pub notes: Option<String>,
+        pub count: i32,
+        pub serial: i64,
+        pub ratio: f64,
+        #[sea_orm(column_type = "Decimal(Some((10, 2)))")]
+        pub price: Decimal,
+        #[sea_orm(default_value = true)]
+        pub active: bool,
+        pub agreed: bool,
+        #[sea_orm(default_value = "[\"red\"]")]
+        pub colors: Json,
+        pub status: String,
+        pub category_id: Option<i32>,
+        pub day: Date,
+        pub local_at: DateTime,
+        pub happened_at: DateTimeUtc,
+        pub token: Uuid,
+        #[sea_orm(default_value = "factory-secret")]
+        pub secret: String,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub struct GadgetResource;
+
+impl Resource for GadgetResource {
+    type Entity = gadget::Entity;
+    const SLUG: &'static str = "gadgets";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Gadget").title("name").icon("box").group("Catalog")
+    }
+
+    fn fields() -> Vec<Field> {
+        use gadget::Column as C;
+        vec![
+            Field::column(C::Name).required().searchable().sortable().max_length(60),
+            Field::column(C::Notes),
+            Field::column(C::Count).sortable(),
+            Field::column(C::Serial),
+            Field::column(C::Ratio),
+            Field::column(C::Price),
+            Field::column(C::Active).filterable(),
+            Field::column(C::Agreed).required(),
+            Field::column(C::Colors),
+            Field::column(C::Status).filterable(),
+            Field::column(C::CategoryId).belongs_to("categories").filterable(),
+            Field::column(C::Day).filterable(),
+            Field::column(C::LocalAt),
+            Field::column(C::HappenedAt),
+            Field::column(C::Token),
+            // Write-only: never read back.
+            Field::column(C::Secret).readable(|_| false),
+        ]
+    }
+
+    fn form() -> Form {
+        Form::new().columns(2).schema(components![
+            Section::make("Basics").columns(2).schema(components![
+                TextInput::make("name").placeholder("Name").help("Shown in lists"),
+                Textarea::make("notes").column_span(2),
+            ]),
+            Grid::make(3).schema(components![
+                NumberInput::make("count"),
+                NumberInput::make("serial"),
+                NumberInput::make("ratio"),
+                NumberInput::make("price"),
+            ]),
+            Toggle::make("active"),
+            Checkbox::make("agreed").label("Terms agreed"),
+            CheckboxList::make("colors").options([("red", "Red"), ("green", "Green"), ("blue", "Blue")]),
+            SelectInput::make("status").options([("draft", "Draft"), ("live", "Live")]),
+            SelectInput::make("category_id"),
+            DatePicker::make("day"),
+            DateTimePicker::make("local_at"),
+            DateTimePicker::make("happened_at"),
+            Hidden::make("token"),
+            TextInput::make("secret").password(),
+        ])
+    }
+
+    fn table() -> Table {
+        Table::new()
+            .columns(vec![
+                TextColumn::make("name"),
+                BadgeColumn::make("status").color("draft", "gray").color("live", "success"),
+                BooleanColumn::make("active"),
+                DateColumn::make("day"),
+                DateColumn::make("happened_at"),
+                TextColumn::make("category_id"),
+                TextColumn::make("price"),
+                TextColumn::make("serial"),
+            ])
+            .filters(vec![
+                TernaryFilter::make("active"),
+                SelectFilter::make("status").options([("draft", "Draft"), ("live", "Live")]),
+                SelectFilter::make("category_id"),
+                DateRangeFilter::make("day"),
+            ])
+            .default_sort("name")
+    }
+}
+
+async fn registry(db: &TestDb) -> Arc<Registry> {
+    let schema = Schema::new(db.conn().get_database_backend());
+    for statement in
+        [schema.create_table_from_entity(category::Entity), schema.create_table_from_entity(gadget::Entity)]
+    {
+        db.conn().execute(&statement).await.unwrap();
+    }
+    Registry::new().register::<CategoryResource>().register::<GadgetResource>().finish()
+}
+
+db_test!(kitchen_sink_contract, |db: TestDb| async move {
+    let registry = registry(&db).await;
+    let ctx = Ctx::new(db.conn().clone(), admin(), registry.clone());
+    let categories = registry.get("categories").unwrap();
+    let gadgets = registry.get("gadgets").unwrap();
+    let category =
+        categories.create(&ctx, json!({"name": "Tools", "slug": "tools"}).as_object().unwrap().clone()).await.unwrap();
+    let input = json!({
+        "name": "Widget",
+        "notes": "Line one\nLine two",
+        "count": 3,
+        "serial": "9007199254740993",
+        "ratio": 0.5,
+        "price": "10.5",
+        "active": true,
+        "agreed": false,
+        "colors": ["red", "blue"],
+        "status": "live",
+        "category_id": category.key.parse::<i32>().unwrap(),
+        "day": "2026-10-12",
+        "local_at": "2026-10-12T09:30:00",
+        "happened_at": "2026-10-12T09:30:00+07:00",
+        "token": "0199d3a4-1b2c-7d3e-8f40-123456789abc",
+        "secret": "hunter2",
+    });
+    let created = gadgets.create(&ctx, input.as_object().unwrap().clone()).await.unwrap();
+
+    let create = gadgets.schema(&ctx, SchemaOperation::Create, None).await.unwrap();
+    let edit = gadgets.schema(&ctx, SchemaOperation::Edit, Some(&created.key)).await.unwrap();
+    let view = gadgets.schema(&ctx, SchemaOperation::View, None).await.unwrap();
+    let page = gadgets.list(&ctx, &ListQuery::default()).await.unwrap();
+    // JSON defaults are not announced (their text is ambiguous); an untouched
+    // field is omitted and the database default applies.
+    let colors = create.form.components.iter().find_map(|c| match c {
+        rustcms_admin::schema::ComponentSchema::Input(i) if i.name == "colors" => i.default.clone(),
+        _ => None,
+    });
+    assert_eq!(colors, None);
+    let mut minimal = input.as_object().unwrap().clone();
+    minimal.remove("colors");
+    minimal.insert("name".into(), json!("Defaults"));
+    let stored = gadgets.create(&ctx, minimal).await.unwrap();
+    assert_eq!(stored.data["colors"], json!(["red"]));
+    gadgets.delete(&ctx, &stored.key).await.unwrap();
+    // A write-only field's declared default is data the user may not read.
+    let secret = create.form.components.iter().find_map(|c| match c {
+        rustcms_admin::schema::ComponentSchema::Input(i) if i.name == "secret" => Some(i.clone()),
+        _ => None,
+    });
+    let secret = secret.expect("secret input");
+    assert!(secret.write_only && secret.default.is_none(), "{secret:?}");
+    assert!(!serde_json::to_string(&create).unwrap().contains("factory-secret"));
+    // Every vocabulary member appears.
+    let text = serde_json::to_string(&create).unwrap();
+    for kind in [
+        "text_input",
+        "textarea",
+        "number_input",
+        "select",
+        "toggle",
+        "checkbox",
+        "checkbox_list",
+        "date_picker",
+        "date_time_picker",
+        "hidden",
+        "section",
+        "grid",
+        "badge",
+        "boolean",
+        "date",
+        "ternary",
+        "date_range",
+    ] {
+        assert!(text.contains(&format!("\"type\":\"{kind}\"")), "{kind} missing");
+    }
+    if db.backend() == rustcms_testing::Backend::Sqlite {
+        // One copy is enough (the backends render the same contract; checked below).
+        support::contract("kitchen-sink.schema.create.json", &serde_json::to_value(&create).unwrap());
+        support::contract("kitchen-sink.schema.edit.json", &serde_json::to_value(&edit).unwrap());
+        support::contract("kitchen-sink.schema.view.json", &serde_json::to_value(&view).unwrap());
+        support::contract("kitchen-sink.records.json", &serde_json::to_value(&page).unwrap());
+    } else {
+        support::contract_matches("kitchen-sink.records.json", &serde_json::to_value(&page).unwrap());
+    }
+});

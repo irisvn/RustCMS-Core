@@ -15,6 +15,7 @@ pub const VOCABULARY_VERSION: u32 = 1;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceInfo {
     /// URL slug.
@@ -24,18 +25,22 @@ pub struct ResourceInfo {
     /// Plural label.
     pub plural_label: String,
     /// Icon name (client icon set).
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     /// Navigation group.
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
     /// Field used as record title.
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title_field: Option<String>,
 }
 
 /// Which form a schema describes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum SchemaOperation {
     /// New record.
@@ -48,6 +53,7 @@ pub enum SchemaOperation {
 
 /// A validation rule mirrored for the client. The server always re-checks.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "rule", rename_all = "snake_case")]
 pub enum Rule {
     /// Must be present and non-null.
@@ -61,6 +67,7 @@ pub enum Rule {
 
 /// Related resource of a `belongs_to` input or column.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Relationship {
     /// Slug of the related resource (options come from the field's options endpoint).
     pub resource: &'static str,
@@ -68,6 +75,7 @@ pub struct Relationship {
 
 /// A form input.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct InputSchema {
     /// Input type.
@@ -79,10 +87,20 @@ pub struct InputSchema {
     pub label: String,
     /// Wire kind of the value (`string`, `i64`, `decimal`, `instant`, …).
     pub value_type: &'static str,
+    /// The column accepts `null` (an emptied input sends `null`; otherwise an
+    /// empty string for text kinds).
+    pub nullable: bool,
+    /// Create forms: the column's declared default (entity `default_value`), in
+    /// wire format. Inputs without one start empty, and untouched ones are left
+    /// out of the payload so the database default applies.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub default: Option<serde_json::Value>,
     /// Shown but not editable.
     pub disabled: bool,
     /// Writable but not readable (e.g. a password): no current value is sent;
     /// leave it out of the payload to keep the stored value.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub write_only: bool,
     /// Client-side rules.
@@ -90,30 +108,37 @@ pub struct InputSchema {
     /// Grid span.
     pub column_span: u8,
     /// Placeholder.
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
     /// Help text.
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub help: Option<String>,
     /// Input mode (`email`, `password`, `url`).
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<&'static str>,
     /// Static options.
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<SelectOption>>", optional))]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<SelectOption>,
     /// Related resource for `belongs_to` fields.
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship: Option<Relationship>,
 }
 
 /// A layout.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct LayoutSchema {
     /// Layout type.
     #[serde(rename = "type")]
     pub kind: LayoutType,
     /// Title (sections).
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     /// Columns.
@@ -124,6 +149,7 @@ pub struct LayoutSchema {
 
 /// An element of a form: input or layout, told apart by `type`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(untagged)]
 pub enum ComponentSchema {
     /// Input.
@@ -134,6 +160,7 @@ pub enum ComponentSchema {
 
 /// A form.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FormSchema {
     /// Columns.
     pub columns: u8,
@@ -143,6 +170,7 @@ pub struct FormSchema {
 
 /// A table column.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ColumnSchema {
     /// Column type.
@@ -159,15 +187,18 @@ pub struct ColumnSchema {
     /// Included in `search`.
     pub searchable: bool,
     /// Badge colors.
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<BadgeColor>>", optional))]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub colors: Vec<BadgeColor>,
     /// Related resource (display `labels[name]`).
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship: Option<Relationship>,
 }
 
 /// Badge color for one value.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BadgeColor {
     /// Value.
     pub value: serde_json::Value,
@@ -177,6 +208,7 @@ pub struct BadgeColor {
 
 /// A table filter.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct FilterSchema {
     /// Filter type.
@@ -189,15 +221,18 @@ pub struct FilterSchema {
     /// Wire kind of the value.
     pub value_type: &'static str,
     /// Options (select filters).
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<SelectOption>>", optional))]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<SelectOption>,
     /// Related resource (options endpoint).
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship: Option<Relationship>,
 }
 
 /// An action the user may run (per-record permission is in each envelope's `abilities`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ActionSchema {
     /// Name (URL segment).
@@ -207,18 +242,22 @@ pub struct ActionSchema {
     /// Offered for selections of records.
     pub bulk: bool,
     /// Confirmation question, if any.
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confirm: Option<String>,
     /// Color (`primary`, `danger`, …).
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     /// Icon name.
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
 }
 
 /// A table.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct TableSchema {
     /// Columns.
@@ -226,6 +265,7 @@ pub struct TableSchema {
     /// Filters.
     pub filters: Vec<FilterSchema>,
     /// Default sort (`-field` for descending).
+    #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_sort: Option<String>,
     /// Allowed page sizes.
@@ -238,6 +278,7 @@ pub struct TableSchema {
 
 /// Everything a client needs to render a resource for one user and operation.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceSchema {
     /// [`SCHEMA_VERSION`].

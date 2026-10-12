@@ -67,6 +67,9 @@ pub enum AppError {
     /// 403: authenticated but not allowed.
     #[error("forbidden")]
     Forbidden,
+    /// The CSRF token is missing or wrong (403): fetch a new one, do not replay blindly.
+    #[error("CSRF token mismatch")]
+    CsrfMismatch,
     /// 404: resource or record not found (also used for records outside the user's scope).
     #[error("not found")]
     NotFound,
@@ -101,7 +104,7 @@ impl AppError {
         match self {
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::Unauthenticated => StatusCode::UNAUTHORIZED,
-            Self::Forbidden => StatusCode::FORBIDDEN,
+            Self::Forbidden | Self::CsrfMismatch => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
@@ -117,6 +120,7 @@ impl AppError {
             Self::BadRequest(_) => "bad_request",
             Self::Unauthenticated => "unauthenticated",
             Self::Forbidden => "forbidden",
+            Self::CsrfMismatch => "csrf_mismatch",
             Self::NotFound => "not_found",
             Self::MethodNotAllowed => "method_not_allowed",
             Self::PayloadTooLarge => "payload_too_large",
@@ -161,6 +165,7 @@ impl IntoResponse for AppError {
             }
             Self::Unauthenticated => "Unauthenticated.",
             Self::Forbidden => "This action is unauthorized.",
+            Self::CsrfMismatch => "CSRF token mismatch.",
             Self::NotFound => "Not found.",
             Self::PayloadTooLarge => "Payload too large.",
             Self::Validation(_) => "The given data was invalid.",

@@ -8,7 +8,7 @@ use axum::middleware::from_fn_with_state;
 use rustcms_core::{AppBuilder, AppState, Principal, ServiceProvider};
 
 use crate::commands::{MakeUser, PermissionSync, SessionPrune, TokenCreate};
-use crate::config::AuthConfig;
+use crate::config::{AuthConfig, normalize_admin_path};
 use crate::state::{ADMIN_GUARD, AuthState, Gate};
 use crate::{guard, routes};
 
@@ -68,8 +68,9 @@ impl AuthProvider {
 #[async_trait]
 impl ServiceProvider for AuthProvider {
     fn register(&self, app: &mut AppBuilder) {
-        let config: AuthConfig =
+        let mut config: AuthConfig =
             app.config().section("auth").unwrap_or_else(|e| panic!("invalid [auth] configuration: {e}"));
+        config.admin_path = normalize_admin_path(&config.admin_path).unwrap_or_else(|e| panic!("{e}"));
         let gate = self.gate.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take().unwrap_or_default();
         let state = AuthState::new(config.clone(), &app.config().app.url, gate);
         for (group, name) in BUILT_IN_PERMISSIONS {

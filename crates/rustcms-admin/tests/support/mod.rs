@@ -361,3 +361,12 @@ pub fn contract(name: &str, actual: &serde_json::Value) {
         .unwrap_or_else(|_| panic!("missing contract fixture {}; run with UPDATE_CONTRACT=1", path.display()));
     assert_eq!(rendered, expected, "contract {name} changed; review and run with UPDATE_CONTRACT=1");
 }
+
+/// Like [`contract`] but never rewrites the fixture (for a second backend).
+#[allow(dead_code)]
+pub fn contract_matches(name: &str, actual: &serde_json::Value) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/contract").join(name);
+    let rendered = serde_json::to_string_pretty(actual).unwrap() + "\n";
+    let expected = std::fs::read_to_string(&path).unwrap_or_default();
+    assert_eq!(rendered, expected, "contract {name} differs on this backend");
+}

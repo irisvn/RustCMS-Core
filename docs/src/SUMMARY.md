@@ -24,6 +24,7 @@
 # Admin panel
 
 - [Resources](admin/resources.md)
+- [The panel (SPA)](admin/spa.md)
 
 # Reference
 

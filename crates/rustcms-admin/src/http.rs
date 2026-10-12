@@ -9,8 +9,8 @@ use axum::http::{Method, StatusCode};
 use axum::routing::{get, post};
 use rustcms_auth::{ADMIN_GUARD, Auth};
 use rustcms_core::{AppError, AppResult, AppState, Json};
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::context::Ctx;
 use crate::policy::ability;
@@ -25,6 +25,38 @@ pub struct AdminPanel {
     pub brand: String,
     /// Registered resources.
     pub registry: Arc<Registry>,
+}
+
+/// `GET panel`.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PanelResponse {
+    /// Name shown in the panel.
+    pub brand: String,
+    /// Signed-in user.
+    pub user: PanelUser,
+    /// Resources the user may list (`view_any`), in registration order.
+    pub navigation: Vec<crate::ResourceInfo>,
+}
+
+/// The signed-in user in [`PanelResponse`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PanelUser {
+    /// User id (string).
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Email.
+    pub email: String,
+}
+
+/// `{data: …}` wrapper of single records and options.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DataResponse<T> {
+    /// Payload.
+    pub data: T,
 }
 
 /// Every admin API route as `(method, path)` with `{slug}`-style placeholders,
@@ -77,7 +109,11 @@ fn resource(ctx: &Ctx, slug: &str) -> AppResult<Arc<dyn DynResource>> {
     ctx.registry.get(slug).cloned().ok_or(AppError::NotFound)
 }
 
-async fn panel(State(state): State<AppState>, AdminCtx(ctx): AdminCtx, Auth(auth): Auth) -> AppResult<Json<Value>> {
+async fn panel(
+    State(state): State<AppState>,
+    AdminCtx(ctx): AdminCtx,
+    Auth(auth): Auth,
+) -> AppResult<Json<PanelResponse>> {
     let panel = state.service::<AdminPanel>().ok_or_else(|| AppError::internal("AdminProvider not registered"))?;
     let mut navigation = Vec::new();
     for resource in ctx.registry.all() {
@@ -85,11 +121,11 @@ async fn panel(State(state): State<AppState>, AdminCtx(ctx): AdminCtx, Auth(auth
             navigation.push(resource.info());
         }
     }
-    Ok(Json(json!({
-        "brand": panel.brand,
-        "user": { "id": auth.user.id.to_string(), "name": auth.user.name, "email": auth.user.email },
-        "navigation": navigation,
-    })))
+    Ok(Json(PanelResponse {
+        brand: panel.brand.clone(),
+        user: PanelUser { id: auth.user.id.to_string(), name: auth.user.name.clone(), email: auth.user.email.clone() },
+        navigation,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -147,27 +183,30 @@ async fn list(
     Ok(Json(resource(&ctx, &slug)?.list(&ctx, &query).await?))
 }
 
-async fn find(AdminCtx(ctx): AdminCtx, Path((slug, key)): Path<(String, String)>) -> AppResult<Json<Value>> {
+async fn find(
+    AdminCtx(ctx): AdminCtx,
+    Path((slug, key)): Path<(String, String)>,
+) -> AppResult<Json<DataResponse<crate::Envelope>>> {
     let record = resource(&ctx, &slug)?.find(&ctx, &key).await?;
-    Ok(Json(json!({ "data": record })))
+    Ok(Json(DataResponse { data: record }))
 }
 
 async fn create(
     AdminCtx(ctx): AdminCtx,
     Path(slug): Path<String>,
     Json(input): Json<Data>,
-) -> AppResult<(StatusCode, Json<Value>)> {
+) -> AppResult<(StatusCode, Json<DataResponse<crate::Envelope>>)> {
     let record = resource(&ctx, &slug)?.create(&ctx, input).await?;
-    Ok((StatusCode::CREATED, Json(json!({ "data": record }))))
+    Ok((StatusCode::CREATED, Json(DataResponse { data: record })))
 }
 
 async fn update(
     AdminCtx(ctx): AdminCtx,
     Path((slug, key)): Path<(String, String)>,
     Json(input): Json<Data>,
-) -> AppResult<Json<Value>> {
+) -> AppResult<Json<DataResponse<crate::Envelope>>> {
     let record = resource(&ctx, &slug)?.update(&ctx, &key, input).await?;
-    Ok(Json(json!({ "data": record })))
+    Ok(Json(DataResponse { data: record }))
 }
 
 async fn destroy(AdminCtx(ctx): AdminCtx, Path((slug, key)): Path<(String, String)>) -> AppResult<StatusCode> {
@@ -202,7 +241,7 @@ async fn options(
     AdminCtx(ctx): AdminCtx,
     Path((slug, field)): Path<(String, String)>,
     Query(query): Query<OptionsQuery>,
-) -> AppResult<Json<Value>> {
+) -> AppResult<Json<DataResponse<Vec<crate::ui::SelectOption>>>> {
     let keys: Vec<String> = query
         .keys
         .as_deref()
@@ -210,5 +249,5 @@ async fn options(
         .unwrap_or_default();
     let options =
         resource(&ctx, &slug)?.options(&ctx, &field, query.search.as_deref(), &keys, query.record.as_deref()).await?;
-    Ok(Json(json!({ "data": options })))
+    Ok(Json(DataResponse { data: options }))
 }

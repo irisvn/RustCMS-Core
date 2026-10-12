@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use axum::extract::{FromRequestParts, Request, State};
 use axum::http::request::Parts;
-use axum::http::{HeaderMap, Method, header};
+use axum::http::{HeaderMap, HeaderValue, Method, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use rustcms_core::models::user;
@@ -90,12 +90,23 @@ pub(crate) async fn authenticate(State(app): State<AppState>, req: Request, next
     let Some(auth) = app.service::<AuthState>() else {
         return AppError::internal("AuthProvider not registered").into_response();
     };
-    let result = if auth.is_admin_path(req.uri().path()) {
-        admin(&app, &auth, req, next).await
+    if auth.is_admin_asset_path(req.uri().path()) {
+        // Public, immutable files: no session is loaded or renewed, so no cookie
+        // ever rides on a cacheable response.
+        return next.run(req).await;
+    }
+    if auth.is_admin_path(req.uri().path()) {
+        let private = auth.is_admin_api_path(req.uri().path());
+        let mut response = admin(&app, &auth, req, next).await.unwrap_or_else(IntoResponse::into_response);
+        // Session-bound data (records, schema, CSRF token, errors), and anything
+        // setting the session cookie, is never cached or stored.
+        if private || response.headers().contains_key(header::SET_COOKIE) {
+            response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
+        }
+        response
     } else {
-        api(&app, req, next).await
-    };
-    result.unwrap_or_else(IntoResponse::into_response)
+        api(&app, req, next).await.unwrap_or_else(IntoResponse::into_response)
+    }
 }
 
 async fn admin(app: &AppState, auth: &Arc<AuthState>, mut req: Request, next: Next) -> AppResult<Response> {
@@ -104,13 +115,15 @@ async fn admin(app: &AppState, auth: &Arc<AuthState>, mut req: Request, next: Ne
         check_origin(auth, req.headers())?;
         let header = req.headers().get(CSRF_HEADER).and_then(|v| v.to_str().ok()).unwrap_or_default();
         if !session.csrf_matches(header) {
-            return Err(AppError::Forbidden);
+            return Err(AppError::CsrfMismatch);
         }
     }
+    let mut signed_in = None;
     if let Some(user_id) = session.user_id() {
         let user = user::Entity::find_by_id(user_id).one(app.db()).await?;
         match user.filter(|u| u.is_active && u.auth_version == session.auth_version()) {
             Some(user) => {
+                signed_in = Some(user.id);
                 let principal = auth.resolver.principal(app.db(), ADMIN_GUARD, &user, None).await?;
                 req.extensions_mut().insert(Authenticated { principal, user, token_id: None });
             }
@@ -119,6 +132,11 @@ async fn admin(app: &AppState, auth: &Arc<AuthState>, mut req: Request, next: Ne
     }
     req.extensions_mut().insert(session.clone());
     let mut response = next.run(req).await;
+    // Who this response was produced for: a page that was built for someone else
+    // (the cookie changed accounts in another tab) must not show it.
+    if let Some(id) = signed_in {
+        response.headers_mut().insert(USER_HEADER, HeaderValue::from(id));
+    }
     if let Some(cookie) = session::persist(auth, app.db(), &session).await? {
         response.headers_mut().append(header::SET_COOKIE, cookie);
     }
@@ -139,6 +157,9 @@ async fn api(app: &AppState, mut req: Request, next: Next) -> AppResult<Response
     }
     Ok(next.run(req).await)
 }
+
+/// Response header naming the signed-in admin user (`id`), on every admin response.
+pub const USER_HEADER: &str = "x-rustcms-user";
 
 fn is_safe(method: &Method) -> bool {
     matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)

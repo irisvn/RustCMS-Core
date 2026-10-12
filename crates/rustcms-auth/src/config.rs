@@ -55,6 +55,25 @@ impl Default for AuthConfig {
     }
 }
 
+/// Validates and normalizes an admin path: `/segment(/segment)*` with segments of
+/// `[A-Za-z0-9_-]`, no trailing slash. The site root and `/api…` are refused (the
+/// whole site would use the admin session guard, or collide with the API).
+pub fn normalize_admin_path(path: &str) -> Result<String, String> {
+    let trimmed = path.trim().trim_end_matches('/');
+    let segments: Vec<&str> = trimmed.strip_prefix('/').map(|p| p.split('/').collect()).unwrap_or_default();
+    let valid = !segments.is_empty()
+        && segments
+            .iter()
+            .all(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'));
+    if !valid {
+        return Err(format!("auth.admin_path `{path}` must look like `/admin` (letters, digits, `_`, `-`)"));
+    }
+    if segments[0] == "api" {
+        return Err(format!("auth.admin_path `{path}` may not be under `/api`"));
+    }
+    Ok(format!("/{}", segments.join("/")))
+}
+
 /// `scheme://host[:port]` of a URL, lowercased; `None` if it has no scheme.
 pub(crate) fn origin_of(url: &str) -> Option<String> {
     let (scheme, rest) = url.split_once("://")?;
@@ -65,6 +84,16 @@ pub(crate) fn origin_of(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn admin_paths() {
+        assert_eq!(normalize_admin_path("/admin").unwrap(), "/admin");
+        assert_eq!(normalize_admin_path("/admin/").unwrap(), "/admin");
+        assert_eq!(normalize_admin_path("/back-office/panel_1").unwrap(), "/back-office/panel_1");
+        for bad in ["", "/", "admin", "//admin", "/admin//x", "/ad min", "/admin\"x", "/api", "/api/admin", "/a<b>"] {
+            assert!(normalize_admin_path(bad).is_err(), "{bad}");
+        }
+    }
 
     #[test]
     fn origins() {

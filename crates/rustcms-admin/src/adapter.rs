@@ -38,6 +38,8 @@ struct ColumnInfo<C> {
     column: C,
     kind: FieldKind,
     nullable: bool,
+    /// Literal default declared on the entity (`default_value`), in wire format.
+    default: Option<serde_json::Value>,
 }
 
 /// Generic implementation of [`DynResource`] for a [`Resource`].
@@ -64,7 +66,13 @@ impl<R: Resource> ResourceAdapter<R> {
             .filter_map(|column| {
                 let def = column.def();
                 let kind = FieldKind::from_column_type(def.get_column_type())?;
-                Some((column.as_str().to_owned(), ColumnInfo { column, kind, nullable: def.is_null() }))
+                let default = match def.get_column_default() {
+                    Some(sea_orm::sea_query::Expr::Value(value)) => {
+                        normalize_default(kind, crate::wire::encode_column(def.get_column_type(), value))
+                    }
+                    _ => None,
+                };
+                Some((column.as_str().to_owned(), ColumnInfo { column, kind, nullable: def.is_null(), default }))
             })
             .collect();
 
@@ -525,6 +533,17 @@ fn escape_like(text: &str) -> String {
     out
 }
 
+/// A declared default in the column's wire type, or `None` when it cannot be
+/// stated reliably: JSON defaults are text whose meaning depends on the
+/// database (a document or a string), so they are always left to the database,
+/// as is anything that does not decode as the column's kind.
+fn normalize_default(kind: FieldKind, value: serde_json::Value) -> Option<serde_json::Value> {
+    if kind == FieldKind::Json {
+        return None;
+    }
+    kind.decode(&value).is_ok().then_some(value)
+}
+
 /// One input per field, by column type.
 fn auto_form<C>(fields: &[Field], columns: &HashMap<String, ColumnInfo<C>>) -> Form {
     let inputs = fields
@@ -772,6 +791,11 @@ impl<R: Resource> ResourceAdapter<R> {
             name: input.name.clone(),
             label: input.label.clone().unwrap_or_else(|| field.display_label()),
             value_type: self.column(&input.name).kind.name(),
+            nullable: self.column(&input.name).nullable,
+            // A default is data: only for fields the user may read.
+            default: (op == SchemaOperation::Create && !write_only)
+                .then(|| self.column(&input.name).default.clone())
+                .flatten(),
             disabled,
             write_only,
             rules,
@@ -1043,14 +1067,18 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
 
         let mut errors = ValidationErrors::new();
         let mut select = R::scope(Entity::<R>::find(), ctx).filter(self.filter_condition(ctx, query, &mut errors));
-        if let Some(sort) = query.sort.as_deref() {
+        // Without `sort`, the table's default sort applies (when this user may use it),
+        // so the order matches what the schema announces.
+        let explicit = query.sort.is_some();
+        let sort = query.sort.clone().or_else(|| self.table_ui.default_sort.clone());
+        if let Some(sort) = sort.as_deref() {
             let (order, name) = match sort.strip_prefix('-') {
                 Some(name) => (Order::Desc, name),
                 None => (Order::Asc, sort),
             };
             if self.field(name).is_some_and(|f| f.sortable && f.can_read(ctx)) {
                 select = select.order_by(self.column(name).column, order);
-            } else {
+            } else if explicit {
                 errors.add("sort", format!("cannot sort by `{name}`"));
             }
         }

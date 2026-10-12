@@ -60,7 +60,11 @@ db_test!(state_changes_need_allowed_origin_and_csrf, migrate = Migrator, |db: Te
     client.post_json(ping, &json!({})).await.assert_status(StatusCode::OK);
 
     let foreign = app.acting_as(&seed.member).await.origin(Some("https://evil.example"));
-    foreign.post_json(ping, &json!({})).await.assert_status(StatusCode::FORBIDDEN);
+    foreign
+        .post_json(ping, &json!({}))
+        .await
+        .assert_status(StatusCode::FORBIDDEN)
+        .assert_json("/code", json!("forbidden"));
 
     let no_origin = app.acting_as(&seed.member).await.origin(None);
     no_origin.post_json(ping, &json!({})).await.assert_status(StatusCode::FORBIDDEN);
@@ -70,10 +74,19 @@ db_test!(state_changes_need_allowed_origin_and_csrf, migrate = Migrator, |db: Te
         .unwrap();
     no_origin.request(with_referer).await.assert_status(StatusCode::OK);
 
+    // A bad token has its own code, so clients refresh it instead of reporting a permission problem.
     client.set_csrf(Some("forged"));
-    client.post_json(ping, &json!({})).await.assert_status(StatusCode::FORBIDDEN);
+    client
+        .post_json(ping, &json!({}))
+        .await
+        .assert_status(StatusCode::FORBIDDEN)
+        .assert_json("/code", json!("csrf_mismatch"));
     client.set_csrf(None);
-    client.post_json(ping, &json!({})).await.assert_status(StatusCode::FORBIDDEN);
+    client
+        .post_json(ping, &json!({}))
+        .await
+        .assert_status(StatusCode::FORBIDDEN)
+        .assert_json("/code", json!("csrf_mismatch"));
     client.get(&app.admin_api("auth/me")).await.assert_status(StatusCode::OK);
 });
 
@@ -563,4 +576,23 @@ db_test!(sign_out_waits_for_an_in_flight_reissue, migrate = Migrator, |db: TestD
     reissue.commit().await.unwrap();
     sign_out.await.unwrap().unwrap();
     assert!(session::Entity::find().all(&db).await.unwrap().is_empty(), "the re-issued session is ended too");
+});
+
+db_test!(admin_api_responses_are_never_cached, migrate = Migrator, |db: TestDb| async move {
+    let (app, seed) = setup(db).await;
+    let anonymous = app.client();
+    let member = app.acting_as(&seed.member).await;
+    for response in [
+        anonymous.get(&app.admin_api("auth/csrf")).await,
+        anonymous.get(&app.admin_api("auth/me")).await,
+        member.get(&app.admin_api("auth/me")).await,
+        member.get(&app.admin_api("no/such/route")).await,
+    ] {
+        assert_eq!(response.header("cache-control").as_deref(), Some("private, no-store"));
+    }
+    assert_eq!(anonymous.get("/health").await.header("cache-control"), None, "only the admin API");
+    // Every admin response says whom it was produced for.
+    let me = member.get(&app.admin_api("auth/me")).await;
+    assert_eq!(me.header("x-rustcms-user"), Some(seed.member.id.to_string()));
+    assert_eq!(anonymous.get(&app.admin_api("auth/me")).await.header("x-rustcms-user"), None);
 });

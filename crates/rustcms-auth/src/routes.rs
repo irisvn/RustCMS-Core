@@ -6,7 +6,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::State;
 use axum::http::{Method, StatusCode};
-use axum::routing::{delete, get, post};
+use axum::routing::{any, delete, get, post};
 use chrono::{Duration, Utc};
 use rustcms_core::models::user;
 use rustcms_core::{AppError, AppResult, AppState, ClientIp, Json, Principal, ValidationErrors};
@@ -44,7 +44,8 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
 }
 
 pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppState> {
-    let admin = format!("{}/api/auth", admin_path.trim_end_matches('/'));
+    let base = format!("{}/api", admin_path.trim_end_matches('/'));
+    let admin = format!("{base}/auth");
     router
         .route(&format!("{admin}/csrf"), get(csrf))
         .route(&format!("{admin}/login"), post(login))
@@ -55,6 +56,14 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route("/api/v1/auth/token", post(issue_token))
         .route("/api/v1/auth/token", delete(revoke_token))
         .route("/api/v1/auth/me", get(me))
+        // Unknown admin API paths answer JSON 404 inside the admin stack (session
+        // guard, no-store), and never fall through to the panel's HTML pages.
+        .route(&base, any(api_not_found))
+        .route(&format!("{base}/{{*rest}}"), any(api_not_found))
+}
+
+async fn api_not_found() -> AppError {
+    AppError::NotFound
 }
 
 fn auth_state(app: &AppState) -> AppResult<Arc<AuthState>> {
@@ -141,7 +150,9 @@ async fn csrf(State(app): State<AppState>, ClientIp(ip): ClientIp, session: Sess
             ("session-new:*", auth.config.anonymous_sessions_per_minute),
         ])?;
     }
-    Ok(Json(json!({ "csrfToken": session.csrf_token() })))
+    // The signed-in user the token belongs to, so a client can tell when the
+    // cookie changed accounts under an open page.
+    Ok(Json(json!({ "csrfToken": session.csrf_token(), "userId": session.user_id().map(|id| id.to_string()) })))
 }
 
 async fn login(

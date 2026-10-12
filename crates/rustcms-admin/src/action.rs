@@ -115,6 +115,7 @@ impl<E: EntityTrait> Action<E> {
 
 /// Per-record result of an action.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActionOutcome {
     /// Keys the handler processed.
     pub processed: Vec<String>,

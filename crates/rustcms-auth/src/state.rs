@@ -110,9 +110,22 @@ impl AuthState {
 
     /// Whether `path` belongs to the admin panel (session guard).
     pub fn is_admin_path(&self, path: &str) -> bool {
-        let base = self.config.admin_path.trim_end_matches('/');
-        path == base || path.strip_prefix(base).is_some_and(|rest| rest.starts_with('/'))
+        under(path, self.config.admin_path.trim_end_matches('/'))
     }
+
+    /// Whether `path` is a static file of the panel (`<admin_path>/assets/…`).
+    pub fn is_admin_asset_path(&self, path: &str) -> bool {
+        path.strip_prefix(self.config.admin_path.trim_end_matches('/')).is_some_and(|rest| rest.starts_with("/assets/"))
+    }
+
+    /// Whether `path` belongs to the admin JSON API (`<admin_path>/api`).
+    pub fn is_admin_api_path(&self, path: &str) -> bool {
+        under(path, &format!("{}/api", self.config.admin_path.trim_end_matches('/')))
+    }
+}
+
+fn under(path: &str, base: &str) -> bool {
+    path == base || path.strip_prefix(base).is_some_and(|rest| rest.starts_with('/'))
 }
 
 #[cfg(test)]
@@ -139,6 +152,13 @@ mod tests {
         assert!(state.is_admin_path("/admin/api/auth/me"));
         assert!(!state.is_admin_path("/administrator"));
         assert!(!state.is_admin_path("/api/v1/x"));
+        assert!(state.is_admin_api_path("/admin/api"));
+        assert!(state.is_admin_api_path("/admin/api/records"));
+        assert!(!state.is_admin_api_path("/admin/apix"));
+        assert!(!state.is_admin_api_path("/admin/r/posts"));
+        assert!(state.is_admin_asset_path("/admin/assets/index-1.js"));
+        assert!(!state.is_admin_asset_path("/admin/assetsx"));
+        assert!(!state.is_admin_asset_path("/admin/api/assets/x"));
         assert_eq!(state.allowed_origins, ["https://cms.example.com"]);
         assert!(state.secure_cookies);
     }

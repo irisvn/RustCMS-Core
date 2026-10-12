@@ -34,7 +34,7 @@ Boot fails with a clear message when `APP_KEY` is missing or malformed.
 
 | Key                                  | Default            |                                         |
 |--------------------------------------|--------------------|-----------------------------------------|
-| `auth.admin_path`                    | `/admin`           | session guard prefix, cookie path       |
+| `auth.admin_path`                    | `/admin`           | panel and session guard prefix, cookie path (`/seg(/seg)*`, not `/` or `/api…`) |
 | `auth.admin_origins`                 | `[]` → `APP_URL`   | origins allowed to change state         |
 | `auth.cookie_name`                   | `rustcms_session`  |                                         |
 | `auth.secure_cookies`                | https `APP_URL`    |                                         |

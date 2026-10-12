@@ -1,0 +1,348 @@
+{
+  "abilities": {
+    "create": true,
+    "viewAny": true
+  },
+  "form": {
+    "columns": 2,
+    "components": [
+      {
+        "columns": 2,
+        "components": [
+          {
+            "columnSpan": 1,
+            "disabled": true,
+            "help": "Shown in lists",
+            "label": "Name",
+            "name": "name",
+            "nullable": false,
+            "placeholder": "Name",
+            "rules": [
+              {
+                "rule": "max_length",
+                "value": 60
+              }
+            ],
+            "type": "text_input",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 2,
+            "disabled": true,
+            "label": "Notes",
+            "name": "notes",
+            "nullable": true,
+            "rules": [],
+            "type": "textarea",
+            "valueType": "string"
+          }
+        ],
+        "label": "Basics",
+        "type": "section"
+      },
+      {
+        "columns": 3,
+        "components": [
+          {
+            "columnSpan": 1,
+            "disabled": true,
+            "label": "Count",
+            "name": "count",
+            "nullable": false,
+            "rules": [],
+            "type": "number_input",
+            "valueType": "i32"
+          },
+          {
+            "columnSpan": 1,
+            "disabled": true,
+            "label": "Serial",
+            "name": "serial",
+            "nullable": false,
+            "rules": [],
+            "type": "number_input",
+            "valueType": "i64"
+          },
+          {
+            "columnSpan": 1,
+            "disabled": true,
+            "label": "Ratio",
+            "name": "ratio",
+            "nullable": false,
+            "rules": [],
+            "type": "number_input",
+            "valueType": "f64"
+          },
+          {
+            "columnSpan": 1,
+            "disabled": true,
+            "label": "Price",
+            "name": "price",
+            "nullable": false,
+            "rules": [],
+            "type": "number_input",
+            "valueType": "decimal"
+          }
+        ],
+        "type": "grid"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Active",
+        "name": "active",
+        "nullable": false,
+        "rules": [],
+        "type": "toggle",
+        "valueType": "bool"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Terms agreed",
+        "name": "agreed",
+        "nullable": false,
+        "rules": [],
+        "type": "checkbox",
+        "valueType": "bool"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Colors",
+        "name": "colors",
+        "nullable": false,
+        "options": [
+          {
+            "label": "Red",
+            "value": "red"
+          },
+          {
+            "label": "Green",
+            "value": "green"
+          },
+          {
+            "label": "Blue",
+            "value": "blue"
+          }
+        ],
+        "rules": [],
+        "type": "checkbox_list",
+        "valueType": "json"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Status",
+        "name": "status",
+        "nullable": false,
+        "options": [
+          {
+            "label": "Draft",
+            "value": "draft"
+          },
+          {
+            "label": "Live",
+            "value": "live"
+          }
+        ],
+        "rules": [],
+        "type": "select",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Category",
+        "name": "category_id",
+        "nullable": true,
+        "relationship": {
+          "resource": "categories"
+        },
+        "rules": [],
+        "type": "select",
+        "valueType": "i32"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Day",
+        "name": "day",
+        "nullable": false,
+        "rules": [],
+        "type": "date_picker",
+        "valueType": "date"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Local at",
+        "name": "local_at",
+        "nullable": false,
+        "rules": [],
+        "type": "date_time_picker",
+        "valueType": "local_datetime"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Happened at",
+        "name": "happened_at",
+        "nullable": false,
+        "rules": [],
+        "type": "date_time_picker",
+        "valueType": "instant"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Token",
+        "name": "token",
+        "nullable": false,
+        "rules": [],
+        "type": "hidden",
+        "valueType": "uuid"
+      }
+    ]
+  },
+  "operation": "view",
+  "resource": {
+    "group": "Catalog",
+    "icon": "box",
+    "label": "Gadget",
+    "pluralLabel": "Gadgets",
+    "slug": "gadgets",
+    "titleField": "name"
+  },
+  "schemaVersion": 1,
+  "table": {
+    "actions": [],
+    "columns": [
+      {
+        "label": "Name",
+        "name": "name",
+        "searchable": true,
+        "sortable": true,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "colors": [
+          {
+            "color": "gray",
+            "value": "draft"
+          },
+          {
+            "color": "success",
+            "value": "live"
+          }
+        ],
+        "label": "Status",
+        "name": "status",
+        "searchable": false,
+        "sortable": false,
+        "type": "badge",
+        "valueType": "string"
+      },
+      {
+        "label": "Active",
+        "name": "active",
+        "searchable": false,
+        "sortable": false,
+        "type": "boolean",
+        "valueType": "bool"
+      },
+      {
+        "label": "Day",
+        "name": "day",
+        "searchable": false,
+        "sortable": false,
+        "type": "date",
+        "valueType": "date"
+      },
+      {
+        "label": "Happened at",
+        "name": "happened_at",
+        "searchable": false,
+        "sortable": false,
+        "type": "date",
+        "valueType": "instant"
+      },
+      {
+        "label": "Category",
+        "name": "category_id",
+        "relationship": {
+          "resource": "categories"
+        },
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "i32"
+      },
+      {
+        "label": "Price",
+        "name": "price",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "decimal"
+      },
+      {
+        "label": "Serial",
+        "name": "serial",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "i64"
+      }
+    ],
+    "defaultSort": "name",
+    "filters": [
+      {
+        "label": "Active",
+        "name": "active",
+        "type": "ternary",
+        "valueType": "bool"
+      },
+      {
+        "label": "Status",
+        "name": "status",
+        "options": [
+          {
+            "label": "Draft",
+            "value": "draft"
+          },
+          {
+            "label": "Live",
+            "value": "live"
+          }
+        ],
+        "type": "select",
+        "valueType": "string"
+      },
+      {
+        "label": "Category",
+        "name": "category_id",
+        "relationship": {
+          "resource": "categories"
+        },
+        "type": "select",
+        "valueType": "i32"
+      },
+      {
+        "label": "Day",
+        "name": "day",
+        "type": "date_range",
+        "valueType": "date"
+      }
+    ],
+    "perPageOptions": [
+      10,
+      25,
+      50,
+      100
+    ],
+    "searchable": true
+  },
+  "vocabularyVersion": 1
+}

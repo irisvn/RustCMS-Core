@@ -1075,3 +1075,17 @@ db_test!(replacement_rows_inserted_while_writes_wait_are_not_written, |db: TestD
     assert_eq!(outcome.missing, vec![post.key.clone()]);
     assert_eq!(posts.find(&owner, &post.key).await.unwrap().data["title"], json!("old"));
 });
+
+db_test!(lists_follow_the_default_sort_without_a_sort_parameter, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
+    let posts = fx.resource("posts");
+    let ctx = fx.ctx(admin());
+    for title in ["b", "c", "a"] {
+        posts.create(&ctx, data(json!({"title": title}))).await.unwrap();
+    }
+    let titles = |page: rustcms_admin::Page| page.data.iter().map(|e| e.data["title"].clone()).collect::<Vec<_>>();
+    // The posts table announces `-title`; the list honours it.
+    assert_eq!(titles(posts.list(&ctx, &ListQuery::default()).await.unwrap()), [json!("c"), json!("b"), json!("a")]);
+    let asc = ListQuery { sort: Some("title".into()), ..Default::default() };
+    assert_eq!(titles(posts.list(&ctx, &asc).await.unwrap()), [json!("a"), json!("b"), json!("c")]);
+});
