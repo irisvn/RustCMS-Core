@@ -53,7 +53,7 @@ pub fn make_test(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn write_new(path: &Path, contents: &str) -> anyhow::Result<()> {
+pub(crate) fn write_new(path: &Path, contents: &str) -> anyhow::Result<()> {
     if path.exists() {
         bail!("{} already exists", path.display());
     }
@@ -62,19 +62,28 @@ fn write_new(path: &Path, contents: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Inserts `line` above the anchor comment, with the anchor's indentation.
-/// Without the anchor, prints the line for the developer to paste.
-fn register(file: &Path, anchor: &str, line: &str) -> anyhow::Result<()> {
-    let contents = std::fs::read_to_string(file).unwrap_or_default();
+/// Inserts `line` above the anchor comment, with the anchor's indentation;
+/// returns whether the line is now in the file. Already present: nothing to do.
+/// Without the file or the anchor, prints the line for the developer to paste.
+pub(crate) fn register(file: &Path, anchor: &str, line: &str) -> anyhow::Result<bool> {
+    let Ok(contents) = std::fs::read_to_string(file) else {
+        println!("Add to {} (file not found):\n    {line}", file.display());
+        return Ok(false);
+    };
+    if contents.lines().any(|l| l.trim() == line.trim()) {
+        return Ok(true);
+    }
     let Some(index) = contents.lines().position(|l| l.trim() == anchor) else {
         println!("Add to {} (anchor `{anchor}` not found):\n    {line}", file.display());
-        return Ok(());
+        return Ok(false);
     };
+    let newline = if contents.contains("\r\n") { "\r\n" } else { "\n" };
     let mut lines: Vec<&str> = contents.lines().collect();
     let indent: String = lines[index].chars().take_while(|c| c.is_whitespace()).collect();
     let inserted = format!("{indent}{line}");
     lines.insert(index, &inserted);
-    std::fs::write(file, lines.join("\n") + "\n").with_context(|| format!("writing {}", file.display()))
+    std::fs::write(file, lines.join(newline) + newline).with_context(|| format!("writing {}", file.display()))?;
+    Ok(true)
 }
 
 #[cfg(test)]

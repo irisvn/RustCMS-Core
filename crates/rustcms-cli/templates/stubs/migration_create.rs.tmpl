@@ -1,9 +1,10 @@
 use rustcms::migration::*;
+use rustcms::async_trait;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl MigrationTrait for Migration {
     /// Schema change and migration record commit together, also on SQLite
     /// (whose default is no transaction), so a failed run can be retried.

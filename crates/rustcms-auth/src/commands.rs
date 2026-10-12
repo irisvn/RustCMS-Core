@@ -155,7 +155,52 @@ impl AppCommand for SessionPrune {
     }
 }
 
+/// `role:assign`: gives an existing user a role of a guard (e.g. API access).
+pub struct RoleAssign;
+
+#[async_trait]
+impl AppCommand for RoleAssign {
+    fn definition(&self) -> Command {
+        Command::new("role:assign")
+            .about("Give an existing user a role (`super_admin` or any role) of a guard")
+            .arg(Arg::new("email").long("email").required(true).help("User email"))
+            .arg(Arg::new("role").long("role").required(true).help("Role name, e.g. `super_admin`"))
+            .arg(Arg::new("guard").long("guard").default_value(ADMIN_GUARD).help("Guard of the role (`admin`, `api`)"))
+    }
+
+    async fn run(&self, state: &AppState, args: &ArgMatches) -> anyhow::Result<()> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+        let auth = auth(state)?;
+        let email = arg(args, "email").map(|e| e.trim().to_lowercase()).unwrap_or_default();
+        let name = arg(args, "role").map_or("", String::as_str);
+        let guard = arg(args, "guard").map_or(ADMIN_GUARD, String::as_str);
+        let user = user::Entity::find()
+            .filter(user::Column::Email.eq(&email))
+            .one(state.db())
+            .await?
+            .with_context(|| format!("no user with email {email}"))?;
+        let role = crate::entities::role::Entity::find()
+            .filter(crate::entities::role::Column::Name.eq(name))
+            .filter(crate::entities::role::Column::GuardName.eq(guard))
+            .one(state.db())
+            .await?
+            .with_context(|| format!("no role `{name}` in guard `{guard}`"))?;
+        RbacService::new(state.db(), &auth.resolver)
+            .assign_role(Actor::System, user.id, role.id)
+            .await
+            .map_err(describe)?;
+        println!("{} now holds `{name}` ({guard})", user.email);
+        Ok(())
+    }
+}
+
 /// Clap definitions of every auth command (for `rustcms docs:cli`).
 pub fn definitions() -> Vec<Command> {
-    vec![MakeUser.definition(), TokenCreate.definition(), PermissionSync.definition(), SessionPrune.definition()]
+    vec![
+        MakeUser.definition(),
+        RoleAssign.definition(),
+        TokenCreate.definition(),
+        PermissionSync.definition(),
+        SessionPrune.definition(),
+    ]
 }

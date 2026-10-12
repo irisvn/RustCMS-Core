@@ -32,6 +32,12 @@ const PLACEHOLDER: &str = "<!doctype html><html lang=\"en\"><head><meta charset=
      </head><body><h1>Admin assets are not built</h1><p>Run <code>just admin-build</code> \
      (Node 20+) to build <code>crates/rustcms-admin/assets</code>.</p></body></html>";
 
+/// Panel pages and assets as `(method, path)` (for `route:list`).
+pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
+    let base = admin_path.trim_end_matches('/');
+    vec![(Method::GET, base.to_owned()), (Method::GET, format!("{base}/")), (Method::GET, format!("{base}/{{*rest}}"))]
+}
+
 pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppState> {
     // `admin_path` is normalized by the auth config (`/admin`, never `/`).
     let base = admin_path.trim_end_matches('/').to_owned();

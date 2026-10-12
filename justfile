@@ -76,3 +76,7 @@ dev:
     (cd examples/demo && RUSTCMS_AUTH__ADMIN_ORIGINS='["http://localhost:8000","http://localhost:5173"]' cargo run -- serve) &
     (cd admin-ui && npm run dev) &
     wait
+
+# Every crate packages and verifies for crates.io (no upload).
+publish-check:
+    cargo publish --workspace --exclude demo --dry-run

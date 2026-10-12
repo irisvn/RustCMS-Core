@@ -54,6 +54,9 @@ enum Command {
     /// Show applied and pending migrations
     #[command(name = "migrate:status")]
     MigrateStatus,
+    /// List the HTTP routes described by the framework, providers and the application
+    #[command(name = "route:list")]
+    RouteList,
     /// Commands registered by providers and the application (`make:user`, …)
     #[command(external_subcommand)]
     App(Vec<String>),
@@ -131,6 +134,15 @@ impl<M: MigratorTrait> Console<M> {
             Command::MigrateRefresh { force } => {
                 guard_production(production, force)?;
                 Ok(M::refresh(&connect(&config).await?).await?)
+            }
+            Command::RouteList => {
+                let routes = (self.build)(config).described_routes();
+                let width = routes.iter().map(|r| r.path.len()).max().unwrap_or(4);
+                println!("{:<7} {:<width$}  SOURCE", "METHOD", "PATH");
+                for route in routes {
+                    println!("{:<7} {:<width$}  {}", route.method.as_str(), route.path, route.source);
+                }
+                Ok(())
             }
             Command::MigrateStatus => {
                 let db = connect(&config).await?;

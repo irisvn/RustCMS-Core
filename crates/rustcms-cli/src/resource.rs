@@ -1,0 +1,503 @@
+//! `make:resource` and `make:policy`.
+
+use std::collections::BTreeMap;
+use std::process::ExitCode;
+
+use anyhow::{Context, bail};
+use serde_json::json;
+
+use crate::generate::{register, write_new};
+use crate::naming::{pascal_case, plural, snake_case, validate_model, validate_snake};
+use crate::project::Project;
+use crate::scaffold::render;
+
+const RESOURCE: &str = include_str!("../templates/stubs/resource.rs.tmpl");
+const POLICY: &str = include_str!("../templates/stubs/policy.rs.tmpl");
+
+/// A column of the model, as written in its `Model` struct.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Column {
+    /// Rust field name (without `r#`).
+    pub name: String,
+    /// Database column name (`column_name = "…"`, else the field name).
+    pub db_name: String,
+    pub ty: String,
+    pub optional: bool,
+    pub primary_key: bool,
+}
+
+/// Columns of `pub struct Model { … }`, with their `#[sea_orm(…)]` attributes
+/// (`primary_key`, `column_name`, `ignore`); comments are ignored.
+pub fn parse_model(source: &str) -> anyhow::Result<Vec<Column>> {
+    let start = source.find("pub struct Model").context("no `pub struct Model` in the model file")?;
+    let body = &source[start..];
+    let open = body.find('{').context("malformed `struct Model`")?;
+    // The matching closing brace (types contain no braces).
+    let close = open + body[open..].find('}').context("malformed `struct Model`")?;
+    let mut columns = Vec::new();
+    let mut attrs = String::new();
+    for raw in body[open + 1..close].lines() {
+        let line = raw.split("//").next().unwrap_or_default().trim();
+        if line.starts_with("#[") {
+            attrs.push_str(line);
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("pub ") else { continue };
+        let Some((name, ty)) = rest.split_once(':') else { continue };
+        let name = name.trim().trim_start_matches("r#").to_owned();
+        let ty = ty.trim().trim_end_matches(',').trim();
+        let (ty, optional) = match ty.strip_prefix("Option<").and_then(|t| t.strip_suffix('>')) {
+            Some(inner) => (inner.trim(), true),
+            None => (ty, false),
+        };
+        // `chrono::NaiveDate` → `NaiveDate`, …
+        let ty = ty.rsplit("::").next().unwrap_or(ty).to_owned();
+        let taken = std::mem::take(&mut attrs);
+        if taken.contains("ignore") && !taken.contains("column_name") {
+            continue;
+        }
+        let db_name = taken
+            .split("column_name")
+            .nth(1)
+            .and_then(|rest| rest.split('"').nth(1))
+            .map_or_else(|| name.clone(), str::to_owned);
+        columns.push(Column { name, db_name, ty, optional, primary_key: taken.contains("primary_key") });
+    }
+    Ok(columns)
+}
+
+const LONG_TEXT: &[&str] = &["body", "content", "description", "notes", "text", "summary", "excerpt", "bio"];
+const MANAGED: &[&str] = &["created_at", "updated_at", "deleted_at"];
+/// Never generated as fields (secrets).
+const SENSITIVE: &[&str] = &["password", "secret", "token", "hash", "api_key", "salt"];
+/// Owners are set by the server (hooks), never by clients.
+const OWNERS: &[&str] = &["author_id", "user_id", "owner_id", "created_by", "updated_by"];
+
+/// Rust types the admin engine reads and writes (see `FieldKind`).
+fn supported(ty: &str) -> bool {
+    matches!(
+        ty,
+        "String"
+            | "i32"
+            | "i64"
+            | "f32"
+            | "f64"
+            | "Decimal"
+            | "bool"
+            | "Uuid"
+            | "Date"
+            | "NaiveDate"
+            | "DateTime"
+            | "NaiveDateTime"
+            | "DateTimeUtc"
+            | "DateTimeWithTimeZone"
+            | "DateTimeLocal"
+            | "Json"
+            | "JsonValue"
+            | "Value"
+    )
+}
+
+struct Generated {
+    title: Option<String>,
+    key: Option<String>,
+    fields: Vec<String>,
+    form: Vec<String>,
+    columns: Vec<String>,
+    filters: Vec<String>,
+    warnings: Vec<String>,
+}
+
+/// Fields, form, table and filters from the model's columns. Relationships only
+/// where `belongs_to` names them (`category_id=categories`); other `*_id`
+/// columns get a text input and a TODO.
+fn generate(columns: &[Column], belongs_to: &BTreeMap<String, String>) -> Generated {
+    let mut out = Generated {
+        title: None,
+        key: None,
+        fields: vec![],
+        form: vec![],
+        columns: vec![],
+        filters: vec![],
+        warnings: vec![],
+    };
+    for column in columns {
+        let name = &column.db_name;
+        if column.primary_key {
+            // Database-generated integer keys need nothing; others are declared.
+            match column.ty.as_str() {
+                "i32" | "i64" => {}
+                "String" => out.key = Some("KeyStrategy::Natural".into()),
+                _ => out.warnings.push(format!(
+                    "primary key `{name}` ({}): set `.key(KeyStrategy::AppGenerated(…))` in meta() unless the database generates it",
+                    column.ty
+                )),
+            }
+            continue;
+        }
+        if MANAGED.contains(&name.as_str()) {
+            continue;
+        }
+        if SENSITIVE.iter().any(|s| name.contains(s)) {
+            out.warnings.push(format!("`{name}` looks secret: not exposed (add it by hand if needed, as write-only)"));
+            continue;
+        }
+        if !supported(&column.ty) {
+            out.warnings.push(format!("`{name}`: type `{}` is not supported by the admin panel; skipped", column.ty));
+            continue;
+        }
+        let col = format!("Column::{}", pascal_case(&column.name));
+        let mut field = format!("Field::column({col})");
+        if OWNERS.contains(&name.as_str()) && !belongs_to.contains_key(name) {
+            // Shown, never written by clients: set it in `mutate_before_create`.
+            out.fields
+                .push(format!("{field}.guarded().readable(|_| true), // set by the server (mutate_before_create)"));
+            continue;
+        }
+        let required = !column.optional && column.ty != "bool";
+        if required {
+            field.push_str(".required()");
+        }
+        let input = match (column.ty.as_str(), belongs_to.get(name)) {
+            (_, Some(slug)) => {
+                field.push_str(&format!(".belongs_to(\"{slug}\").filterable()"));
+                out.columns.push(format!("TextColumn::make(\"{name}\"),"));
+                out.filters.push(format!("SelectFilter::make(\"{name}\"),"));
+                format!("SelectInput::make(\"{name}\"),")
+            }
+            ("String", _) if LONG_TEXT.contains(&name.as_str()) => {
+                format!("Textarea::make(\"{name}\").column_span(2),")
+            }
+            ("String", _) => {
+                if out.title.is_none() {
+                    out.title = Some(name.clone());
+                    field.push_str(".searchable().sortable()");
+                    out.columns.push(format!("TextColumn::make(\"{name}\"),"));
+                }
+                format!("TextInput::make(\"{name}\"),")
+            }
+            ("bool", _) => {
+                field.push_str(".filterable()");
+                out.columns.push(format!("BooleanColumn::make(\"{name}\"),"));
+                out.filters.push(format!("TernaryFilter::make(\"{name}\"),"));
+                format!("Toggle::make(\"{name}\"),")
+            }
+            ("i32" | "i64" | "f32" | "f64" | "Decimal", _) if name.ends_with("_id") => {
+                out.warnings.push(format!(
+                    "`{name}` looks like a relationship: pass `--belongs-to {name}=<slug>` to get a select"
+                ));
+                format!("TextInput::make(\"{name}\"), // TODO(rustcms): relationship? `--belongs-to {name}=<slug>`")
+            }
+            ("i32" | "i64" | "f32" | "f64" | "Decimal", _) => {
+                field.push_str(".sortable()");
+                format!("NumberInput::make(\"{name}\"),")
+            }
+            ("Date" | "NaiveDate", _) => {
+                field.push_str(".sortable().filterable()");
+                out.columns.push(format!("DateColumn::make(\"{name}\"),"));
+                out.filters.push(format!("DateRangeFilter::make(\"{name}\"),"));
+                format!("DatePicker::make(\"{name}\"),")
+            }
+            ("DateTime" | "NaiveDateTime" | "DateTimeUtc" | "DateTimeWithTimeZone" | "DateTimeLocal", _) => {
+                field.push_str(".sortable()");
+                out.columns.push(format!("DateColumn::make(\"{name}\"),"));
+                format!("DateTimePicker::make(\"{name}\"),")
+            }
+            ("Json" | "JsonValue" | "Value", _) => format!("Textarea::make(\"{name}\"), // JSON"),
+            _ => format!("TextInput::make(\"{name}\"),"),
+        };
+        out.fields.push(format!("{field},"));
+        out.form.push(input);
+    }
+    out
+}
+
+pub fn make_resource(
+    project: &Project,
+    model: &str,
+    generate_fields: bool,
+    belongs_to: &[String],
+) -> anyhow::Result<ExitCode> {
+    validate_model(model)?;
+    let module = snake_case(model);
+    let table = plural(&module);
+    let model_file = project.root.join("src/models").join(format!("{module}.rs"));
+    if !model_file.exists() {
+        bail!("{} not found: create the model first (`rustcms make:model {model} -m`)", model_file.display());
+    }
+    if !belongs_to.is_empty() && !generate_fields {
+        bail!("--belongs-to needs --generate");
+    }
+    let mut relations = BTreeMap::new();
+    for spec in belongs_to {
+        let Some((field, slug)) = spec.split_once('=') else {
+            bail!("--belongs-to expects `field=slug`, e.g. `category_id=categories`");
+        };
+        let (field, slug) = (field.trim(), slug.trim());
+        validate_snake(field)?;
+        validate_snake(slug)?;
+        if relations.insert(field.to_owned(), slug.to_owned()).is_some() {
+            bail!("--belongs-to: `{field}` given twice");
+        }
+    }
+    let generated = if generate_fields {
+        let columns = parse_model(&std::fs::read_to_string(&model_file)?)?;
+        for field in relations.keys() {
+            match columns.iter().find(|c| &c.db_name == field) {
+                None => bail!("--belongs-to: `{field}` is not a column of {model}"),
+                Some(c) if c.primary_key || MANAGED.contains(&field.as_str()) => {
+                    bail!("--belongs-to: `{field}` cannot be a relationship")
+                }
+                Some(_) => {}
+            }
+        }
+        generate(&columns, &relations)
+    } else {
+        Generated {
+            title: None,
+            key: None,
+            fields: vec!["// Field::column(Column::Title).required().searchable(),".into()],
+            form: vec![],
+            columns: vec![],
+            filters: vec![],
+            warnings: vec![],
+        }
+    };
+    let dir = project.root.join("src/admin");
+    if project.root.join("src/admin.rs").exists() {
+        bail!("src/admin.rs exists: move it to src/admin/mod.rs (with a `// rustcms:resource-mods` line) first");
+    }
+    ensure_module_dir(
+        &dir,
+        "Admin panel resources. `rustcms make:resource <Model>` adds modules here.",
+        "// rustcms:resource-mods",
+    )?;
+    let fields: Vec<String> =
+        generated.fields.iter().map(|f| f.replace("Column::", &format!("{module}::Column::"))).collect();
+    let contents = render(
+        RESOURCE,
+        json!({
+            "name": model,
+            "module": module,
+            "table": table,
+            "label": humanize(model),
+            "plural_label": humanize_plural(&table),
+            "title": generated.title,
+            "key": generated.key,
+            "fields": fields,
+            "form": generated.form,
+            "columns": generated.columns,
+            "filters": generated.filters,
+        }),
+    )?;
+    write_new(&dir.join(format!("{module}.rs")), &contents)?;
+    register(&dir.join("mod.rs"), "// rustcms:resource-mods", &format!("pub mod {module};"))?;
+    let wired = register(
+        &project.root.join("src/app.rs"),
+        "// rustcms:resources",
+        &format!(".resource::<crate::admin::{module}::{model}Resource>()"),
+    )?;
+    for warning in &generated.warnings {
+        println!("warning: {warning}");
+    }
+    if wired {
+        println!("Permissions `{table}.view_any`, `{table}.create`, … are declared; run `rustcms permission:sync`.");
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+pub fn make_policy(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
+    validate_model(name)?;
+    let Some(stem) = name.strip_suffix("Policy").filter(|s| !s.is_empty()) else {
+        bail!("policy names end with `Policy`, e.g. `PostPolicy`");
+    };
+    let module = snake_case(name);
+    let slug = plural(&snake_case(stem));
+    let contents = render(POLICY, json!({ "name": name, "slug": slug }))?;
+    let dir = project.root.join("src/policies");
+    ensure_module_dir(&dir, "Policies. `rustcms make:policy <Name>` adds modules here.", "// rustcms:policies")?;
+    write_new(&dir.join(format!("{module}.rs")), &contents)?;
+    register(&dir.join("mod.rs"), "// rustcms:policies", &format!("pub mod {module};"))?;
+    println!(
+        "Use it in a resource: `fn policy() -> std::sync::Arc<dyn Policy> {{ std::sync::Arc::new(crate::policies::{module}::{name}) }}`"
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Creates `dir/mod.rs` with its anchor if missing (apps created before the
+/// generator), and says which line `src/lib.rs` needs.
+fn ensure_module_dir(dir: &std::path::Path, doc: &str, anchor: &str) -> anyhow::Result<()> {
+    let index = dir.join("mod.rs");
+    if index.exists() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(&index, format!("//! {doc}\n\n{anchor}\n"))?;
+    let module = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    println!("Created {}; add `pub mod {module};` to src/lib.rs", index.display());
+    Ok(())
+}
+
+/// `blog_posts` → `Blog posts`.
+fn humanize_plural(table: &str) -> String {
+    let words = table.replace('_', " ");
+    let mut chars = words.chars();
+    chars.next().map(|c| c.to_ascii_uppercase().to_string() + chars.as_str()).unwrap_or_default()
+}
+
+/// `BlogPost` → `Blog post`.
+fn humanize(model: &str) -> String {
+    let words = snake_case(model).replace('_', " ");
+    let mut chars = words.chars();
+    chars.next().map(|c| c.to_ascii_uppercase().to_string() + chars.as_str()).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const POST: &str = r#"
+#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+#[sea_orm(table_name = "posts")]
+pub struct Model {
+    #[sea_orm(primary_key)]
+    pub id: i64,
+    pub title: String,
+    pub body: Option<String>, // long text
+    pub category_id: Option<i32>,
+    pub author_id: i64,
+    pub published: bool,
+    pub published_at: Option<DateTimeUtc>,
+    pub views: i32,
+    pub r#type: String,
+    #[sea_orm(column_name = "full_name")]
+    pub display: String,
+    #[sea_orm(ignore)]
+    pub cached: String,
+    pub stock: u64,
+    pub password_hash: String,
+    pub created_at: DateTimeUtc,
+    pub updated_at: DateTimeUtc,
+}
+
+impl ActiveModelBehavior for ActiveModel {}
+"#;
+
+    fn generated() -> Generated {
+        let columns = parse_model(POST).unwrap();
+        generate(&columns, &BTreeMap::from([("category_id".into(), "categories".into())]))
+    }
+
+    #[test]
+    fn parses_columns_attributes_and_comments() {
+        let columns = parse_model(POST).unwrap();
+        let names: Vec<&str> = columns.iter().map(|c| c.db_name.as_str()).collect();
+        assert!(names.contains(&"type") && names.contains(&"full_name") && !names.contains(&"cached"), "{names:?}");
+        let body = columns.iter().find(|c| c.name == "body").unwrap();
+        assert_eq!((body.ty.as_str(), body.optional), ("String", true));
+        assert!(columns.iter().find(|c| c.name == "id").unwrap().primary_key);
+    }
+
+    #[test]
+    fn generates_inputs_by_type() {
+        let g = generated();
+        let form = g.form.join("\n");
+        assert_eq!(g.title.as_deref(), Some("title"));
+        for expected in [
+            "TextInput::make(\"title\")",
+            "Textarea::make(\"body\")",
+            "SelectInput::make(\"category_id\")",
+            "Toggle::make(\"published\")",
+            "DateTimePicker::make(\"published_at\")",
+            "NumberInput::make(\"views\")",
+            "TextInput::make(\"type\")",
+            "TextInput::make(\"full_name\")",
+        ] {
+            assert!(form.contains(expected), "{expected} in {form}");
+        }
+        let fields = g.fields.join("\n");
+        assert!(fields.contains("Column::Type"), "raw identifiers lose `r#`: {fields}");
+        assert!(fields.contains("Column::Display"), "renamed columns keep their variant");
+        assert!(fields.contains("Column::Title).required()"));
+        assert!(fields.contains("Column::Views).required()"), "NOT NULL columns are required");
+        assert!(fields.contains(".belongs_to(\"categories\")"));
+        assert!(
+            g.columns.iter().any(|c| c.contains("category_id")) && g.filters.iter().any(|f| f.contains("category_id"))
+        );
+    }
+
+    #[test]
+    fn skips_what_must_not_be_generated() {
+        let g = generated();
+        let all = format!("{}\n{}", g.fields.join("\n"), g.form.join("\n"));
+        assert!(!all.contains("cached") && !all.contains("created_at") && !all.contains("Column::Id"));
+        assert!(!all.contains("password_hash"), "secrets are never exposed");
+        assert!(!all.contains("\"stock\""), "unsupported types (u64) are skipped");
+        assert!(g.fields.iter().any(|f| f.contains("Column::AuthorId).guarded()")), "owners are set by the server");
+        assert!(!g.form.iter().any(|f| f.contains("author_id")));
+        assert!(
+            g.warnings.iter().any(|w| w.contains("stock")) && g.warnings.iter().any(|w| w.contains("password_hash"))
+        );
+    }
+
+    #[test]
+    fn natural_string_keys_are_declared() {
+        let model = "pub struct Model {\n    #[sea_orm(primary_key, auto_increment = false)]\n    pub slug: String,\n    pub label: String,\n}\n";
+        let g = generate(&parse_model(model).unwrap(), &BTreeMap::new());
+        assert_eq!(g.key.as_deref(), Some("KeyStrategy::Natural"));
+        assert!(!g.form.iter().any(|f| f.contains("slug")));
+    }
+
+    fn project() -> (tempfile::TempDir, Project) {
+        let dir = tempfile::tempdir().unwrap();
+        for (path, contents) in [
+            ("src/models/post.rs", POST),
+            ("src/app.rs", "fn build() {\n    AdminProvider::new()\n        // rustcms:resources\n    ;\n}\n"),
+        ] {
+            let file = dir.path().join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, contents).unwrap();
+        }
+        let project = Project { root: dir.path().to_path_buf(), package: "blog".into() };
+        (dir, project)
+    }
+
+    #[test]
+    fn writes_registers_once_and_validates_input() {
+        let (dir, project) = project();
+        make_resource(&project, "Post", true, &["category_id=categories".into()]).unwrap();
+        let app = std::fs::read_to_string(dir.path().join("src/app.rs")).unwrap();
+        assert_eq!(app.matches(".resource::<crate::admin::post::PostResource>()").count(), 1);
+        assert!(dir.path().join("src/admin/mod.rs").exists(), "module directory created");
+        let resource = std::fs::read_to_string(dir.path().join("src/admin/post.rs")).unwrap();
+        assert!(resource.contains(".plural(\"Posts\")"));
+        // Regenerating after deleting the file does not register twice.
+        std::fs::remove_file(dir.path().join("src/admin/post.rs")).unwrap();
+        make_resource(&project, "Post", true, &[]).unwrap();
+        let app = std::fs::read_to_string(dir.path().join("src/app.rs")).unwrap();
+        assert_eq!(app.matches("PostResource").count(), 1);
+        let index = std::fs::read_to_string(dir.path().join("src/admin/mod.rs")).unwrap();
+        assert_eq!(index.matches("pub mod post;").count(), 1);
+        std::fs::remove_file(dir.path().join("src/admin/post.rs")).unwrap();
+        for bad in ["category_id", "category_id=cat\"egories", "category_id=", "id=x", "nope=x"] {
+            assert!(make_resource(&project, "Post", true, &[bad.into()]).is_err(), "{bad}");
+        }
+        assert!(
+            make_resource(&project, "Post", false, &["category_id=categories".into()]).is_err(),
+            "needs --generate"
+        );
+        assert!(make_resource(&project, "Missing", true, &[]).is_err());
+    }
+
+    #[test]
+    fn policy_names() {
+        let (dir, project) = project();
+        make_policy(&project, "PostPolicy").unwrap();
+        let policy = std::fs::read_to_string(dir.path().join("src/policies/post_policy.rs")).unwrap();
+        assert!(policy.contains("format!(\"posts.{ability}\")") && policy.contains("use rustcms::async_trait;"));
+        for bad in ["Policy", "Post", "bad"] {
+            assert!(make_policy(&project, bad).is_err(), "{bad}");
+        }
+        assert!(make_resource(&project, "Type", false, &[]).is_err(), "keyword module");
+    }
+}

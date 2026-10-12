@@ -68,6 +68,8 @@ impl ServiceProvider for AdminProvider {
             }
         }
         let admin_path = auth.config.admin_path.clone();
+        app.describe_routes("admin", http::routes(&admin_path));
+        app.describe_routes("admin", spa::routes(&admin_path));
         app.bind(AdminPanel { brand: self.brand.clone(), registry });
         app.routes(move |router| {
             spa::router(system::router(http::router(router, &admin_path), &admin_path), &admin_path)

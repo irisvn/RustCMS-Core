@@ -1,0 +1,44 @@
+//! Admin resource for `{{ table }}`.
+
+use rustcms::admin::*;
+
+use crate::models::{{ module }};
+
+pub struct {{ name }}Resource;
+
+impl Resource for {{ name }}Resource {
+    type Entity = {{ module }}::Entity;
+    const SLUG: &'static str = "{{ table }}";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("{{ label }}").plural("{{ plural_label }}"){% if title %}.title("{{ title }}"){% endif %}{% if key %}.key({{ key }}){% endif %}
+
+    }
+
+    /// Readable/writable fields. Only declared columns are ever exposed.
+    fn fields() -> Vec<Field> {
+        vec![
+{% for f in fields %}            {{ f }}
+{% endfor %}        ]
+    }
+{% if form %}
+
+    fn form() -> Form {
+        Form::new().columns(2).schema(components![
+{% for c in form %}            {{ c }}
+{% endfor %}        ])
+    }
+{% endif %}
+{% if columns or filters %}
+
+    fn table() -> Table {
+        Table::new()
+            .columns(vec![
+{% for c in columns %}                {{ c }}
+{% endfor %}            ])
+            .filters(vec![
+{% for f in filters %}                {{ f }}
+{% endfor %}            ])
+    }
+{% endif %}
+}

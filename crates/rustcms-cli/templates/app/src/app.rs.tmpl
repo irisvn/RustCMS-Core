@@ -6,9 +6,15 @@ pub fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
     // Admin sessions under /admin, API tokens elsewhere; declare your permissions here.
     app.provider(AuthProvider::new());
-    // Resources appear in the admin panel at /admin: `.resource::<PostResource>()`.
-    app.provider(AdminProvider::new().brand("{{ name }}"));
+    // Resources appear in the admin panel at /admin (`rustcms make:resource <Model>`).
+    app.provider(
+        AdminProvider::new()
+            .brand("{{ name }}")
+            // rustcms:resources
+    );
     app.routes(|router| router.route("/api/v1/ping", get(ping)));
+    // Routes added here are listed by `rustcms route:list` once described.
+    app.describe_routes("app", [(Method::GET, "/api/v1/ping".to_owned())]);
     app
 }
 

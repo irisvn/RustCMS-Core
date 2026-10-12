@@ -733,3 +733,16 @@ db_test!(verification_round_rules, |db: TestDb| async move {
         r.assert_status(StatusCode::FORBIDDEN);
     }
 });
+
+db_test!(nobody_deletes_a_role_they_hold, |db: TestDb| async move {
+    let (app, _users): (TestApp, Users) = setup(db).await;
+    let holder = with_role(&app, "self-deleter", &["roles.view_any", "roles.view", "roles.delete"]).await;
+    let client = app.acting_as(&holder).await;
+    let own = support::role_id(&app, "self-deleter").await;
+    let shown = client.get(&api(&app, &format!("roles/{own}"))).await.json();
+    assert_eq!(shown["abilities"]["delete"], json!(false));
+    client
+        .send(axum::http::Method::DELETE, &api(&app, &format!("roles/{own}")), None)
+        .await
+        .assert_status(StatusCode::FORBIDDEN);
+});

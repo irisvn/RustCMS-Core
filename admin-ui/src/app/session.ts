@@ -72,9 +72,20 @@ export function createSession(
 
   // Concurrent 401s navigate once.
   let rotations = 0;
+  // A 401 seen while a rotation was in flight: checked again once it settles.
+  let deferred = false;
+  const settle = () => {
+    if (rotations > 0 || !deferred) return;
+    deferred = false;
+    // Still signed in? A 401 here is handled normally (no rotation in flight).
+    void api.request("GET", "/auth/me").catch(() => undefined);
+  };
   const unauthenticated = () => {
-    // A rotation in flight: the next request after it settles tells for sure.
-    if (rotations > 0) return;
+    // A rotation in flight (here or in another tab): decide once it settles.
+    if (rotations > 0) {
+      deferred = true;
+      return;
+    }
     clear();
     userId = null;
     if (redirecting) return;
@@ -116,12 +127,15 @@ export function createSession(
     },
     async rotating(work) {
       rotations += 1;
-      session.rotated();
+      api.resetCsrf();
+      channel?.postMessage("rotation-start");
       try {
         return await work();
       } finally {
-        session.rotated();
+        api.resetCsrf();
+        channel?.postMessage("rotation-end");
         rotations -= 1;
+        settle();
       }
     },
     markUncertain(slug) {
@@ -177,9 +191,32 @@ export function createSession(
     },
   };
 
+  const pending = new Set<ReturnType<typeof setTimeout>>();
   channel?.addEventListener("message", (event) => {
     if (event.data === "signed-out") session.signedOut({ broadcast: false });
     if (event.data === "rotated") api.resetCsrf();
+    // Another tab rotates the shared session: hold auth handling here too (at
+    // most 30 s, in case that tab closes before telling us it is done).
+    if (event.data === "rotation-start") {
+      rotations += 1;
+      api.resetCsrf();
+      const timer = setTimeout(() => {
+        if (pending.delete(timer)) {
+          rotations -= 1;
+          settle();
+        }
+      }, 30_000);
+      pending.add(timer);
+    }
+    if (event.data === "rotation-end") {
+      const timer = pending.values().next().value;
+      if (timer !== undefined && pending.delete(timer)) {
+        clearTimeout(timer);
+        rotations -= 1;
+      }
+      api.resetCsrf();
+      settle();
+    }
     // Another tab signed in (maybe as someone else): drop this tab's data.
     if (event.data === "signed-in") {
       clear();

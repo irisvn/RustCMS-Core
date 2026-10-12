@@ -21,6 +21,10 @@ impl AppCommand for Seed {
     }
 
     async fn run(&self, state: &AppState, _args: &clap::ArgMatches) -> anyhow::Result<()> {
+        // Well-known passwords and a super admin: never in production.
+        if state.config().app.env == rustcms::config::Environment::Production {
+            anyhow::bail!("demo:seed creates accounts with a public password; refusing in production");
+        }
         seed(state).await?;
         println!("Seeded. Sign in at /admin as admin@example.test or editor@example.test (password: {PASSWORD}).");
         Ok(())

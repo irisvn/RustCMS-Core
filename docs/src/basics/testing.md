@@ -63,3 +63,7 @@ nothing from the code under test, and fail when a route has no row.
 
 Implement `Factory::definition` for your entities; `create` and `create_many`
 insert. Sequence numbers are unique per process, so unique columns stay unique.
+
+`app.make_super_admin(&user)` gives a user the `super_admin` role of every guard
+(through `RbacService`), for tests that need full access; prefer a role with the
+exact permissions when the test is about authorization.

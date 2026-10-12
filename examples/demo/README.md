@@ -1,17 +1,21 @@
 # demo
 
-A [rustcms](https://github.com/irisvn/rustcms) application.
+A small blog built with rustcms: categories, posts with an ownership policy
+(editors edit only their own posts), a publish action, and a token API.
 
 ```sh
-rustcms migrate          # create tables (SQLite file by default, see .env)
-rustcms serve            # http://localhost:8000/health
-cargo test               # set RUSTCMS_TEST_PG to also run tests on PostgreSQL
+cp .env.example .env && cargo run -- key:generate   # first time only
+cargo run -- migrate
+cargo run -- demo:seed     # admin@example.test / editor@example.test, password `password123`
+cargo run -- serve         # http://localhost:8000/admin
 ```
 
-| Command                              | Does                                   |
-|--------------------------------------|----------------------------------------|
-| `rustcms make:model Post -m`         | entity in `src/models` + migration     |
-| `rustcms make:migration add_x_to_y`  | blank migration in `src/migrations`    |
-| `rustcms migrate:status`             | applied / pending migrations           |
-| `rustcms migrate:rollback --step 1`  | undo the last migration                |
-| `rustcms key:generate --force`       | rotate `APP_KEY` (signs everyone out)  |
+API (`GET/POST /api/v1/posts`):
+
+```sh
+cargo run -- token:create --email admin@example.test --name cli --abilities posts.view_any,posts.create
+curl -H "Authorization: Bearer rcms_…" http://localhost:8000/api/v1/posts
+```
+
+Tests: `cargo test` (SQLite; PostgreSQL with `RUSTCMS_TEST_PG`). Unlike a fresh
+`rustcms new` app, the demo keeps its resources in `src/admin.rs`.

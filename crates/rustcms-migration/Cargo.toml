@@ -1,4 +1,5 @@
 [package]
+exclude = ["tests/"]
 name = "rustcms-migration"
 description = "Database migrations owned by the rustcms framework."
 version.workspace = true
@@ -6,13 +7,18 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 sea-orm-migration.workspace = true
 
 [dev-dependencies]
 rustcms-core = { workspace = true, features = ["sqlite", "postgres"] }
-rustcms-testing.workspace = true
+# Path only (no version): not published, so the published crate does not depend on
+# rustcms-testing (which depends on rustcms-auth). Tests are excluded from the package.
+rustcms-testing = { path = "../rustcms-testing" }
 sea-orm = { workspace = true, features = ["sqlx-sqlite", "sqlx-postgres"] }
 chrono.workspace = true
 tokio.workspace = true

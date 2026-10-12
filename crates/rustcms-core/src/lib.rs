@@ -13,7 +13,7 @@ pub mod models;
 pub mod principal;
 pub mod telemetry;
 
-pub use app::{App, AppBuilder, AppCommand, AppState, Inject, ServiceProvider};
+pub use app::{App, AppBuilder, AppCommand, AppState, Inject, RouteInfo, ServiceProvider};
 pub use config::{Config, Environment};
 pub use console::Console;
 pub use error::{AppError, AppResult, ValidationErrors};

@@ -17,3 +17,22 @@ describe("session identity", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("rotation", () => {
+  it("re-checks a 401 deferred during a rotation once it settles", async () => {
+    const queryClient = new QueryClient();
+    const toLogin = vi.fn();
+    const session = createSession({ basePath: "/admin", apiPath: "/admin/api" }, queryClient, toLogin);
+    const probes: string[] = [];
+    session.api.request = (async (method: string, path: string) => {
+      probes.push(`${method} ${path}`);
+      throw new Error("offline");
+    }) as typeof session.api.request;
+    await session.rotating(async () => {
+      // A request racing with the rotation got 401: held, not acted on.
+      (session.api as unknown as { opts: { onUnauthenticated: () => void } }).opts.onUnauthenticated();
+      expect(toLogin).not.toHaveBeenCalled();
+    });
+    expect(probes).toContain("GET /auth/me");
+  });
+});

@@ -48,6 +48,15 @@ impl Auth {
         &self.0.principal
     }
 
+    /// Like [`Self::authorize`], for a route of one guard: a principal of another
+    /// guard (e.g. an admin session on an overlapping path) is 401.
+    pub fn authorize_guard(&self, guard: &str, permission: &str) -> AppResult<()> {
+        if self.0.principal.guard != guard {
+            return Err(AppError::Unauthenticated);
+        }
+        self.authorize(permission)
+    }
+
     /// 403 unless the principal has `permission`.
     pub fn authorize(&self, permission: &str) -> AppResult<()> {
         if self.0.principal.can(permission) { Ok(()) } else { Err(AppError::Forbidden) }
@@ -131,7 +140,7 @@ async fn admin(app: &AppState, auth: &Arc<AuthState>, mut req: Request, next: Ne
             // ended here, because a concurrent request of the same browser may be
             // re-issuing it right now (password change, sign-out of other sessions);
             // ending the lineage would sign out the user who just proved their password.
-            Some(_) => {}
+            Some(_) => session.freeze(),
             None => session.logout(),
         }
     }

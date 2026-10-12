@@ -7,6 +7,30 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- M6 developer experience and release prep: `make:resource [--generate]
+  [--belongs-to field=slug]` (fields, form, table and filters from the model's
+  columns; unknown `*_id` columns flagged), `make:policy`, `route:list`
+  (routes described by core, providers and the app via
+  `AppBuilder::describe_routes`), `TestApp::make_super_admin`; new apps get
+  `src/admin`, `src/policies` and a `// rustcms:resources` anchor; demo token API
+  `GET/POST /api/v1/posts`; docs: getting started with the demo, API guide,
+  support boundary with footprint and roadmap; README quick start.
+- Public API: `RouteInfo`, `AppBuilder::{describe_routes, described_routes}`,
+  `rustcms_admin::spa::routes`, `Auth::authorize_guard`, `rustcms::async_trait`
+  (`use rustcms::async_trait;`; stubs no longer need an `async-trait` dependency), `role:assign` command.
+- M6 review batch: generator skips unsupported types and secret columns, handles
+  `r#`, `column_name`, `ignore` and natural keys, marks NOT NULL fields required,
+  creates module directories, registers idempotently, validates `--belongs-to`
+  and policy names; `route:list` lists catch-all and trailing-slash routes; demo
+  API authorizes before reading input, validates `page`, hides scheduled posts,
+  limits creates per user; `demo:seed` refuses production.
+- M5 follow-ups: RBAC COMMIT and cache eviction run to completion even when the
+  request is cancelled; deleting a role you hold is refused; stale-credential
+  requests never renew or re-send their cookie; hashing budgets count successful
+  hashes; id lists are deduplicated and chunked; rotation start/end across tabs.
+- Publishing: LICENSE-MIT / LICENSE-APACHE, crates.io metadata, internal
+  dev-dependencies path-only (tests excluded from those packages);
+  `just publish-check` packages and verifies every crate.
 - M5 users, roles and account: System pages (Users, Roles with a permission
   matrix) and an Account page (password change, sign out other sessions);
   `/admin/api/system/…` endpoints, all writes through `RbacService`

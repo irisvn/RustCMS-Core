@@ -1,0 +1,26 @@
+//! `{{ name }}`: who may do what with a record.
+
+use rustcms::admin::{Ctx, Data, Policy};
+use rustcms::async_trait;
+
+/// Deny by default. `ability` is `view_any`, `view`, `create`, `update`,
+/// `delete` or an action name; `record` is the record's readable data when
+/// the check concerns one record.
+pub struct {{ name }};
+
+#[async_trait]
+impl Policy for {{ name }} {
+    async fn allows(&self, ctx: &Ctx, ability: &str, record: Option<&Data>) -> bool {
+        // Example: owners may also view and update their own records.
+        // let owns = record.is_some_and(|r| r["author_id"].as_str() == Some(ctx.principal.id.as_str()));
+        let _ = record;
+        ctx.can(&format!("{{ slug }}.{ability}"))
+    }
+
+    /// Whether `view` depends on the record. `true` (the default) checks every
+    /// record of a list one by one; return `false` when `view` only depends on
+    /// permissions (and `scope()`), so lists are paged by the database.
+    fn view_depends_on_record(&self) -> bool {
+        true
+    }
+}

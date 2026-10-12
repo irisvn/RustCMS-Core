@@ -27,6 +27,10 @@
 - [The panel (SPA)](admin/spa.md)
 - [Users, roles & account](admin/users-roles.md)
 
+# API
+
+- [Tokens & endpoints](api.md)
+
 # Reference
 
 - [CLI](cli.md)

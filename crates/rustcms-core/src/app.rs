@@ -106,6 +106,18 @@ pub struct AppBuilder {
     providers: Vec<Arc<dyn ServiceProvider>>,
     commands: Vec<Arc<dyn AppCommand>>,
     middleware: Vec<MiddlewareFn>,
+    described: Vec<RouteInfo>,
+}
+
+/// A route as listed by `route:list`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteInfo {
+    /// HTTP method.
+    pub method: axum::http::Method,
+    /// Path template (`/admin/api/resources/{slug}`).
+    pub path: String,
+    /// Who registered it (`core`, `auth`, `admin`, `app`, …).
+    pub source: String,
 }
 
 impl AppBuilder {
@@ -118,7 +130,35 @@ impl AppBuilder {
             providers: Vec::new(),
             commands: Vec::new(),
             middleware: Vec::new(),
+            described: vec![RouteInfo {
+                method: axum::http::Method::GET,
+                path: "/health".into(),
+                source: "core".into(),
+            }],
         }
+    }
+
+    /// Describes routes for `route:list` (axum routers cannot be listed back):
+    /// providers describe theirs; applications describe what they add with [`Self::routes`].
+    pub fn describe_routes(
+        &mut self,
+        source: &str,
+        routes: impl IntoIterator<Item = (axum::http::Method, String)>,
+    ) -> &mut Self {
+        self.described.extend(routes.into_iter().map(|(method, path)| RouteInfo {
+            method,
+            path,
+            source: source.into(),
+        }));
+        self
+    }
+
+    /// Every described route, sorted by path then method.
+    pub fn described_routes(&self) -> Vec<RouteInfo> {
+        let mut routes = self.described.clone();
+        routes.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.method.as_str().cmp(b.method.as_str())));
+        routes.dedup();
+        routes
     }
 
     /// Configuration.
@@ -234,4 +274,26 @@ async fn shutdown_signal() {
         () = terminate => {},
     }
     tracing::info!("shutting down");
+}
+
+#[cfg(test)]
+mod route_tests {
+    use super::*;
+
+    #[test]
+    fn described_routes_are_sorted_and_deduplicated() {
+        let figment = crate::config::Config::figment(std::path::Path::new("/nonexistent"))
+            .unwrap()
+            .merge(figment::providers::Serialized::default("app.key", crate::key::AppKey::generate().encode()))
+            .merge(figment::providers::Serialized::default("database.url", "sqlite::memory:"));
+        let mut app = AppBuilder::new(crate::config::Config::from_figment(figment).unwrap());
+        app.describe_routes("app", [(axum::http::Method::POST, "/b".into()), (axum::http::Method::GET, "/a".into())]);
+        app.describe_routes("app", [(axum::http::Method::GET, "/a".into())]);
+        let routes: Vec<(String, String)> =
+            app.described_routes().into_iter().map(|r| (r.method.to_string(), r.path)).collect();
+        assert_eq!(
+            routes,
+            [("GET".into(), "/a".into()), ("POST".into(), "/b".into()), ("GET".into(), "/health".into())]
+        );
+    }
 }

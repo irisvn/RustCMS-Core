@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [features]
 default = ["sqlite", "postgres"]
@@ -20,6 +23,7 @@ rustcms-migration.workspace = true
 axum.workspace = true
 sea-orm-migration.workspace = true
 serde_json.workspace = true
+async-trait.workspace = true
 
 [lints]
 workspace = true

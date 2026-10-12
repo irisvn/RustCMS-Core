@@ -47,9 +47,10 @@ pub struct Grants {
 /// Entries are keyed by a generation that every change advances. A load that
 /// started before a change can only populate the previous generation, which no
 /// later request reads, so eviction cannot be undone by an in-flight load.
+#[derive(Clone)]
 pub struct PermissionResolver {
     cache: Cache<(String, i64, u64), Arc<Grants>>,
-    generation: AtomicU64,
+    generation: Arc<AtomicU64>,
 }
 
 /// Loads retried before giving up on caching under constant churn.
@@ -58,7 +59,10 @@ const LOAD_ATTEMPTS: usize = 3;
 impl PermissionResolver {
     /// Cache entries expire after `ttl` even without eviction.
     pub fn new(ttl: Duration) -> Self {
-        Self { cache: Cache::builder().time_to_live(ttl).max_capacity(10_000).build(), generation: AtomicU64::new(0) }
+        Self {
+            cache: Cache::builder().time_to_live(ttl).max_capacity(10_000).build(),
+            generation: Arc::new(AtomicU64::new(0)),
+        }
     }
 
     /// Grants of `user_id` in `guard`.
@@ -212,16 +216,16 @@ impl<'a> RbacService<'a> {
     /// Commits and always evicts cached grants: if COMMIT reached the server but
     /// its answer was lost, the change may be applied, so the cache must not outlive it.
     async fn commit(&self, txn: DatabaseTransaction) -> AppResult<()> {
-        // Evicts on drop too: a request cancelled while COMMIT is in flight may
-        // still have committed.
-        struct EvictOnDrop<'r>(&'r PermissionResolver);
-        impl Drop for EvictOnDrop<'_> {
-            fn drop(&mut self) {
-                self.0.evict_all();
-            }
-        }
-        let _evict = EvictOnDrop(self.resolver);
-        Ok(txn.commit().await?)
+        // COMMIT and the eviction after it run to completion even if the request is
+        // cancelled meanwhile: evicting before the commit is visible would let a
+        // concurrent load cache the old grants again.
+        let resolver = self.resolver.clone();
+        let done = tokio::spawn(async move {
+            let result = txn.commit().await;
+            resolver.evict_all();
+            result
+        });
+        Ok(done.await.map_err(|e| AppError::internal(format!("commit task: {e}")))??)
     }
 
     /// Opens a write transaction holding the RBAC lock and reloads the acting
@@ -369,6 +373,12 @@ impl<'a> RbacService<'a> {
             return forbidden();
         }
         protected(actor, &role)?;
+        // Nobody changes their own access, deleting a role they hold included.
+        if let Actor::User(principal) = actor
+            && holds_role(&txn, &principal.id, role.id).await?
+        {
+            return forbidden();
+        }
         let permissions = active_permissions(&txn, role.id).await?;
         grantable(actor, &role.guard_name, permissions.keys())?;
         user_role::Entity::delete_many().filter(user_role::Column::RoleId.eq(role.id)).exec(&txn).await?;

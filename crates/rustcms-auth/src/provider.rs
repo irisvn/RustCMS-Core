@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use axum::middleware::from_fn_with_state;
 use rustcms_core::{AppBuilder, AppState, Principal, ServiceProvider};
 
-use crate::commands::{MakeUser, PermissionSync, SessionPrune, TokenCreate};
+use crate::commands::{MakeUser, PermissionSync, RoleAssign, SessionPrune, TokenCreate};
 use crate::config::{AuthConfig, normalize_admin_path};
 use crate::state::{ADMIN_GUARD, AuthState, Gate};
 use crate::{guard, routes};
@@ -81,9 +81,14 @@ impl ServiceProvider for AuthProvider {
         }
         app.bind(state);
         let admin_path = config.admin_path.clone();
+        app.describe_routes("auth", routes::routes(&admin_path));
+        // Unknown admin API paths: JSON 404 for every method.
+        let any = axum::http::Method::from_bytes(b"ANY").expect("valid method token");
+        let base = format!("{}/api", admin_path.trim_end_matches('/'));
+        app.describe_routes("auth", [(any.clone(), base.clone()), (any, format!("{base}/{{*rest}}"))]);
         app.routes(move |router| routes::router(router, &admin_path));
         app.middleware(|router, state| router.layer(from_fn_with_state(state, guard::authenticate)));
-        app.command(MakeUser).command(TokenCreate).command(PermissionSync).command(SessionPrune);
+        app.command(MakeUser).command(RoleAssign).command(TokenCreate).command(PermissionSync).command(SessionPrune);
     }
 
     async fn boot(&self, state: &AppState) -> anyhow::Result<()> {

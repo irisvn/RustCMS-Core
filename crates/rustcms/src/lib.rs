@@ -16,6 +16,10 @@ pub use rustcms_auth as auth;
 /// HTTP toolkit used by rustcms.
 pub use axum;
 
+/// `use rustcms::async_trait;` then `#[async_trait]` for policies, hooks and migrations
+/// (no extra dependency; `#[rustcms::…]` paths are reserved by rustc's `rustc` prefix rule).
+pub use async_trait::async_trait;
+
 /// Migrations: the SeaORM migration prelude plus the framework's own migrations.
 pub mod migration {
     pub use rustcms_migration::migrations as framework;
@@ -29,6 +33,7 @@ pub mod prelude {
     pub use crate::{AppBuilder, AppError, AppResult, AppState, ClientIp, Config, Inject, Json, ServiceProvider};
     pub use axum::Router;
     pub use axum::extract::{Path, Query, State};
+    pub use axum::http::{Method, StatusCode};
     pub use axum::routing::{delete, get, patch, post, put};
     pub use serde_json::json;
 }

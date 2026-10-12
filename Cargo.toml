@@ -8,6 +8,9 @@ edition = "2024"
 rust-version = "1.90"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/irisvn/rustcms"
+homepage = "https://github.com/irisvn/rustcms"
+keywords = ["cms", "admin", "framework", "axum", "seaorm"]
+categories = ["web-programming", "web-programming::http-server"]
 
 [workspace.dependencies]
 rustcms-core = { path = "crates/rustcms-core", version = "0.1.0-alpha.0" }

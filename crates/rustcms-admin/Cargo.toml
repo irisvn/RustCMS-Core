@@ -1,4 +1,5 @@
 [package]
+exclude = ["tests/"]
 name = "rustcms-admin"
 description = "Filament-style admin panel engine for rustcms: resources, schema, generic CRUD."
 version.workspace = true
@@ -6,6 +7,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [features]
 default = ["sqlite"]
@@ -33,8 +37,10 @@ ts-rs = { workspace = true, optional = true }
 
 [dev-dependencies]
 chrono.workspace = true
-rustcms-testing.workspace = true
-rustcms-migration.workspace = true
+# Path only (no version): not published, so the published crate does not depend on
+# rustcms-testing (which depends on rustcms-auth). Tests are excluded from the package.
+rustcms-testing = { path = "../rustcms-testing" }
+rustcms-migration = { path = "../rustcms-migration" }
 toml.workspace = true
 tokio.workspace = true
 insta.workspace = true

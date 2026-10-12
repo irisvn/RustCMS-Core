@@ -52,6 +52,22 @@ impl TestApp {
         client
     }
 
+    /// Makes `user` a super admin of every guard (through `RbacService`).
+    ///
+    /// # Panics
+    /// Without `AuthProvider` or the framework migrations.
+    pub async fn make_super_admin(&self, user: &user::Model) {
+        use rustcms_auth::{Actor, RbacService};
+        let auth = self.state().service::<AuthState>().expect("AuthProvider registered");
+        let db = self.state().db();
+        let rbac = RbacService::new(db, &auth.resolver);
+        for guard in [rustcms_auth::ADMIN_GUARD, rustcms_auth::API_GUARD] {
+            let role =
+                rustcms_auth::entities::role::super_admin_id(db, guard).await.unwrap().expect("super_admin role");
+            rbac.assign_role(Actor::System, user.id, role).await.expect("assign super_admin");
+        }
+    }
+
     /// A client signed in through the real HTTP flow (`csrf` then `login`).
     ///
     /// # Panics

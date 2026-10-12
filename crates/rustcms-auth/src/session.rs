@@ -118,6 +118,14 @@ impl Session {
     }
 
     /// Keeps the user signed in after their credentials changed elsewhere in this request.
+    /// Leaves the stored session untouched by this request: no sliding renewal and
+    /// no cookie (a stale request must not re-send a cookie that a concurrent
+    /// rotation is replacing).
+    pub(crate) fn freeze(&self) {
+        self.state().touch = false;
+    }
+
+    /// Re-issues the session for a new credential version (keeps the user signed in).
     pub fn restamp(&self, auth_version: i64) {
         let mut state = self.state();
         state.data.auth_version = auth_version;

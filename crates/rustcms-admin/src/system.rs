@@ -180,6 +180,13 @@ fn ids_of(field: &str, raw: &[String]) -> AppResult<Vec<i64>> {
         .collect()
 }
 
+/// Ids deduplicated and split so no query binds more parameters than every
+/// backend accepts (SQLite: 32 766; PostgreSQL: 65 535).
+fn chunks(ids: impl IntoIterator<Item = i64>) -> Vec<Vec<i64>> {
+    let unique: std::collections::BTreeSet<i64> = ids.into_iter().collect();
+    unique.into_iter().collect::<Vec<_>>().chunks(500).map(<[i64]>::to_vec).collect()
+}
+
 /// Roles held by each of `users`, in every guard (one query each).
 async fn roles_of(app: &AppState, users: &[i64]) -> AppResult<HashMap<i64, Vec<role::Model>>> {
     let pivots = user_role::Entity::find()
@@ -187,13 +194,17 @@ async fn roles_of(app: &AppState, users: &[i64]) -> AppResult<HashMap<i64, Vec<r
         .filter(user_role::Column::ModelId.is_in(users.iter().map(i64::to_string)))
         .all(app.db())
         .await?;
-    let roles: HashMap<i64, role::Model> = role::Entity::find()
-        .filter(role::Column::Id.is_in(pivots.iter().map(|p| p.role_id)))
-        .all(app.db())
-        .await?
-        .into_iter()
-        .map(|r| (r.id, r))
-        .collect();
+    let mut roles: HashMap<i64, role::Model> = HashMap::new();
+    for chunk in chunks(pivots.iter().map(|p| p.role_id)) {
+        roles.extend(
+            role::Entity::find()
+                .filter(role::Column::Id.is_in(chunk))
+                .all(app.db())
+                .await?
+                .into_iter()
+                .map(|r| (r.id, r)),
+        );
+    }
     let mut out: HashMap<i64, Vec<role::Model>> = HashMap::new();
     for pivot in pivots {
         if let (Ok(user), Some(role)) = (pivot.model_id.parse::<i64>(), roles.get(&pivot.role_id)) {
@@ -342,10 +353,10 @@ struct NewUserInput {
 
 /// Password hashing for other users is costly and shares capacity with sign-in:
 /// counted per actor (`attempts_per_identifier` a minute) before any work.
-fn reserve_hashing(auth: &AuthState, actor: &Principal) -> AppResult<String> {
-    let key = format!("admin-hash:{}", actor.id);
-    auth.limiter.reserve(&[(&key, auth.config.attempts_per_identifier)])?;
-    Ok(key)
+/// Every hash counts, successful or not (it is the CPU shared with sign-in that is bounded);
+/// creations have a larger budget than password resets.
+fn reserve_hashing(auth: &AuthState, actor: &Principal, kind: &str, per_minute: u32) -> AppResult<()> {
+    auth.limiter.reserve(&[(&format!("admin-hash:{kind}:{}", actor.id), per_minute)])
 }
 
 fn check_password(auth: &AuthState, field: &str, password: &str) -> AppResult<()> {
@@ -371,7 +382,7 @@ async fn create_user(
     check_password(&auth, "password", &input.password)?;
     let rbac = RbacService::new(app.db(), &auth.resolver);
     rbac.check_new_user(Actor::User(&ctx.principal), &input.name, &input.email, ADMIN_GUARD, &role_ids).await?;
-    let budget = reserve_hashing(&auth, &ctx.principal)?;
+    reserve_hashing(&auth, &ctx.principal, "create", auth.config.attempts_per_ip)?;
     let new = NewUser {
         name: &input.name,
         email: &input.email,
@@ -379,8 +390,6 @@ async fn create_user(
         super_admin_guard: None,
     };
     let user = rbac.create_user_with_roles(Actor::User(&ctx.principal), new, ADMIN_GUARD, &role_ids).await?;
-    // The budget bounds failed or abusive hashing, not onboarding.
-    auth.limiter.release(&budget);
     changed_user(&app, &ctx.principal, user.id, StatusCode::CREATED).await
 }
 
@@ -521,7 +530,7 @@ async fn reset_password(
     // Refused before any hashing unless the change could succeed (all re-checked in it).
     RbacService::new(app.db(), &auth.resolver).check_reset_password(Actor::User(&ctx.principal), id).await?;
     check_password(&auth, "password", &input.password)?;
-    reserve_hashing(&auth, &ctx.principal)?;
+    reserve_hashing(&auth, &ctx.principal, "reset", auth.config.attempts_per_identifier)?;
     let hash = auth.passwords.hash(input.password).await?;
     RbacService::new(app.db(), &auth.resolver).reset_password(Actor::User(&ctx.principal), id, hash).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -536,18 +545,27 @@ async fn system_roles(
     show_contents: bool,
 ) -> AppResult<Vec<SystemRole>> {
     let ids: Vec<i64> = roles.iter().map(|r| r.id).collect();
-    let pivots = role_has_permissions::Entity::find()
-        .filter(role_has_permissions::Column::RoleId.is_in(ids.clone()))
-        .all(app.db())
-        .await?;
-    let names: HashMap<i64, String> = permission::Entity::find()
-        .filter(permission::Column::Id.is_in(pivots.iter().map(|p| p.permission_id)))
-        .filter(permission::Column::Orphaned.eq(false))
-        .all(app.db())
-        .await?
-        .into_iter()
-        .map(|p| (p.id, p.name))
-        .collect();
+    let mut pivots = Vec::new();
+    for chunk in chunks(ids.iter().copied()) {
+        pivots.extend(
+            role_has_permissions::Entity::find()
+                .filter(role_has_permissions::Column::RoleId.is_in(chunk))
+                .all(app.db())
+                .await?,
+        );
+    }
+    let mut names: HashMap<i64, String> = HashMap::new();
+    for chunk in chunks(pivots.iter().map(|p| p.permission_id)) {
+        names.extend(
+            permission::Entity::find()
+                .filter(permission::Column::Id.is_in(chunk))
+                .filter(permission::Column::Orphaned.eq(false))
+                .all(app.db())
+                .await?
+                .into_iter()
+                .map(|p| (p.id, p.name)),
+        );
+    }
     let mut permissions: HashMap<i64, Vec<String>> = HashMap::new();
     for pivot in &pivots {
         if let Some(name) = names.get(&pivot.permission_id) {
@@ -561,7 +579,6 @@ async fn system_roles(
             .select_only()
             .column(user_role::Column::RoleId)
             .column_as(user_role::Column::ModelId.count(), "n")
-            .filter(user_role::Column::RoleId.is_in(ids.clone()))
             .filter(user_role::Column::ModelType.eq(USER_MODEL))
             .group_by(user_role::Column::RoleId)
             .into_tuple::<(i64, i64)>()
@@ -574,7 +591,6 @@ async fn system_roles(
         HashMap::new()
     };
     let held: std::collections::HashSet<i64> = user_role::Entity::find()
-        .filter(user_role::Column::RoleId.is_in(ids))
         .filter(user_role::Column::ModelType.eq(USER_MODEL))
         .filter(user_role::Column::ModelId.eq(&actor.id))
         .all(app.db())
@@ -592,7 +608,10 @@ async fn system_roles(
             let holds_all = perms.iter().all(|p| actor.can(p));
             let abilities = BTreeMap::from([
                 ("update", actor.can("roles.update") && manageable && !held.contains(&role.id)),
-                ("delete", actor.can("roles.delete") && manageable && !role.is_system && holds_all),
+                (
+                    "delete",
+                    actor.can("roles.delete") && manageable && !role.is_system && holds_all && !held.contains(&role.id),
+                ),
                 ("assign", actor.can("roles.assign") && manageable && holds_all),
             ]);
             let users = users.get(&role.id).copied().unwrap_or(0);

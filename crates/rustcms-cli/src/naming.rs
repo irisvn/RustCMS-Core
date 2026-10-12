@@ -42,11 +42,23 @@ pub fn plural(word: &str) -> String {
     }
 }
 
-/// PascalCase model name.
+/// Rust keywords: cannot be module names.
+const KEYWORDS: &[&str] = &[
+    "as", "async", "await", "box", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false",
+    "fn", "for", "gen", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+    "self", "static", "struct", "super", "trait", "true", "try", "type", "unsafe", "use", "where", "while", "yield",
+];
+
+/// PascalCase model name whose module name is not a keyword.
 pub fn validate_model(name: &str) -> anyhow::Result<()> {
     ensure!(
         name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && name.chars().all(|c| c.is_ascii_alphanumeric()),
         "model name must be PascalCase, e.g. `BlogPost`"
+    );
+    ensure!(
+        !KEYWORDS.contains(&snake_case(name).as_str()),
+        "`{name}` would be the module `{}`, a Rust keyword",
+        snake_case(name)
     );
     Ok(())
 }

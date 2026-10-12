@@ -5,6 +5,7 @@ mod docs;
 mod generate;
 mod naming;
 mod project;
+mod resource;
 mod scaffold;
 
 use std::path::PathBuf;
@@ -44,6 +45,24 @@ enum Command {
         #[arg(short = 'm', long)]
         migration: bool,
     },
+    /// Create an admin resource in `src/admin` for a model
+    #[command(name = "make:resource")]
+    MakeResource {
+        /// Model name in PascalCase (the model must exist in `src/models`)
+        model: String,
+        /// Generate fields, form, table and filters from the model's columns
+        #[arg(long)]
+        generate: bool,
+        /// Relationship select for a column: `category_id=categories` (repeatable)
+        #[arg(long = "belongs-to", value_name = "FIELD=SLUG")]
+        belongs_to: Vec<String>,
+    },
+    /// Create a policy in `src/policies`
+    #[command(name = "make:policy")]
+    MakePolicy {
+        /// Policy name in PascalCase, e.g. `PostPolicy`
+        name: String,
+    },
     /// Create a migration in `src/migrations`
     #[command(name = "make:migration")]
     MakeMigration {
@@ -73,6 +92,10 @@ fn main() -> ExitCode {
         Command::MakeModel { name, migration } => {
             project::Project::find().and_then(|p| generate::make_model(&p, &name, migration))
         }
+        Command::MakeResource { model, generate, belongs_to } => {
+            project::Project::find().and_then(|p| resource::make_resource(&p, &model, generate, &belongs_to))
+        }
+        Command::MakePolicy { name } => project::Project::find().and_then(|p| resource::make_policy(&p, &name)),
         Command::MakeTest { name } => project::Project::find().and_then(|p| generate::make_test(&p, &name)),
         Command::MakeMigration { name } => project::Project::find().and_then(|p| generate::make_migration(&p, &name)),
         Command::DocsCli => {

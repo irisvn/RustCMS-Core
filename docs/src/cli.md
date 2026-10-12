@@ -27,6 +27,24 @@ Create a SeaORM entity in `src/models`
 | `<name>` | Model name in PascalCase, e.g. `BlogPost` |
 | `-m, --migration` | Also create a `create_<table>_table` migration |
 
+### `make:resource`
+
+Create an admin resource in `src/admin` for a model
+
+| Argument | Description |
+|---|---|
+| `<model>` | Model name in PascalCase (the model must exist in `src/models`) |
+| `--generate` | Generate fields, form, table and filters from the model's columns |
+| `--belongs-to` | Relationship select for a column: `category_id=categories` (repeatable) |
+
+### `make:policy`
+
+Create a policy in `src/policies`
+
+| Argument | Description |
+|---|---|
+| `<name>` | Policy name in PascalCase, e.g. `PostPolicy` |
+
 ### `make:migration`
 
 Create a migration in `src/migrations`
@@ -89,6 +107,10 @@ Roll back every migration and run them again
 
 Show applied and pending migrations
 
+### `route:list`
+
+List the HTTP routes described by the framework, providers and the application
+
 ### `key:generate`
 
 Generate APP_KEY and write it to .env
@@ -113,6 +135,16 @@ Create a user (prints a generated password if none is given)
 | `--password` | Password (default: generated) |
 | `--super-admin` | Grant the super_admin role |
 | `--guard` | Guard of the super_admin role (default: `admin`) |
+
+### `role:assign`
+
+Give an existing user a role (`super_admin` or any role) of a guard
+
+| Argument | Description |
+|---|---|
+| `--email` | User email |
+| `--role` | Role name, e.g. `super_admin` |
+| `--guard` | Guard of the role (`admin`, `api`) (default: `admin`) |
 
 ### `token:create`
 

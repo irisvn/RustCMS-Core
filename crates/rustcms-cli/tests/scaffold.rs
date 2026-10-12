@@ -35,6 +35,35 @@ fn generated_app_builds_and_passes_its_tests() {
         .replace("todo!(\"add_slug_to_blog_posts: undo the migration\")", "Ok(())");
     std::fs::write(&blank, contents).unwrap();
 
+    // Columns for the generated resource (the schema endpoint does not read the table).
+    let model = app.join("src/models/blog_post.rs");
+    let source = std::fs::read_to_string(&model).unwrap().replace(
+        "    pub id: i64,\n",
+        "    pub id: i64,\n    pub title: String,\n    pub body: Option<String>,\n    pub published: bool,\n",
+    );
+    std::fs::write(&model, source).unwrap();
+    rustcms(&app).args(["make:resource", "BlogPost", "--generate"]).assert().success();
+    rustcms(&app).args(["make:policy", "BlogPostPolicy"]).assert().success();
+    let app_rs = std::fs::read_to_string(app.join("src/app.rs")).unwrap();
+    assert!(app_rs.contains(".resource::<crate::admin::blog_post::BlogPostResource>()"), "{app_rs}");
+    std::fs::write(
+        app.join("tests/admin_resource.rs"),
+        r#"use blog::{app, migrations::Migrator};
+use rustcms::axum::http::StatusCode;
+use rustcms_testing::{Factory, TestApp, TestDb, UserFactory, db_test};
+use serde_json::json;
+
+db_test!(generated_resource_is_served, migrate = Migrator, |db: TestDb| async move {
+    let app = TestApp::new(app::build, db).await;
+    let user = UserFactory::new().create(app.state().db()).await;
+    app.make_super_admin(&user).await;
+    let schema = app.acting_as(&user).await.get("/admin/api/resources/blog_posts/schema?operation=create").await;
+    schema.assert_status(StatusCode::OK).assert_json("/form/components/0/name", json!("title"));
+});
+"#,
+    )
+    .unwrap();
+
     let env = std::fs::read_to_string(app.join(".env")).unwrap();
     assert!(env.lines().any(|l| l.starts_with("APP_KEY=base64:")), "fresh key in .env");
 

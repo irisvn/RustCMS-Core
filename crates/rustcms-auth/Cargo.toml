@@ -1,4 +1,5 @@
 [package]
+exclude = ["tests/"]
 name = "rustcms-auth"
 description = "Authentication (session and token guards), roles, permissions and policies for rustcms."
 version.workspace = true
@@ -6,6 +7,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 rustcms-core.workspace = true
@@ -32,8 +36,10 @@ tracing.workspace = true
 futures = "0.3"
 chrono.workspace = true
 rustcms-core = { workspace = true, features = ["sqlite", "postgres"] }
-rustcms-migration.workspace = true
-rustcms-testing.workspace = true
+rustcms-migration = { path = "../rustcms-migration" }
+# Path only (no version): not published, so the published crate does not depend on
+# rustcms-testing (which depends on rustcms-auth). Tests are excluded from the package.
+rustcms-testing = { path = "../rustcms-testing" }
 serde = { workspace = true }
 toml.workspace = true
 
