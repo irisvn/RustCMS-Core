@@ -14,6 +14,8 @@ import { ListPage, type ListSearch } from "@/pages/list";
 import { LoginPage } from "@/pages/login";
 import { FormPage, ViewPage } from "@/pages/record";
 import { Dashboard, Shell } from "@/pages/shell";
+import { AccountPage } from "@/pages/account";
+import { RoleCreatePage, RolePage, RolesPage, UserCreatePage, UserPage, UsersPage } from "@/pages/system";
 import type { Session } from "./session";
 
 export interface RouterContext {
@@ -96,7 +98,45 @@ const edit = createRoute({
   },
 });
 
-const routeTree = root.addChildren([login, app.addChildren([index, list, create, view, edit])]);
+const systemUsers = createRoute({ getParentRoute: () => app, path: "/system/users", component: UsersPage });
+const systemUserCreate = createRoute({ getParentRoute: () => app, path: "/system/users/create", component: UserCreatePage });
+const systemUser = createRoute({
+  getParentRoute: () => app,
+  path: "/system/users/$id",
+  component: function SystemUser() {
+    const { id } = systemUser.useParams();
+    return <UserPage key={id} id={id} />;
+  },
+});
+const systemRoles = createRoute({ getParentRoute: () => app, path: "/system/roles", component: RolesPage });
+const systemRoleCreate = createRoute({ getParentRoute: () => app, path: "/system/roles/create", component: RoleCreatePage });
+const systemRole = createRoute({
+  getParentRoute: () => app,
+  path: "/system/roles/$id",
+  component: function SystemRole() {
+    const { id } = systemRole.useParams();
+    return <RolePage key={id} id={id} />;
+  },
+});
+const account = createRoute({ getParentRoute: () => app, path: "/account", component: AccountPage });
+
+const routeTree = root.addChildren([
+  login,
+  app.addChildren([
+    index,
+    list,
+    create,
+    view,
+    edit,
+    systemUsers,
+    systemUserCreate,
+    systemUser,
+    systemRoles,
+    systemRoleCreate,
+    systemRole,
+    account,
+  ]),
+]);
 
 /** Plain `a=b&c=d` search strings (the list query string is sent to the API as is). */
 function parseSearch(search: string): Record<string, unknown> {

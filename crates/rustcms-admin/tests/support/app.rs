@@ -42,6 +42,9 @@ pub async fn setup(db: TestDb) -> (TestApp, Users) {
     let member = UserFactory::new().name("Member").create(db).await;
     let super_admin = rustcms_auth::entities::role::super_admin_id(db, ADMIN_GUARD).await.unwrap().unwrap();
     rbac.assign_role(Actor::System, admin.id, super_admin).await.unwrap();
+    // Super admin of every guard (may replace other users' credentials).
+    let api_super = rustcms_auth::entities::role::super_admin_id(db, rustcms_auth::API_GUARD).await.unwrap().unwrap();
+    rbac.assign_role(Actor::System, admin.id, api_super).await.unwrap();
     let permissions: Vec<String> = [
         "posts.view_any",
         "posts.view",

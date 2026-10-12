@@ -198,8 +198,10 @@ export class ApiClient {
     if (!response.ok) {
       const error = new ApiError(response.status, errorBody(response, payload));
       if (response.status === 401) {
-        this.resetCsrf();
-        this.opts.onUnauthenticated?.();
+        // The session decides (it holds auth handling during a credential rotation);
+        // without one, just forget the token.
+        if (this.opts.onUnauthenticated) this.opts.onUnauthenticated();
+        else this.resetCsrf();
       } else if (error.code === "csrf_mismatch") {
         // Stale token (e.g. the session expired or rotated): drop it, and find out
         // whether the session is still there. The write is not replayed.

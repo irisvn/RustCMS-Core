@@ -179,6 +179,29 @@ describe("ApiClient", () => {
     server.resetHandlers();
   });
 
+  it("after a credential rotation, a late 401 for the old credentials is ignored", async () => {
+    let release: () => void = () => {};
+    server.use(
+      http.get("http://localhost/admin/api/slow-read", async () => {
+        await new Promise<void>((r) => (release = r));
+        return HttpResponse.json({ message: "Unauthenticated.", code: "unauthenticated" }, { status: 401 });
+      }),
+    );
+    const onUnauthenticated = vi.fn();
+    const api = client(onUnauthenticated);
+    const read = api.get("/slow-read").catch((e: unknown) => e);
+    await new Promise((r) => setTimeout(r, 10));
+    await api.post("/auth/password", {}); // succeeds; the hook then starts a new epoch
+    api.resetCsrf();
+    csrfToken = "rotated";
+    release();
+    await read;
+    expect(onUnauthenticated).not.toHaveBeenCalled();
+    await api.post("/a", {});
+    expect(calls.at(-1)?.csrf).toBe("rotated");
+    server.resetHandlers();
+  });
+
   it("returns undefined for 204", async () => {
     await expect(client().delete("/x")).resolves.toBeUndefined();
   });

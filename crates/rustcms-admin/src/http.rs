@@ -37,6 +37,8 @@ pub struct PanelResponse {
     pub user: PanelUser,
     /// Resources the user may list (`view_any`), in registration order.
     pub navigation: Vec<crate::ResourceInfo>,
+    /// System pages the user may open.
+    pub system: crate::system::SystemLinks,
 }
 
 /// The signed-in user in [`PanelResponse`].
@@ -75,6 +77,9 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::POST, format!("{resource}/actions/{{action}}")),
         (Method::GET, format!("{resource}/fields/{{field}}/options")),
     ]
+    .into_iter()
+    .chain(crate::system::routes(admin_path))
+    .collect()
 }
 
 pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppState> {
@@ -125,6 +130,7 @@ async fn panel(
         brand: panel.brand.clone(),
         user: PanelUser { id: auth.user.id.to_string(), name: auth.user.name.clone(), email: auth.user.email.clone() },
         navigation,
+        system: crate::system::SystemLinks::of(&ctx.principal),
     }))
 }
 

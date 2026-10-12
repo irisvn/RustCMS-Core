@@ -29,7 +29,7 @@ const queues = new WeakMap<Session, Map<string, Promise<unknown>>>();
  * Writes to one resource run one at a time, so the pause check below always
  * sees the outcome of the previous write before the next one is sent.
  */
-function guardedWrite<T>(session: Session, slug: string, write: () => Promise<T>): Promise<T> {
+export function guardedWrite<T>(session: Session, slug: string, write: () => Promise<T>): Promise<T> {
   let perSession = queues.get(session);
   if (!perSession) queues.set(session, (perSession = new Map()));
   const previous = perSession.get(slug) ?? Promise.resolve();

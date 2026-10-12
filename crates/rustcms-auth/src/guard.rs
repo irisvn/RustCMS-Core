@@ -121,12 +121,17 @@ async fn admin(app: &AppState, auth: &Arc<AuthState>, mut req: Request, next: Ne
     let mut signed_in = None;
     if let Some(user_id) = session.user_id() {
         let user = user::Entity::find_by_id(user_id).one(app.db()).await?;
-        match user.filter(|u| u.is_active && u.auth_version == session.auth_version()) {
-            Some(user) => {
+        match user.filter(|u| u.is_active) {
+            Some(user) if user.auth_version == session.auth_version() => {
                 signed_in = Some(user.id);
                 let principal = auth.resolver.principal(app.db(), ADMIN_GUARD, &user, None).await?;
                 req.extensions_mut().insert(Authenticated { principal, user, token_id: None });
             }
+            // Credentials moved on: this request is anonymous. The session is not
+            // ended here, because a concurrent request of the same browser may be
+            // re-issuing it right now (password change, sign-out of other sessions);
+            // ending the lineage would sign out the user who just proved their password.
+            Some(_) => {}
             None => session.logout(),
         }
     }

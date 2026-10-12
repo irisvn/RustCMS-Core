@@ -8,7 +8,7 @@ use rustcms_core::{AppBuilder, ServiceProvider};
 use crate::http::{self, AdminPanel};
 use crate::registry::Registry;
 use crate::resource::Resource;
-use crate::spa;
+use crate::{spa, system};
 
 /// The admin panel of an application.
 ///
@@ -69,6 +69,8 @@ impl ServiceProvider for AdminProvider {
         }
         let admin_path = auth.config.admin_path.clone();
         app.bind(AdminPanel { brand: self.brand.clone(), registry });
-        app.routes(move |router| spa::router(http::router(router, &admin_path), &admin_path));
+        app.routes(move |router| {
+            spa::router(system::router(http::router(router, &admin_path), &admin_path), &admin_path)
+        });
     }
 }

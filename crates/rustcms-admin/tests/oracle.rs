@@ -30,8 +30,34 @@ fn oracle() -> Oracle {
     toml::from_str(&std::fs::read_to_string(path).expect("oracle file")).expect("oracle syntax")
 }
 
-async fn actor<'a>(app: &'a TestApp, users: &Users, name: &str) -> TestClient<'a> {
+struct Extra {
+    /// users.view_any, users.view, users.update, users.delete, roles.assign; no super admin.
+    manager: rustcms_core::models::user::Model,
+    /// Super admin of the admin guard only.
+    panel_super: rustcms_core::models::user::Model,
+}
+
+async fn extra(app: &TestApp) -> Extra {
+    use rustcms_auth::{ADMIN_GUARD, Actor, AuthState, RbacService};
+    use rustcms_testing::{Factory, UserFactory};
+    let auth = app.state().service::<AuthState>().unwrap();
+    let db = app.state().db();
+    let rbac = RbacService::new(db, &auth.resolver);
+    let permissions: Vec<String> =
+        ["users.view_any", "users.view", "users.update", "users.delete", "roles.assign"].map(String::from).to_vec();
+    let role = rbac.create_role(Actor::System, ADMIN_GUARD, "manager", &permissions).await.unwrap();
+    let manager = UserFactory::new().name("Manager").create(db).await;
+    rbac.assign_role(Actor::System, manager.id, role.id).await.unwrap();
+    let panel_super = UserFactory::new().name("Panel super").create(db).await;
+    let super_role = rustcms_auth::entities::role::super_admin_id(db, ADMIN_GUARD).await.unwrap().unwrap();
+    rbac.assign_role(Actor::System, panel_super.id, super_role).await.unwrap();
+    Extra { manager, panel_super }
+}
+
+async fn actor<'a>(app: &'a TestApp, users: &Users, extra: &Extra, name: &str) -> TestClient<'a> {
     match name {
+        "manager" => app.acting_as(&extra.manager).await,
+        "panel_super" => app.acting_as(&extra.panel_super).await,
         "guest" => {
             let client = app.client();
             client.fetch_csrf().await;
@@ -65,14 +91,37 @@ db_test!(oracle_matches_the_admin_api, |db: TestDb| async move {
             .await;
         response.json()["data"]["key"].as_str().unwrap().to_owned()
     };
+    let extra = extra(&app).await;
     let own = post(&users.editor, "own").await;
     let spare = post(&users.editor, "spare").await;
     let theirs = post(&users.admin, "theirs").await;
-    let fill = |text: &str| text.replace("{own}", &own).replace("{spare}", &spare).replace("{theirs}", &theirs);
+    let role_id = async |name: &str| {
+        use rustcms_auth::entities::role;
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+        let found = role::Entity::find().filter(role::Column::Name.eq(name)).one(app.state().db()).await.unwrap();
+        found.unwrap().id.to_string()
+    };
+    let (editor_role, super_role) = (role_id("editor").await, role_id("super_admin").await);
+    let ids = [
+        ("{member_id}", users.member.id.to_string()),
+        ("{editor_id}", users.editor.id.to_string()),
+        ("{admin_id}", users.admin.id.to_string()),
+        ("{member_email}", users.member.email.clone()),
+        ("{editor_email}", users.editor.email.clone()),
+        ("{editor_role}", editor_role),
+        ("{super_role}", super_role),
+    ];
+    let fill = |text: &str| {
+        let mut text = text.replace("{own}", &own).replace("{spare}", &spare).replace("{theirs}", &theirs);
+        for (placeholder, value) in &ids {
+            text = text.replace(placeholder, value);
+        }
+        text
+    };
 
     let mut failures = Vec::new();
     for case in oracle().case {
-        let client = actor(&app, &users, &case.actor).await;
+        let client = actor(&app, &users, &extra, &case.actor).await;
         let (method, _) = case.route.split_once(' ').expect("`METHOD /path`");
         let body = case.body.as_deref().map(|b| serde_json::from_str(&fill(b)).expect("case body is JSON"));
         let response = client.send(method.parse::<Method>().unwrap(), &fill(&case.path), body.as_ref()).await;

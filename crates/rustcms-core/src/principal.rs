@@ -19,6 +19,10 @@ pub struct Principal {
     pub super_admin: bool,
     /// Abilities of the API token used, `None` for session auth.
     pub token_abilities: Option<HashSet<String>>,
+    /// The user's credential version (`users.auth_version`) when authenticated.
+    /// Changes made on their behalf are refused once it moved on (signed out
+    /// everywhere, password changed), even mid-request.
+    pub auth_version: Option<i64>,
 }
 
 impl Principal {
@@ -44,6 +48,7 @@ mod tests {
             permissions: perms.iter().map(|p| p.to_string()).collect(),
             super_admin,
             token_abilities: token.map(|t| t.iter().map(|a| a.to_string()).collect()),
+            auth_version: None,
         }
     }
 

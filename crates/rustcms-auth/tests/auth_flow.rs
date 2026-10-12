@@ -596,3 +596,18 @@ db_test!(admin_api_responses_are_never_cached, migrate = Migrator, |db: TestDb| 
     assert_eq!(me.header("x-rustcms-user"), Some(seed.member.id.to_string()));
     assert_eq!(anonymous.get(&app.admin_api("auth/me")).await.header("x-rustcms-user"), None);
 });
+
+db_test!(a_stale_request_does_not_end_the_rotated_session, migrate = Migrator, |db: TestDb| async move {
+    use sea_orm::PaginatorTrait;
+    let (app, seed) = setup(db).await;
+    let browser = app.login_as(&seed.member.email, PASSWORD).await;
+    browser.get(&app.admin_api("auth/me")).await.assert_status(StatusCode::OK);
+    let sessions = || async { session::Entity::find().count(app.state().db()).await.unwrap() };
+    let before = sessions().await;
+    // Credentials move on while this browser still holds the previous stamp
+    // (as when a parallel request of the same tab is changing the password).
+    rustcms_auth::credentials::logout_everywhere(app.state().db(), &seed.member).await.unwrap();
+    browser.get(&app.admin_api("auth/me")).await.assert_status(StatusCode::UNAUTHORIZED);
+    // The stale request is anonymous but destroys nothing: a re-issue in flight survives.
+    assert_eq!(sessions().await, before);
+});

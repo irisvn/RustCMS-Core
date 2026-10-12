@@ -19,6 +19,7 @@ errors included, is `Cache-Control: private, no-store`; unknown paths under
 | GET / PATCH / DELETE | `/resources/{slug}/records/{key}` | `{data: Envelope}` / `{data: Envelope}` / 204 |
 | POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing}` |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
+| … | `/system/…` | users, roles and permissions, see [Users, roles & account](admin/users-roles.md) |
 
 Options are available to users who may use the field. When a record-level
 policy hides more than 1,000 candidates before 50 visible ones are found, the

@@ -10,6 +10,8 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ResourceIcon } from "@/components/icons";
 
+const navLink = "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted [&.active]:bg-muted [&.active]:font-medium";
+
 function groups(navigation: ResourceInfo[]): [string, ResourceInfo[]][] {
   const out = new Map<string, ResourceInfo[]>();
   for (const r of navigation) {
@@ -58,18 +60,34 @@ export function Shell() {
                   key={r.slug}
                   to="/r/$slug"
                   params={{ slug: r.slug }}
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted [&.active]:bg-muted [&.active]:font-medium"
+                  className={navLink}
                 >
                   <ResourceIcon name={r.icon} /> {r.pluralLabel}
                 </Link>
               ))}
             </div>
           ))}
+          {/* `system` is absent from older servers. */}
+          {(p.system?.users || p.system?.roles) && (
+            <div className="flex flex-col gap-1">
+              <p className="px-2 text-xs font-semibold uppercase text-muted-foreground">System</p>
+              {p.system?.users && (
+                <Link to="/system/users" className={navLink}>
+                  <ResourceIcon name="users" /> Users
+                </Link>
+              )}
+              {p.system?.roles && (
+                <Link to="/system/roles" className={navLink}>
+                  <ResourceIcon name="shield" /> Roles
+                </Link>
+              )}
+            </div>
+          )}
         </nav>
         <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3 text-sm">
-          <span className="truncate" title={p.user.email}>
+          <Link to="/account" className="truncate hover:underline" title={p.user.email}>
             {p.user.name}
-          </span>
+          </Link>
           <Button variant="outline" size="sm" onClick={() => void logout()} disabled={leaving}>
             <LogOut /> Sign out
           </Button>

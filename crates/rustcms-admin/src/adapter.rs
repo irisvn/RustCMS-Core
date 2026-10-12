@@ -503,7 +503,7 @@ impl<R: Resource> ResourceAdapter<R> {
 ///
 /// Both sides are folded by the database's own `LOWER`, so an exact value always
 /// matches itself (SQLite folds ASCII only; PostgreSQL folds Unicode).
-fn search_match(backend: DbBackend, column: impl ColumnTrait, kind: FieldKind, pattern: &str) -> Expr {
+pub(crate) fn search_match(backend: DbBackend, column: impl ColumnTrait, kind: FieldKind, pattern: &str) -> Expr {
     let column = Expr::col(column.as_column_ref());
     let pattern = Expr::val(pattern);
     // sea-query substitutes the backend's own placeholder token in custom SQL.
@@ -522,7 +522,7 @@ fn search_match(backend: DbBackend, column: impl ColumnTrait, kind: FieldKind, p
 }
 
 /// Escapes `%`, `_` and `\\` for `LIKE … ESCAPE '\\'`.
-fn escape_like(text: &str) -> String {
+pub(crate) fn escape_like(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
         if matches!(c, '%' | '_' | '\\') {

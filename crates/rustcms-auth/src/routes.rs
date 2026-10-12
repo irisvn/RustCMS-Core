@@ -185,7 +185,7 @@ struct PasswordChange {
 }
 
 /// Verifies the current password of a signed-in user (throttled per user).
-async fn confirm_password(auth: &AuthState, user: &user::Model, password: String) -> AppResult<()> {
+pub async fn confirm_password(auth: &AuthState, user: &user::Model, password: String) -> AppResult<()> {
     if password.len() > MAX_PASSWORD_LEN {
         return Err(ValidationErrors::field("current_password", "The password is incorrect.").into());
     }

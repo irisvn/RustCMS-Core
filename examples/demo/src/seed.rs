@@ -50,6 +50,9 @@ pub async fn seed(state: &AppState) -> anyhow::Result<()> {
     let admin = user("Ada Admin", "admin@example.test").await?;
     let super_admin = role::super_admin_id(db, ADMIN_GUARD).await?.expect("super_admin role (migrations)");
     rbac.assign_role(Actor::System, admin.id, super_admin).await?;
+    // Super admin of the API guard too: replacing other users' credentials needs every guard.
+    let api_super = role::super_admin_id(db, rustcms::auth::API_GUARD).await?.expect("api super_admin role");
+    rbac.assign_role(Actor::System, admin.id, api_super).await?;
     let editor = user("Eddie Editor", "editor@example.test").await?;
     let permissions: Vec<String> =
         ["posts.create", "posts.update_own", "categories.view_any", "categories.view"].map(String::from).to_vec();

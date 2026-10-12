@@ -25,7 +25,7 @@ use rustcms_core::models::user;
 use rustcms_core::{AppError, AppResult, Principal, ValidationErrors};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, DbBackend, EntityTrait,
-    PaginatorTrait, QueryFilter, Set,
+    PaginatorTrait, QueryFilter, QuerySelect, Set,
 };
 
 use crate::entities::{
@@ -101,6 +101,7 @@ impl PermissionResolver {
             permissions: grants.permissions.clone(),
             super_admin: grants.super_admin,
             token_abilities,
+            auth_version: Some(user.auth_version),
         })
     }
 
@@ -208,18 +209,47 @@ impl<'a> RbacService<'a> {
         Self { db, resolver }
     }
 
+    /// Commits and always evicts cached grants: if COMMIT reached the server but
+    /// its answer was lost, the change may be applied, so the cache must not outlive it.
+    async fn commit(&self, txn: DatabaseTransaction) -> AppResult<()> {
+        // Evicts on drop too: a request cancelled while COMMIT is in flight may
+        // still have committed.
+        struct EvictOnDrop<'r>(&'r PermissionResolver);
+        impl Drop for EvictOnDrop<'_> {
+            fn drop(&mut self) {
+                self.0.evict_all();
+            }
+        }
+        let _evict = EvictOnDrop(self.resolver);
+        Ok(txn.commit().await?)
+    }
+
     /// Opens a write transaction holding the RBAC lock and reloads the acting
     /// user's grants inside it, so authorization uses current permissions, not
     /// the snapshot taken when the request was authenticated.
     async fn begin(&self, actor: Actor<'_>) -> AppResult<(DatabaseTransaction, Fresh)> {
         let txn = rustcms_core::db::begin_write(self.db).await?;
+        if txn.get_database_backend() == DbBackend::Postgres {
+            // A stuck lock holder must not pin every RBAC request (and the pool) forever.
+            txn.execute_unprepared("SET LOCAL lock_timeout = '10s'").await?;
+        }
         lock(&txn).await?;
         let fresh = match actor {
             Actor::System => Fresh(None),
             Actor::User(p) => {
                 let id: i64 = p.id.parse().map_err(|_| AppError::Forbidden)?;
-                let user =
-                    user::Entity::find_by_id(id).one(&txn).await?.filter(|u| u.is_active).ok_or(AppError::Forbidden)?;
+                // The actor's row is held (shared) until commit, so revoking their
+                // credentials waits for this change, or this change sees it.
+                let mut find = user::Entity::find_by_id(id);
+                if txn.get_database_backend() == DbBackend::Postgres {
+                    find = find.lock_shared();
+                }
+                let user = find
+                    .one(&txn)
+                    .await?
+                    // Fail closed: a principal without its credential version cannot prove it is current.
+                    .filter(|u| u.is_active && p.auth_version == Some(u.auth_version))
+                    .ok_or(AppError::Forbidden)?;
                 let grants = load_grants(&txn, &p.guard, user.id).await?;
                 Fresh(Some(Principal { permissions: grants.permissions, super_admin: grants.super_admin, ..p.clone() }))
             }
@@ -243,13 +273,17 @@ impl<'a> RbacService<'a> {
         if name.is_empty() {
             return invalid("name", "is required");
         }
-        if role::Entity::find()
-            .filter(role::Column::Name.eq(name))
+        if name.chars().count() > 120 || name.chars().any(char::is_control) {
+            return invalid("name", "must be at most 120 characters, without control characters");
+        }
+        // Names differing only in case would be confusing to assign.
+        let taken = role::Entity::find()
             .filter(role::Column::GuardName.eq(guard))
-            .one(&txn)
+            .all(&txn)
             .await?
-            .is_some()
-        {
+            .iter()
+            .any(|r| r.name.to_lowercase() == name.to_lowercase());
+        if taken {
             return invalid("name", "has already been taken");
         }
         let wanted = permission_ids(&txn, guard, permissions).await?;
@@ -266,18 +300,33 @@ impl<'a> RbacService<'a> {
         for id in wanted.values() {
             role_perm::ActiveModel { role_id: Set(role.id), permission_id: Set(*id) }.insert(&txn).await?;
         }
-        txn.commit().await?;
-        self.resolver.evict_all();
+        self.commit(txn).await?;
         Ok(role)
     }
 
     /// Replaces the permissions of a role. Added and removed permissions must both be held by the actor.
     pub async fn set_role_permissions(&self, actor: Actor<'_>, role_id: i64, permissions: &[String]) -> AppResult<()> {
+        self.set_role_permissions_if(actor, role_id, permissions, None).await
+    }
+
+    /// Like [`Self::set_role_permissions`], but only if the role still has exactly
+    /// `expected` (the permissions the editor started from): a stale draft can
+    /// never undo a change made meanwhile. Orphaned grants are kept untouched.
+    pub async fn set_role_permissions_if(
+        &self,
+        actor: Actor<'_>,
+        role_id: i64,
+        permissions: &[String],
+        expected: Option<&[String]>,
+    ) -> AppResult<()> {
         let (txn, fresh) = self.begin(actor).await?;
         let actor = fresh.actor();
         require(actor, "roles.update")?;
-        let role = role::Entity::find_by_id(role_id).one(&txn).await?.ok_or(AppError::NotFound)?;
-        same_guard(actor, &role.guard_name)?;
+        // Comparing with `expected` answers "stale" or not: only for callers who may read the role.
+        if expected.is_some() {
+            require_any(actor, &["roles.view", "roles.view_any"])?;
+        }
+        let role = find_role(&txn, actor, role_id).await?;
         protected(actor, &role)?;
         if let Actor::User(principal) = actor
             && holds_role(&txn, &principal.id, role.id).await?
@@ -285,17 +334,27 @@ impl<'a> RbacService<'a> {
             return forbidden();
         }
         let wanted = permission_ids(&txn, &role.guard_name, permissions).await?;
-        let current = role_permission_names(&txn, role.id).await?;
+        let current = active_permissions(&txn, role.id).await?;
+        let current_names: BTreeSet<String> = current.keys().cloned().collect();
+        if let Some(expected) = expected
+            && expected.iter().cloned().collect::<BTreeSet<_>>() != current_names
+        {
+            return stale();
+        }
         let wanted_names: BTreeSet<String> = wanted.keys().cloned().collect();
-        let changed: Vec<&String> = wanted_names.symmetric_difference(&current).collect();
+        let changed: Vec<&String> = wanted_names.symmetric_difference(&current_names).collect();
         grantable(actor, &role.guard_name, changed)?;
 
-        role_perm::Entity::delete_many().filter(role_perm::Column::RoleId.eq(role.id)).exec(&txn).await?;
+        // Only active grants are replaced: orphaned ones stay, ready for a redeclaration.
+        role_perm::Entity::delete_many()
+            .filter(role_perm::Column::RoleId.eq(role.id))
+            .filter(role_perm::Column::PermissionId.is_in(current.values().copied()))
+            .exec(&txn)
+            .await?;
         for id in wanted.values() {
             role_perm::ActiveModel { role_id: Set(role.id), permission_id: Set(*id) }.insert(&txn).await?;
         }
-        txn.commit().await?;
-        self.resolver.evict_all();
+        self.commit(txn).await?;
         Ok(())
     }
 
@@ -310,12 +369,11 @@ impl<'a> RbacService<'a> {
             return forbidden();
         }
         protected(actor, &role)?;
-        let permissions = role_permission_names(&txn, role.id).await?;
-        grantable(actor, &role.guard_name, &permissions)?;
+        let permissions = active_permissions(&txn, role.id).await?;
+        grantable(actor, &role.guard_name, permissions.keys())?;
         user_role::Entity::delete_many().filter(user_role::Column::RoleId.eq(role.id)).exec(&txn).await?;
         role::Entity::delete_by_id(role.id).exec(&txn).await?;
-        txn.commit().await?;
-        self.resolver.evict_all();
+        self.commit(txn).await?;
         Ok(())
     }
 
@@ -329,8 +387,9 @@ impl<'a> RbacService<'a> {
         let role = role::Entity::find_by_id(role_id).one(&txn).await?.ok_or(AppError::NotFound)?;
         same_guard(actor, &role.guard_name)?;
         protected(actor, &role)?;
-        grantable(actor, &role.guard_name, &role_permission_names(&txn, role.id).await?)?;
+        grantable(actor, &role.guard_name, active_permissions(&txn, role.id).await?.keys())?;
         if !holds_role(&txn, &user_id.to_string(), role.id).await? {
+            dormant_grants(&txn, actor, role.id).await?;
             user_role::ActiveModel {
                 role_id: Set(role.id),
                 model_type: Set(USER_MODEL.into()),
@@ -339,8 +398,7 @@ impl<'a> RbacService<'a> {
             .insert(&txn)
             .await?;
         }
-        txn.commit().await?;
-        self.resolver.evict_all();
+        self.commit(txn).await?;
         Ok(())
     }
 
@@ -353,7 +411,7 @@ impl<'a> RbacService<'a> {
         let role = role::Entity::find_by_id(role_id).one(&txn).await?.ok_or(AppError::NotFound)?;
         same_guard(actor, &role.guard_name)?;
         protected(actor, &role)?;
-        grantable(actor, &role.guard_name, &role_permission_names(&txn, role.id).await?)?;
+        grantable(actor, &role.guard_name, active_permissions(&txn, role.id).await?.keys())?;
         user_role::Entity::delete_many()
             .filter(user_role::Column::RoleId.eq(role.id))
             .filter(user_role::Column::ModelType.eq(USER_MODEL))
@@ -363,8 +421,7 @@ impl<'a> RbacService<'a> {
         if role.is_super_admin() {
             ensure_super_admin_remains(&txn, &role.guard_name).await?;
         }
-        txn.commit().await?;
-        self.resolver.evict_all();
+        self.commit(txn).await?;
         Ok(())
     }
 
@@ -392,8 +449,7 @@ impl<'a> RbacService<'a> {
             .insert(&txn)
             .await?;
         }
-        txn.commit().await?;
-        self.resolver.evict_all();
+        self.commit(txn).await?;
         Ok(())
     }
 
@@ -412,22 +468,39 @@ impl<'a> RbacService<'a> {
             .filter(user_perm::Column::ModelId.eq(user_id.to_string()))
             .exec(&txn)
             .await?;
-        txn.commit().await?;
-        self.resolver.evict_all();
+        self.commit(txn).await?;
         Ok(())
     }
 
     /// Enables or disables a user. Disabling signs them out everywhere and revokes their tokens.
     pub async fn set_user_active(&self, actor: Actor<'_>, user_id: i64, active: bool) -> AppResult<()> {
+        self.set_user_active_if(actor, user_id, active, None).await
+    }
+
+    /// Like [`Self::set_user_active`], but only if the user is still `expected`
+    /// active or not (what the editor saw). Users holding protected roles or
+    /// super-admin roles (in any guard) are managed only by super admins of every guard.
+    pub async fn set_user_active_if(
+        &self,
+        actor: Actor<'_>,
+        user_id: i64,
+        active: bool,
+        expected: Option<bool>,
+    ) -> AppResult<()> {
         let (txn, fresh) = self.begin(actor).await?;
         let actor = fresh.actor();
         require(actor, "users.update")?;
-        not_self(actor, user_id)?;
-        let target = user::Entity::find_by_id(user_id).one(&txn).await?.ok_or(AppError::NotFound)?;
-        let guards = super_admin_guards(&txn, user_id).await?;
-        if !guards.is_empty() && !is_super_admin_actor(actor) {
-            return forbidden();
+        // Comparing with `expected` reveals the current status.
+        if expected.is_some() {
+            require_any(actor, &["users.view", "users.view_any"])?;
         }
+        not_self(actor, user_id)?;
+        let target = lock_user(&txn, user_id).await?;
+        guard_target(&txn, actor, user_id).await?;
+        if expected.is_some_and(|e| e != target.is_active) {
+            return stale();
+        }
+        let guards = super_admin_guards(&txn, user_id).await?;
         let mut model: user::ActiveModel = target.into();
         model.is_active = Set(active);
         model.update(&txn).await?;
@@ -437,8 +510,7 @@ impl<'a> RbacService<'a> {
         for guard in &guards {
             ensure_super_admin_remains(&txn, guard).await?;
         }
-        txn.commit().await?;
-        self.resolver.evict_all();
+        self.commit(txn).await?;
         Ok(())
     }
 
@@ -448,11 +520,9 @@ impl<'a> RbacService<'a> {
         let actor = fresh.actor();
         require(actor, "users.delete")?;
         not_self(actor, user_id)?;
-        user::Entity::find_by_id(user_id).one(&txn).await?.ok_or(AppError::NotFound)?;
+        lock_user(&txn, user_id).await?;
+        guard_target(&txn, actor, user_id).await?;
         let guards = super_admin_guards(&txn, user_id).await?;
-        if !guards.is_empty() && !is_super_admin_actor(actor) {
-            return forbidden();
-        }
         let model_id = user_id.to_string();
         user_role::Entity::delete_many()
             .filter(user_role::Column::ModelType.eq(USER_MODEL))
@@ -468,8 +538,7 @@ impl<'a> RbacService<'a> {
         for guard in &guards {
             ensure_super_admin_remains(&txn, guard).await?;
         }
-        txn.commit().await?;
-        self.resolver.evict_all();
+        self.commit(txn).await?;
         Ok(())
     }
 
@@ -477,58 +546,208 @@ impl<'a> RbacService<'a> {
     /// in one transaction: on any failure, nothing is created.
     pub async fn create_user(&self, actor: Actor<'_>, new: NewUser<'_>) -> AppResult<user::Model> {
         let (txn, fresh) = self.begin(actor).await?;
+        let user = create_user_in(&txn, fresh.actor(), new).await?;
+        self.commit(txn).await?;
+        Ok(user)
+    }
+
+    /// Creates a user holding `role_ids` (roles of `guard`), all or nothing. Assigning
+    /// roles needs `roles.assign` and follows [`Self::set_user_roles`]'s rules.
+    pub async fn create_user_with_roles(
+        &self,
+        actor: Actor<'_>,
+        new: NewUser<'_>,
+        guard: &str,
+        role_ids: &[i64],
+    ) -> AppResult<user::Model> {
+        let (txn, fresh) = self.begin(actor).await?;
         let actor = fresh.actor();
-        require(actor, "users.create")?;
-        let email = new.email.trim().to_lowercase();
-        let mut errors = ValidationErrors::new();
-        if new.name.trim().is_empty() {
-            errors.add("name", "is required");
+        let user = create_user_in(&txn, actor, new).await?;
+        if !role_ids.is_empty() {
+            apply_roles(&txn, actor, user.id, guard, role_ids).await?;
         }
-        if email.is_empty() || !email.contains('@') || email.len() > crate::routes::MAX_EMAIL_LEN {
-            errors.add("email", "must be a valid email address");
+        self.commit(txn).await?;
+        Ok(user)
+    }
+
+    /// Replaces the roles a user holds in `guard` with `role_ids`. Every role added
+    /// or removed is checked like [`Self::assign_role`] / [`Self::revoke_role`].
+    pub async fn set_user_roles(&self, actor: Actor<'_>, user_id: i64, guard: &str, role_ids: &[i64]) -> AppResult<()> {
+        self.set_user_roles_if(actor, user_id, guard, role_ids, None).await
+    }
+
+    /// Like [`Self::set_user_roles`], but only if the user still holds exactly
+    /// `expected` in `guard` (what the editor started from), so a stale draft
+    /// cannot restore a role revoked meanwhile.
+    pub async fn set_user_roles_if(
+        &self,
+        actor: Actor<'_>,
+        user_id: i64,
+        guard: &str,
+        role_ids: &[i64],
+        expected: Option<&[i64]>,
+    ) -> AppResult<()> {
+        let (txn, fresh) = self.begin(actor).await?;
+        let actor = fresh.actor();
+        // Authorize before reading anything about the target: unauthorized callers
+        // learn nothing (existence, current roles) from the answer.
+        require(actor, "roles.assign")?;
+        // Comparing with `expected` reveals the current roles: only for callers who may read them.
+        if expected.is_some() {
+            require_any(actor, &["users.view", "users.view_any"])?;
         }
-        errors.into_result()?;
-        if user::Entity::find().filter(user::Column::Email.eq(&email)).one(&txn).await?.is_some() {
+        same_guard(actor, guard)?;
+        not_self(actor, user_id)?;
+        lock_user(&txn, user_id).await?;
+        if let Some(expected) = expected
+            && expected.iter().copied().collect::<BTreeSet<_>>() != held_roles(&txn, user_id, guard).await?
+        {
+            return stale();
+        }
+        apply_roles(&txn, actor, user_id, guard, role_ids).await?;
+        self.commit(txn).await?;
+        Ok(())
+    }
+
+    /// Changes a user's name and email (`users.update`; super admins' profiles
+    /// only by super admins). Users may edit their own profile.
+    pub async fn update_profile(
+        &self,
+        actor: Actor<'_>,
+        user_id: i64,
+        name: &str,
+        email: &str,
+    ) -> AppResult<user::Model> {
+        self.update_profile_if(actor, user_id, name, email, None, false).await
+    }
+
+    /// Like [`Self::update_profile`], but only if the profile still has the
+    /// `expected` `(name, email)` the editor started from: a stale draft never
+    /// restores an old sign-in email. Users changing their own email must have
+    /// confirmed their password (`password_confirmed`).
+    pub async fn update_profile_if(
+        &self,
+        actor: Actor<'_>,
+        user_id: i64,
+        name: &str,
+        email: &str,
+        expected: Option<(&str, &str)>,
+        password_confirmed: bool,
+    ) -> AppResult<user::Model> {
+        let (txn, fresh) = self.begin(actor).await?;
+        let actor = fresh.actor();
+        let own = matches!(actor, Actor::User(p) if p.id == user_id.to_string());
+        // Authorization first: nothing about the target leaks to callers who may not edit it.
+        if !own {
+            require(actor, "users.update")?;
+            // Comparing with `expected` reveals the current profile.
+            if expected.is_some() {
+                require_any(actor, &["users.view", "users.view_any"])?;
+            }
+        }
+        let email = valid_profile(name, email)?;
+        let target = lock_user(&txn, user_id).await?;
+        if !own {
+            guard_target(&txn, actor, user_id).await?;
+        }
+        let email_changed = email != target.email;
+        // The email is a credential: changing someone else's is a takeover.
+        if !own && email_changed {
+            covers(&txn, actor, user_id).await?;
+        }
+        if let Some((name, email)) = expected
+            && (name != target.name || email.trim().to_lowercase() != target.email)
+        {
+            return stale();
+        }
+        // Changing one's own sign-in email needs a confirmed password (decided here,
+        // against the stored email, so concurrent requests cannot slip past it).
+        if own && email_changed && !password_confirmed {
+            return invalid("current_password", "is required to change your email");
+        }
+        if user::Entity::find()
+            .filter(user::Column::Email.eq(&email))
+            .filter(user::Column::Id.ne(user_id))
+            .one(&txn)
+            .await?
+            .is_some()
+        {
             return invalid("email", "has already been taken");
         }
-        let super_admin = match new.super_admin_guard {
-            Some(guard) => {
-                let role = role::Entity::find()
-                    .filter(role::Column::IsSystem.eq(true))
-                    .filter(role::Column::Name.eq(role::SUPER_ADMIN))
-                    .filter(role::Column::GuardName.eq(guard))
-                    .one(&txn)
-                    .await?;
-                let Some(role) = role else {
-                    return invalid("guard", &format!("no super_admin role for guard `{guard}`"));
-                };
-                same_guard(actor, guard)?;
-                protected(actor, &role)?;
-                Some(role)
-            }
-            None => None,
-        };
-        let user = user::ActiveModel {
-            name: Set(new.name.trim().to_owned()),
-            email: Set(email),
-            password: Set(new.password_hash),
-            is_active: Set(true),
-            ..Default::default()
+        let mut model: user::ActiveModel = target.into();
+        model.name = Set(name.trim().to_owned());
+        model.email = Set(email);
+        // A new address is not verified, whoever changed it.
+        if email_changed {
+            model.email_verified_at = Set(None);
         }
-        .insert(&txn)
-        .await?;
-        if let Some(role) = super_admin {
-            user_role::ActiveModel {
-                role_id: Set(role.id),
-                model_type: Set(USER_MODEL.into()),
-                model_id: Set(user.id.to_string()),
-            }
-            .insert(&txn)
-            .await?;
+        model.updated_at = Set(chrono::Utc::now());
+        let mut user = model.update(&txn).await.map_err(email_conflict)?;
+        // A credential changed: other sessions and tokens end (the caller's own
+        // session is re-issued by the handler with the new version).
+        if email_changed {
+            user.auth_version = crate::credentials::revoke_all(&txn, user_id, true).await?;
         }
-        txn.commit().await?;
-        self.resolver.evict_all();
+        self.commit(txn).await?;
         Ok(user)
+    }
+
+    /// Read-only preflight of [`Self::reset_password`] (no lock): lets callers
+    /// refuse before costly hashing. The change itself checks everything again.
+    pub async fn check_reset_password(&self, actor: Actor<'_>, user_id: i64) -> AppResult<()> {
+        require(actor, "users.update")?;
+        not_self(actor, user_id)?;
+        // Before the lookup: callers who may not reset anyone learn nothing about ids.
+        covers(self.db, actor, user_id).await?;
+        user::Entity::find_by_id(user_id).one(self.db).await?.ok_or(AppError::NotFound)?;
+        Ok(())
+    }
+
+    /// Read-only preflight of [`Self::create_user_with_roles`] (no lock): input,
+    /// duplicate email and role checks before costly hashing.
+    pub async fn check_new_user(
+        &self,
+        actor: Actor<'_>,
+        name: &str,
+        email: &str,
+        guard: &str,
+        role_ids: &[i64],
+    ) -> AppResult<()> {
+        require(actor, "users.create")?;
+        if !role_ids.is_empty() {
+            require(actor, "roles.assign")?;
+            same_guard(actor, guard)?;
+        }
+        let email = valid_profile(name, email)?;
+        if user::Entity::find().filter(user::Column::Email.eq(&email)).one(self.db).await?.is_some() {
+            return invalid("email", "has already been taken");
+        }
+        check_role_ids(self.db, guard, role_ids).await
+    }
+
+    /// Whether `actor` is a super admin of every guard (may replace credentials).
+    pub async fn covers_all_guards(&self, actor: Actor<'_>) -> AppResult<bool> {
+        Ok(covers(self.db, actor, 0).await.is_ok())
+    }
+
+    /// Sets another user's password (`users.update`; a super admin's only by a super
+    /// admin). Their sessions end and their API tokens are revoked. Users change
+    /// their own password with the current one (`/auth/password`), never here.
+    pub async fn reset_password(&self, actor: Actor<'_>, user_id: i64, password_hash: String) -> AppResult<()> {
+        let (txn, fresh) = self.begin(actor).await?;
+        let actor = fresh.actor();
+        require(actor, "users.update")?;
+        not_self(actor, user_id)?;
+        // Choosing someone's password is signing in as them: never for an
+        // account with more access than the actor, in any guard.
+        covers(&txn, actor, user_id).await?;
+        let target = lock_user(&txn, user_id).await?;
+        let mut model: user::ActiveModel = target.into();
+        model.password = Set(password_hash);
+        model.update(&txn).await?;
+        crate::credentials::revoke_all(&txn, user_id, true).await?;
+        self.commit(txn).await?;
+        Ok(())
     }
 
     /// Creates declared permissions and marks undeclared ones orphaned (never renames or deletes).
@@ -570,10 +789,291 @@ impl<'a> RbacService<'a> {
             model.update(&txn).await?;
             report.orphaned.push(format!("{}:{}", stale.guard_name, stale.name));
         }
-        txn.commit().await?;
-        self.resolver.evict_all();
+        self.commit(txn).await?;
         Ok(report)
     }
+}
+
+/// Creates a user inside `txn` (see [`RbacService::create_user`]).
+async fn create_user_in(txn: &DatabaseTransaction, actor: Actor<'_>, new: NewUser<'_>) -> AppResult<user::Model> {
+    require(actor, "users.create")?;
+    let email = valid_profile(new.name, new.email)?;
+    if user::Entity::find().filter(user::Column::Email.eq(&email)).one(txn).await?.is_some() {
+        return invalid("email", "has already been taken");
+    }
+    let super_admin = match new.super_admin_guard {
+        Some(guard) => {
+            let role = role::Entity::find()
+                .filter(role::Column::IsSystem.eq(true))
+                .filter(role::Column::Name.eq(role::SUPER_ADMIN))
+                .filter(role::Column::GuardName.eq(guard))
+                .one(txn)
+                .await?;
+            let Some(role) = role else {
+                return invalid("guard", &format!("no super_admin role for guard `{guard}`"));
+            };
+            same_guard(actor, guard)?;
+            protected(actor, &role)?;
+            Some(role)
+        }
+        None => None,
+    };
+    let user = user::ActiveModel {
+        name: Set(new.name.trim().to_owned()),
+        email: Set(email),
+        password: Set(new.password_hash),
+        is_active: Set(true),
+        ..Default::default()
+    }
+    .insert(txn)
+    .await
+    .map_err(email_conflict)?;
+    if let Some(role) = super_admin {
+        user_role::ActiveModel {
+            role_id: Set(role.id),
+            model_type: Set(USER_MODEL.into()),
+            model_id: Set(user.id.to_string()),
+        }
+        .insert(txn)
+        .await?;
+    }
+    Ok(user)
+}
+
+/// The actor may replace another user's credentials (password, email), which
+/// is signing in as them, everywhere: the same credentials open the admin
+/// panel and issue API tokens, and an application may grant access by identity
+/// (gates, ownership) without any role. So only a super admin of *every* guard
+/// may do it; [`Actor::System`] always may.
+async fn covers<C: ConnectionTrait>(txn: &C, actor: Actor<'_>, _user_id: i64) -> AppResult<()> {
+    let Actor::User(principal) = actor else { return Ok(()) };
+    if !is_super_admin_actor(actor) {
+        return forbidden();
+    }
+    let actor_id: i64 = principal.id.parse().map_err(|_| AppError::Forbidden)?;
+    let guards: BTreeSet<String> = role::Entity::find()
+        .filter(role::Column::IsSystem.eq(true))
+        .filter(role::Column::Name.eq(role::SUPER_ADMIN))
+        .all(txn)
+        .await?
+        .into_iter()
+        .map(|r| r.guard_name)
+        .collect();
+    let held: BTreeSet<String> = super_admin_guards(txn, actor_id).await?.into_iter().collect();
+    if guards.is_subset(&held) { Ok(()) } else { forbidden() }
+}
+
+fn stale<T>() -> AppResult<T> {
+    let mut errors = ValidationErrors::new();
+    errors.add_form("This was changed by someone else meanwhile. Reload and try again.");
+    Err(errors.into())
+}
+
+/// Active (not orphaned) permissions granted to a role, by name.
+async fn active_permissions<C: ConnectionTrait>(db: &C, role_id: i64) -> AppResult<BTreeMap<String, i64>> {
+    let ids = role_perm::Entity::find().filter(role_perm::Column::RoleId.eq(role_id)).all(db).await?;
+    Ok(permission::Entity::find()
+        .filter(permission::Column::Id.is_in(ids.into_iter().map(|r| r.permission_id)))
+        .filter(permission::Column::Orphaned.eq(false))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|p| (p.name, p.id))
+        .collect())
+}
+
+/// Ids of the roles `user_id` holds in `guard`.
+async fn held_roles<C: ConnectionTrait>(db: &C, user_id: i64, guard: &str) -> AppResult<BTreeSet<i64>> {
+    let assigned: Vec<i64> = user_role::Entity::find()
+        .filter(user_role::Column::ModelType.eq(USER_MODEL))
+        .filter(user_role::Column::ModelId.eq(user_id.to_string()))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|r| r.role_id)
+        .collect();
+    Ok(role::Entity::find()
+        .filter(role::Column::Id.is_in(assigned))
+        .filter(role::Column::GuardName.eq(guard))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|r| r.id)
+        .collect())
+}
+
+/// Validated, normalized email for a profile with `name`.
+fn valid_profile(name: &str, email: &str) -> AppResult<String> {
+    let email = email.trim().to_lowercase();
+    let mut errors = ValidationErrors::new();
+    let name = name.trim();
+    if name.is_empty() {
+        errors.add("name", "is required");
+    }
+    if name.chars().count() > 255 {
+        errors.add("name", "may not be longer than 255 characters");
+    }
+    if name.chars().any(char::is_control) {
+        errors.add("name", "may not contain control characters");
+    }
+    if !valid_email(&email) || email.len() > crate::routes::MAX_EMAIL_LEN {
+        errors.add("email", "must be a valid email address");
+    }
+    errors.into_result()?;
+    Ok(email)
+}
+
+/// `local@domain`: one `@`, both parts non-empty, a dot in the domain, no whitespace or control characters.
+fn valid_email(email: &str) -> bool {
+    let Some((local, domain)) = email.split_once('@') else { return false };
+    !local.is_empty()
+        && !domain.is_empty()
+        && !domain.contains('@')
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+        && !email.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+/// Makes `role_ids` the user's roles in `guard`: each added or removed role is
+/// checked (`roles.assign`, same guard, protected roles by super admins, only
+/// permissions the actor holds), and a guard keeps an active super admin.
+async fn apply_roles(
+    txn: &DatabaseTransaction,
+    actor: Actor<'_>,
+    user_id: i64,
+    guard: &str,
+    role_ids: &[i64],
+) -> AppResult<()> {
+    require(actor, "roles.assign")?;
+    same_guard(actor, guard)?;
+    if role_ids.len() > MAX_ITEMS {
+        return invalid("roleIds", "has too many roles");
+    }
+    let model_id = user_id.to_string();
+    let wanted: BTreeSet<i64> = role_ids.iter().copied().collect();
+    let roles = role::Entity::find().filter(role::Column::Id.is_in(wanted.iter().copied())).all(txn).await?;
+    if roles.len() != wanted.len() || roles.iter().any(|r| r.guard_name != guard) {
+        return invalid("roleIds", "has unknown roles");
+    }
+    let held = held_roles(txn, user_id, guard).await?;
+    let mut removed_super_admin = false;
+    for id in wanted.symmetric_difference(&held) {
+        let role = role::Entity::find_by_id(*id).one(txn).await?.ok_or(AppError::NotFound)?;
+        protected(actor, &role)?;
+        grantable(actor, guard, active_permissions(txn, role.id).await?.keys())?;
+        if held.contains(id) {
+            removed_super_admin |= role.is_super_admin();
+            user_role::Entity::delete_many()
+                .filter(user_role::Column::RoleId.eq(role.id))
+                .filter(user_role::Column::ModelType.eq(USER_MODEL))
+                .filter(user_role::Column::ModelId.eq(&model_id))
+                .exec(txn)
+                .await?;
+        } else {
+            dormant_grants(txn, actor, role.id).await?;
+            user_role::ActiveModel {
+                role_id: Set(role.id),
+                model_type: Set(USER_MODEL.into()),
+                model_id: Set(model_id.clone()),
+            }
+            .insert(txn)
+            .await?;
+        }
+    }
+    if removed_super_admin {
+        ensure_super_admin_remains(txn, guard).await?;
+    }
+    Ok(())
+}
+
+/// Largest list of ids or names one change accepts.
+const MAX_ITEMS: usize = 1000;
+
+fn require_any(actor: Actor<'_>, permissions: &[&str]) -> AppResult<()> {
+    match actor {
+        Actor::System => Ok(()),
+        Actor::User(p) if permissions.iter().any(|name| p.can(name)) => Ok(()),
+        Actor::User(_) => forbidden(),
+    }
+}
+
+/// A role of the actor's guard (other guards' roles look missing, like unknown ids).
+async fn find_role<C: ConnectionTrait>(db: &C, actor: Actor<'_>, role_id: i64) -> AppResult<role::Model> {
+    let mut find = role::Entity::find_by_id(role_id);
+    if let Actor::User(p) = actor {
+        find = find.filter(role::Column::GuardName.eq(&p.guard));
+    }
+    find.one(db).await?.ok_or(AppError::NotFound)
+}
+
+/// The user row, locked until commit on PostgreSQL (SQLite writers are already serialized),
+/// so checks and writes see the same version even against writers outside RBAC.
+async fn lock_user(txn: &DatabaseTransaction, user_id: i64) -> AppResult<user::Model> {
+    let mut find = user::Entity::find_by_id(user_id);
+    if txn.get_database_backend() == DbBackend::Postgres {
+        find = find.lock_exclusive();
+    }
+    find.one(txn).await?.ok_or(AppError::NotFound)
+}
+
+/// Assigning a role that carries orphaned grants would hand them out, dormant,
+/// to come back on a redeclaration nobody checked: super admins only.
+async fn dormant_grants<C: ConnectionTrait>(db: &C, actor: Actor<'_>, role_id: i64) -> AppResult<()> {
+    if is_super_admin_actor(actor) {
+        return Ok(());
+    }
+    let ids: Vec<i64> = role_perm::Entity::find()
+        .filter(role_perm::Column::RoleId.eq(role_id))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|r| r.permission_id)
+        .collect();
+    let orphaned = permission::Entity::find()
+        .filter(permission::Column::Id.is_in(ids))
+        .filter(permission::Column::Orphaned.eq(true))
+        .count(db)
+        .await?;
+    if orphaned > 0 { forbidden() } else { Ok(()) }
+}
+
+/// Accounts holding a protected role or a super-admin role in any guard are
+/// managed (status, profile, deletion) only by super admins of every guard.
+async fn guard_target(txn: &DatabaseTransaction, actor: Actor<'_>, user_id: i64) -> AppResult<()> {
+    let assigned: Vec<i64> = user_role::Entity::find()
+        .filter(user_role::Column::ModelType.eq(USER_MODEL))
+        .filter(user_role::Column::ModelId.eq(user_id.to_string()))
+        .all(txn)
+        .await?
+        .into_iter()
+        .map(|r| r.role_id)
+        .collect();
+    let roles = role::Entity::find().filter(role::Column::Id.is_in(assigned)).all(txn).await?;
+    if roles.iter().any(role::Model::is_protected) { covers(txn, actor, user_id).await } else { Ok(()) }
+}
+
+/// A unique violation on `users.email` (a concurrent writer outside RBAC) is a 422.
+fn email_conflict(err: sea_orm::DbErr) -> AppError {
+    if matches!(err.sql_err(), Some(sea_orm::SqlErr::UniqueConstraintViolation(_))) {
+        ValidationErrors::field("email", "has already been taken").into()
+    } else {
+        err.into()
+    }
+}
+
+/// Role ids exist in `guard` (and are not too many).
+async fn check_role_ids<C: ConnectionTrait>(db: &C, guard: &str, role_ids: &[i64]) -> AppResult<()> {
+    if role_ids.len() > MAX_ITEMS {
+        return invalid("roleIds", "has too many roles");
+    }
+    let wanted: BTreeSet<i64> = role_ids.iter().copied().collect();
+    let found = role::Entity::find()
+        .filter(role::Column::Id.is_in(wanted.iter().copied()))
+        .filter(role::Column::GuardName.eq(guard))
+        .count(db)
+        .await?;
+    if found as usize != wanted.len() { invalid("roleIds", "has unknown roles") } else { Ok(()) }
 }
 
 fn require(actor: Actor<'_>, permission: &str) -> AppResult<()> {
@@ -627,6 +1127,9 @@ fn grantable<'p>(actor: Actor<'_>, guard: &str, permissions: impl IntoIterator<I
 
 /// Resolves permission names of `guard`; unknown or orphaned names are a 422.
 async fn permission_ids<C: ConnectionTrait>(db: &C, guard: &str, names: &[String]) -> AppResult<BTreeMap<String, i64>> {
+    if names.len() > MAX_ITEMS {
+        return invalid("permissions", "has too many permissions");
+    }
     let found: BTreeMap<String, i64> = permission::Entity::find()
         .filter(permission::Column::GuardName.eq(guard))
         .filter(permission::Column::Orphaned.eq(false))
@@ -638,21 +1141,13 @@ async fn permission_ids<C: ConnectionTrait>(db: &C, guard: &str, names: &[String
         .collect();
     let unknown: Vec<&String> = names.iter().filter(|n| !found.contains_key(*n)).collect();
     if !unknown.is_empty() {
-        let list = unknown.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+        let mut list = unknown.iter().take(10).map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+        if unknown.len() > 10 {
+            list.push_str(&format!(" and {} more", unknown.len() - 10));
+        }
         return invalid("permissions", &format!("unknown permissions: {list}"));
     }
     Ok(found)
-}
-
-async fn role_permission_names<C: ConnectionTrait>(db: &C, role_id: i64) -> AppResult<BTreeSet<String>> {
-    let ids = role_perm::Entity::find().filter(role_perm::Column::RoleId.eq(role_id)).all(db).await?;
-    Ok(permission::Entity::find()
-        .filter(permission::Column::Id.is_in(ids.into_iter().map(|r| r.permission_id)))
-        .all(db)
-        .await?
-        .into_iter()
-        .map(|p| p.name)
-        .collect())
 }
 
 async fn holds_role<C: ConnectionTrait>(db: &C, model_id: &str, role_id: i64) -> AppResult<bool> {

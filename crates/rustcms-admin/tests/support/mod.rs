@@ -370,3 +370,11 @@ pub fn contract_matches(name: &str, actual: &serde_json::Value) {
     let expected = std::fs::read_to_string(&path).unwrap_or_default();
     assert_eq!(rendered, expected, "contract {name} differs on this backend");
 }
+
+/// Id of the role named `name` (as a string, like the API).
+#[allow(dead_code)]
+pub async fn role_id(app: &rustcms_testing::TestApp, name: &str) -> String {
+    use rustcms_auth::entities::role;
+    let found = role::Entity::find().filter(role::Column::Name.eq(name)).one(app.state().db()).await.unwrap();
+    found.unwrap_or_else(|| panic!("role {name}")).id.to_string()
+}

@@ -6,6 +6,8 @@
 #   admin    admin session, super admin
 #   foreign  editor's session sending a foreign Origin
 #   token    API token of the super admin (abilities ["*"])
+#   manager  users.view_any, users.view, users.update, users.delete, roles.assign (no super admin)
+#   panel_super  super admin of the admin guard only (the admin is super admin of every guard)
 # Placeholders: {own} a post of the editor, {spare} another post of the editor,
 #               {theirs} a post of the admin (outside the editor's scope).
 # `route` is the template from `rustcms_admin::http::routes`; every template needs a case.
@@ -219,3 +221,355 @@ route = "GET /admin/api/resources/{slug}/fields/{field}/options"
 path = "/admin/api/resources/posts/fields/category_id/options"
 actor = "editor"
 status = 200
+
+# ---------------------------------------------------------------------------
+# System pages (users, roles, permissions). Placeholders: {member_id},
+# {editor_id}, {admin_id}, {editor_role} (the editor role), {super_role}.
+# Cases run in order: destructive ones come last.
+
+[[case]]
+route = "GET /admin/api/system/users"
+path = "/admin/api/system/users"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/system/users"
+path = "/admin/api/system/users"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/system/users"
+path = "/admin/api/system/users?search=a"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "GET /admin/api/system/users"
+path = "/admin/api/system/users"
+actor = "token"
+status = 401
+
+[[case]]
+route = "POST /admin/api/system/users"
+path = "/admin/api/system/users"
+actor = "editor"
+status = 403
+body = '{"name": "X", "email": "x@example.test", "password": "long enough password"}'
+
+[[case]]
+route = "POST /admin/api/system/users"
+path = "/admin/api/system/users"
+actor = "foreign"
+status = 403
+body = '{"name": "X", "email": "x@example.test", "password": "long enough password"}'
+
+[[case]]
+route = "POST /admin/api/system/users"
+path = "/admin/api/system/users"
+actor = "admin"
+status = 201
+body = '{"name": "Oracle", "email": "oracle@example.test", "password": "long enough password", "roleIds": ["{editor_role}"]}'
+
+[[case]]
+route = "POST /admin/api/system/users"
+path = "/admin/api/system/users"
+actor = "admin"
+status = 422
+body = '{"name": "Short", "email": "short@example.test", "password": "short"}'
+
+[[case]]
+route = "GET /admin/api/system/users/{id}"
+path = "/admin/api/system/users/{member_id}"
+actor = "member"
+status = 200
+
+[[case]]
+route = "GET /admin/api/system/users/{id}"
+path = "/admin/api/system/users/{admin_id}"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/system/users/{id}"
+path = "/admin/api/system/users/{editor_id}"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "GET /admin/api/system/users/{id}"
+path = "/admin/api/system/users/999999"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "PATCH /admin/api/system/users/{id}"
+path = "/admin/api/system/users/{member_id}"
+actor = "member"
+status = 200
+body = '{"name": "Member Renamed", "email": "{member_email}", "expected": {"name": "Member", "email": "{member_email}"}}'
+
+[[case]]
+route = "PATCH /admin/api/system/users/{id}"
+path = "/admin/api/system/users/{admin_id}"
+actor = "editor"
+status = 403
+body = '{"name": "Hijacked", "email": "hijacked@example.test", "expected": {"name": "Admin", "email": "x"}}'
+
+[[case]]
+route = "PATCH /admin/api/system/users/{id}"
+path = "/admin/api/system/users/{editor_id}"
+actor = "admin"
+status = 200
+body = '{"name": "Editor Renamed", "email": "{editor_email}", "expected": {"name": "Editor", "email": "{editor_email}"}}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/roles"
+path = "/admin/api/system/users/{member_id}/roles"
+actor = "editor"
+status = 403
+body = '{"roleIds": ["{editor_role}"], "expectedRoleIds": []}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/roles"
+path = "/admin/api/system/users/{admin_id}/roles"
+actor = "admin"
+status = 403
+body = '{"roleIds": [], "expectedRoleIds": []}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/roles"
+path = "/admin/api/system/users/{member_id}/roles"
+actor = "admin"
+status = 200
+body = '{"roleIds": [], "expectedRoleIds": []}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/active"
+path = "/admin/api/system/users/{editor_id}/active"
+actor = "member"
+status = 403
+body = '{"active": false, "expected": true}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/active"
+path = "/admin/api/system/users/{admin_id}/active"
+actor = "admin"
+status = 403
+body = '{"active": false, "expected": true}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/active"
+path = "/admin/api/system/users/{editor_id}/active"
+actor = "admin"
+status = 200
+body = '{"active": true, "expected": true}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/password"
+path = "/admin/api/system/users/{editor_id}/password"
+actor = "member"
+status = 403
+body = '{"password": "another long password"}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/password"
+path = "/admin/api/system/users/{admin_id}/password"
+actor = "admin"
+status = 403
+body = '{"password": "another long password"}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/password"
+path = "/admin/api/system/users/{member_id}/password"
+actor = "admin"
+status = 422
+body = '{"password": "short"}'
+
+[[case]]
+route = "GET /admin/api/system/roles"
+path = "/admin/api/system/roles"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/system/roles"
+path = "/admin/api/system/roles"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "POST /admin/api/system/roles"
+path = "/admin/api/system/roles"
+actor = "editor"
+status = 403
+body = '{"name": "escalate", "permissions": ["users.delete"]}'
+
+[[case]]
+route = "POST /admin/api/system/roles"
+path = "/admin/api/system/roles"
+actor = "admin"
+status = 201
+body = '{"name": "reviewer", "permissions": ["posts.view_any", "posts.view"]}'
+
+[[case]]
+route = "POST /admin/api/system/roles"
+path = "/admin/api/system/roles"
+actor = "admin"
+status = 422
+body = '{"name": "reviewer", "permissions": []}'
+
+[[case]]
+route = "GET /admin/api/system/roles/{id}"
+path = "/admin/api/system/roles/{editor_role}"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/system/roles/{id}"
+path = "/admin/api/system/roles/{editor_role}"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "GET /admin/api/system/permissions"
+path = "/admin/api/system/permissions"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/system/permissions"
+path = "/admin/api/system/permissions"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "PUT /admin/api/system/roles/{id}/permissions"
+path = "/admin/api/system/roles/{editor_role}/permissions"
+actor = "editor"
+status = 403
+body = '{"permissions": ["users.delete"], "expectedPermissions": []}'
+
+[[case]]
+route = "PUT /admin/api/system/roles/{id}/permissions"
+path = "/admin/api/system/roles/{super_role}/permissions"
+actor = "admin"
+status = 403
+body = '{"permissions": [], "expectedPermissions": []}'
+
+[[case]]
+route = "PUT /admin/api/system/roles/{id}/permissions"
+path = "/admin/api/system/roles/{editor_role}/permissions"
+actor = "admin"
+status = 200
+body = '{"permissions": ["posts.view_any", "posts.view", "posts.create", "posts.update", "posts.delete", "categories.view_any", "categories.view"], "expectedPermissions": ["posts.view_any", "posts.view", "posts.create", "posts.update", "posts.delete", "categories.view_any", "categories.view"]}'
+
+[[case]]
+route = "DELETE /admin/api/system/roles/{id}"
+path = "/admin/api/system/roles/{super_role}"
+actor = "admin"
+status = 403
+
+[[case]]
+route = "DELETE /admin/api/system/roles/{id}"
+path = "/admin/api/system/roles/{editor_role}"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/password"
+path = "/admin/api/system/users/{member_id}/password"
+actor = "admin"
+status = 204
+# Ends every session of the member: member cases after this one would be 401.
+body = '{"password": "another long password"}'
+
+[[case]]
+route = "DELETE /admin/api/system/users/{id}"
+path = "/admin/api/system/users/{admin_id}"
+actor = "admin"
+status = 403
+
+[[case]]
+route = "DELETE /admin/api/system/users/{id}"
+path = "/admin/api/system/users/{member_id}"
+actor = "editor"
+status = 403
+
+# --- Delegated manager and admin-guard-only super admin -----------------------
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/password"
+path = "/admin/api/system/users/{member_id}/password"
+actor = "manager"
+status = 403
+body = '{"password": "chosen by a manager"}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/password"
+path = "/admin/api/system/users/{member_id}/password"
+actor = "panel_super"
+status = 403
+body = '{"password": "chosen by a panel super admin"}'
+
+[[case]]
+route = "PATCH /admin/api/system/users/{id}"
+path = "/admin/api/system/users/{member_id}"
+actor = "manager"
+status = 403
+body = '{"name": "Member", "email": "taken-over@example.test", "expected": {"name": "Member", "email": "{member_email}"}}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/active"
+path = "/admin/api/system/users/{admin_id}/active"
+actor = "manager"
+status = 403
+body = '{"active": false, "expected": true}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/active"
+path = "/admin/api/system/users/{admin_id}/active"
+actor = "panel_super"
+status = 403
+body = '{"active": false, "expected": true}'
+
+[[case]]
+route = "DELETE /admin/api/system/users/{id}"
+path = "/admin/api/system/users/{admin_id}"
+actor = "manager"
+status = 403
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/roles"
+path = "/admin/api/system/users/{member_id}/roles"
+actor = "manager"
+status = 403
+body = '{"roleIds": ["{super_role}"], "expectedRoleIds": []}'
+
+[[case]]
+route = "PUT /admin/api/system/users/{id}/roles"
+path = "/admin/api/system/users/{member_id}/roles"
+actor = "manager"
+status = 403
+body = '{"roleIds": ["{editor_role}"], "expectedRoleIds": []}'
+
+[[case]]
+route = "GET /admin/api/system/roles"
+path = "/admin/api/system/roles"
+actor = "manager"
+status = 200
+
+[[case]]
+route = "PATCH /admin/api/system/users/{id}"
+path = "/admin/api/system/users/{editor_id}"
+actor = "admin"
+status = 200
+# Changing someone's email is a credential change: the editor's sessions end here.
+body = '{"name": "Editor Renamed", "email": "editor-renamed@example.test", "expected": {"name": "Editor Renamed", "email": "{editor_email}"}}'
+
+[[case]]
+route = "DELETE /admin/api/system/users/{id}"
+path = "/admin/api/system/users/{member_id}"
+actor = "admin"
+status = 204

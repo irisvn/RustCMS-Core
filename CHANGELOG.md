@@ -7,6 +7,19 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- M5 users, roles and account: System pages (Users, Roles with a permission
+  matrix) and an Account page (password change, sign out other sessions);
+  `/admin/api/system/…` endpoints, all writes through `RbacService`
+  (new `create_user_with_roles`, `set_user_roles`, `update_profile`,
+  `reset_password`), `PanelResponse.system`, authz oracle rows for every new
+  route, escalation tests, E2E for role/user creation, disabling and password change.
+- M5 hardening (exhaustive review batch): authorization before any state is read or
+  compared; protected accounts (any guard) managed by super admins of every guard;
+  optimistic checks for roles, permissions, profile and status; credential changes
+  re-checked against `auth_version` under lock (fail closed); email changes revoke
+  other sessions and tokens; strict email/role-name validation; per-caller hashing
+  budget after cheap checks; batched role loading; accurate `abilities`; client
+  epoch around credential rotation (also across tabs); `docs/review-checklist.md`.
 - M4 admin SPA (`admin-ui/`, React 19 + Vite + Tailwind + TanStack Router/Query):
   sign-in, navigation, list (search, sort, filters, pagination, row and bulk
   actions), create/edit/view forms rendering the whole 0.1 vocabulary, relationship

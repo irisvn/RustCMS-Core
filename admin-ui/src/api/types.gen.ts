@@ -386,6 +386,122 @@ name: string,
  */
 email: string, };
 
+export type SystemLinks = { 
+/**
+ * Users page (`users.view_any`).
+ */
+users: boolean, 
+/**
+ * Roles page (`roles.view_any`).
+ */
+roles: boolean, 
+/**
+ * May create users (`users.create`).
+ */
+createUsers: boolean, 
+/**
+ * May create roles (`roles.create`).
+ */
+createRoles: boolean, };
+
+export type RoleRef = { 
+/**
+ * Role id.
+ */
+id: string, 
+/**
+ * Role name.
+ */
+name: string, };
+
+export type SystemUser = { 
+/**
+ * User id.
+ */
+id: string, 
+/**
+ * Display name.
+ */
+name: string, 
+/**
+ * Sign-in email.
+ */
+email: string, 
+/**
+ * May sign in.
+ */
+isActive: boolean, 
+/**
+ * Roles held in the admin guard.
+ */
+roles: Array<RoleRef>, 
+/**
+ * Holds the admin `super_admin` role.
+ */
+superAdmin: boolean, 
+/**
+ * The signed-in user themselves (managed on `/account`).
+ */
+isSelf: boolean, 
+/**
+ * What the current user may do with this user (the server re-checks).
+ */
+abilities: { [key in string]: boolean }, };
+
+export type UserPage = { 
+/**
+ * Users.
+ */
+data: Array<SystemUser>, 
+/**
+ * Pagination.
+ */
+meta: PageMeta, };
+
+export type SystemRole = { 
+/**
+ * Role id.
+ */
+id: string, 
+/**
+ * Role name.
+ */
+name: string, 
+/**
+ * Created by migrations (immutable, never deleted).
+ */
+isSystem: boolean, 
+/**
+ * Managed by super admins only.
+ */
+isPrivileged: boolean, 
+/**
+ * Permission names.
+ */
+permissions: Array<string>, 
+/**
+ * Users holding it.
+ */
+users: number, 
+/**
+ * What the current user may do with this role (the server re-checks).
+ */
+abilities: { [key in string]: boolean }, };
+
+export type PermissionInfo = { 
+/**
+ * Name (`posts.update`).
+ */
+name: string, 
+/**
+ * Group (usually the resource slug).
+ */
+group?: string, 
+/**
+ * The current user holds it, so may grant or remove it.
+ */
+grantable: boolean, };
+
 export type PanelResponse = { 
 /**
  * Name shown in the panel.
@@ -398,7 +514,11 @@ user: PanelUser,
 /**
  * Resources the user may list (`view_any`), in registration order.
  */
-navigation: Array<ResourceInfo>, };
+navigation: Array<ResourceInfo>, 
+/**
+ * System pages the user may open.
+ */
+system: SystemLinks, };
 
 export type DataResponse<T> = { 
 /**

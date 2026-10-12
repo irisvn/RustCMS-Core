@@ -28,6 +28,17 @@ export interface Session {
    */
   markUncertain(slug: string): void;
   isUncertain(slug: string): boolean;
+  /**
+   * The server rotated this session's credentials (password change, sign-out of
+   * other sessions, own email change): start a new epoch here and in other tabs,
+   * so answers to requests sent with the old cookie never sign the user out.
+   */
+  rotated(): void;
+  /**
+   * Runs a credential rotation: auth handling (401 → sign-in) is held while it
+   * is in flight, since requests racing with it may see the old session gone.
+   */
+  rotating<T>(work: () => Promise<T>): Promise<T>;
   /** Subscribes to changes of the paused resources (for `useSyncExternalStore`). */
   subscribe(listener: () => void): () => void;
   /** Whether a response produced for `userId` may be used by this tab. */
@@ -60,7 +71,10 @@ export function createSession(
   };
 
   // Concurrent 401s navigate once.
+  let rotations = 0;
   const unauthenticated = () => {
+    // A rotation in flight: the next request after it settles tells for sure.
+    if (rotations > 0) return;
     clear();
     userId = null;
     if (redirecting) return;
@@ -95,6 +109,20 @@ export function createSession(
       clear();
       userId = null;
       channel?.postMessage("signed-in");
+    },
+    rotated() {
+      api.resetCsrf();
+      channel?.postMessage("rotated");
+    },
+    async rotating(work) {
+      rotations += 1;
+      session.rotated();
+      try {
+        return await work();
+      } finally {
+        session.rotated();
+        rotations -= 1;
+      }
     },
     markUncertain(slug) {
       uncertain.add(slug);
@@ -151,6 +179,7 @@ export function createSession(
 
   channel?.addEventListener("message", (event) => {
     if (event.data === "signed-out") session.signedOut({ broadcast: false });
+    if (event.data === "rotated") api.resetCsrf();
     // Another tab signed in (maybe as someone else): drop this tab's data.
     if (event.data === "signed-in") {
       clear();
