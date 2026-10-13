@@ -7,7 +7,7 @@ const COLORS: Record<string, string> = {
   success: "bg-success/15 text-success",
   warning: "bg-warning/15 text-warning",
   danger: "bg-destructive/15 text-destructive",
-  info: "bg-sky-500/15 text-sky-600",
+  info: "border border-border bg-card text-foreground",
 };
 
 export function Badge({ color = "gray", className, ...props }: React.ComponentProps<"span"> & { color?: string }) {

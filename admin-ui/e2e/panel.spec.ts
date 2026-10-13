@@ -2,7 +2,7 @@ import { PASSWORD, expect, signIn, test } from "./fixtures";
 
 test("admin manages posts end to end", async ({ page, watch: _ }) => {
   await signIn(page, "admin@example.test");
-  await page.getByRole("link", { name: "Posts" }).click();
+  await page.getByRole("navigation", { name: "Resources" }).getByRole("link", { name: "Posts", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Posts" })).toBeVisible();
   await expect(page.getByText("Page 1 of 2 · 30 records")).toBeVisible();
 
@@ -14,7 +14,7 @@ test("admin manages posts end to end", async ({ page, watch: _ }) => {
   await page.getByRole("button", { name: "Title" }).click();
   await expect(page).toHaveURL(/sort=title/);
   await page.getByRole("combobox", { name: "Published" }).selectOption("false");
-  await expect(page.getByText("15 records")).toBeVisible();
+  await expect(page.getByText("15 records", { exact: true })).toBeVisible();
   await page.getByRole("combobox", { name: "Published" }).selectOption("");
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByText("Page 2 of 2")).toBeVisible();
@@ -31,14 +31,14 @@ test("admin manages posts end to end", async ({ page, watch: _ }) => {
   await page.getByRole("switch", { name: "Published" }).click();
   await page.getByRole("button", { name: "Create" }).click();
   await expect(page.getByRole("heading", { name: "Hello from Playwright" })).toBeVisible();
-  await expect(page.getByRole("combobox")).toHaveText(/Guides/);
+  await expect(page.getByRole("main").getByText("Guides", { exact: true })).toBeVisible();
 
   // Edit only what changed.
   await page.getByRole("link", { name: "Edit" }).click();
   await page.getByLabel("Title").fill("Hello again");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("heading", { name: "Hello again" })).toBeVisible();
-  await expect(page.getByLabel("Body")).toHaveValue("Written by a robot.");
+  await expect(page.getByRole("main").getByText("Written by a robot.", { exact: true })).toBeVisible();
 
   // Delete after confirming.
   await page.getByRole("button", { name: "Delete" }).click();
@@ -51,23 +51,23 @@ test("admin manages posts end to end", async ({ page, watch: _ }) => {
 test("bulk action reports its outcome", async ({ page, watch: _ }) => {
   await signIn(page, "admin@example.test");
   await page.goto("/admin/r/posts?filter%5Bpublished%5D%5Beq%5D=false&per_page=10");
-  await expect(page.getByText("15 records")).toBeVisible();
+  await expect(page.getByText("15 records", { exact: true })).toBeVisible();
   await page.getByLabel("Select all").check();
   await page.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("Publish the selected posts?");
   await page.getByRole("dialog").getByRole("button", { name: "Confirm" }).click();
   await expect(page.getByRole("alert")).toContainText("Publish: 10 records done.");
-  await expect(page.getByText("5 records")).toBeVisible();
+  await expect(page.getByText("5 records", { exact: true })).toBeVisible();
 });
 
 test("editor only sees and changes what policies allow", async ({ page, watch: _ }) => {
   await signIn(page, "editor@example.test");
-  await page.getByRole("link", { name: "Posts" }).click();
+  await page.getByRole("navigation", { name: "Resources" }).getByRole("link", { name: "Posts", exact: true }).click();
   // Seeded: every third post belongs to the editor (10 of 30).
-  await expect(page.getByText("10 records")).toBeVisible();
+  await expect(page.getByText("10 records", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Delete" })).toHaveCount(0);
   // Categories are read-only for editors.
-  await page.getByRole("link", { name: "Categories" }).click();
+  await page.getByRole("navigation", { name: "Resources" }).getByRole("link", { name: "Categories", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Categories" })).toBeVisible();
   await expect(page.getByRole("button", { name: /New category/ })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Edit", exact: true })).toHaveCount(0);

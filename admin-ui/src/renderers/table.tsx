@@ -21,12 +21,12 @@ export function Cell({ column, record }: { column: ColumnSchema; record: Envelop
     case "badge": {
       if (value === null || value === undefined) return null;
       const color = column.colors?.find((c) => same(c.value, value))?.color ?? "gray";
-      return <Badge color={color}>{display(column.valueType, value)}</Badge>;
+      return <Badge color={color === "danger" ? "danger" : "gray"}>{display(column.valueType, value)}</Badge>;
     }
     case "boolean":
       if (value === null || value === undefined) return null;
       return value ? (
-        <Check className="size-4 text-success" aria-label="Yes" />
+        <Check className="size-4 text-foreground" aria-label="Yes" />
       ) : (
         <X className="size-4 text-muted-foreground" aria-label="No" />
       );
@@ -121,9 +121,10 @@ export function FilterControl({
       if (filter.relationship) {
         return (
           <div className="flex flex-col gap-1 text-xs font-medium">
-            <span>{filter.label}</span>
-            <div className="w-48">
+            <label htmlFor={id}>{filter.label}</label>
+            <div className="w-full sm:w-48">
               <RelationSelect
+                id={id}
                 slug={slug}
                 field={filter.name}
                 value={current === "" ? "" : JSON.stringify(current)}
@@ -153,9 +154,9 @@ export function FilterControl({
       const exclusive = timed(filter.valueType);
       const until = param(filter.name, exclusive ? "lt" : "lte");
       return (
-        <fieldset className="flex flex-col gap-1 text-xs font-medium">
+        <fieldset className="flex min-w-0 w-full flex-col gap-1 text-xs font-medium sm:w-80">
           <legend>{filter.label}</legend>
-          <div className="flex gap-1">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             <Input
               type="date"
               aria-label={`${filter.label} from`}

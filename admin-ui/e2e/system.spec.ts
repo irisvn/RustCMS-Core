@@ -2,7 +2,7 @@ import { PASSWORD, expect, signIn, test } from "./fixtures";
 
 test("admin creates a role and a user who then sees only what the role allows", async ({ page, browser, watch: _ }) => {
   await signIn(page, "admin@example.test");
-  await page.getByRole("link", { name: "Roles" }).click();
+  await page.getByRole("navigation", { name: "Resources" }).getByRole("link", { name: "Roles", exact: true }).click();
   await page.getByRole("link", { name: "New role" }).click();
   await page.getByLabel("Name").fill("reader");
   await page.getByLabel("posts.view_any").check();
@@ -10,7 +10,7 @@ test("admin creates a role and a user who then sees only what the role allows", 
   await page.getByRole("button", { name: "Create role" }).click();
   await expect(page.getByRole("heading", { name: "reader" })).toBeVisible();
 
-  await page.getByRole("link", { name: "Users" }).click();
+  await page.getByRole("navigation", { name: "Resources" }).getByRole("link", { name: "Users", exact: true }).click();
   await page.getByRole("link", { name: "New user" }).click();
   await page.getByLabel("Name").fill("Rita Reader");
   await page.getByLabel("Email").fill("rita@example.test");
@@ -45,7 +45,7 @@ test("admin creates a role and a user who then sees only what the role allows", 
 
 test("editors have no system pages", async ({ page, watch: _ }) => {
   await signIn(page, "editor@example.test");
-  await expect(page.getByRole("link", { name: "Users" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Resources" }).getByRole("link", { name: "Users", exact: true })).toHaveCount(0);
   await page.goto("/admin/system/users");
   await expect(page.getByRole("heading", { name: "Access denied" })).toBeVisible();
   await page.goto("/admin/system/roles");
@@ -63,7 +63,7 @@ test("changing the password keeps this session and ends the others", async ({ pa
   await page.getByLabel("Confirm new password").fill("a new editor password");
   await page.getByRole("button", { name: "Change password" }).click();
   await expect(page.getByText(/Password changed/)).toBeVisible();
-  await page.getByRole("link", { name: "Posts" }).click();
+  await page.getByRole("navigation", { name: "Resources" }).getByRole("link", { name: "Posts", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Posts" })).toBeVisible();
   await elsewhere.reload();
   await expect(elsewhere.getByRole("heading", { name: "Sign in" })).toBeVisible();

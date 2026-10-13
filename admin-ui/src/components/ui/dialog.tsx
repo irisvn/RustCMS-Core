@@ -40,7 +40,7 @@ export function Dialog({
         onClose();
       }}
       className={cn(
-        "m-auto w-full max-w-md rounded-lg border border-border bg-card p-0 text-foreground shadow-lg backdrop:bg-black/40",
+        "m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-xl border border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/50",
         className,
       )}
     >

@@ -1,11 +1,13 @@
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 
-export function Checkbox({ className, ...props }: Omit<React.ComponentProps<"input">, "type">) {
+export function Checkbox({ className, indeterminate = false, ...props }: Omit<React.ComponentProps<"input">, "type" | "ref"> & { indeterminate?: boolean }) {
   return (
     <input
       type="checkbox"
-      className={cn("size-4 rounded border-input accent-primary disabled:opacity-60", className)}
+      ref={(node) => { if (node) node.indeterminate = indeterminate; }}
+      aria-checked={indeterminate ? "mixed" : undefined}
+      className={cn("size-4 shrink-0 rounded border-input accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-60", className)}
       {...props}
     />
   );
@@ -37,7 +39,7 @@ export function Switch({
     >
       <span
         className={cn(
-          "block size-4 rounded-full bg-white shadow transition-transform",
+          "block size-4 rounded-full shadow transition-transform", checked ? "bg-primary-foreground" : "bg-card",
           checked ? "translate-x-4" : "translate-x-0",
         )}
       />

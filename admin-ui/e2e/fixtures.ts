@@ -7,10 +7,14 @@ export { expect };
 export const test = base.extend<{ watch: { violations: string[]; errors: string[] } }>({
   watch: async ({ page }, use) => {
     const watch = { violations: [] as string[], errors: [] as string[] };
+    // Keep violations across full-page navigations, not just the final document.
+    await page.exposeBinding("__reportCsp", (_source, violation: string) => watch.violations.push(violation));
     await page.addInitScript(() => {
       document.addEventListener("securitypolicyviolation", (e) => {
+        const violation = `${e.violatedDirective} ${e.blockedURI}`;
         (window as unknown as { __csp: string[] }).__csp ??= [];
-        (window as unknown as { __csp: string[] }).__csp.push(`${e.violatedDirective} ${e.blockedURI}`);
+        (window as unknown as { __csp: string[] }).__csp.push(violation);
+        void (window as unknown as { __reportCsp: (violation: string) => Promise<void> }).__reportCsp(violation);
       });
     });
     page.on("console", (msg) => {
@@ -20,6 +24,7 @@ export const test = base.extend<{ watch: { violations: string[]; errors: string[
     await use(watch);
     const csp = await page.evaluate(() => (window as unknown as { __csp?: string[] }).__csp ?? []).catch(() => []);
     expect(csp, "CSP violations").toEqual([]);
+    expect(watch.violations, "CSP violations across every visited page").toEqual([]);
     expect(watch.errors, "console errors").toEqual([]);
   },
 });
@@ -29,6 +34,7 @@ export async function signIn(page: Page, email: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("navigation", { name: "Resources" })).toBeVisible();
+  // Mobile navigation is intentionally closed after signing in.
+  await expect(page.getByRole("main").getByRole("heading", { name: /^Welcome/ })).toBeVisible();
 }
 

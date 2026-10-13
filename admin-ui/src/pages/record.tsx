@@ -8,11 +8,12 @@ import { useDeleteRecord, useRecord, useSaveRecord, useSchema } from "@/api/quer
 import type { Envelope, InputSchema, ResourceSchema } from "@/api/types";
 import { ErrorState, Loading, VersionBanner, compatibility } from "@/components/states";
 import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Page, PageHeader } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { Components, gridCols } from "@/renderers/form";
+import { Components, ReadOnlyComponents, gridCols } from "@/renderers/form";
 import { type FormValues, defaultValues, inputsOf, payloadOf, protectLossyJson } from "@/schema/form";
 import { editResolver } from "@/schema/resolver";
 
@@ -28,8 +29,7 @@ function useMounted() {
   return mounted;
 }
 
-const linkClass =
-  "inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-4 text-sm font-medium hover:bg-muted [&_svg]:size-4";
+const linkClass = buttonVariants({ variant: "outline" });
 
 /** Create (`recordKey` undefined) or edit form. */
 export function FormPage({ slug, recordKey }: { slug: string; recordKey?: string }) {
@@ -146,10 +146,9 @@ function RecordForm({
 
   const title = editing ? `Edit ${record?.title ?? schema.resource.label.toLowerCase()}` : `New ${schema.resource.label.toLowerCase()}`;
   return (
-    <form className="flex flex-col gap-4" onSubmit={(e) => void submit(e)} noValidate>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">{title}</h1>
-      </div>
+    <Page className="max-w-4xl">
+    <form className="flex min-w-0 flex-col gap-6" onSubmit={(e) => void submit(e)} noValidate>
+      <PageHeader title={title} eyebrow={schema.resource.pluralLabel} description={editing ? "Update the record details below." : "Fill in the details to create a record."} />
       <VersionBanner schema={schema} />
       {refreshError instanceof Error && (
         <Alert variant="warning">Could not refresh this page ({refreshError.message}). Your changes are kept.</Alert>
@@ -165,7 +164,7 @@ function RecordForm({
         </Alert>
       )}
       <Card>
-        <CardContent className={cn("grid grid-cols-1 gap-4", gridCols(schema.form.columns))}>
+        <CardContent className={cn("grid grid-cols-1 gap-x-6 gap-y-6 p-5 sm:p-6", gridCols(schema.form.columns))}>
           <Components
             components={components}
             ctx={{
@@ -180,7 +179,7 @@ function RecordForm({
           />
         </CardContent>
       </Card>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-3 border-t border-border pt-5">
         <Button type="submit" disabled={readOnly || uncertain || save.isPending || form.formState.isSubmitting}>
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create"}
         </Button>
@@ -189,6 +188,7 @@ function RecordForm({
         </Link>
       </div>
     </form>
+    </Page>
   );
 }
 
@@ -201,8 +201,6 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
   const del = useDeleteRecord(slug);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const inputs = useMemo(() => (schema.data ? inputsOf(schema.data.form.components) : []), [schema.data]);
-  const form = useForm<FormValues>({ values: defaultValues(inputs, record.data?.data) });
   const uncertain = useUncertain(slug);
 
   if (schema.isLoading || record.isLoading) return <Loading />;
@@ -221,10 +219,12 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">{record.data.title ?? `${s.resource.label} ${recordKey}`}</h1>
-        <div className="flex gap-2">
+    <Page className="max-w-4xl">
+      <PageHeader
+        title={record.data.title ?? `${s.resource.label} ${recordKey}`}
+        eyebrow={s.resource.pluralLabel}
+        description="Record details"
+        actions={<>
           {record.data.abilities.update && !readOnly && (
             <Link to="/r/$slug/records/$key/edit" params={{ slug, key: recordKey }} className={linkClass}>
               <Pencil /> Edit
@@ -235,19 +235,16 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
               <Trash2 /> Delete
             </Button>
           )}
-        </div>
-      </div>
+        </>}
+      />
       <VersionBanner schema={s} />
       {error && <Alert variant="destructive">{error}</Alert>}
       <Card>
-        <CardContent className={cn("grid grid-cols-1 gap-4", gridCols(s.form.columns))}>
-          <Components
-            components={s.form.components}
-            ctx={{ slug, record: recordKey, control: form.control, errors: {}, readOnly: true }}
-          />
+        <CardContent className={cn("grid grid-cols-1 gap-x-6 gap-y-6 p-5 sm:p-6", gridCols(s.form.columns))}>
+          <ReadOnlyComponents components={s.form.components} data={record.data.data} slug={slug} record={recordKey} />
         </CardContent>
       </Card>
-      <Link to="/r/$slug" params={{ slug }} className="text-sm text-primary hover:underline">
+      <Link to="/r/$slug" params={{ slug }} className={buttonVariants({ variant: "ghost", className: "self-start" })}>
         ← Back to {s.resource.pluralLabel.toLowerCase()}
       </Link>
       <Dialog open={confirming} onClose={() => setConfirming(false)} title="Delete record?">
@@ -261,6 +258,6 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
           </Button>
         </div>
       </Dialog>
-    </div>
+    </Page>
   );
 }

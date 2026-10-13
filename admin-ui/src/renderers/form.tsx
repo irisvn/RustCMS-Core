@@ -2,12 +2,12 @@
 // fall back to a read-only rendering instead of breaking the page.
 import { Controller, type Control, type FieldErrors } from "react-hook-form";
 import type * as React from "react";
-import type { ComponentSchema, InputSchema, LayoutSchema, SelectOption } from "@/api/types";
+import type { ComponentSchema, Data, InputSchema, LayoutSchema, SelectOption } from "@/api/types";
 import { Checkbox, Switch } from "@/components/ui/checkbox";
 import { Input, Label, NativeSelect, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { KNOWN_INPUT_TYPES, hasUnsafeInteger, isInput, isTriState, type FormValue, type FormValues } from "@/schema/form";
-import { RelationSelect } from "./relation-select";
+import { RelationSelect, RelationValue } from "./relation-select";
 
 export interface FormContext {
   slug: string;
@@ -49,27 +49,75 @@ export function Components({ components, ctx }: { components: ComponentSchema[];
   );
 }
 
-function Layout({ layout, ctx }: { layout: LayoutSchema; ctx: FormContext }) {
-  const grid = <div className={cn("grid grid-cols-1 gap-4", gridCols(layout.columns))}><Components components={layout.components} ctx={ctx} /></div>;
+function SchemaLayout({ layout, children }: { layout: LayoutSchema; children: React.ReactNode }) {
+  const grid = <div className={cn("grid grid-cols-1 gap-x-6 gap-y-6", gridCols(layout.columns))}>{children}</div>;
   if (layout.type === "section" || !KNOWN_LAYOUTS.has(layout.type)) {
     return (
-      <fieldset className="col-span-full rounded-lg border border-border p-4">
-        {layout.label && <legend className="px-1 text-sm font-semibold">{layout.label}</legend>}
+      <fieldset className="col-span-full min-w-0 rounded-lg border border-border p-5 sm:p-6">
+        {layout.label && <legend className="px-2 text-sm font-semibold tracking-tight">{layout.label}</legend>}
         {grid}
       </fieldset>
     );
   }
-  return <div className="col-span-full">{grid}</div>;
+  return <div className="col-span-full min-w-0">{grid}</div>;
+}
+
+function Layout({ layout, ctx }: { layout: LayoutSchema; ctx: FormContext }) {
+  return <SchemaLayout layout={layout}><Components components={layout.components} ctx={ctx} /></SchemaLayout>;
+}
+
+/** Read only the supplied view schema and record. Defaults are never stored values. */
+export function ReadOnlyComponents({ components, data, slug, record }: {
+  components: ComponentSchema[];
+  data: Data;
+  slug: string;
+  record: string;
+}) {
+  return <>{components.map((component, index) => {
+    if (!isInput(component)) {
+      return <SchemaLayout key={`layout-${index}`} layout={component}>
+        <ReadOnlyComponents components={component.components} data={data} slug={slug} record={record} />
+      </SchemaLayout>;
+    }
+    if (component.type === "hidden" || component.writeOnly) return null;
+    const supplied = Object.prototype.hasOwnProperty.call(data, component.name);
+    const value = supplied ? data[component.name] : undefined;
+    const unknown = !KNOWN_INPUTS.has(component.type);
+    let content: React.ReactNode;
+    if (!supplied || value === undefined) content = <span className="text-muted-foreground">Not provided</span>;
+    else if (value === null) content = <span className="text-muted-foreground">Not set (null)</span>;
+    else if (value === "") content = <span className="text-muted-foreground">Empty string</span>;
+    else if (component.type === "select" && component.relationship &&
+      (typeof value === "string" || (typeof value === "number" && Number.isSafeInteger(value)))) {
+      content = <RelationValue slug={slug} field={component.name} record={record} value={JSON.stringify(value)} />;
+    } else if (typeof value === "boolean") content = value ? "Yes" : "No";
+    else if (component.type === "select") {
+      content = component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(value))?.label ?? readOnlyText(value);
+    } else if (component.type === "checkbox_list" && Array.isArray(value)) {
+      content = value.length === 0 ? "Empty list" : <ul className="space-y-1">{value.map((item, i) =>
+        <li key={i}>{component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(item))?.label ?? readOnlyText(item)}</li>,
+      )}</ul>;
+    } else content = readOnlyText(value);
+    return <dl key={component.name} className={cn("min-w-0 space-y-2", span(component.columnSpan))}>
+      <dt className="text-sm font-medium text-muted-foreground">{component.label}</dt>
+      <dd className="select-text whitespace-pre-wrap break-words text-sm leading-6" data-fallback={unknown || undefined}>{content}</dd>
+    </dl>;
+  })}</>;
+}
+
+function readOnlyText(value: unknown): string {
+  return typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
 }
 
 function Field({ input, ctx }: { input: InputSchema; ctx: FormContext }) {
   if (input.type === "hidden") return null;
   const id = `field-${input.name}`;
   const error = ctx.errors[input.name]?.message;
+  const describedBy = [input.help && `${id}-help`, error && `${id}-error`].filter(Boolean).join(" ") || undefined;
   const disabled = input.disabled || ctx.readOnly;
   const required = input.rules.some((r) => r.rule === "required");
   return (
-    <div className={cn("flex flex-col gap-1.5", span(input.columnSpan))}>
+    <div className={cn("flex min-w-0 flex-col gap-2", span(input.columnSpan))}>
       {(input.type !== "checkbox" || isTriState(input)) && (
         <Label htmlFor={id}>
           {input.label}
@@ -92,12 +140,13 @@ function Field({ input, ctx }: { input: InputSchema; ctx: FormContext }) {
             onBlur={field.onBlur}
             disabled={disabled}
             invalid={!!error}
+            describedBy={describedBy}
           />
         )}
       />
-      {input.help && <p className="text-xs text-muted-foreground">{input.help}</p>}
+      {input.help && <p id={`${id}-help`} className="text-xs leading-5 text-muted-foreground">{input.help}</p>}
       {error && (
-        <p role="alert" className="text-xs text-destructive">
+        <p id={`${id}-error`} role="alert" className="text-xs leading-5 text-destructive">
           {String(error)}
         </p>
       )}
@@ -114,22 +163,23 @@ interface WidgetProps {
   onBlur: () => void;
   disabled?: boolean;
   invalid: boolean;
+  describedBy?: string;
 }
 
 const encodeOption = (o: SelectOption) => JSON.stringify(o.value);
 
-function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid }: WidgetProps) {
+function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, describedBy }: WidgetProps) {
   if (isTriState(input)) {
     // Nullable boolean: "not set" is a value of its own, and can be restored.
     return (
-      <NativeSelect id={id} disabled={disabled} onBlur={onBlur} aria-invalid={invalid || undefined} value={typeof value === "string" ? value : ""} onChange={(e) => onChange(e.target.value)}>
+      <NativeSelect id={id} disabled={disabled} onBlur={onBlur} aria-invalid={invalid || undefined} aria-describedby={describedBy} value={typeof value === "string" ? value : ""} onChange={(e) => onChange(e.target.value)}>
         <option value="">Not set</option>
         <option value="true">Yes</option>
         <option value="false">No</option>
       </NativeSelect>
     );
   }
-  const common = { id, disabled, onBlur, "aria-invalid": invalid || undefined, placeholder: input.placeholder };
+  const common = { id, disabled, onBlur, "aria-invalid": invalid || undefined, "aria-describedby": describedBy, placeholder: input.placeholder };
   const text = typeof value === "string" ? value : "";
   const onText = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     onChange(e.target.value);
@@ -165,24 +215,27 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid }: 
       }
       return <Input {...common} type="datetime-local" step={1} value={text} onChange={onText} />;
     case "toggle":
-      return <Switch id={id} checked={value === true} onCheckedChange={onChange} disabled={disabled} aria-label={input.label} />;
+      return <Switch {...common} checked={value === true} onCheckedChange={onChange} aria-label={input.label} />;
     case "checkbox":
       return (
         <label className="flex items-center gap-2 text-sm font-medium">
-          <Checkbox id={id} checked={value === true} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />
+          <Checkbox {...common} checked={value === true} onChange={(e) => onChange(e.target.checked)} />
           {input.label}
         </label>
       );
     case "checkbox_list": {
       const selected = Array.isArray(value) ? value : [];
       return (
-        <div id={id} role="group" aria-label={input.label} className="flex flex-col gap-1.5">
+        <div id={id} role="group" aria-label={input.label} aria-invalid={invalid || undefined} aria-describedby={describedBy} className="flex flex-col gap-2.5">
           {(input.options ?? []).map((o) => {
             const encoded = encodeOption(o);
             return (
               <label key={encoded} className="flex items-center gap-2 text-sm">
                 <Checkbox
                   checked={selected.includes(encoded)}
+                  onBlur={onBlur}
+                  aria-invalid={invalid || undefined}
+                  aria-describedby={describedBy}
                   disabled={disabled || hasUnsafeInteger(o.value)}
                   onChange={(e) =>
                     onChange(e.target.checked ? [...selected, encoded] : selected.filter((s) => s !== encoded))
@@ -207,6 +260,8 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid }: 
             onChange={onChange}
             disabled={disabled}
             invalid={invalid}
+            describedBy={describedBy}
+            onBlur={onBlur}
             placeholder={input.placeholder}
           />
         );
@@ -223,6 +278,6 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid }: 
       );
     default:
       // Unknown component (newer vocabulary): show the value, never edit it.
-      return <Input id={id} value={Array.isArray(value) ? value.join(", ") : String(value)} disabled readOnly data-fallback="true" />;
+      return <Input {...common} value={Array.isArray(value) ? value.join(", ") : String(value)} disabled readOnly data-fallback="true" />;
   }
 }

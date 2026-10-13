@@ -26,6 +26,7 @@ const server = setupServer(
 );
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterAll(() => server.close());
+afterEach(() => server.resetHandlers());
 
 function mount() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -49,6 +50,29 @@ it("shows a wrong password next to the form that sent it", async () => {
   const error = await screen.findByText("The password is incorrect.");
   // Inside the "Other sessions" form, not under "Current password".
   expect(error.closest("form")).toBe(screen.getByRole("button", { name: "Sign out other sessions" }).closest("form"));
+  expect(screen.getByLabelText("Password")).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByLabelText("Password")).toHaveAccessibleDescription(/The password is incorrect/);
+  expect(screen.getByLabelText("Current password")).not.toHaveAttribute("aria-invalid", "true");
+});
+
+it("shows the existing identity beside a labelled security section", async () => {
+  mount();
+  expect(await screen.findByText("me@x.y", { selector: "dd" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Profile" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Security" })).toContainElement(screen.getByLabelText("Current password"));
+});
+
+it("connects password validation errors to their matching input", async () => {
+  server.use(http.post("*/admin/api/auth/password", () =>
+    HttpResponse.json({ message: "x", code: "validation_failed", errors: { password: ["Choose a stronger password."] } }, { status: 422 }),
+  ));
+  mount();
+  await userEvent.type(await screen.findByLabelText("New password", { selector: "#new-password" }), "short");
+  await userEvent.click(screen.getByRole("button", { name: "Change password" }));
+  await screen.findByText("Choose a stronger password.");
+  expect(screen.getByLabelText("New password", { selector: "#new-password" })).toHaveAccessibleDescription("Choose a stronger password.");
+  expect(screen.getByLabelText("New password", { selector: "#new-password" })).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByLabelText("Current password")).not.toHaveAttribute("aria-invalid", "true");
 });
 
 it("a 401 for a request sent before a password change does not sign the tab out", async () => {

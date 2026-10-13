@@ -2,6 +2,7 @@ import { type FormEvent, useState } from "react";
 import { ApiError } from "@/api/client";
 import { useChangePassword, useLogoutOthers } from "@/api/system";
 import { usePanel } from "@/api/queries";
+import { Page, PageHeader } from "@/components/layout";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,67 +56,107 @@ export function AccountPage() {
       if (text) setNotice({ variant: "destructive", text });
     }
   };
-  const error = (fields: Record<string, string[]>, name: string) =>
-    fields[name] && <p role="alert" className="text-xs text-destructive">{fields[name]!.join(" ")}</p>;
+  const error = (fields: Record<string, string[]>, name: string, id: string) =>
+    fields[name] && <p id={id} role="alert" className="text-xs text-destructive">{fields[name]!.join(" ")}</p>;
 
   return (
-    <div className="flex max-w-xl flex-col gap-4">
-      <h1 className="text-xl font-semibold">Your account</h1>
-      {panel.data && (
-        <p className="text-sm text-muted-foreground">
-          Signed in as {panel.data.user.name} ({panel.data.user.email}).
-        </p>
-      )}
+    <Page>
+      <PageHeader title="Your account" description="Manage your profile, password, and signed-in sessions."
+        eyebrow="Settings" />
       {notice && <Alert variant={notice.variant}>{notice.text}</Alert>}
-      <Card>
-        <CardHeader>
-          <CardTitle>Change password</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="flex flex-col gap-4" onSubmit={(e) => void submitPassword(e)} noValidate>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="current-password">Current password</Label>
-              <Input id="current-password" type="password" autoComplete="current-password" value={pw.current_password} onChange={(e) => setPw({ ...pw, current_password: e.target.value })} disabled={change.isPending} />
-              {error(pwFields, "current_password")}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="new-password">New password</Label>
-              <Input id="new-password" type="password" autoComplete="new-password" value={pw.password} onChange={(e) => setPw({ ...pw, password: e.target.value })} disabled={change.isPending} />
-              {error(pwFields, "password")}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="confirm-new-password">Confirm new password</Label>
-              <Input id="confirm-new-password" type="password" autoComplete="new-password" value={pw.password_confirmation} onChange={(e) => setPw({ ...pw, password_confirmation: e.target.value })} disabled={change.isPending} />
-              {error(pwFields, "password_confirmation")}
-            </div>
-            <div>
-              <Button type="submit" disabled={change.isPending}>
-                Change password
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Other sessions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="flex flex-col gap-4" onSubmit={(e) => void submitOthers(e)} noValidate>
-            <p className="text-sm text-muted-foreground">Signs you out on every other browser and revokes your API tokens.</p>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="confirm-password">Password</Label>
-              <Input id="confirm-password" type="password" autoComplete="current-password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} disabled={others.isPending} />
-              {error(otherFields, "confirm_password")}
-            </div>
-            <div>
-              <Button type="submit" variant="outline" disabled={!confirmPw || others.isPending}>
-                Sign out other sessions
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+      <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle>Profile</CardTitle>
+            <p className="text-sm text-muted-foreground">Your signed-in identity.</p>
+          </CardHeader>
+          <CardContent>
+            {panel.data && (
+              <dl className="flex flex-col gap-5 text-sm">
+                <div className="min-w-0">
+                  <dt className="text-muted-foreground">Name</dt>
+                  <dd className="mt-1 break-words font-medium">{panel.data.user.name}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-muted-foreground">Email</dt>
+                  <dd className="mt-1 break-all font-medium">{panel.data.user.email}</dd>
+                </div>
+              </dl>
+            )}
+          </CardContent>
+        </Card>
+        <section aria-label="Security" className="flex min-w-0 flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Change password</CardTitle>
+              <p id="password-help" className="text-sm text-muted-foreground">Choose a new password. Your
+                other sessions will be signed out.</p>
+            </CardHeader>
+            <CardContent>
+              <form className="flex max-w-lg flex-col gap-5" onSubmit={(e) => void submitPassword(e)}
+                noValidate aria-describedby="password-help">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="current-password">Current password</Label>
+                  <Input id="current-password" type="password" autoComplete="current-password"
+                    value={pw.current_password}
+                    onChange={(e) => setPw({ ...pw, current_password: e.target.value })}
+                    disabled={change.isPending} aria-invalid={!!pwFields.current_password}
+                    aria-describedby={pwFields.current_password ? "current-password-error" : undefined} />
+                  {error(pwFields, "current_password", "current-password-error")}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="new-password">New password</Label>
+                  <Input id="new-password" type="password" autoComplete="new-password"
+                    value={pw.password}
+                    onChange={(e) => setPw({ ...pw, password: e.target.value })}
+                    disabled={change.isPending} aria-invalid={!!pwFields.password}
+                    aria-describedby={pwFields.password ? "new-password-error" : undefined} />
+                  {error(pwFields, "password", "new-password-error")}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="confirm-new-password">Confirm new password</Label>
+                  <Input id="confirm-new-password" type="password" autoComplete="new-password"
+                    value={pw.password_confirmation}
+                    onChange={(e) => setPw({ ...pw, password_confirmation: e.target.value })}
+                    disabled={change.isPending} aria-invalid={!!pwFields.password_confirmation}
+                    aria-describedby={pwFields.password_confirmation ? "confirm-new-password-error" : undefined} />
+                  {error(pwFields, "password_confirmation", "confirm-new-password-error")}
+                </div>
+                <div className="border-t border-border pt-5">
+                  <Button type="submit" disabled={change.isPending}>
+                    Change password
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Other sessions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form className="flex max-w-lg flex-col gap-5" onSubmit={(e) => void submitOthers(e)}
+                noValidate aria-describedby="sessions-help">
+                <p id="sessions-help" className="text-sm leading-6 text-muted-foreground">Signs you out
+                  on every other browser and revokes your API tokens.</p>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="confirm-password">Password</Label>
+                  <Input id="confirm-password" type="password" autoComplete="current-password"
+                    value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)}
+                    disabled={others.isPending} aria-invalid={!!otherFields.confirm_password}
+                    aria-describedby={otherFields.confirm_password ? "sessions-help confirm-password-error" : "sessions-help"} />
+                  {error(otherFields, "confirm_password", "confirm-password-error")}
+                </div>
+                <div className="border-t border-border pt-5">
+                  <Button type="submit" variant="outline" disabled={!confirmPw || others.isPending}>
+                    Sign out other sessions
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </section>
+      </div>
+    </Page>
   );
 }

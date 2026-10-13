@@ -6,6 +6,16 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Admin UI redesigned with a monochrome, shadcn-block-inspired layout: collapsible
+  desktop sidebar, native mobile navigation drawer, breadcrumbs, authorized
+  overview shortcuts, consistent CRUD/System/Account layouts and OS light/dark
+  themes. Responsive tables scroll locally; list filters and bulk actions have
+  distinct toolbars. Details show selectable values without inferring defaults.
+- Improved keyboard/focus behavior, form help/error associations, table sort and
+  partial-selection semantics, and relationship picker keyboard controls. Strict
+  CSP, authorization and session/write lifecycle contracts are unchanged.
+
 ### Added
 - M6 developer experience and release prep: `make:resource [--generate]
   [--belongs-to field=slug]` (fields, form, table and filters from the model's

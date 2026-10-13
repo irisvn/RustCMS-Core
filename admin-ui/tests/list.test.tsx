@@ -36,10 +36,10 @@ afterAll(() => server.close());
 
 let router: ReturnType<typeof createAppRouter>;
 
-function mount() {
+function mount(search = "") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
-  router = createAppRouter({ queryClient, session }, createMemoryHistory({ initialEntries: ["/r/posts"] }));
+  router = createAppRouter({ queryClient, session }, createMemoryHistory({ initialEntries: ["/r/posts" + search] }));
   render(
     <SessionContext.Provider value={session}>
       <QueryClientProvider client={queryClient}>
@@ -48,6 +48,23 @@ function mount() {
     </SessionContext.Provider>,
   );
 }
+
+it("shows mixed selection without changing row ownership", async () => {
+  mount();
+  await userEvent.click(await screen.findByLabelText("Select Post a"));
+  expect(screen.getByLabelText("Select all")).toBePartiallyChecked();
+  await userEvent.click(screen.getByLabelText("Select all"));
+  expect(screen.getByLabelText("Select all")).toBeChecked();
+  expect(screen.getByLabelText("Select Post b")).toBeChecked();
+});
+
+it("clears only filters and keeps search, sort and page size", async () => {
+  mount("?search=Post&sort=-title&per_page=25&filter[published][op]=eq&filter[published][value]=true");
+  const clear = await screen.findByRole("button", { name: "Clear filters" });
+  await userEvent.click(clear);
+  await waitFor(() => expect(router.state.location.search).toEqual({ search: "Post", sort: "-title", per_page: "25" }));
+  expect(screen.getByRole("columnheader", { name: /Title/ })).toHaveAttribute("aria-sort", "descending");
+});
 
 it("pauses actions after one with an unknown outcome", async () => {
   server.use(http.post("*/admin/api/resources/posts/actions/:action", () => new HttpResponse(null, { status: 504 })));

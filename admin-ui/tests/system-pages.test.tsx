@@ -20,6 +20,21 @@ const server = setupServer(
 );
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterAll(() => server.close());
+afterEach(() => server.resetHandlers());
+
+function mount(path: string) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
+  const router = createAppRouter({ queryClient, session }, createMemoryHistory({ initialEntries: [path] }));
+  render(
+    <SessionContext.Provider value={session}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </SessionContext.Provider>,
+  );
+  return router;
+}
 
 it("a creator who may not view users stays on the form after creating one", async () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -39,6 +54,43 @@ it("a creator who may not view users stays on the form after creating one", asyn
   expect(await screen.findByText("new@x.y was created.")).toBeInTheDocument();
   await waitFor(() => expect(router.state.location.pathname).toBe("/system/users/create"));
   expect(screen.getByLabelText("Email")).toHaveValue("");
+});
+
+it("connects user validation errors to their matching labels", async () => {
+  server.use(http.post("*/admin/api/system/users", () =>
+    HttpResponse.json({ message: "x", code: "validation_failed", errors: { email: ["This email is already in use."] } }, { status: 422 }),
+  ));
+  mount("/system/users/create");
+  await userEvent.type(await screen.findByLabelText("Email"), "used@x.y");
+  await userEvent.click(screen.getByRole("button", { name: "Create user" }));
+  await screen.findByText("This email is already in use.");
+  expect(screen.getByLabelText("Email")).toHaveAccessibleDescription("This email is already in use.");
+  expect(screen.getByLabelText("Email")).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByLabelText("Name")).not.toHaveAttribute("aria-invalid", "true");
+});
+
+it("keeps named system tables inside their local overflow container", async () => {
+  server.use(http.get("*/admin/api/system/users", () => HttpResponse.json({
+    data: [], meta: { page: 1, perPage: 25, total: 0, lastPage: 1 },
+  })));
+  mount("/system/users");
+  const table = await screen.findByRole("table", { name: "Users" });
+  expect(table.parentElement).toHaveClass("overflow-x-auto");
+  expect(screen.getByLabelText("Search users")).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "New user" })).not.toBeInTheDocument();
+});
+
+it("keeps grouped permission labels and grantability guards", async () => {
+  server.use(http.get("*/admin/api/system/permissions", () => HttpResponse.json([
+    { name: "posts.view", group: "posts", grantable: true },
+    { name: "posts.delete", group: "posts", grantable: false },
+  ])));
+  mount("/system/roles/create");
+  const view = await screen.findByRole("checkbox", { name: "posts.view" });
+  expect(screen.getByRole("group", { name: "posts" })).toContainElement(view);
+  expect(view).toHaveAccessibleDescription(/You can only change permissions you hold/);
+  expect(view).not.toBeDisabled();
+  expect(screen.getByRole("checkbox", { name: "posts.delete" })).toBeDisabled();
 });
 
 it("groups permissions by resource", () => {

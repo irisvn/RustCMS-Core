@@ -17,7 +17,7 @@
   --color-accent: var(--muted);
   --color-accent-foreground: var(--foreground);
   --color-destructive: var(--destructive);
-  --color-destructive-foreground: #fff;
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-card: var(--card);
   --color-popover: var(--card);
   --color-success: var(--success);
@@ -26,40 +26,76 @@
 }
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  color-scheme: light;
+  --background: #fafafa;
+  --foreground: #18181b;
   --card: #ffffff;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --border: #e2e8f0;
-  --ring: #6366f1;
-  --primary: #4f46e5;
-  --primary-foreground: #ffffff;
-  --secondary: #e2e8f0;
-  --destructive: #dc2626;
-  --success: #16a34a;
-  --warning: #d97706;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --border: #e4e4e7;
+  --ring: #71717a;
+  --primary: #18181b;
+  --primary-foreground: #fafafa;
+  --secondary: #f4f4f5;
+  --destructive: #b91c1c;
+  --destructive-foreground: #ffffff;
+  --success: #3f3f46;
+  --warning: #52525b;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0b1120;
-    --foreground: #e2e8f0;
-    --card: #111827;
-    --muted: #1e293b;
-    --muted-foreground: #94a3b8;
-    --border: #1f2937;
-    --ring: #818cf8;
-    --primary: #6366f1;
-    --primary-foreground: #ffffff;
-    --secondary: #1e293b;
-    --destructive: #ef4444;
-    --success: #22c55e;
-    --warning: #f59e0b;
+    color-scheme: dark;
+    --background: #09090b;
+    --foreground: #fafafa;
+    --card: #111113;
+    --muted: #202023;
+    --muted-foreground: #a1a1aa;
+    --border: #2b2b30;
+    --ring: #71717a;
+    --primary: #fafafa;
+    --primary-foreground: #18181b;
+    --secondary: #27272a;
+    --destructive: #f87171;
+    --destructive-foreground: #18181b;
+    --success: #d4d4d8;
+    --warning: #d4d4d8;
   }
 }
 
 body {
-  @apply bg-background text-foreground antialiased;
+  @apply m-0 bg-background text-foreground antialiased;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+button:not(:disabled), select:not(:disabled), summary {
+  cursor: pointer;
+}
+
+/* Native overlays stay in compiled CSS to comply with style-src 'self'. */
+body:has(dialog[open]) {
+  overflow: hidden;
+}
+
+.admin-drawer {
+  margin: 0;
+  width: min(18rem, calc(100vw - 2rem));
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  border-radius: 0;
+  border-width: 0 1px 0 0;
+}
+
+.admin-drawer > div {
+  height: 100%;
+  min-height: 0;
+  padding: 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

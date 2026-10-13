@@ -1,10 +1,11 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowDown, ArrowUp, Eye, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, Eye, ListFilter, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useUncertain } from "@/api/context";
 import { useDeleteRecord, useRecords, useRunAction, useSchema } from "@/api/queries";
 import type { ActionOutcome, ActionSchema, Envelope } from "@/api/types";
 import { ErrorState, Loading, VersionBanner, compatibility } from "@/components/states";
+import { Page, PageHeader } from "@/components/layout";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -60,6 +61,8 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: string } | null>(null);
   // A write with an unknown outcome (timeout, cut connection) must not be repeated blindly.
   const uncertain = useUncertain(slug);
+  const [filtersOpen, setFiltersOpen] = useState(true);
+  const filtersId = useId();
   const [searchText, setSearchText] = useState(search.search ?? "");
   const debouncedSearch = useDebounced(searchText, 300);
 
@@ -99,6 +102,8 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
 
   const toggleSort = (name: string) => setSearch({ sort: sort === name ? `-${name}` : name });
   const filters = table.filters.filter((f) => KNOWN_FILTERS.has(f.type));
+  const activeFilters = filters.filter((filter) => Object.entries(search).some(([key, value]) => key.startsWith(`filter[${filter.name}][`) && value));
+  const clearFilters = () => setSearch(Object.fromEntries(Object.keys(search).filter((key) => /^filter\[/.test(key)).map((key) => [key, undefined])));
 
   const runAction = async (action: ActionSchema, requested: string[]) => {
     setNotice(null);
@@ -133,15 +138,12 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     action.confirm ? setConfirm({ kind: "action", action, keys }) : void runAction(action, keys);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">{s.resource.pluralLabel}</h1>
-        {s.abilities.create && !readOnly && !uncertain && (
-          <Button onClick={() => navigate({ to: "/r/$slug/create", params: { slug } })}>
-            <Plus /> New {s.resource.label.toLowerCase()}
-          </Button>
-        )}
-      </div>
+    <Page>
+      <PageHeader title={s.resource.pluralLabel} description={`Browse and manage your ${s.resource.pluralLabel.toLowerCase()}.`} actions={s.abilities.create && !readOnly && !uncertain && (
+        <Button onClick={() => navigate({ to: "/r/$slug/create", params: { slug } })}>
+          <Plus /> New {s.resource.label.toLowerCase()}
+        </Button>
+      )} />
       <VersionBanner schema={s} />
       {notice && <Alert variant={notice.variant}>{notice.text}</Alert>}
       {uncertain && (
@@ -154,43 +156,40 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
       )}
 
       <Card>
-        <div className="flex flex-wrap items-end gap-3 border-b border-border p-3">
-          {table.searchable && (
-            <Input
-              aria-label="Search"
-              placeholder="Search…"
-              className="max-w-xs"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-            />
-          )}
-          {filters.map((f) => (
-            <FilterControl
-              key={f.name}
-              slug={slug}
-              filter={f}
-              params={search as FilterParams}
-              onChange={(changes) => setSearch(changes)}
-            />
-          ))}
-          {bulkActions.length > 0 && selected.size > 0 && !stale && (
-            <div className="ml-auto flex items-center gap-2 text-sm">
-              <span>{count(selected.size, "selected record")}</span>
-              {bulkActions.map((a) => (
-                <Button key={a.name} size="sm" variant={a.color === "danger" ? "destructive" : "outline"} disabled={run.isPending} onClick={() => startAction(a, [...selected])}>
-                  {a.label}
-                </Button>
-              ))}
+        <div className="space-y-4 border-b border-border p-4 sm:p-5">
+          <div className="flex flex-wrap items-center gap-3">
+            {table.searchable && (
+              <div className="relative w-full sm:max-w-xs">
+                <Search className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" aria-hidden="true" />
+                <Input aria-label="Search" placeholder={`Search ${s.resource.pluralLabel.toLowerCase()}…`} className="pl-9" value={searchText} onChange={(e) => setSearchText(e.target.value)} />
+              </div>
+            )}
+            {filters.length > 0 && <Button variant="outline" aria-expanded={filtersOpen} aria-controls={filtersId} onClick={() => setFiltersOpen((value) => !value)}><ListFilter />Filters{activeFilters.length > 0 && <span className="rounded bg-muted px-1.5 text-xs">{activeFilters.length}</span>}</Button>}
+            {activeFilters.length > 0 && <Button variant="ghost" size="sm" onClick={clearFilters}><X />Clear filters</Button>}
+            {meta && <span className="ml-auto text-xs text-muted-foreground">{count(meta.total, "record")}</span>}
+          </div>
+          {filters.length > 0 && (
+            <div id={filtersId} hidden={!filtersOpen}>
+              <div className="flex flex-wrap items-end gap-4 rounded-lg bg-muted/50 p-3">
+                {filters.map((f) => <FilterControl key={f.name} slug={slug} filter={f} params={search as FilterParams} onChange={(changes) => setSearch(changes)} />)}
+              </div>
             </div>
           )}
+          {!filtersOpen && activeFilters.length > 0 && <p className="text-xs text-muted-foreground">Filtering by {activeFilters.map((f) => f.label).join(", ")}</p>}
         </div>
+        {bulkActions.length > 0 && selected.size > 0 && !stale && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/50 px-4 py-3 text-sm sm:px-5">
+            <span className="mr-2 font-medium">{count(selected.size, "selected record")}</span>
+            {bulkActions.map((a) => <Button key={a.name} size="sm" variant={a.color === "danger" ? "destructive" : "outline"} disabled={run.isPending} onClick={() => startAction(a, [...selected])}>{a.label}</Button>)}
+          </div>
+        )}
 
         {records.error ? (
           <ErrorState error={records.error} />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative max-w-full overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b border-border text-left text-xs text-muted-foreground">
+              <thead className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
                 <tr>
                   {bulkActions.length > 0 && (
                     <th className="w-8 p-3">
@@ -198,14 +197,15 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                         aria-label="Select all"
                         disabled={stale}
                         checked={rows.length > 0 && rows.every((r) => selected.has(r.key))}
+                        indeterminate={rows.some((r) => selected.has(r.key)) && !rows.every((r) => selected.has(r.key))}
                         onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.key)) : new Set())}
                       />
                     </th>
                   )}
                   {table.columns.map((c) => (
-                    <th key={c.name} className="p-3 font-medium">
+                    <th key={c.name} scope="col" className="whitespace-nowrap p-3 font-medium" aria-sort={c.sortable ? sort === c.name ? "ascending" : sort === `-${c.name}` ? "descending" : "none" : undefined}>
                       {c.sortable ? (
-                        <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => toggleSort(c.name)}>
+                        <button type="button" className="inline-flex min-h-8 items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => toggleSort(c.name)}>
                           {c.label}
                           {sort === c.name && <ArrowUp className="size-3" aria-label="ascending" />}
                           {sort === `-${c.name}` && <ArrowDown className="size-3" aria-label="descending" />}
@@ -236,7 +236,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                   </tr>
                 )}
                 {rows.map((record) => (
-                  <tr key={record.key} className="border-b border-border last:border-0 hover:bg-muted/50">
+                  <tr key={record.key} data-selected={selected.has(record.key) || undefined} className="border-b border-border last:border-0 hover:bg-muted/50 data-[selected=true]:bg-muted/60">
                     {bulkActions.length > 0 && (
                       <td className="p-3">
                         <Checkbox
@@ -346,6 +346,6 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
           </Button>
         </div>
       </Dialog>
-    </div>
+    </Page>
   );
 }

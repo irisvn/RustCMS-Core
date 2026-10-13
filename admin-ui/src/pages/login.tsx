@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
+import { ArrowRight, PanelsTopLeft } from "lucide-react";
 import { ApiError } from "@/api/client";
 import { useSession } from "@/api/context";
 import type { Me } from "@/api/types";
@@ -37,12 +38,14 @@ export function LoginPage({ redirect }: { redirect?: string }) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <main className="flex min-h-dvh flex-col items-center justify-center gap-8 bg-background p-4 sm:p-8">
+      <div className="flex items-center gap-2.5 text-base font-semibold tracking-tight"><span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><PanelsTopLeft className="size-5" /></span>rustcms</div>
       <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Sign in</CardTitle>
+        <CardHeader className="gap-2 p-6 pb-0 text-center">
+          <CardTitle className="text-2xl tracking-tight">Sign in</CardTitle>
+          <p className="text-sm text-muted-foreground">Enter your details to access your workspace.</p>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-6 pt-6">
           <form className="flex flex-col gap-4" onSubmit={(e) => void submit(e)} noValidate>
             {message && <Alert variant="destructive">{message}</Alert>}
             <div className="flex flex-col gap-1.5">
@@ -55,8 +58,9 @@ export function LoginPage({ redirect }: { redirect?: string }) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 aria-invalid={!!errors.email || undefined}
+                aria-describedby={errors.email ? "email-error" : undefined}
               />
-              {errors.email && <p role="alert" className="text-xs text-destructive">{errors.email.join(" ")}</p>}
+              {errors.email && <p id="email-error" role="alert" className="text-xs text-destructive">{errors.email.join(" ")}</p>}
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="password">Password</Label>
@@ -68,15 +72,17 @@ export function LoginPage({ redirect }: { redirect?: string }) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 aria-invalid={!!errors.password || undefined}
+                aria-describedby={errors.password ? "password-error" : undefined}
               />
-              {errors.password && <p role="alert" className="text-xs text-destructive">{errors.password.join(" ")}</p>}
+              {errors.password && <p id="password-error" role="alert" className="text-xs text-destructive">{errors.password.join(" ")}</p>}
             </div>
             <Button type="submit" disabled={pending}>
-              {pending ? "Signing in…" : "Sign in"}
+              {pending ? "Signing in…" : <>Sign in <ArrowRight className="ml-auto" /></>}
             </Button>
           </form>
         </CardContent>
       </Card>
-    </div>
+      <p className="text-center text-xs text-muted-foreground">Your content. Your workspace.</p>
+    </main>
   );
 }
