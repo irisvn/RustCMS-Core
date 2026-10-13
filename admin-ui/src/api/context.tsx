@@ -20,3 +20,10 @@ export function useUncertain(slug: string): boolean {
   const read = useCallback(() => session.isUncertain(slug), [session, slug]);
   return useSyncExternalStore(session.subscribe, read, read);
 }
+
+/** Whether the write that paused `slug` can be re-sent safely (same key). */
+export function useRetryable(slug: string): boolean {
+  const session = useSession();
+  const read = useCallback(() => session.pendingWrite(slug) !== undefined, [session, slug]);
+  return useSyncExternalStore(session.subscribe, read, read);
+}

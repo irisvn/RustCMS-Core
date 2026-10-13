@@ -52,8 +52,12 @@ pub trait DynResource: Send + Sync {
     async fn create(&self, ctx: &Ctx, input: Data) -> AppResult<Envelope>;
     /// Updates a record from client input (PATCH semantics).
     async fn update(&self, ctx: &Ctx, key: &str, input: Data) -> AppResult<Envelope>;
-    /// Deletes a record.
+    /// Deletes a record (moves it to the trash with soft deletes).
     async fn delete(&self, ctx: &Ctx, key: &str) -> AppResult<()>;
+    /// Restores a trashed record (soft deletes; 404 otherwise).
+    async fn restore(&self, ctx: &Ctx, key: &str) -> AppResult<Envelope>;
+    /// Deletes a trashed record for good (soft deletes; 404 otherwise).
+    async fn force_delete(&self, ctx: &Ctx, key: &str) -> AppResult<()>;
     /// Runs an action on the given records.
     async fn run_action(&self, ctx: &Ctx, name: &str, keys: &[String], data: Data) -> AppResult<ActionOutcome>;
     /// Titles of visible records, for relationship labels and options. Invisible keys are absent.

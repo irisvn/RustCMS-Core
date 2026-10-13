@@ -67,6 +67,7 @@ pub fn parse_model(source: &str) -> anyhow::Result<Vec<Column>> {
 }
 
 const LONG_TEXT: &[&str] = &["body", "content", "description", "notes", "text", "summary", "excerpt", "bio"];
+const TIMESTAMPS: &[&str] = &["DateTime", "NaiveDateTime", "DateTimeUtc", "DateTimeWithTimeZone", "DateTimeLocal"];
 const MANAGED: &[&str] = &["created_at", "updated_at", "deleted_at"];
 /// Never generated as fields (secrets).
 const SENSITIVE: &[&str] = &["password", "secret", "token", "hash", "api_key", "salt"];
@@ -101,6 +102,7 @@ fn supported(ty: &str) -> bool {
 struct Generated {
     title: Option<String>,
     key: Option<String>,
+    soft_deletes: bool,
     fields: Vec<String>,
     form: Vec<String>,
     columns: Vec<String>,
@@ -115,6 +117,7 @@ fn generate(columns: &[Column], belongs_to: &BTreeMap<String, String>) -> Genera
     let mut out = Generated {
         title: None,
         key: None,
+        soft_deletes: false,
         fields: vec![],
         form: vec![],
         columns: vec![],
@@ -145,6 +148,11 @@ fn generate(columns: &[Column], belongs_to: &BTreeMap<String, String>) -> Genera
             continue;
         }
         if names.iter().any(|n| MANAGED.contains(n)) {
+            // A nullable `deleted_at` timestamp (the database name) marks soft deletes.
+            let timestamp = TIMESTAMPS.contains(&column.ty.as_str());
+            if column.db_name == "deleted_at" && column.optional && timestamp {
+                out.soft_deletes = true;
+            }
             continue;
         }
         if SENSITIVE.iter().any(|s| names.iter().any(|n| n.contains(s))) {
@@ -264,6 +272,7 @@ pub fn make_resource(
         Generated {
             title: None,
             key: None,
+            soft_deletes: false,
             fields: vec!["// Field::column(Column::Title).required().searchable(),".into()],
             form: vec![],
             columns: vec![],
@@ -292,6 +301,7 @@ pub fn make_resource(
             "plural_label": humanize_plural(&table),
             "title": generated.title,
             "key": generated.key,
+            "soft_deletes": generated.soft_deletes,
             "fields": fields,
             "form": generated.form,
             "columns": generated.columns,
@@ -456,6 +466,22 @@ impl ActiveModelBehavior for ActiveModel {}
         assert!(g.form.iter().any(|f| f.contains("TextInput::make(\"slug\")")), "the key is typed in: {:?}", g.form);
         assert!(g.fields.iter().any(|f| f.contains("Column::Slug).required()")), "{:?}", g.fields);
         assert_eq!(g.title.as_deref(), Some("label"), "the title stays a non-key column");
+    }
+
+    #[test]
+    fn nullable_deleted_at_means_soft_deletes() {
+        let model = |ty: &str| {
+            format!(
+                "pub struct Model {{\n    #[sea_orm(primary_key)]\n    pub id: i32,\n    pub title: String,\n    pub deleted_at: {ty},\n}}\n"
+            )
+        };
+        let soft = |ty: &str| generate(&parse_model(&model(ty)).unwrap(), &BTreeMap::new()).soft_deletes;
+        assert!(soft("Option<DateTimeUtc>"));
+        assert!(soft("Option<chrono::NaiveDateTime>"));
+        assert!(!soft("DateTimeUtc"), "not nullable");
+        assert!(!soft("Option<bool>"), "not a timestamp");
+        let g = generate(&parse_model(&model("Option<DateTimeUtc>")).unwrap(), &BTreeMap::new());
+        assert!(!g.fields.iter().any(|f| f.contains("DeletedAt")), "no field for the marker");
     }
 
     #[test]

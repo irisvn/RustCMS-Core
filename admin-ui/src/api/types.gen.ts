@@ -2,9 +2,9 @@
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
-export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden";
+export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value";
 
-export type LayoutType = "section" | "grid";
+export type LayoutType = "section" | "grid" | "tabs" | "tab";
 
 export type ColumnType = "text" | "badge" | "boolean" | "date";
 
@@ -49,6 +49,10 @@ titleField?: string, };
 export type SchemaOperation = "create" | "edit" | "view";
 
 export type Rule = { "rule": "required" } | { "rule": "max_length", 
+/**
+ * Limit.
+ */
+value: number, } | { "rule": "max_items", 
 /**
  * Limit.
  */
@@ -132,7 +136,11 @@ export type LayoutSchema = {
  */
 type: LayoutType, 
 /**
- * Title (sections).
+ * Stable identity (tabs).
+ */
+id?: string, 
+/**
+ * Title (sections, tabs).
  */
 label?: string, 
 /**
@@ -276,7 +284,11 @@ searchable: boolean,
 /**
  * Actions.
  */
-actions: Array<ActionSchema>, };
+actions: Array<ActionSchema>, 
+/**
+ * Deleting moves records to the trash (`trashed` list parameter, restore, force delete).
+ */
+softDeletes?: boolean, };
 
 export type ResourceSchema = { 
 /**
@@ -326,6 +338,11 @@ abilities: { [key in string]: boolean },
  */
 data: { [key in string]: JsonValue }, 
 /**
+ * The record is in the trash (soft deletes); then only `view`, `restore`
+ * and `force_delete` apply.
+ */
+trashed?: boolean, 
+/**
  * Titles of related records for `belongs_to` fields (`#key` when not visible).
  */
 labels?: { [key in string]: string }, };
@@ -370,7 +387,12 @@ denied: Array<string>,
 /**
  * Keys not found in the user's scope.
  */
-missing: Array<string>, };
+missing: Array<string>, 
+/**
+ * This is the outcome of an earlier request with the same `Idempotency-Key`:
+ * the action did not run again.
+ */
+replayed?: boolean, };
 
 export type PanelUser = { 
 /**

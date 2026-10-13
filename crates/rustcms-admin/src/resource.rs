@@ -60,6 +60,7 @@ pub struct ResourceMeta {
     pub(crate) key: KeyStrategy,
     pub(crate) title_field: Option<String>,
     pub(crate) constraints: Vec<ConstraintMap>,
+    pub(crate) soft_delete: Option<String>,
 }
 
 impl ResourceMeta {
@@ -73,6 +74,7 @@ impl ResourceMeta {
             key: KeyStrategy::DbGenerated,
             title_field: None,
             constraints: Vec::new(),
+            soft_delete: None,
         }
     }
 
@@ -100,6 +102,19 @@ impl ResourceMeta {
             field,
             message: message.to_owned(),
         });
+        self
+    }
+
+    /// Soft deletes: deleting sets `deleted_at` (a nullable timestamp column),
+    /// trashed records are hidden everywhere, and `restore` / `force_delete`
+    /// bring them back or remove them for good.
+    pub fn soft_deletes(self) -> Self {
+        self.soft_deletes_column("deleted_at")
+    }
+
+    /// Soft deletes with the marker column `column`.
+    pub fn soft_deletes_column(mut self, column: impl Into<String>) -> Self {
+        self.soft_delete = Some(column.into());
         self
     }
 
@@ -225,6 +240,19 @@ pub struct Filter {
     pub value: serde_json::Value,
 }
 
+/// Records by deletion state, for resources with soft deletes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Trashed {
+    /// Active records only.
+    #[default]
+    Without,
+    /// Active and trashed records.
+    With,
+    /// Trashed records only.
+    Only,
+}
+
 /// Parameters of a list request.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -240,6 +268,9 @@ pub struct ListQuery {
     /// Filters, combined with AND.
     #[serde(default)]
     pub filters: Vec<Filter>,
+    /// Which records by deletion state (resources with soft deletes only).
+    #[serde(default)]
+    pub trashed: Trashed,
     /// Filter values came from a URL query string, so they are all strings and
     /// are interpreted by field type (`5`, `true`, comma-separated `in` lists).
     /// JSON clients keep the strict wire format.
@@ -282,6 +313,11 @@ pub struct Envelope {
     pub abilities: BTreeMap<&'static str, bool>,
     /// Readable fields only.
     pub data: Data,
+    /// The record is in the trash (soft deletes); then only `view`, `restore`
+    /// and `force_delete` apply.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub trashed: bool,
     /// Titles of related records for `belongs_to` fields (`#key` when not visible).
     #[cfg_attr(feature = "ts", ts(as = "Option<BTreeMap<String, String>>", optional))]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]

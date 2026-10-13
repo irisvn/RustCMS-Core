@@ -6,7 +6,7 @@ import { ApiError } from "@/api/client";
 import { useUncertain } from "@/api/context";
 import { useDeleteRecord, useRecord, useSaveRecord, useSchema } from "@/api/queries";
 import type { Envelope, InputSchema, ResourceSchema } from "@/api/types";
-import { ErrorState, Loading, VersionBanner, compatibility } from "@/components/states";
+import { ErrorState, Loading, PausedBanner, VersionBanner, compatibility } from "@/components/states";
 import { Alert } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Page, PageHeader } from "@/components/layout";
@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { Components, ReadOnlyComponents, gridCols } from "@/renderers/form";
 import { type FormValues, defaultValues, inputsOf, payloadOf, protectLossyJson } from "@/schema/form";
 import { editResolver } from "@/schema/resolver";
+import type { PendingWrite } from "@/app/session";
 
 
 function useMounted() {
@@ -110,10 +111,22 @@ function RecordForm({
     touched.current.has(name) || (!editing && inputs.some((i) => i.name === name && shownAsSet(i)));
   dirty.current = (name) =>
     byIntent(name) ? touchedOrShown(name) : !editing || form.getFieldState(name).isDirty;
-  const save = useSaveRecord(slug, recordKey);
+  // This form's identity: a retried create continues here only if it came from here.
+  const [origin] = useState(() => crypto.randomUUID());
+  const save = useSaveRecord(slug, recordKey, origin);
   const [formErrors, setFormErrors] = useState<string[]>([]);
   // After a write with an unknown outcome, resubmitting could create a duplicate.
   const uncertain = useUncertain(slug);
+
+  // After a failed save, the first input with an error (in form order) gets the
+  // focus, once enclosing tabs have opened it.
+  const focusFirstError = () =>
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const first = inputs.find((i) => form.getFieldState(i.name).error);
+        if (first) document.getElementById(`field-${first.name}`)?.focus();
+      }),
+    );
 
   const submit = form.handleSubmit(async (values) => {
     setFormErrors([]);
@@ -143,11 +156,22 @@ function RecordForm({
           else other.push(`${field}: ${messages.join(" ")}`);
         }
         setFormErrors(other.length || Object.keys(e.fieldErrors).length ? other : [e.message]);
+        focusFirstError();
       } else {
           setFormErrors([e instanceof Error ? e.message : "Could not save."]);
       }
     }
-  });
+  }, focusFirstError);
+
+  // A retried create from this form that went through: continue as after a
+  // normal save. Another form's write only gets the banner's notice.
+  const recovered = async (result: unknown, pending: PendingWrite) => {
+    const saved = (result as { data?: Envelope } | undefined)?.data;
+    if (editing || !saved || pending.origin !== origin || !mounted.current) return false;
+    if (saved.abilities.view) await navigate({ to: "/r/$slug/records/$key", params: { slug, key: saved.key } });
+    else await navigate({ to: "/r/$slug", params: { slug } });
+    return true;
+  };
 
   const title = editing ? `Edit ${record?.title ?? schema.resource.label.toLowerCase()}` : `New ${schema.resource.label.toLowerCase()}`;
   return (
@@ -155,6 +179,7 @@ function RecordForm({
     <form className="flex min-w-0 flex-col gap-6" onSubmit={(e) => void submit(e)} noValidate>
       <PageHeader title={title} eyebrow={schema.resource.pluralLabel} description={editing ? "Update the record details below." : "Fill in the details to create a record."} />
       <VersionBanner schema={schema} />
+      <PausedBanner scope={slug} onRecovered={recovered} />
       {refreshError instanceof Error && (
         <Alert variant="warning">Could not refresh this page ({refreshError.message}). Your changes are kept.</Alert>
       )}
@@ -178,7 +203,9 @@ function RecordForm({
               control: form.control,
               errors: form.formState.errors,
               // Locked while saving: edits made meanwhile would be lost on completion.
-              readOnly: readOnly || save.isPending,
+              // Also while paused: a retry re-sends the earlier submission, not later edits.
+              readOnly: readOnly || save.isPending || uncertain,
+              submitCount: form.formState.submitCount,
               onUserChange: (name) => touched.current.add(name),
             }}
           />
@@ -242,6 +269,7 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
           )}
         </>}
       />
+      <PausedBanner scope={slug} />
       <VersionBanner schema={s} />
       {error && <Alert variant="destructive">{error}</Alert>}
       <Card>

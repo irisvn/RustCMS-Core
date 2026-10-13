@@ -2,14 +2,16 @@
 # Actors:
 #   guest    anonymous browser with a CSRF token
 #   member   admin session, no permissions
-#   editor   admin session: posts.{view_any,view,create,update,delete}, categories.{view_any,view}
+#   editor   admin session: posts.{view_any,view,create,update,delete}, categories.{view_any,view},
+#            notes.{view_any,view,create,delete,restore} (notes have soft deletes)
 #   admin    admin session, super admin
 #   foreign  editor's session sending a foreign Origin
 #   token    API token of the super admin (abilities ["*"])
 #   manager  users.view_any, users.view, users.update, users.delete, roles.assign (no super admin)
 #   panel_super  super admin of the admin guard only (the admin is super admin of every guard)
 # Placeholders: {own} a post of the editor, {spare} another post of the editor,
-#               {theirs} a post of the admin (outside the editor's scope).
+#               {theirs} a post of the admin (outside the editor's scope),
+#               {trashed} a trashed note, {note} an active note.
 # `route` is the template from `rustcms_admin::http::routes`; every template needs a case.
 
 [[case]]
@@ -226,6 +228,146 @@ status = 200
 # System pages (users, roles, permissions). Placeholders: {member_id},
 # {editor_id}, {admin_id}, {editor_role} (the editor role), {super_role}.
 # Cases run in order: destructive ones come last.
+
+# Trash (soft deletes). A bearer token has no CSRF token: admin writes answer 403.
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/restore"
+path = "/admin/api/resources/notes/records/{trashed}/restore"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/restore"
+path = "/admin/api/resources/notes/records/{trashed}/restore"
+actor = "token"
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/restore"
+path = "/admin/api/resources/notes/records/{trashed}/restore"
+actor = "foreign"
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/restore"
+path = "/admin/api/resources/notes/records/{trashed}/restore"
+actor = "member"
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/restore"
+path = "/admin/api/resources/notes/records/999999/restore"
+actor = "member"
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/restore"
+path = "/admin/api/resources/notes/records/{note}/restore"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/restore"
+path = "/admin/api/resources/posts/records/{own}/restore"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}/force"
+path = "/admin/api/resources/notes/records/{trashed}/force"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}/force"
+path = "/admin/api/resources/notes/records/{trashed}/force"
+actor = "token"
+status = 403
+
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}/force"
+path = "/admin/api/resources/notes/records/{trashed}/force"
+actor = "foreign"
+status = 403
+
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}/force"
+path = "/admin/api/resources/notes/records/{trashed}/force"
+actor = "member"
+status = 403
+
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}/force"
+path = "/admin/api/resources/notes/records/999999/force"
+actor = "member"
+status = 403
+
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}/force"
+path = "/admin/api/resources/notes/records/{note}/force"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}/force"
+path = "/admin/api/resources/posts/records/{own}/force"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}/force"
+path = "/admin/api/resources/notes/records/{trashed}/force"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}/force"
+path = "/admin/api/resources/notes/records/999999/force"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/restore"
+path = "/admin/api/resources/notes/records/999999/restore"
+actor = "editor"
+status = 404
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/restore"
+path = "/admin/api/resources/notes/records/{trashed}/restore"
+actor = "editor"
+status = 200
+
+# Restored by the editor just before: no longer in the trash.
+[[case]]
+route = "DELETE /admin/api/resources/{slug}/records/{key}/force"
+path = "/admin/api/resources/notes/records/{trashed}/force"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/notes/records?trashed=only"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/notes/records?trashed=only"
+actor = "editor"
+status = 200
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/notes/records?trashed=maybe"
+actor = "editor"
+status = 422
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records"
+path = "/admin/api/resources/posts/records?trashed=only"
+actor = "admin"
+status = 422
 
 [[case]]
 route = "GET /admin/api/system/users"
@@ -463,7 +605,7 @@ route = "PUT /admin/api/system/roles/{id}/permissions"
 path = "/admin/api/system/roles/{editor_role}/permissions"
 actor = "admin"
 status = 200
-body = '{"permissions": ["posts.view_any", "posts.view", "posts.create", "posts.update", "posts.delete", "categories.view_any", "categories.view"], "expectedPermissions": ["posts.view_any", "posts.view", "posts.create", "posts.update", "posts.delete", "categories.view_any", "categories.view"]}'
+body = '{"permissions": ["posts.view_any", "posts.view", "posts.create", "posts.update", "posts.delete", "categories.view_any", "categories.view", "notes.view_any", "notes.view", "notes.create", "notes.delete", "notes.restore"], "expectedPermissions": ["posts.view_any", "posts.view", "posts.create", "posts.update", "posts.delete", "categories.view_any", "categories.view", "notes.view_any", "notes.view", "notes.create", "notes.delete", "notes.restore"]}'
 
 [[case]]
 route = "DELETE /admin/api/system/roles/{id}"

@@ -18,12 +18,21 @@ pub struct Ctx {
     pub registry: Arc<Registry>,
     /// The write in progress, if any (see [`Ctx::conn`]).
     pub txn: Option<Arc<DatabaseTransaction>>,
+    /// Client `Idempotency-Key` of this request (creates and actions).
+    pub idempotency_key: Option<String>,
 }
 
 impl Ctx {
     /// Context outside any write.
     pub fn new(db: DatabaseConnection, principal: Principal, registry: Arc<Registry>) -> Self {
-        Self { db, principal, registry, txn: None }
+        Self { db, principal, registry, txn: None, idempotency_key: None }
+    }
+
+    /// The same context with an `Idempotency-Key`: a create or action retried
+    /// with the same key and request replays the first result instead of running again.
+    pub fn with_idempotency_key(mut self, key: Option<String>) -> Self {
+        self.idempotency_key = key;
+        self
     }
 
     /// Shorthand for [`Principal::can`].

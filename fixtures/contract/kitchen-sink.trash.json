@@ -1,0 +1,49 @@
+{
+  "data": [
+    {
+      "abilities": {
+        "delete": false,
+        "force_delete": true,
+        "restore": true,
+        "update": false,
+        "view": true
+      },
+      "data": {
+        "active": true,
+        "agreed": false,
+        "category_id": 1,
+        "colors": [
+          "red"
+        ],
+        "count": 3,
+        "day": "2026-10-12",
+        "deleted_at": "2026-10-12T09:30:00Z",
+        "happened_at": "2026-10-12T02:30:00Z",
+        "local_at": "2026-10-12T09:30:00",
+        "name": "Defaults",
+        "notes": "Line one\nLine two",
+        "price": "10.50",
+        "ratio": 0.5,
+        "serial": "9007199254740993",
+        "specs": {
+          "material": "steel",
+          "size": "M"
+        },
+        "status": "live",
+        "token": "0199d3a4-1b2c-7d3e-8f40-123456789abc"
+      },
+      "key": "2",
+      "labels": {
+        "category_id": "Tools"
+      },
+      "title": "Defaults",
+      "trashed": true
+    }
+  ],
+  "meta": {
+    "lastPage": 1,
+    "page": 1,
+    "perPage": 25,
+    "total": 1
+  }
+}

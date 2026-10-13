@@ -10,6 +10,7 @@ mod adapter;
 pub mod context;
 pub mod field;
 pub mod http;
+pub mod idempotency;
 pub mod policy;
 mod provider;
 pub mod registry;
@@ -29,12 +30,13 @@ pub use provider::AdminProvider;
 pub use registry::{DynResource, Registry};
 pub use resource::{
     Envelope, Filter, FilterOp, KeyStrategy, Limits, ListQuery, Page, PageMeta, Resource, ResourceEntity, ResourceMeta,
+    Trashed,
 };
 pub use schema::{ResourceInfo, ResourceSchema, SchemaOperation};
 pub use ui::{
     BadgeColumn, BooleanColumn, Checkbox, CheckboxList, DateColumn, DatePicker, DateRangeFilter, DateTimePicker, Form,
-    Grid, Hidden, NumberInput, Section, SelectFilter, SelectInput, Table, TernaryFilter, TextColumn, TextInput,
-    Textarea, Toggle,
+    Grid, Hidden, KeyValue, NumberInput, Section, SelectFilter, SelectInput, Tab, Table, Tabs, TernaryFilter,
+    TextColumn, TextInput, Textarea, Toggle,
 };
 
 /// A JSON object in wire format (input, hook data, trusted records).

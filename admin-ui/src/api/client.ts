@@ -85,6 +85,15 @@ export class ApiClient {
     this.csrfLoading = null;
   }
 
+  /**
+   * Fetches a new CSRF token on the next write without starting a new epoch
+   * (work in flight stays valid): for re-sending a write after a CSRF refusal.
+   */
+  refreshCsrf() {
+    this.csrf = null;
+    this.csrfLoading = null;
+  }
+
   /** The session's CSRF token, fetched once and kept in memory only. */
   async csrfToken(): Promise<string> {
     if (this.csrf) return this.csrf;
@@ -125,8 +134,8 @@ export class ApiClient {
     return this.request<T>("DELETE", path);
   }
 
-  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const headers: Record<string, string> = { Accept: "application/json" };
+  async request<T>(method: string, path: string, body?: unknown, extra?: Record<string, string>): Promise<T> {
+    const headers: Record<string, string> = { ...extra, Accept: "application/json" };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     const generation = this.generation;
     // An answer to a request from an earlier session state (before a sign-in,

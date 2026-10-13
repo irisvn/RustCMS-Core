@@ -6,7 +6,7 @@ use rustcms_core::models::user;
 use rustcms_core::{AppBuilder, Config};
 use rustcms_testing::{Factory, TestApp, TestDb, UserFactory};
 
-use super::{CategoryResource, PostResource, TagResource};
+use super::{CategoryResource, NoteResource, PostResource, TagResource};
 
 pub fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
@@ -16,7 +16,8 @@ pub fn build(config: Config) -> AppBuilder {
             .brand("Test CMS")
             .resource::<CategoryResource>()
             .resource::<PostResource>()
-            .resource::<TagResource>(),
+            .resource::<TagResource>()
+            .resource::<NoteResource>(),
     );
     app
 }
@@ -53,6 +54,11 @@ pub async fn setup(db: TestDb) -> (TestApp, Users) {
         "posts.delete",
         "categories.view_any",
         "categories.view",
+        "notes.view_any",
+        "notes.view",
+        "notes.create",
+        "notes.delete",
+        "notes.restore",
     ]
     .iter()
     .map(|p| (*p).to_owned())

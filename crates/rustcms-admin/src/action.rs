@@ -114,7 +114,7 @@ impl<E: EntityTrait> Action<E> {
 }
 
 /// Per-record result of an action.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActionOutcome {
     /// Keys the handler processed.
@@ -123,4 +123,9 @@ pub struct ActionOutcome {
     pub denied: Vec<String>,
     /// Keys not found in the user's scope.
     pub missing: Vec<String>,
+    /// This is the outcome of an earlier request with the same `Idempotency-Key`:
+    /// the action did not run again.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub replayed: bool,
 }

@@ -8,3 +8,4 @@ Architecture decisions live in [`docs/adr/`](https://github.com/irisvn/rustcms/t
 - 0004 — Two-level CLI: global generator, in-app console
 - 0005 — Own session store, synchronizer CSRF, deterministic guards
 - 0006 — Admin SPA delivery: committed assets, runtime meta, strict CSP
+- 0007 — Idempotency keys for creates and actions

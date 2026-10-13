@@ -27,20 +27,41 @@ export function hasUnsafeInteger(value: unknown): boolean {
 export const lossyJson = (input: InputSchema, value: unknown) =>
   (input.valueType as WireKind) === "json" && hasUnsafeInteger(value);
 
-/** The form with JSON inputs made read-only where the stored value would lose precision. */
+/** A JSON object whose values are all text (what a key/value input edits). */
+export const isTextObject = (value: unknown): value is Record<string, string> =>
+  typeof value === "object" && value !== null && !Array.isArray(value) && Object.values(value).every((v) => typeof v === "string");
+
+/** A stored key/value that is not an object of text: shown, never rewritten. */
+const foreignKeyValue = (input: InputSchema, value: unknown) =>
+  input.type === "key_value" && value !== null && value !== undefined && !isTextObject(value);
+
+/**
+ * The form with JSON inputs made read-only where the stored value would lose
+ * precision, or (key/value inputs) is not an object of text.
+ */
 export function protectLossyJson(components: ComponentSchema[], data?: Record<string, unknown>): ComponentSchema[] {
   if (!data) return components;
   return components.map((c) =>
     isInput(c)
       ? lossyJson(c, data[c.name])
         ? { ...c, disabled: true, help: "Holds numbers too large to edit here without changing them." }
-        : c
+        : foreignKeyValue(c, data[c.name])
+          ? { ...c, disabled: true, help: "Holds values that are not text pairs: it cannot be edited here." }
+          : c
       : { ...c, components: protectLossyJson(c.components, data) },
   );
 }
 
-/** Input types of vocabulary version 1. */
+/** Key/value pairs of a form value (each held as the JSON of `[key, value]`). */
+export function pairsOf(value: FormValue): [string, string][] {
+  return Array.isArray(value) ? value.map((p) => JSON.parse(p) as [string, string]) : [];
+}
+
+export const encodePair = (key: string, value: string) => JSON.stringify([key, value]);
+
+/** Input types of vocabulary version 2. */
 export const KNOWN_INPUT_TYPES = new Set<string>([
+  "key_value",
   "text_input",
   "textarea",
   "number_input",
@@ -78,6 +99,11 @@ export function toFormValue(input: InputSchema, value: unknown): FormValue {
       return Array.isArray(value) ? value.map(encode) : [];
     case "select":
       return value === null || value === undefined ? "" : encode(value);
+    case "key_value":
+      // "" is null (not set); a list (possibly empty) is an object. Anything else
+      // stays as its JSON text: shown read-only (`protectLossyJson`), never sent.
+      if (value === null || value === undefined) return "";
+      return isTextObject(value) ? Object.entries(value).map(([k, v]) => encodePair(k, v)) : JSON.stringify(value, null, 2);
     default:
       if (input.writeOnly) return "";
       if (kindOf(input) === "json") return value === null || value === undefined ? "" : JSON.stringify(value, null, 2);
@@ -97,6 +123,13 @@ export function fromFormValue(input: InputSchema, value: FormValue): unknown {
       return (value as string[]).map((v) => JSON.parse(v) as JsonValue);
     case "select":
       return value === "" ? null : (JSON.parse(value as string) as JsonValue);
+    case "key_value": {
+      if (!Array.isArray(value)) return null;
+      // No prototype: a key such as `__proto__` stays an ordinary key.
+      const object = Object.create(null) as Record<string, string>;
+      for (const [key, text] of pairsOf(value)) object[key] = text;
+      return object;
+    }
     default: {
       const text = value as string;
       if (text === "") {
@@ -155,6 +188,29 @@ export function zodSchema(inputs: InputSchema[]) {
       case "checkbox":
         shape[input.name] = z.boolean();
         break;
+      case "key_value": {
+        const items = input.rules.find((r) => r.rule === "max_items");
+        const length = input.rules.find((r) => r.rule === "max_length");
+        shape[input.name] = z.union([z.string(), z.array(z.string())]).superRefine((value, ctx) => {
+          if (input.disabled) return;
+          if (!Array.isArray(value)) {
+            if (required) ctx.addIssue({ code: "custom", message: "is required" });
+            return;
+          }
+          const pairs = pairsOf(value);
+          const keys = pairs.map(([k]) => k);
+          const chars = (text: string) => [...text].length;
+          const issue = (message: string) => ctx.addIssue({ code: "custom", message });
+          if (items && items.rule === "max_items" && pairs.length > items.value) issue(`may not have more than ${items.value} items`);
+          else if (keys.some((k) => k.trim() === "")) issue("may not have an empty key");
+          else if (new Set(keys).size !== keys.length) issue(`has the key "${keys.find((k, i) => keys.indexOf(k) !== i)}" twice`);
+          else if (keys.some((k) => chars(k) > 255)) issue("may not have keys longer than 255 characters");
+          else if (length && length.rule === "max_length" && pairs.some(([, v]) => chars(v) > length.value)) {
+            issue(`may not have values longer than ${length.value} characters`);
+          }
+        });
+        break;
+      }
       case "checkbox_list":
         shape[input.name] = z
           .array(z.string())

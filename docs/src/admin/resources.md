@@ -64,9 +64,9 @@ fn table() -> Table {
 }
 ```
 
-| Inputs | `TextInput` (`.email()`, `.password()`, `.url()`), `Textarea`, `NumberInput`, `SelectInput`, `Toggle`, `Checkbox`, `CheckboxList`, `DatePicker`, `DateTimePicker`, `Hidden` |
+| Inputs | `TextInput` (`.email()`, `.password()`, `.url()`), `Textarea`, `NumberInput`, `SelectInput`, `Toggle`, `Checkbox`, `CheckboxList`, `DatePicker`, `DateTimePicker`, `Hidden`, `KeyValue` |
 |---|---|
-| Layouts | `Section::make(label)`, `Grid::make(columns)` |
+| Layouts | `Section::make(label)`, `Grid::make(columns)`, `Tabs::make()` with `Tab::make(label)` children |
 | Columns | `TextColumn`, `BadgeColumn` (`.color(value, "success")`), `BooleanColumn`, `DateColumn` |
 | Filters | `SelectFilter`, `TernaryFilter`, `DateRangeFilter` (field must be `.filterable()`) |
 
@@ -74,6 +74,27 @@ Misconfiguration (an input for an unknown field, a filter on a non-filterable
 field, a default sort on a non-sortable field) panics at boot.
 
 `SelectInput` is named so it does not clash with `sea_orm::Select` in `scope()`.
+
+**Tabs** hold only `Tab`s, and a `Tab` only sits in `Tabs`; a tab's id comes
+from its label and must be unique among its siblings (checked at boot). Tabs the
+user cannot see anything in are left out. On a failed save the panel opens the
+first tab with an error and focuses its input.
+
+**KeyValue** edits a JSON column holding an object of text values
+(`{"size": "M"}`). The field is a key/value field when it declares
+`.key_value()` or `.max_items(n)`, or a `KeyValue` input uses it; its bounds then
+apply to every write, API and hooks included, whatever the form shows:
+`max_items` pairs (default 50), keys up to 255 characters, values up to
+`max_length` (default 1,000). A stored value that is not an object of text is
+shown read-only and never rewritten; a nullable field can be cleared to "not
+set" (distinct from an empty object).
+
+```rust,ignore
+Tabs::make().schema(components![
+    Tab::make("Content").schema(components![TextInput::make("title")]),
+    Tab::make("Attributes").schema(components![KeyValue::make("specs")]),
+])
+```
 
 ## Actions
 
@@ -127,6 +148,34 @@ hidden from the schema) for users without that permission.
   ability needs a permission regardless of the record.
 - **Relationships:** a `belongs_to` key sent by a client must be visible to that
   user in the target resource, otherwise the request fails with 422.
+
+## Soft deletes
+
+```rust,ignore
+fn meta() -> ResourceMeta {
+    ResourceMeta::new("Post").soft_deletes()   // or .soft_deletes_column("removed_at")
+}
+```
+
+The marker is a nullable timestamp column (`Option<DateTimeUtc>` or
+`Option<DateTime>`), declared as a field only if `.guarded()` (e.g.
+`.guarded().readable(|_| true)` to show it); hooks may not write it.
+
+- **Delete** sets the marker. Trashed records disappear everywhere: lists,
+  reads, writes, actions, relationship options and labels (`#key`), and
+  references from other records (422). No database cascade runs: related
+  records are kept.
+- **Restore** (`{slug}.restore`) clears the marker. The record's relationships
+  must still point to records the user can see (422 otherwise); `after_save`
+  runs.
+- **Force delete** (`{slug}.force_delete`) removes a trashed record for good;
+  database foreign-key actions apply then.
+- The trash (`trashed=with|only`) needs `restore` or `force_delete`, and shows a
+  record only if the policy allows `view` and one of them on it. With a custom
+  policy, override `admits` for these abilities like the others.
+- Unique values stay taken by trashed records (the database still holds them).
+- `make:resource --generate` adds `.soft_deletes()` for a nullable `deleted_at`
+  timestamp.
 
 ## Policies that query the database
 

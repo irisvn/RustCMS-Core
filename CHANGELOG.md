@@ -6,6 +6,25 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.2 — M7)
+- **Soft deletes**: `ResourceMeta::soft_deletes()` / `soft_deletes_column(..)`.
+  Delete moves records to the trash; trashed records are hidden on every path
+  (lists, reads, writes, actions, options, labels, relationship checks).
+  `POST …/records/{key}/restore` and `DELETE …/records/{key}/force` with their
+  own abilities (`{slug}.restore`, `{slug}.force_delete`); `trashed=with|only`
+  lists; envelopes carry `trashed`; `make:resource --generate` detects a
+  nullable `deleted_at`. The panel gets a trash filter and restore / permanent
+  delete buttons.
+- **Idempotency keys** for resource creates and actions (`Idempotency-Key`):
+  claimed in the write transaction, replayed (re-rendered for the user now) on
+  retry, 422 for a reused key with another request, 409 `write_conflict` after a
+  bounded wait. Migration `idempotency_keys`, `idempotency:prune`, hourly
+  pruning. The panel's paused banner offers **Retry safely**. ADR 0007.
+- **Vocabulary 2**: `Tabs`/`Tab` layouts (keyboard tablist, errors open their
+  tab) and `KeyValue` inputs on JSON columns (`Field::max_items`, bounds on
+  every write). `Rule::MaxItems`; `LayoutSchema.id`.
+- `AppError::Conflict` (409 with a stable code).
+
 ### Security
 - Write responses re-read the record in scope: a create or update that moves a
   record out of the user's `scope()` returns only its key.

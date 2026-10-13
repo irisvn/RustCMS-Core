@@ -79,6 +79,50 @@ pub mod tag {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+pub mod note {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "notes")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i32,
+        #[sea_orm(unique)]
+        pub title: String,
+        pub category_id: Option<i32>,
+        pub deleted_at: Option<DateTimeUtc>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+/// Soft deletes, default permission policy (`notes.*`).
+pub struct NoteResource;
+
+impl Resource for NoteResource {
+    type Entity = note::Entity;
+    const SLUG: &'static str = "notes";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Note").title("title").soft_deletes().unique("notes_title_key", &["title"], "is taken")
+    }
+
+    fn fields() -> Vec<Field> {
+        vec![
+            Field::column(note::Column::Title).required().searchable(),
+            Field::column(note::Column::CategoryId).belongs_to("categories"),
+            Field::column(note::Column::DeletedAt).guarded().readable(|_| true),
+        ]
+    }
+
+    fn actions() -> Vec<Action<note::Entity>> {
+        vec![Action::<note::Entity>::new("touch", |_, _, _, _| Box::pin(async { Ok(()) })).bulk().ability("update")]
+    }
+}
+
 pub struct CategoryResource;
 
 impl Resource for CategoryResource {
@@ -316,6 +360,7 @@ impl Fixture {
             .register::<CategoryResource>()
             .register::<PostResource>()
             .register::<TagResource>()
+            .register::<NoteResource>()
             .finish();
         Self { db, registry }
     }
@@ -342,6 +387,7 @@ pub async fn create_tables(conn: &sea_orm::DatabaseConnection) {
         schema.create_table_from_entity(category::Entity),
         schema.create_table_from_entity(post::Entity),
         schema.create_table_from_entity(tag::Entity),
+        schema.create_table_from_entity(note::Entity),
     ] {
         conn.execute(&statement).await.expect("create table");
     }

@@ -95,6 +95,18 @@ db_test!(oracle_matches_the_admin_api, |db: TestDb| async move {
     let own = post(&users.editor, "own").await;
     let spare = post(&users.editor, "spare").await;
     let theirs = post(&users.admin, "theirs").await;
+    let note = async |title: &str| {
+        let client = app.acting_as(&users.admin).await;
+        let response = client.post_json(&app.admin_api("resources/notes/records"), &json!({"title": title})).await;
+        response.json()["data"]["key"].as_str().unwrap().to_owned()
+    };
+    let active_note = note("active").await;
+    let trashed_note = note("trashed").await;
+    let trash = app.acting_as(&users.admin).await;
+    trash
+        .send(Method::DELETE, &app.admin_api(&format!("resources/notes/records/{trashed_note}")), None)
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
     let role_id = async |name: &str| {
         use rustcms_auth::entities::role;
         use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -112,7 +124,12 @@ db_test!(oracle_matches_the_admin_api, |db: TestDb| async move {
         ("{super_role}", super_role),
     ];
     let fill = |text: &str| {
-        let mut text = text.replace("{own}", &own).replace("{spare}", &spare).replace("{theirs}", &theirs);
+        let mut text = text
+            .replace("{own}", &own)
+            .replace("{spare}", &spare)
+            .replace("{theirs}", &theirs)
+            .replace("{note}", &active_note)
+            .replace("{trashed}", &trashed_note);
         for (placeholder, value) in &ids {
             text = text.replace(placeholder, value);
         }

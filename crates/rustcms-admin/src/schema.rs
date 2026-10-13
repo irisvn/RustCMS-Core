@@ -11,7 +11,7 @@ use crate::ui::{ColumnType, FilterType, InputType, LayoutType, SelectOption};
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 1;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 1;
+pub const VOCABULARY_VERSION: u32 = 2;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -58,8 +58,14 @@ pub enum SchemaOperation {
 pub enum Rule {
     /// Must be present and non-null.
     Required,
-    /// Maximum length in characters.
+    /// Maximum length in characters (for key/value inputs: of each value; keys
+    /// are limited to 255 characters).
     MaxLength {
+        /// Limit.
+        value: usize,
+    },
+    /// Maximum number of items (key/value pairs).
+    MaxItems {
         /// Limit.
         value: usize,
     },
@@ -137,7 +143,11 @@ pub struct LayoutSchema {
     /// Layout type.
     #[serde(rename = "type")]
     pub kind: LayoutType,
-    /// Title (sections).
+    /// Stable identity (tabs).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    /// Title (sections, tabs).
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
@@ -274,6 +284,10 @@ pub struct TableSchema {
     pub searchable: bool,
     /// Actions.
     pub actions: Vec<ActionSchema>,
+    /// Deleting moves records to the trash (`trashed` list parameter, restore, force delete).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub soft_deletes: bool,
 }
 
 /// Everything a client needs to render a resource for one user and operation.

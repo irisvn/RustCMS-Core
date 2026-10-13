@@ -20,6 +20,7 @@ mod m20261011_000002_create_sessions_table;
 mod m20261012_000003_create_personal_access_tokens_table;
 mod m20261012_000004_create_rbac_tables;
 mod m20261012_000005_add_lineage_to_sessions;
+mod m20261013_000006_create_idempotency_keys_table;
 
 /// Framework migrations, in order.
 pub fn migrations() -> Vec<Box<dyn MigrationTrait>> {
@@ -29,6 +30,7 @@ pub fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         Box::new(m20261012_000003_create_personal_access_tokens_table::Migration),
         Box::new(m20261012_000004_create_rbac_tables::Migration),
         Box::new(m20261012_000005_add_lineage_to_sessions::Migration),
+        Box::new(m20261013_000006_create_idempotency_keys_table::Migration),
     ]
 }
 

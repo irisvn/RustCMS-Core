@@ -160,6 +160,56 @@ describe("edit form", () => {
     }
   });
 
+  it("retries an unknown create safely and continues to the record", async () => {
+    const sent: { key: string | null; body: unknown }[] = [];
+    let status = 504;
+    server.use(
+      http.post("*/admin/api/resources/gadgets/records", async ({ request }) => {
+        sent.push({ key: request.headers.get("Idempotency-Key"), body: await request.json() });
+        return status === 504 ? new HttpResponse(null, { status: 504 }) : HttpResponse.json({ data: record }, { status: 201 });
+      }),
+    );
+    try {
+      mount("/r/gadgets/create");
+      await userEvent.type(await screen.findByLabelText(/^Name/), "Once");
+      await userEvent.click(screen.getByRole("button", { name: "Create" }));
+      expect(await screen.findByRole("button", { name: "Retry safely" })).toBeInTheDocument();
+      // The form is locked: the retry sends what was submitted, not later edits.
+      expect(screen.getByLabelText(/^Name/)).toBeDisabled();
+      status = 201;
+      await userEvent.click(screen.getByRole("button", { name: "Retry safely" }));
+      await waitFor(() => expect(router.state.location.pathname).toBe("/r/gadgets/records/1"));
+      expect(sent).toHaveLength(2);
+      expect(sent[1]).toEqual(sent[0]);
+    } finally {
+      server.resetHandlers();
+    }
+  });
+
+  it("a retried create from another form leaves this form and its draft alone", async () => {
+    let status = 504;
+    server.use(
+      http.post("*/admin/api/resources/gadgets/records", () =>
+        status === 504 ? new HttpResponse(null, { status: 504 }) : HttpResponse.json({ data: record }, { status: 201 }),
+      ),
+    );
+    try {
+      mount("/r/gadgets/create");
+      await userEvent.type(await screen.findByLabelText(/^Name/), "First");
+      await userEvent.click(screen.getByRole("button", { name: "Create" }));
+      await screen.findByRole("button", { name: "Retry safely" });
+      // A new create form (another draft) shows the same pause.
+      await act(() => router.navigate({ to: "/" }));
+      await act(() => router.navigate({ to: "/r/$slug/create", params: { slug: "gadgets" } }));
+      status = 201;
+      await userEvent.click(await screen.findByRole("button", { name: "Retry safely" }));
+      expect(await screen.findByText(/The change was applied/)).toBeInTheDocument();
+      expect(router.state.location.pathname).toBe("/r/gadgets/create");
+    } finally {
+      server.resetHandlers();
+    }
+  });
+
   it("keeps writes paused for a resource across navigation while one is pending", async () => {
     let release: () => void = () => {};
     let posts = 0;

@@ -1,6 +1,8 @@
 {
   "abilities": {
     "create": true,
+    "forceDelete": true,
+    "restore": true,
     "viewAny": true
   },
   "form": {
@@ -172,34 +174,75 @@
         "valueType": "i32"
       },
       {
-        "columnSpan": 1,
-        "disabled": false,
-        "label": "Day",
-        "name": "day",
-        "nullable": false,
-        "rules": [],
-        "type": "date_picker",
-        "valueType": "date"
-      },
-      {
-        "columnSpan": 1,
-        "disabled": false,
-        "label": "Local at",
-        "name": "local_at",
-        "nullable": false,
-        "rules": [],
-        "type": "date_time_picker",
-        "valueType": "local_datetime"
-      },
-      {
-        "columnSpan": 1,
-        "disabled": false,
-        "label": "Happened at",
-        "name": "happened_at",
-        "nullable": false,
-        "rules": [],
-        "type": "date_time_picker",
-        "valueType": "instant"
+        "columns": 1,
+        "components": [
+          {
+            "columns": 2,
+            "components": [
+              {
+                "columnSpan": 1,
+                "disabled": false,
+                "label": "Day",
+                "name": "day",
+                "nullable": false,
+                "rules": [],
+                "type": "date_picker",
+                "valueType": "date"
+              },
+              {
+                "columnSpan": 1,
+                "disabled": false,
+                "label": "Local at",
+                "name": "local_at",
+                "nullable": false,
+                "rules": [],
+                "type": "date_time_picker",
+                "valueType": "local_datetime"
+              },
+              {
+                "columnSpan": 1,
+                "disabled": false,
+                "label": "Happened at",
+                "name": "happened_at",
+                "nullable": false,
+                "rules": [],
+                "type": "date_time_picker",
+                "valueType": "instant"
+              }
+            ],
+            "id": "schedule",
+            "label": "Schedule",
+            "type": "tab"
+          },
+          {
+            "columns": 1,
+            "components": [
+              {
+                "columnSpan": 1,
+                "disabled": false,
+                "label": "Specs",
+                "name": "specs",
+                "nullable": true,
+                "rules": [
+                  {
+                    "rule": "max_items",
+                    "value": 5
+                  },
+                  {
+                    "rule": "max_length",
+                    "value": 40
+                  }
+                ],
+                "type": "key_value",
+                "valueType": "json"
+              }
+            ],
+            "id": "specs",
+            "label": "Specs",
+            "type": "tab"
+          }
+        ],
+        "type": "tabs"
       },
       {
         "columnSpan": 1,
@@ -362,7 +405,8 @@
       50,
       100
     ],
-    "searchable": true
+    "searchable": true,
+    "softDeletes": true
   },
-  "vocabularyVersion": 1
+  "vocabularyVersion": 2
 }

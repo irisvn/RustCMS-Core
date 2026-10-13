@@ -4,6 +4,24 @@ import type { QueryClient } from "@tanstack/react-query";
 import { ApiClient } from "@/api/client";
 import { type PanelConfig, safeRedirect } from "@/lib/config";
 
+/**
+ * A keyed write whose outcome is unknown, kept in memory to be re-sent with the
+ * same `Idempotency-Key` (the server then applies it at most once).
+ */
+export interface PendingWrite {
+  /** Identity of this logical write. */
+  id: string;
+  /** The signed-in user who sent it: only they may re-send it. */
+  user: string;
+  method: string;
+  path: string;
+  /** Exactly the bytes sent the first time. */
+  body: string;
+  key: string;
+  /** The form that sent it, if any: only that form continues after a retry. */
+  origin?: string;
+}
+
 const CHANNEL = "rustcms-admin-session";
 
 export interface Session {
@@ -26,8 +44,14 @@ export interface Session {
    * Resources with a write of unknown outcome (timeout, cut connection): writes
    * there stay paused until the page is reloaded, whatever the navigation.
    */
-  markUncertain(slug: string): void;
+  markUncertain(slug: string, pending?: PendingWrite): void;
   isUncertain(slug: string): boolean;
+  /** The write that paused `slug`, when it can be re-sent safely. */
+  pendingWrite(slug: string): PendingWrite | undefined;
+  /** Lifts the pause of `slug` if `id` is still the write that caused it. */
+  resolved(slug: string, id: string): void;
+  /** The signed-in user, once known. */
+  user(): string | null;
   /**
    * The server rotated this session's credentials (password change, sign-out of
    * other sessions, own email change): start a new epoch here and in other tabs,
@@ -56,9 +80,21 @@ export function createSession(
   // Set when the cookie changed accounts under this tab: no write until the reload.
   let invalidated = false;
   const uncertain = new Set<string>();
+  // Re-sendable writes by paused resource; never kept past a change of user.
+  const pendingWrites = new Map<string, PendingWrite>();
   const listeners = new Set<() => void>();
+  const notify = () => {
+    for (const listener of listeners) listener();
+  };
 
   const clear = () => {
+    // A new session (sign-in, sign-out, 401, another account): nothing paused
+    // or re-sendable carries over to it.
+    if (pendingWrites.size || uncertain.size) {
+      pendingWrites.clear();
+      uncertain.clear();
+      notify();
+    }
     void queryClient.cancelQueries();
     queryClient.getMutationCache().clear();
     queryClient.clear();
@@ -138,9 +174,25 @@ export function createSession(
         settle();
       }
     },
-    markUncertain(slug) {
+    markUncertain(slug, pending) {
       uncertain.add(slug);
-      for (const listener of listeners) listener();
+      // A newer unknown outcome replaces the older one (the server has both keys).
+      if (pending && pending.user === userId) pendingWrites.set(slug, pending);
+      else pendingWrites.delete(slug);
+      notify();
+    },
+    pendingWrite(slug) {
+      const pending = pendingWrites.get(slug);
+      return pending && pending.user === userId ? pending : undefined;
+    },
+    resolved(slug, id) {
+      if (pendingWrites.get(slug)?.id !== id) return;
+      pendingWrites.delete(slug);
+      uncertain.delete(slug);
+      notify();
+    },
+    user() {
+      return userId;
     },
     subscribe(listener) {
       listeners.add(listener);

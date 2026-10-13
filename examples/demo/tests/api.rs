@@ -38,6 +38,14 @@ db_test!(token_api_lists_and_creates_posts, migrate = Migrator, |db: TestDb| asy
     let stored = demo::models::post::Entity::find_by_id(id).one(app.state().db()).await.unwrap().unwrap();
     assert_eq!(stored.author_id, Some(admin.id));
     assert_eq!(writer.get("/api/v1/posts").await.json()["meta"]["total"], json!(15), "drafts are not public");
+    // A post moved to the trash in the panel leaves the public list.
+    let first = reader.get("/api/v1/posts").await.json()["data"][0]["id"].as_str().unwrap().to_owned();
+    let panel = app.acting_as(&admin).await;
+    panel
+        .send(rustcms::axum::http::Method::DELETE, &app.admin_api(&format!("resources/posts/records/{first}")), None)
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+    assert_eq!(reader.get("/api/v1/posts").await.json()["meta"]["total"], json!(14), "trashed posts are not public");
     for bad in [
         json!({"title": ""}),
         json!({"title": "x".repeat(201)}),

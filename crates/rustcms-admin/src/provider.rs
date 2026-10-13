@@ -2,8 +2,10 @@
 
 use std::sync::Mutex;
 
+use async_trait::async_trait;
+use clap::{ArgMatches, Command};
 use rustcms_auth::{ADMIN_GUARD, AuthState};
-use rustcms_core::{AppBuilder, ServiceProvider};
+use rustcms_core::{AppBuilder, AppCommand, AppState, ServiceProvider};
 
 use crate::http::{self, AdminPanel};
 use crate::registry::Registry;
@@ -57,6 +59,10 @@ impl AdminProvider {
     }
 }
 
+/// How often expired idempotency receipts are deleted while serving.
+const PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(3_600);
+
+#[async_trait]
 impl ServiceProvider for AdminProvider {
     fn register(&self, app: &mut AppBuilder) {
         let registry =
@@ -74,5 +80,38 @@ impl ServiceProvider for AdminProvider {
         app.routes(move |router| {
             spa::router(system::router(http::router(router, &admin_path), &admin_path), &admin_path)
         });
+        app.command(IdempotencyPrune);
+    }
+
+    async fn boot(&self, state: &AppState) -> anyhow::Result<()> {
+        let db = state.db().clone();
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval_at(tokio::time::Instant::now() + PRUNE_EVERY, PRUNE_EVERY);
+            loop {
+                every.tick().await;
+                match crate::idempotency::prune(&db).await {
+                    Ok(n) if n > 0 => tracing::info!(pruned = n, "expired idempotency keys deleted"),
+                    Ok(_) => {}
+                    Err(err) => tracing::warn!(%err, "idempotency key pruning failed"),
+                }
+            }
+        });
+        Ok(())
+    }
+}
+
+/// `idempotency:prune`: deletes expired idempotency receipts.
+struct IdempotencyPrune;
+
+#[async_trait]
+impl AppCommand for IdempotencyPrune {
+    fn definition(&self) -> Command {
+        Command::new("idempotency:prune").about("Delete expired idempotency keys of admin writes")
+    }
+
+    async fn run(&self, state: &AppState, _: &ArgMatches) -> anyhow::Result<()> {
+        let pruned = crate::idempotency::prune(state.db()).await?;
+        println!("{pruned} expired idempotency keys deleted");
+        Ok(())
     }
 }

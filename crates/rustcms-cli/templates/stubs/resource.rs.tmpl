@@ -11,7 +11,7 @@ impl Resource for {{ name }}Resource {
     const SLUG: &'static str = "{{ table }}";
 
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("{{ label }}").plural("{{ plural_label }}"){% if title %}.title("{{ title }}"){% endif %}{% if key %}.key({{ key }}){% endif %}
+        ResourceMeta::new("{{ label }}").plural("{{ plural_label }}"){% if title %}.title("{{ title }}"){% endif %}{% if key %}.key({{ key }}){% endif %}{% if soft_deletes %}.soft_deletes(){% endif %}
 
     }
 

@@ -66,24 +66,47 @@ it("clears only filters and keeps search, sort and page size", async () => {
   expect(screen.getByRole("columnheader", { name: /Title/ })).toHaveAttribute("aria-sort", "descending");
 });
 
-it("pauses actions after one with an unknown outcome", async () => {
-  server.use(http.post("*/admin/api/resources/posts/actions/:action", () => new HttpResponse(null, { status: 504 })));
-  mount();
-  await userEvent.click(await screen.findByLabelText("Select Post a"));
-  await userEvent.click(screen.getByRole("button", { name: "Publish" }));
-  await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
-  expect(await screen.findByText(/Actions are paused/)).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
-  // Leaving and coming back does not lift the pause; only a reload does.
-  await act(() => router.navigate({ to: "/" }));
-  await act(() => router.navigate({ to: "/r/$slug", params: { slug: "posts" } }));
-  expect(await screen.findByText(/Actions are paused/)).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /New post/ })).toBeNull();
-  server.resetHandlers();
+it("pauses actions after one with an unknown outcome until a safe retry", async () => {
+  const keys: (string | null)[] = [];
+  let outcome = 504;
+  server.use(http.post("*/admin/api/resources/posts/actions/:action", async ({ request }) => {
+    keys.push(request.headers.get("Idempotency-Key"));
+    actions.push(await request.json());
+    return outcome === 504 ? new HttpResponse(null, { status: 504 }) : HttpResponse.json({ processed: ["a"], denied: [], missing: [], replayed: true });
+  }));
+  try {
+    mount();
+    await userEvent.click(await screen.findByLabelText("Select Post a"));
+    await userEvent.click(screen.getByRole("button", { name: "Publish" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(await screen.findByText(/may not have been saved/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    // Leaving and coming back does not lift the pause.
+    await act(() => router.navigate({ to: "/" }));
+    await act(() => router.navigate({ to: "/r/$slug", params: { slug: "posts" } }));
+    expect(await screen.findByText(/may not have been saved/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /New post/ })).toBeNull();
+
+    // Still unknown: stays paused.
+    await userEvent.click(screen.getByRole("button", { name: "Retry safely" }));
+    await waitFor(() => expect(keys).toHaveLength(2));
+    expect(await screen.findByText(/may not have been saved/)).toBeInTheDocument();
+    // Applied (or replayed): the pause lifts. Every attempt carried the same key and body.
+    outcome = 200;
+    await userEvent.click(screen.getByRole("button", { name: "Retry safely" }));
+    await waitFor(() => expect(screen.queryByText(/may not have been saved/)).toBeNull());
+    expect(new Set(keys).size).toBe(1);
+    expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(actions.slice(-3)).toEqual([{ keys: ["a"], data: {} }, { keys: ["a"], data: {} }, { keys: ["a"], data: {} }]);
+    expect(await screen.findByRole("button", { name: /New post/ })).toBeInTheDocument();
+  } finally {
+    server.resetHandlers();
+  }
 });
 
 it("never acts on rows of the previous page while the next one loads", async () => {
+  actions.length = 0;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
   const router = createAppRouter({ queryClient, session }, createMemoryHistory({ initialEntries: ["/r/posts"] }));
@@ -121,4 +144,33 @@ it("follows the URL search on back and forward", async () => {
   await userEvent.type(screen.getByLabelText("Search"), "typed");
   await waitFor(() => expect(router.state.location.search).toEqual({ search: "typed" }));
   expect(screen.getByLabelText("Search")).toHaveValue("typed");
+});
+
+it("a safe retry fetches a fresh CSRF token when the old one was rotated", async () => {
+  let csrfFetches = 0;
+  let attempts = 0;
+  server.use(
+    http.get("*/admin/api/auth/csrf", () => {
+      csrfFetches += 1;
+      return HttpResponse.json({ csrfToken: `t${csrfFetches}`, userId: "1" });
+    }),
+    http.post("*/admin/api/resources/posts/actions/:action", ({ request }) => {
+      attempts += 1;
+      if (attempts === 1) return new HttpResponse(null, { status: 504 });
+      if (request.headers.get("X-CSRF-Token") === "t1") return HttpResponse.json({ message: "x", code: "csrf_mismatch" }, { status: 403 });
+      return HttpResponse.json({ processed: ["a"], denied: [], missing: [] });
+    }),
+  );
+  try {
+    mount();
+    await userEvent.click(await screen.findByLabelText("Select Post a"));
+    await userEvent.click(screen.getByRole("button", { name: "Publish" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Retry safely" }));
+    expect(await screen.findByText(/The change was applied/)).toBeInTheDocument();
+    expect(attempts).toBe(3);
+    expect(csrfFetches).toBe(2);
+  } finally {
+    server.resetHandlers();
+  }
 });

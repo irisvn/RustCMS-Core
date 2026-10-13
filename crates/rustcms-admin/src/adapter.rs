@@ -20,12 +20,14 @@ use crate::context::Ctx;
 use crate::field::{Field, Operation};
 use crate::policy::{Policy, ability};
 use crate::registry::DynResource;
-use crate::resource::{Envelope, FilterOp, KeyStrategy, Limits, ListQuery, Page, PageMeta, Resource, ResourceMeta};
+use crate::resource::{
+    Envelope, FilterOp, KeyStrategy, Limits, ListQuery, Page, PageMeta, Resource, ResourceMeta, Trashed,
+};
 use crate::schema::{
     ActionSchema, BadgeColor, ColumnSchema, ComponentSchema, FilterSchema, FormSchema, InputSchema, LayoutSchema,
     Relationship, ResourceInfo, ResourceSchema, Rule, SCHEMA_VERSION, SchemaOperation, TableSchema, VOCABULARY_VERSION,
 };
-use crate::ui::{Component, Form, Input, InputType, SelectOption, Table, TableColumn, humanize};
+use crate::ui::{Component, Form, Input, InputType, Layout, LayoutType, SelectOption, Table, TableColumn, humanize};
 use crate::wire::{FieldKind, encode, encode_column, encode_key};
 
 type Entity<R> = <R as Resource>::Entity;
@@ -33,6 +35,12 @@ type Model<R> = <Entity<R> as EntityTrait>::Model;
 type Column<R> = <Entity<R> as EntityTrait>::Column;
 
 const DEFAULT_PER_PAGE: u64 = 25;
+/// Default most pairs of a key/value input.
+const KEY_VALUE_ITEMS: usize = 50;
+/// Default longest value of a key/value pair (keys: 255).
+const KEY_VALUE_LENGTH: usize = 1000;
+/// Longest key of a key/value pair.
+const KEY_LENGTH: usize = 255;
 
 struct ColumnInfo<C> {
     column: C,
@@ -51,9 +59,13 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     pk_name: String,
     pk_kind: FieldKind,
     table: String,
+    /// Soft delete marker: column, name and kind.
+    soft: Option<(Column<R>, String, FieldKind)>,
     policy: Arc<dyn Policy>,
     actions: Vec<Action<Entity<R>>>,
     form: Form,
+    /// Key/value fields: most pairs and longest value.
+    key_values: HashMap<String, (usize, usize)>,
     table_ui: Table,
     limits: Limits,
     _resource: PhantomData<fn() -> R>,
@@ -100,6 +112,21 @@ impl<R: Resource> ResourceAdapter<R> {
         if let Some(title) = &meta.title_field {
             assert!(seen.contains(title.as_str()), "resource `{slug}`: title field `{title}` is not a field");
         }
+        let soft = meta.soft_delete.as_deref().map(|name| {
+            let info = columns
+                .get(name)
+                .unwrap_or_else(|| panic!("resource `{slug}`: soft delete column `{name}` is unknown or unsupported"));
+            assert!(info.nullable, "resource `{slug}`: soft delete column `{name}` must be nullable");
+            assert!(
+                matches!(info.kind, FieldKind::Instant | FieldKind::LocalDateTime),
+                "resource `{slug}`: soft delete column `{name}` must be a timestamp"
+            );
+            assert!(
+                fields.iter().all(|f| f.name != name || f.guarded),
+                "resource `{slug}`: soft delete column `{name}` may only be a `guarded()` field"
+            );
+            (info.column, name.to_owned(), info.kind)
+        });
         for constraint in &meta.constraints {
             for column in &constraint.columns {
                 assert!(columns.contains_key(column), "resource `{slug}`: constraint column `{column}` is unknown");
@@ -112,6 +139,23 @@ impl<R: Resource> ResourceAdapter<R> {
                 seen.contains(input.name.as_str()),
                 "resource `{slug}`: form input `{}` is not a field",
                 input.name
+            );
+        }
+        check_layouts(slug, &form.components, None);
+        // Key/value fields: declared on the field, or implied by a `KeyValue` input.
+        // Either way the bounds hold on every write, whatever the form shows.
+        let inputs: HashSet<&str> =
+            form.inputs().into_iter().filter(|i| i.kind == InputType::KeyValue).map(|i| i.name.as_str()).collect();
+        let mut key_values = HashMap::new();
+        for field in fields.iter().filter(|f| f.key_value || inputs.contains(f.name.as_str())) {
+            assert!(
+                columns[&field.name].kind == FieldKind::Json,
+                "resource `{slug}`: key/value field `{}` needs a JSON column",
+                field.name
+            );
+            key_values.insert(
+                field.name.clone(),
+                (field.max_items.unwrap_or(KEY_VALUE_ITEMS), field.max_length.unwrap_or(KEY_VALUE_LENGTH)),
             );
         }
         let mut table_ui = R::table();
@@ -141,8 +185,16 @@ impl<R: Resource> ResourceAdapter<R> {
         for action in &actions {
             assert!(action_names.insert(action.name), "resource `{slug}`: action `{}` declared twice", action.name);
             assert!(
-                ![ability::VIEW_ANY, ability::VIEW, ability::CREATE, ability::UPDATE, ability::DELETE]
-                    .contains(&action.name),
+                ![
+                    ability::VIEW_ANY,
+                    ability::VIEW,
+                    ability::CREATE,
+                    ability::UPDATE,
+                    ability::DELETE,
+                    ability::RESTORE,
+                    ability::FORCE_DELETE
+                ]
+                .contains(&action.name),
                 "resource `{slug}`: action name `{}` is reserved for CRUD abilities",
                 action.name
             );
@@ -150,6 +202,7 @@ impl<R: Resource> ResourceAdapter<R> {
 
         Self {
             table: Entity::<R>::default().table_name().to_owned(),
+            soft,
             meta,
             fields,
             columns,
@@ -159,6 +212,7 @@ impl<R: Resource> ResourceAdapter<R> {
             policy: R::policy(),
             actions,
             form,
+            key_values,
             table_ui,
             limits: Limits::default(),
             _resource: PhantomData,
@@ -200,9 +254,35 @@ impl<R: Resource> ResourceAdapter<R> {
         if self.policy.admits(ctx, ability).await { Ok(()) } else { Err(AppError::Forbidden) }
     }
 
+    /// Records in the user's scope, by deletion state. Every read goes through
+    /// here, so trashed records stay hidden unless asked for.
+    fn base(&self, ctx: &Ctx, trashed: Trashed) -> sea_orm::Select<Entity<R>> {
+        let select = R::scope(Entity::<R>::find(), ctx);
+        match (&self.soft, trashed) {
+            (Some((column, _, _)), Trashed::Without) => select.filter(column.is_null()),
+            (Some((column, _, _)), Trashed::Only) => select.filter(column.is_not_null()),
+            _ => select,
+        }
+    }
+
+    /// Whether the trusted `record` is in the trash.
+    fn is_trashed(&self, record: &Data) -> bool {
+        self.soft.as_ref().is_some_and(|(_, name, _)| record.get(name).is_some_and(|v| !v.is_null()))
+    }
+
     async fn find_model<C: ConnectionTrait>(&self, ctx: &Ctx, conn: &C, key: &str) -> AppResult<Model<R>> {
+        self.find_model_in(ctx, conn, key, Trashed::Without).await
+    }
+
+    async fn find_model_in<C: ConnectionTrait>(
+        &self,
+        ctx: &Ctx,
+        conn: &C,
+        key: &str,
+        trashed: Trashed,
+    ) -> AppResult<Model<R>> {
         let key = self.pk_kind.decode_key(key).map_err(|_| AppError::NotFound)?;
-        R::scope(Entity::<R>::find(), ctx).filter(self.pk.eq(key)).one(conn).await?.ok_or(AppError::NotFound)
+        self.base(ctx, trashed).filter(self.pk.eq(key)).one(conn).await?.ok_or(AppError::NotFound)
     }
 
     /// Models in scope among `keys`, together with their trusted records.
@@ -216,7 +296,7 @@ impl<R: Resource> ResourceAdapter<R> {
         if values.is_empty() {
             return Ok(Vec::new());
         }
-        let models = R::scope(Entity::<R>::find(), ctx).filter(self.pk.is_in(values)).all(conn).await?;
+        let models = self.base(ctx, Trashed::Without).filter(self.pk.is_in(values)).all(conn).await?;
         Ok(models
             .into_iter()
             .map(|m| {
@@ -224,6 +304,33 @@ impl<R: Resource> ResourceAdapter<R> {
                 (m, r)
             })
             .collect())
+    }
+
+    /// A key/value field holds an object of strings within its bounds.
+    fn check_key_value(&self, name: &str, value: &serde_json::Value, errors: &mut ValidationErrors) -> bool {
+        let Some(&(max_items, max_length)) = self.key_values.get(name) else { return true };
+        if value.is_null() {
+            return true;
+        }
+        let Some(object) = value.as_object() else {
+            errors.add(name, "must be an object of text values");
+            return false;
+        };
+        let message = if object.len() > max_items {
+            format!("may not have more than {max_items} items")
+        } else if object.keys().any(|k| k.trim().is_empty()) {
+            "may not have an empty key".to_owned()
+        } else if object.keys().any(|k| k.chars().count() > KEY_LENGTH) {
+            format!("may not have keys longer than {KEY_LENGTH} characters")
+        } else if object.values().any(|v| !v.is_string()) {
+            "must be an object of text values".to_owned()
+        } else if object.values().any(|v| v.as_str().is_some_and(|t| t.chars().count() > max_length)) {
+            format!("may not have values longer than {max_length} characters")
+        } else {
+            return true;
+        };
+        errors.add(name, message);
+        false
     }
 
     /// Validates client input against field permissions and types.
@@ -244,6 +351,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 }
             } else if let Err(e) = column.kind.decode(value) {
                 errors.add(name.as_str(), e.0);
+            } else if !self.check_key_value(name, value, &mut errors) {
             } else if let (Some(max), Some(text)) = (field.max_length, value.as_str())
                 && text.chars().count() > max
             {
@@ -293,11 +401,20 @@ impl<R: Resource> ResourceAdapter<R> {
                 errors.add(name.as_str(), "is not allowed");
                 continue;
             }
+            if self.soft.as_ref().is_some_and(|(_, soft, _)| soft == name) {
+                return Err(AppError::internal(format!(
+                    "`{}`: hooks may not write the soft delete column `{name}` (use delete and restore)",
+                    R::SLUG
+                )));
+            }
             if value.is_null() && !column.nullable {
                 errors.add(name.as_str(), "is required");
                 continue;
             }
             // Hooks may change values: limits hold for what is actually written.
+            if !self.check_key_value(name, value, &mut errors) {
+                continue;
+            }
             let max_length = self.field(name).and_then(|f| f.max_length);
             if let (Some(max), Some(text)) = (max_length, value.as_str())
                 && text.chars().count() > max
@@ -370,15 +487,24 @@ impl<R: Resource> ResourceAdapter<R> {
         let mut out = Vec::with_capacity(models.len());
         for (model, labels) in models.iter().zip(labels) {
             let record = Self::record(model);
+            let trashed = self.is_trashed(&record);
             let mut abilities = BTreeMap::new();
-            for name in [ability::VIEW, ability::UPDATE, ability::DELETE] {
-                abilities.insert(name, self.policy.allows(ctx, name, Some(&record)).await);
+            abilities.insert(ability::VIEW, self.policy.allows(ctx, ability::VIEW, Some(&record)).await);
+            // A trashed record can only be restored or deleted for good; an active
+            // one can do anything but those.
+            for name in [ability::UPDATE, ability::DELETE] {
+                abilities.insert(name, !trashed && self.policy.allows(ctx, name, Some(&record)).await);
+            }
+            if self.soft.is_some() {
+                for name in [ability::RESTORE, ability::FORCE_DELETE] {
+                    abilities.insert(name, trashed && self.policy.allows(ctx, name, Some(&record)).await);
+                }
             }
             // Decided before action entries are added (their names cannot collide,
             // see registration, but the view decision never depends on them).
             let viewable = abilities[ability::VIEW];
             for action in &self.actions {
-                abilities.insert(action.name, self.policy.allows(ctx, action.ability, Some(&record)).await);
+                abilities.insert(action.name, !trashed && self.policy.allows(ctx, action.ability, Some(&record)).await);
             }
             // Every envelope (list, read, and the result of a write) carries data
             // only if the user may view the record; blind writes get key and abilities.
@@ -392,6 +518,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     Data::new()
                 },
                 labels: if viewable { labels } else { BTreeMap::new() },
+                trashed,
             });
         }
         Ok(out)
@@ -556,6 +683,28 @@ fn normalize_default(kind: FieldKind, value: serde_json::Value) -> Option<serde_
 }
 
 /// One input per field, by column type.
+/// Tabs hold only tabs, tabs sit only in tabs, and tab ids are unique per tabs.
+fn check_layouts(slug: &str, components: &[Component], parent: Option<LayoutType>) {
+    let mut ids = HashSet::new();
+    for component in components {
+        let Component::Layout(Layout { kind, id, children, .. }) = component else {
+            assert!(parent != Some(LayoutType::Tabs), "resource `{slug}`: tabs may only contain `Tab`s");
+            continue;
+        };
+        assert!(
+            (*kind == LayoutType::Tab) == (parent == Some(LayoutType::Tabs)),
+            "resource `{slug}`: a `Tab` belongs directly in `Tabs`, and `Tabs` hold only `Tab`s"
+        );
+        if let Some(id) = id {
+            assert!(
+                !id.is_empty() && ids.insert(id.clone()),
+                "resource `{slug}`: tab `{id}` is empty or declared twice"
+            );
+        }
+        check_layouts(slug, children, Some(*kind));
+    }
+}
+
 fn auto_form<C>(fields: &[Field], columns: &HashMap<String, ColumnInfo<C>>) -> Form {
     let inputs = fields
         .iter()
@@ -607,6 +756,8 @@ const RESPONSE_MARGIN: std::time::Duration = std::time::Duration::from_millis(25
 /// Longest wait for a written record's envelope before answering with its key
 /// alone (also bounded by the request deadline).
 const POST_COMMIT_HYDRATION: std::time::Duration = std::time::Duration::from_secs(2);
+/// Longest wait for a concurrent request holding the same idempotency key.
+const CLAIM_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Records loaded at a time while checking candidates (bounds memory by row size).
 const LOAD_CHUNK: usize = 100;
 /// Rows read per batch when a list checks records individually.
@@ -673,11 +824,43 @@ impl<R: Resource> ResourceAdapter<R> {
         Ok(chunk.iter().filter_map(|key| loaded.remove(key)).collect())
     }
 
+    /// The outcome as the user may see it now: processed and denied keys only
+    /// for records they can view (an action may have hidden or trashed its
+    /// records; a replay comes later still). Keys they sent but which were not
+    /// found stay in `missing`; hidden ones are left out, never moved there.
+    async fn disclosed(&self, ctx: &Ctx, mut outcome: ActionOutcome) -> AppResult<ActionOutcome> {
+        let keys: Vec<String> = outcome.processed.iter().chain(&outcome.denied).cloned().collect();
+        let mut visible = HashSet::new();
+        for chunk in keys.chunks(LOAD_CHUNK) {
+            for (model, record) in self.models_in_scope(ctx, &ctx.db, chunk).await? {
+                if self.policy.allows(ctx, ability::VIEW, Some(&record)).await {
+                    visible.insert(self.key_of(&model));
+                }
+            }
+        }
+        outcome.processed.retain(|k| visible.contains(k));
+        outcome.denied.retain(|k| visible.contains(k));
+        Ok(outcome)
+    }
+
+    /// Whether a list shows `record`: viewable, and when trashed, also restorable
+    /// or deletable for good (the trash is not readable on `view` alone).
+    async fn listable(&self, ctx: &Ctx, record: &Data) -> bool {
+        self.policy.allows(ctx, ability::VIEW, Some(record)).await
+            && (!self.is_trashed(record)
+                || self.policy.allows(ctx, ability::RESTORE, Some(record)).await
+                || self.policy.allows(ctx, ability::FORCE_DELETE, Some(record)).await)
+    }
+
     /// Envelope of a record whose write has committed. Building it must not
     /// turn the committed write into an error (a retry would repeat it): on
     /// failure, the key alone is returned, with no data.
     async fn committed_envelope(&self, ctx: &Ctx, model: Model<R>) -> Envelope {
-        let key = self.key_of(&model);
+        self.committed_key_envelope(ctx, self.key_of(&model)).await
+    }
+
+    /// [`Self::committed_envelope`] by key (replays of committed creates).
+    async fn committed_key_envelope(&self, ctx: &Ctx, key: String) -> Envelope {
         // Bounded: a slow lookup must not let the HTTP timeout (or a client
         // giving up) hide the committed key and invite a duplicating retry.
         // Within the request's own deadline too (minus a margin to write the response).
@@ -693,6 +876,7 @@ impl<R: Resource> ResourceAdapter<R> {
             abilities: BTreeMap::new(),
             data: Data::new(),
             labels: BTreeMap::new(),
+            trashed: false,
         };
         // Re-read in scope: a write may move the record out of the user's scope
         // (e.g. a new owner), and then the response shows nothing of it.
@@ -716,9 +900,29 @@ impl<R: Resource> ResourceAdapter<R> {
     /// Opens a write transaction and a context whose [`Ctx::conn`] is that
     /// transaction, for policies and hooks.
     async fn begin(&self, ctx: &Ctx) -> AppResult<(Arc<sea_orm::DatabaseTransaction>, Ctx)> {
-        let txn = Arc::new(rustcms_core::db::begin_write(&ctx.db).await?);
+        // A busy database (SQLite) or a lock wait timing out: nothing written.
+        let txn = rustcms_core::db::begin_write(&ctx.db).await.map_err(crate::idempotency::conflict)?;
+        if ctx.idempotency_key.is_some() && txn.get_database_backend() == DbBackend::Postgres {
+            // A concurrent claim of the same key is waited for, within the request.
+            let wait = rustcms_core::http::request_deadline()
+                .map_or(CLAIM_WAIT, |deadline| {
+                    deadline.saturating_duration_since(tokio::time::Instant::now()).saturating_sub(RESPONSE_MARGIN * 4)
+                })
+                .clamp(std::time::Duration::from_millis(100), CLAIM_WAIT);
+            txn.execute_unprepared(&format!("SET LOCAL lock_timeout = '{}ms'", wait.as_millis())).await?;
+        }
+        let txn = Arc::new(txn);
         let wctx = ctx.within(txn.clone());
         Ok((txn, wctx))
+    }
+
+    /// Ends a write opened with [`Self::begin`] without committing it.
+    async fn abort(txn: Arc<sea_orm::DatabaseTransaction>, wctx: Ctx) -> AppResult<()> {
+        drop(wctx);
+        let txn = Arc::try_unwrap(txn)
+            .map_err(|_| AppError::internal(format!("`{}`: the write transaction is still in use", R::SLUG)))?;
+        txn.rollback().await?;
+        Ok(())
     }
 
     /// Commits a write opened with [`Self::begin`].
@@ -740,15 +944,16 @@ impl<R: Resource> ResourceAdapter<R> {
         txn: &sea_orm::DatabaseTransaction,
         key: &str,
         ability: &str,
+        trashed: Trashed,
     ) -> AppResult<Model<R>> {
-        let model = self.find_model(ctx, txn, key).await?;
+        let model = self.find_model_in(ctx, txn, key, trashed).await?;
         if !self.policy.allows(ctx, ability, Some(&Self::record(&model))).await {
             return Err(AppError::Forbidden);
         }
-        if self.lock_rows(txn, std::slice::from_ref(&self.key_of(&model))).await?.is_empty() {
+        if self.lock_rows(txn, std::slice::from_ref(&self.key_of(&model)), trashed).await?.is_empty() {
             return Err(AppError::NotFound);
         }
-        let model = self.find_model(ctx, txn, key).await?;
+        let model = self.find_model_in(ctx, txn, key, trashed).await?;
         if !self.policy.allows(ctx, ability, Some(&Self::record(&model))).await {
             return Err(AppError::Forbidden);
         }
@@ -763,7 +968,12 @@ impl<R: Resource> ResourceAdapter<R> {
     /// Returns the keys actually locked. A row deleted while waiting is skipped
     /// by PostgreSQL, so callers must use only these keys: a replacement row
     /// inserted under the same key afterwards is not locked.
-    async fn lock_rows(&self, txn: &sea_orm::DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>> {
+    async fn lock_rows(
+        &self,
+        txn: &sea_orm::DatabaseTransaction,
+        keys: &[String],
+        trashed: Trashed,
+    ) -> AppResult<HashSet<String>> {
         if txn.get_database_backend() != DbBackend::Postgres {
             return Ok(keys.iter().cloned().collect());
         }
@@ -771,8 +981,36 @@ impl<R: Resource> ResourceAdapter<R> {
         if values.is_empty() {
             return Ok(HashSet::new());
         }
-        let locked = Entity::<R>::find().filter(self.pk.is_in(values)).lock_exclusive().all(txn).await?;
+        // Key order: concurrent writes to overlapping records lock them in the
+        // same order. A row trashed (or restored) meanwhile is not locked.
+        let mut select = Entity::<R>::find().filter(self.pk.is_in(values)).order_by(self.pk, Order::Asc);
+        match (&self.soft, trashed) {
+            (Some((column, _, _)), Trashed::Without) => select = select.filter(column.is_null()),
+            (Some((column, _, _)), Trashed::Only) => select = select.filter(column.is_not_null()),
+            _ => {}
+        }
+        let locked = select.lock_exclusive().all(txn).await?;
         Ok(locked.iter().map(|m| self.key_of(m)).collect())
+    }
+
+    /// Sets the soft delete marker to now, or clears it.
+    fn set_marker(&self, active: &mut <Entity<R> as EntityTrait>::ActiveModel, trash: bool) -> AppResult<()> {
+        let Some((column, name, kind)) = &self.soft else { return Ok(()) };
+        let candidates = if trash {
+            let now = chrono::Utc::now();
+            let text = match kind {
+                FieldKind::LocalDateTime => now.naive_utc().format("%Y-%m-%dT%H:%M:%S%.6f").to_string(),
+                _ => now.to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            };
+            kind.decode(&serde_json::Value::String(text)).map_err(|e| AppError::internal(e.0))?
+        } else {
+            kind.nulls()
+        };
+        if candidates.into_iter().any(|v| active.try_set(*column, v).is_ok()) {
+            Ok(())
+        } else {
+            Err(AppError::internal(format!("`{}`: cannot write the soft delete column `{name}`", R::SLUG)))
+        }
     }
 
     fn info(&self) -> ResourceInfo {
@@ -810,7 +1048,10 @@ impl<R: Resource> ResourceAdapter<R> {
         if field.required && !disabled && !(write_only && op == SchemaOperation::Edit) {
             rules.push(Rule::Required);
         }
-        if let Some(max) = field.max_length {
+        if let Some(&(items, length)) = self.key_values.get(&input.name).filter(|_| input.kind == InputType::KeyValue) {
+            rules.push(Rule::MaxItems { value: items });
+            rules.push(Rule::MaxLength { value: length });
+        } else if let Some(max) = field.max_length {
             rules.push(Rule::MaxLength { value: max });
         }
         Some(InputSchema {
@@ -845,6 +1086,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     (!children.is_empty()).then(|| {
                         ComponentSchema::Layout(LayoutSchema {
                             kind: layout.kind,
+                            id: layout.id.clone(),
                             label: layout.label.clone(),
                             columns: layout.columns,
                             components: children,
@@ -919,6 +1161,7 @@ impl<R: Resource> ResourceAdapter<R> {
             per_page_options: PER_PAGE_OPTIONS.to_vec(),
             searchable: self.fields.iter().any(|f| f.searchable && f.can_read(ctx)),
             actions,
+            soft_deletes: self.soft.is_some(),
         }
     }
 }
@@ -944,6 +1187,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     fn permissions(&self) -> Vec<String> {
         let mut abilities: Vec<&str> =
             vec![ability::VIEW_ANY, ability::VIEW, ability::CREATE, ability::UPDATE, ability::DELETE];
+        if self.soft.is_some() {
+            abilities.extend([ability::RESTORE, ability::FORCE_DELETE]);
+        }
         abilities.extend(self.actions.iter().map(|a| a.ability));
         abilities.sort_unstable();
         abilities.dedup();
@@ -959,6 +1205,11 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let mut abilities = BTreeMap::new();
         abilities.insert("viewAny", self.policy.allows(ctx, ability::VIEW_ANY, None).await);
         abilities.insert("create", self.policy.allows(ctx, ability::CREATE, None).await);
+        if self.soft.is_some() {
+            // Whether the trash can be listed; each record still decides.
+            abilities.insert("restore", self.policy.admits(ctx, ability::RESTORE).await);
+            abilities.insert("forceDelete", self.policy.admits(ctx, ability::FORCE_DELETE).await);
+        }
         if let Some(key) = key {
             let admission = if op == SchemaOperation::Edit { ability::UPDATE } else { ability::VIEW };
             self.admit(ctx, admission).await?;
@@ -998,7 +1249,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             return Ok(Vec::new());
         }
         let title_column = self.column(title).column;
-        let mut select = R::scope(Entity::<R>::find(), ctx);
+        let mut select = self.base(ctx, Trashed::Without);
         if !keys.is_empty() {
             select = select.filter(self.pk.is_in(self.decode_keys(keys)?));
         } else if let Some(search) = search.filter(|s| !s.is_empty()) {
@@ -1097,8 +1348,17 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             return Err(ValidationErrors::field("page", "is too large").into());
         }
 
+        if query.trashed != Trashed::Without {
+            if self.soft.is_none() {
+                return Err(ValidationErrors::field("trashed", "is not supported by this resource").into());
+            }
+            if !self.policy.admits(ctx, ability::RESTORE).await && !self.policy.admits(ctx, ability::FORCE_DELETE).await
+            {
+                return Err(AppError::Forbidden);
+            }
+        }
         let mut errors = ValidationErrors::new();
-        let mut select = R::scope(Entity::<R>::find(), ctx).filter(self.filter_condition(ctx, query, &mut errors));
+        let mut select = self.base(ctx, query.trashed).filter(self.filter_condition(ctx, query, &mut errors));
         // Without `sort`, the table's default sort applies (when this user may use it),
         // so the order matches what the schema announces.
         let explicit = query.sort.is_some();
@@ -1116,7 +1376,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         }
         errors.into_result()?;
         let select = select.order_by(self.pk, Order::Asc);
-        if !self.policy.view_depends_on_record() {
+        if !self.policy.view_depends_on_record() && query.trashed == Trashed::Without {
             // The same decision holds for every record: deny once, show nothing.
             if !self.policy.allows(ctx, ability::VIEW, None).await {
                 return Ok(Page { data: Vec::new(), meta: PageMeta { page, per_page, total: 0, last_page: 1 } });
@@ -1149,7 +1409,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         // Only the page's rows are kept; the rest are counted and dropped.
         for chunk in keys.chunks(LOAD_CHUNK) {
             for (model, record) in self.load_ordered(ctx, &select, chunk).await? {
-                if self.policy.allows(ctx, ability::VIEW, Some(&record)).await {
+                if self.listable(ctx, &record).await {
                     if total >= skip && (visible.len() as u64) < per_page {
                         visible.push(model);
                     }
@@ -1176,13 +1436,35 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if !self.policy.allows(ctx, ability::CREATE, None).await {
             return Err(AppError::Forbidden);
         }
-        let input = self.accept_input(ctx, Operation::Create, input)?;
+        // The request as sent is what a retry must repeat: a receipt is found
+        // before validating, which may have changed (field permissions) since.
+        let claim = ctx.idempotency_key.as_deref().map(|key| {
+            crate::idempotency::Claim::new(
+                &ctx.principal,
+                R::SLUG,
+                "create",
+                key,
+                &serde_json::Value::Object(input.clone()),
+            )
+        });
         let (txn, wctx) = self.begin(ctx).await?;
+        if let Some(claim) = &claim
+            && !crate::idempotency::acquire(txn.as_ref(), claim).await?
+        {
+            // Committed earlier: answer with that record, as the user sees it now.
+            Self::abort(txn, wctx).await?;
+            let receipt = crate::idempotency::receipt(&ctx.db, claim).await?;
+            let key = receipt["key"].as_str().ok_or_else(|| AppError::internal("create receipt without a key"))?;
+            return Ok(self.committed_key_envelope(ctx, key.to_owned()).await);
+        }
+        let input = self.accept_input(ctx, Operation::Create, input)?;
         self.check_relations(&wctx, &txn, &input).await?;
         let data = R::mutate_before_create(&wctx, &txn, input).await?;
 
         let mut active = <<Entity<R> as EntityTrait>::ActiveModel as ActiveModelBehavior>::new();
         self.apply(&mut active, &data, Operation::Create)?;
+        // New records are active, whatever the model's or the column's default.
+        self.set_marker(&mut active, false)?;
         match self.meta.key {
             KeyStrategy::DbGenerated => active.not_set(self.pk),
             KeyStrategy::AppGenerated(generate) => active
@@ -1195,6 +1477,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         }
         let model = active.insert(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?;
         R::after_save(&wctx, &txn, &model).await?;
+        if let Some(claim) = &claim {
+            crate::idempotency::complete(txn.as_ref(), claim, &serde_json::json!({ "key": self.key_of(&model) }))
+                .await?;
+        }
         Self::commit(txn, wctx).await?;
         Ok(self.committed_envelope(ctx, model).await)
     }
@@ -1203,7 +1489,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.admit(ctx, ability::UPDATE).await?;
         let input = self.accept_input(ctx, Operation::Update, input)?;
         let (txn, wctx) = self.begin(ctx).await?;
-        let model = self.find_authorized_locked(&wctx, &txn, key, ability::UPDATE).await?;
+        let model = self.find_authorized_locked(&wctx, &txn, key, ability::UPDATE, Trashed::Without).await?;
         self.check_relations(&wctx, &txn, &input).await?;
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
         let model = if data.is_empty() {
@@ -1221,7 +1507,55 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     async fn delete(&self, ctx: &Ctx, key: &str) -> AppResult<()> {
         self.admit(ctx, ability::DELETE).await?;
         let (txn, wctx) = self.begin(ctx).await?;
-        let model = self.find_authorized_locked(&wctx, &txn, key, ability::DELETE).await?;
+        let model = self.find_authorized_locked(&wctx, &txn, key, ability::DELETE, Trashed::Without).await?;
+        if self.soft.is_some() {
+            // To the trash: related records are kept (no database cascade runs).
+            let mut active = model.into_active_model();
+            self.set_marker(&mut active, true)?;
+            active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?;
+        } else {
+            Entity::<R>::delete_many()
+                .filter(self.pk.eq(model.get(self.pk)))
+                .exec(txn.as_ref())
+                .await
+                .map_err(|e| self.map_db_err(e))?;
+        }
+        Self::commit(txn, wctx).await?;
+        Ok(())
+    }
+
+    async fn restore(&self, ctx: &Ctx, key: &str) -> AppResult<Envelope> {
+        if self.soft.is_none() {
+            return Err(AppError::NotFound);
+        }
+        self.admit(ctx, ability::RESTORE).await?;
+        let (txn, wctx) = self.begin(ctx).await?;
+        let model = self.find_authorized_locked(&wctx, &txn, key, ability::RESTORE, Trashed::Only).await?;
+        // Back among active records, its relationships must point to records
+        // the user can see, as when it was written.
+        let record = Self::record(&model);
+        let relations: Data = self
+            .fields
+            .iter()
+            .filter(|f| f.belongs_to.is_some())
+            .filter_map(|f| record.get(&f.name).map(|v| (f.name.clone(), v.clone())))
+            .collect();
+        self.check_relations(&wctx, &txn, &relations).await?;
+        let mut active = model.into_active_model();
+        self.set_marker(&mut active, false)?;
+        let model = active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?;
+        R::after_save(&wctx, &txn, &model).await?;
+        Self::commit(txn, wctx).await?;
+        Ok(self.committed_envelope(ctx, model).await)
+    }
+
+    async fn force_delete(&self, ctx: &Ctx, key: &str) -> AppResult<()> {
+        if self.soft.is_none() {
+            return Err(AppError::NotFound);
+        }
+        self.admit(ctx, ability::FORCE_DELETE).await?;
+        let (txn, wctx) = self.begin(ctx).await?;
+        let model = self.find_authorized_locked(&wctx, &txn, key, ability::FORCE_DELETE, Trashed::Only).await?;
         Entity::<R>::delete_many()
             .filter(self.pk.eq(model.get(self.pk)))
             .exec(txn.as_ref())
@@ -1239,7 +1573,22 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             return Err(AppError::Forbidden);
         }
         self.admit(ctx, action.ability).await?;
+        let claim = ctx.idempotency_key.as_deref().map(|key| {
+            let unique: BTreeSet<&String> = keys.iter().collect();
+            let request = serde_json::json!({ "keys": unique, "data": data });
+            crate::idempotency::Claim::new(&ctx.principal, R::SLUG, &format!("action:{name}"), key, &request)
+        });
         let (txn, wctx) = self.begin(ctx).await?;
+        if let Some(claim) = &claim
+            && !crate::idempotency::acquire(txn.as_ref(), claim).await?
+        {
+            // The action ran with this key before: report that run, never run it again.
+            Self::abort(txn, wctx).await?;
+            let receipt = crate::idempotency::receipt(&ctx.db, claim).await?;
+            let mut outcome: ActionOutcome = serde_json::from_value(receipt).map_err(AppError::internal)?;
+            outcome.replayed = true;
+            return self.disclosed(ctx, outcome).await;
+        }
         // Lock only records the user may act on, then re-read just those under
         // the lock: a record that became visible meanwhile is never processed
         // unlocked.
@@ -1258,7 +1607,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         // Candidates are re-counted below; any not locked (deleted meanwhile)
         // or gone on reload end up in `missing`.
         seen.retain(|k| !candidates.contains(k));
-        let locked = self.lock_rows(&txn, &candidates).await?;
+        let locked = self.lock_rows(&txn, &candidates, Trashed::Without).await?;
         candidates.retain(|k| locked.contains(k));
         let mut allowed = Vec::new();
         for (model, record) in self.models_in_scope(&wctx, txn.as_ref(), &candidates).await? {
@@ -1276,10 +1625,14 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if !allowed.is_empty() {
             (action.handler)(&wctx, txn.as_ref(), allowed, data).await?;
         }
-        Self::commit(txn, wctx).await?;
         outcome.processed.sort();
         outcome.denied.sort();
-        Ok(outcome)
+        if let Some(claim) = &claim {
+            let result = serde_json::to_value(&outcome).map_err(AppError::internal)?;
+            crate::idempotency::complete(txn.as_ref(), claim, &result).await?;
+        }
+        Self::commit(txn, wctx).await?;
+        self.disclosed(ctx, outcome).await
     }
 
     async fn titles(&self, ctx: &Ctx, keys: &[String]) -> AppResult<BTreeMap<String, String>> {

@@ -11,6 +11,10 @@ export RUSTCMS_APP__LISTEN=127.0.0.1:8123
 export APP_ENV=testing
 export APP_KEY=${APP_KEY:-base64:ZTJlLXRlc3Qta2V5LW5vdC1zZWNyZXQtMzItYnl0ZXM=}
 export RUSTCMS_AUTH__SESSION_LIFETIME_MINUTES=120
+# The suite signs the same accounts in many times a minute (throttling has its own Rust tests).
+export RUSTCMS_AUTH__ATTEMPTS_PER_IDENTIFIER=100
+export RUSTCMS_AUTH__ATTEMPTS_PER_IP=300
+export RUSTCMS_AUTH__ANONYMOUS_SESSIONS_PER_IP=1000
 # Run outside the checkout: the binary must not depend on source paths.
 cd "$db_dir"
 "$bin" migrate

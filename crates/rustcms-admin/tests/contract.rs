@@ -40,6 +40,8 @@ pub mod gadget {
         pub token: Uuid,
         #[sea_orm(default_value = "factory-secret")]
         pub secret: String,
+        pub deleted_at: Option<DateTimeUtc>,
+        pub specs: Option<Json>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -55,7 +57,7 @@ impl Resource for GadgetResource {
     const SLUG: &'static str = "gadgets";
 
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("Gadget").title("name").icon("box").group("Catalog")
+        ResourceMeta::new("Gadget").title("name").icon("box").group("Catalog").soft_deletes()
     }
 
     fn fields() -> Vec<Field> {
@@ -78,6 +80,8 @@ impl Resource for GadgetResource {
             Field::column(C::Token),
             // Write-only: never read back.
             Field::column(C::Secret).readable(|_| false),
+            Field::column(C::DeletedAt).guarded().readable(|_| true),
+            Field::column(C::Specs).max_items(5).max_length(40),
         ]
     }
 
@@ -98,9 +102,14 @@ impl Resource for GadgetResource {
             CheckboxList::make("colors").options([("red", "Red"), ("green", "Green"), ("blue", "Blue")]),
             SelectInput::make("status").options([("draft", "Draft"), ("live", "Live")]),
             SelectInput::make("category_id"),
-            DatePicker::make("day"),
-            DateTimePicker::make("local_at"),
-            DateTimePicker::make("happened_at"),
+            Tabs::make().schema(components![
+                Tab::make("Schedule").columns(2).schema(components![
+                    DatePicker::make("day"),
+                    DateTimePicker::make("local_at"),
+                    DateTimePicker::make("happened_at"),
+                ]),
+                Tab::make("Specs").schema(components![KeyValue::make("specs")]),
+            ]),
             Hidden::make("token"),
             TextInput::make("secret").password(),
         ])
@@ -162,6 +171,7 @@ db_test!(kitchen_sink_contract, |db: TestDb| async move {
         "happened_at": "2026-10-12T09:30:00+07:00",
         "token": "0199d3a4-1b2c-7d3e-8f40-123456789abc",
         "secret": "hunter2",
+        "specs": {"size": "M", "material": "steel"},
     });
     let created = gadgets.create(&ctx, input.as_object().unwrap().clone()).await.unwrap();
 
@@ -182,6 +192,10 @@ db_test!(kitchen_sink_contract, |db: TestDb| async move {
     let stored = gadgets.create(&ctx, minimal).await.unwrap();
     assert_eq!(stored.data["colors"], json!(["red"]));
     gadgets.delete(&ctx, &stored.key).await.unwrap();
+    let trash = gadgets.list(&ctx, &ListQuery { trashed: rustcms_admin::Trashed::Only, ..Default::default() }).await;
+    let mut trash = serde_json::to_value(trash.unwrap()).unwrap();
+    // The deletion time varies: the contract keeps its shape.
+    trash["data"][0]["data"]["deleted_at"] = json!("2026-10-12T09:30:00Z");
     // A write-only field's declared default is data the user may not read.
     let secret = create.form.components.iter().find_map(|c| match c {
         rustcms_admin::schema::ComponentSchema::Input(i) if i.name == "secret" => Some(i.clone()),
@@ -203,8 +217,11 @@ db_test!(kitchen_sink_contract, |db: TestDb| async move {
         "date_picker",
         "date_time_picker",
         "hidden",
+        "key_value",
         "section",
         "grid",
+        "tabs",
+        "tab",
         "badge",
         "boolean",
         "date",
@@ -219,6 +236,7 @@ db_test!(kitchen_sink_contract, |db: TestDb| async move {
         support::contract("kitchen-sink.schema.edit.json", &serde_json::to_value(&edit).unwrap());
         support::contract("kitchen-sink.schema.view.json", &serde_json::to_value(&view).unwrap());
         support::contract("kitchen-sink.records.json", &serde_json::to_value(&page).unwrap());
+        support::contract("kitchen-sink.trash.json", &trash);
     } else {
         support::contract_matches("kitchen-sink.records.json", &serde_json::to_value(&page).unwrap());
     }

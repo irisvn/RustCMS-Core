@@ -15,8 +15,12 @@ pub mod ability {
     pub const CREATE: &str = "create";
     /// Update a record.
     pub const UPDATE: &str = "update";
-    /// Delete a record.
+    /// Delete a record (move it to the trash with soft deletes).
     pub const DELETE: &str = "delete";
+    /// Restore a trashed record (soft deletes).
+    pub const RESTORE: &str = "restore";
+    /// Delete a trashed record for good (soft deletes).
+    pub const FORCE_DELETE: &str = "force_delete";
 }
 
 /// Decides whether the current user may perform `ability`, optionally on `record`.

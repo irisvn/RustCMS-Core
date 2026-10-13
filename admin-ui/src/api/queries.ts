@@ -13,7 +13,7 @@ import type {
   SelectOption,
 } from "./types";
 import { ApiError, sessionReset } from "./client";
-import type { Session } from "@/app/session";
+import type { PendingWrite, Session } from "@/app/session";
 import { useApi, useSession } from "./context";
 
 const enc = encodeURIComponent;
@@ -29,23 +29,37 @@ const queues = new WeakMap<Session, Map<string, Promise<unknown>>>();
  * Writes to one resource run one at a time, so the pause check below always
  * sees the outcome of the previous write before the next one is sent.
  */
-export function guardedWrite<T>(session: Session, slug: string, write: () => Promise<T>): Promise<T> {
+export function guardedWrite<T>(
+  session: Session,
+  slug: string,
+  write: () => Promise<T>,
+  pending?: Omit<PendingWrite, "user">,
+): Promise<T> {
+  // A queued write belongs to the session state it was submitted in.
+  const epoch = session.api.epoch;
+  const user = session.user();
+  return enqueue(session, slug, () => {
+    if (session.api.epoch !== epoch) throw sessionReset();
+    return checkedWrite(session, slug, write, user, pending && user !== null ? { ...pending, user } : undefined);
+  });
+}
+
+function enqueue<T>(session: Session, slug: string, run: () => Promise<T>): Promise<T> {
   let perSession = queues.get(session);
   if (!perSession) queues.set(session, (perSession = new Map()));
   const previous = perSession.get(slug) ?? Promise.resolve();
-  // A queued write belongs to the session state it was submitted in.
-  const epoch = session.api.epoch;
-  const next = previous
-    .catch(() => undefined)
-    .then(() => {
-      if (session.api.epoch !== epoch) throw sessionReset();
-      return checkedWrite(session, slug, write);
-    });
+  const next = previous.catch(() => undefined).then(run);
   perSession.set(slug, next);
   return next;
 }
 
-async function checkedWrite<T>(session: Session, slug: string, write: () => Promise<T>): Promise<T> {
+async function checkedWrite<T>(
+  session: Session,
+  slug: string,
+  write: () => Promise<T>,
+  user: string | null,
+  pending?: PendingWrite,
+): Promise<T> {
   if (session.isUncertain(slug)) {
     throw new ApiError(409, {
       code: "writes_paused",
@@ -55,9 +69,53 @@ async function checkedWrite<T>(session: Session, slug: string, write: () => Prom
   try {
     return await write();
   } catch (e) {
-    if (e instanceof ApiError && e.maybeApplied) session.markUncertain(slug);
+    // An answer for another session (signed out, another user meanwhile) concerns
+    // that session only: this one is neither paused nor handed the write.
+    // (Credential rotations change the epoch, not the user: they still pause.)
+    if (e instanceof ApiError && e.maybeApplied && session.user() === user) session.markUncertain(slug, pending);
     throw e;
   }
+}
+
+/**
+ * A create or action sent with an `Idempotency-Key`: if its outcome is unknown,
+ * it can be re-sent as is (see `retryPending`) and the server applies it once.
+ */
+export function keyedWrite<T>(
+  session: Session,
+  slug: string,
+  method: string,
+  path: string,
+  body: unknown,
+  origin?: string,
+): Promise<T> {
+  const text = JSON.stringify(body);
+  const pending = { id: crypto.randomUUID(), method, path, body: text, key: crypto.randomUUID(), origin };
+  return guardedWrite(session, slug, () => session.api.request<T>(method, path, JSON.parse(text), { "Idempotency-Key": pending.key }), pending);
+}
+
+/**
+ * Re-sends the write that paused `slug` with its key, in the resource's queue.
+ * The caller lifts the pause (`session.resolved`) once it has handled the
+ * answer, so nothing can be submitted before then. Any failure leaves the
+ * outcome unknown and the pause in place.
+ */
+export function retryPending(session: Session, slug: string): Promise<{ result: unknown; pending: PendingWrite }> {
+  const pending = session.pendingWrite(slug);
+  if (!pending) return Promise.reject(new Error("Nothing to retry: reload the page to check."));
+  const send = () =>
+    session.api.request<unknown>(pending.method, pending.path, JSON.parse(pending.body), { "Idempotency-Key": pending.key });
+  return enqueue(session, slug, async () => {
+    if (session.pendingWrite(slug)?.id !== pending.id) throw new Error("This change was already handled.");
+    try {
+      return { result: await send(), pending };
+    } catch (e) {
+      // The CSRF token may have been rotated meanwhile: fetch a new one, once.
+      if (!(e instanceof ApiError && e.code === "csrf_mismatch")) throw e;
+      session.api.refreshCsrf();
+      return { result: await send(), pending };
+    }
+  });
 }
 
 /** After any write: lists, records, schemas (abilities) and relationship options may have changed. */
@@ -115,16 +173,16 @@ export function useRecord(slug: string, key: string, opts: { enabled?: boolean }
   });
 }
 
-export function useSaveRecord(slug: string, key?: string) {
+export function useSaveRecord(slug: string, key?: string, origin?: string) {
   const api = useApi();
   const session = useSession();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (data: Data) => guardedWrite(session, slug, () =>
+    mutationFn: (data: Data) =>
       (key === undefined
-        ? api.post<DataResponse<Envelope>>(`/resources/${enc(slug)}/records`, data)
-        : api.patch<DataResponse<Envelope>>(`/resources/${enc(slug)}/records/${enc(key)}`, data)
-      ).then((r) => r.data)),
+        ? keyedWrite<DataResponse<Envelope>>(session, slug, "POST", `/resources/${enc(slug)}/records`, data, origin)
+        : guardedWrite(session, slug, () => api.patch<DataResponse<Envelope>>(`/resources/${enc(slug)}/records/${enc(key)}`, data))
+      ).then((r) => r.data),
     // Only after a successful save: a rejected one must not refetch under the user's draft.
     onSuccess: () => invalidateAfterWrite(client, slug),
   });
@@ -141,15 +199,36 @@ export function useDeleteRecord(slug: string) {
   });
 }
 
-export function useRunAction(slug: string) {
+/** Restores a trashed record (soft deletes). */
+export function useRestoreRecord(slug: string) {
   const api = useApi();
   const session = useSession();
   const client = useQueryClient();
   return useMutation({
+    mutationFn: (key: string) =>
+      guardedWrite(session, slug, () => api.post<DataResponse<Envelope>>(`/resources/${enc(slug)}/records/${enc(key)}/restore`, {})),
+    onSettled: () => invalidateAfterWrite(client, slug),
+  });
+}
+
+/** Deletes a trashed record for good (soft deletes). */
+export function useForceDeleteRecord(slug: string) {
+  const api = useApi();
+  const session = useSession();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (key: string) =>
+      guardedWrite(session, slug, () => api.delete<void>(`/resources/${enc(slug)}/records/${enc(key)}/force`)),
+    onSettled: () => invalidateAfterWrite(client, slug),
+  });
+}
+
+export function useRunAction(slug: string) {
+  const session = useSession();
+  const client = useQueryClient();
+  return useMutation({
     mutationFn: ({ action, keys: recordKeys, data }: { action: string; keys: string[]; data?: Data }) =>
-      guardedWrite(session, slug, () =>
-        api.post<ActionOutcome>(`/resources/${enc(slug)}/actions/${enc(action)}`, { keys: recordKeys, data: data ?? {} }),
-      ),
+      keyedWrite<ActionOutcome>(session, slug, "POST", `/resources/${enc(slug)}/actions/${enc(action)}`, { keys: recordKeys, data: data ?? {} }),
     onSettled: () => invalidateAfterWrite(client, slug),
   });
 }

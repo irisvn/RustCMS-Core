@@ -1,8 +1,8 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowDown, ArrowUp, Eye, ListFilter, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Eye, ListFilter, Pencil, Plus, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useUncertain } from "@/api/context";
-import { useDeleteRecord, useRecords, useRunAction, useSchema } from "@/api/queries";
+import { useDeleteRecord, useForceDeleteRecord, useRecords, useRestoreRecord, useRunAction, useSchema } from "@/api/queries";
 import type { ActionOutcome, ActionSchema, Envelope } from "@/api/types";
 import { ErrorState, Loading, PausedBanner, VersionBanner, compatibility } from "@/components/states";
 import { Page, PageHeader } from "@/components/layout";
@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, NativeSelect } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Cell, FilterControl, KNOWN_FILTERS, type FilterParams } from "@/renderers/table";
 
 export type ListSearch = Record<string, string>;
@@ -22,7 +23,7 @@ export function listQuery(search: ListSearch): URLSearchParams {
   for (const key of Object.keys(search).sort()) {
     const value = search[key];
     if (!value) continue;
-    if (["page", "per_page", "sort", "search"].includes(key) || /^filter\[[^\]]+\]\[[a-z]+\]$/.test(key)) {
+    if (["page", "per_page", "sort", "search", "trashed"].includes(key) || /^filter\[[^\]]+\]\[[a-z]+\]$/.test(key)) {
       params.set(key, value);
     }
   }
@@ -53,10 +54,15 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   const query = useMemo(() => listQuery(search), [search]);
   const records = useRecords(slug, query);
   const del = useDeleteRecord(slug);
+  const restore = useRestoreRecord(slug);
+  const forceDelete = useForceDeleteRecord(slug);
   const run = useRunAction(slug);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirm, setConfirm] = useState<
-    { kind: "delete"; record: Envelope } | { kind: "action"; action: ActionSchema; keys: string[] } | null
+    | { kind: "delete"; record: Envelope }
+    | { kind: "force"; record: Envelope }
+    | { kind: "action"; action: ActionSchema; keys: string[] }
+    | null
   >(null);
   const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: string } | null>(null);
   // A write with an unknown outcome (timeout, cut connection) must not be repeated blindly.
@@ -97,6 +103,8 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   const queryKey = query.toString();
   // Selection belongs to the rows on screen: cleared on a new query and when its results arrive.
   useEffect(() => setSelected(new Set()), [slug, queryKey, records.dataUpdatedAt]);
+  // A confirmation belongs to the rows it was opened on.
+  useEffect(() => setConfirm(null), [slug, queryKey, records.dataUpdatedAt]);
   // Rows of the previous query are kept on screen while the next loads: not actionable.
   const stale = records.isPlaceholderData;
 
@@ -106,7 +114,11 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   const { readOnly } = compatibility(s);
   const table = s.table;
   const locked = readOnly || uncertain;
-  const bulkActions = locked ? [] : table.actions.filter((a) => a.bulk);
+  // The trash is offered when the resource has one and the user may restore or purge.
+  const trash = table.softDeletes === true && (s.abilities.restore === true || s.abilities.forceDelete === true);
+  const trashMode = trash && (search.trashed === "with" || search.trashed === "only") ? search.trashed : "";
+  // Actions never apply to trashed records: none in the trash-only view.
+  const bulkActions = locked || trashMode === "only" ? [] : table.actions.filter((a) => a.bulk);
   const rowActions = locked ? [] : table.actions.filter((a) => !a.bulk);
   const sort = search.sort ?? table.defaultSort ?? "";
   const rows = records.data?.data ?? [];
@@ -135,15 +147,40 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     if (!confirm) return;
     const current = confirm;
     setConfirm(null);
+    if (current.kind !== "action") {
+      // Still shown, current and allowed (rows may have been refreshed meanwhile).
+      const row = rows.find((r) => r.key === current.record.key);
+      const ability = current.kind === "delete" ? "delete" : "force_delete";
+      if (stale || locked || !row || !row.abilities[ability]) {
+        setNotice({ variant: "destructive", text: "This record changed meanwhile; nothing was done." });
+        return;
+      }
+    }
     if (current.kind === "delete") {
       try {
         await del.mutateAsync(current.record.key);
-        setNotice({ variant: "default", text: "Deleted." });
+        setNotice({ variant: "default", text: table.softDeletes ? "Moved to the trash." : "Deleted." });
       } catch (e) {
           setNotice({ variant: "destructive", text: e instanceof Error ? e.message : "Could not delete." });
       }
+    } else if (current.kind === "force") {
+      try {
+        await forceDelete.mutateAsync(current.record.key);
+        setNotice({ variant: "default", text: "Deleted permanently." });
+      } catch (e) {
+        setNotice({ variant: "destructive", text: e instanceof Error ? e.message : "Could not delete." });
+      }
     } else {
       await runAction(current.action, current.keys);
+    }
+  };
+  const restoreRecord = async (record: Envelope) => {
+    setNotice(null);
+    try {
+      await restore.mutateAsync(record.key);
+      setNotice({ variant: "default", text: "Restored." });
+    } catch (e) {
+      setNotice({ variant: "destructive", text: e instanceof Error ? e.message : "Could not restore." });
     }
   };
   const startAction = (action: ActionSchema, keys: string[]) =>
@@ -171,6 +208,13 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
             )}
             {filters.length > 0 && <Button variant="outline" aria-expanded={filtersOpen} aria-controls={filtersId} onClick={() => setFiltersOpen((value) => !value)}><ListFilter />Filters{activeFilters.length > 0 && <span className="rounded bg-muted px-1.5 text-xs">{activeFilters.length}</span>}</Button>}
             {activeFilters.length > 0 && <Button variant="ghost" size="sm" onClick={clearFilters}><X />Clear filters</Button>}
+            {trash && (
+              <NativeSelect aria-label="Trashed records" className="w-44" value={trashMode} onChange={(e) => setSearch({ trashed: e.target.value || undefined })}>
+                <option value="">Without trashed</option>
+                <option value="with">With trashed</option>
+                <option value="only">Only trashed</option>
+              </NativeSelect>
+            )}
             {meta && <span className="ml-auto text-xs text-muted-foreground">{count(meta.total, "record")}</span>}
           </div>
           {filters.length > 0 && (
@@ -257,9 +301,10 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                         />
                       </td>
                     )}
-                    {table.columns.map((c) => (
+                    {table.columns.map((c, i) => (
                       <td key={c.name} className="p-3">
                         <Cell column={c} record={record} />
+                        {i === 0 && record.trashed && <Badge className="ml-2">Trashed</Badge>}
                       </td>
                     ))}
                     <td className="p-3">
@@ -271,7 +316,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                               {a.label}
                             </Button>
                           ))}
-                        {record.abilities.view && (
+                        {record.abilities.view && !record.trashed && (
                           <Link
                             to="/r/$slug/records/$key"
                             params={{ slug, key: record.key }}
@@ -294,6 +339,16 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                         {record.abilities.delete && !locked && (
                           <Button size="icon" variant="ghost" aria-label="Delete" disabled={del.isPending || stale} onClick={() => setConfirm({ kind: "delete", record })}>
                             <Trash2 />
+                          </Button>
+                        )}
+                        {record.trashed && record.abilities.restore && !locked && (
+                          <Button size="sm" variant="ghost" disabled={restore.isPending || stale} onClick={() => void restoreRecord(record)}>
+                            <RotateCcw /> Restore
+                          </Button>
+                        )}
+                        {record.trashed && record.abilities.force_delete && !locked && (
+                          <Button size="sm" variant="ghost" className="text-destructive" disabled={forceDelete.isPending || stale} onClick={() => setConfirm({ kind: "force", record })}>
+                            Delete permanently
                           </Button>
                         )}
                       </div>
@@ -334,10 +389,14 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
         )}
       </Card>
 
-      <Dialog open={confirm !== null} onClose={() => setConfirm(null)} title={confirm?.kind === "delete" ? "Delete record?" : (confirm?.action.label ?? "")}>
+      <Dialog open={confirm !== null} onClose={() => setConfirm(null)} title={confirm?.kind === "action" ? confirm.action.label : "Delete record?"}>
         <p className="text-sm text-muted-foreground">
           {confirm?.kind === "delete"
-            ? `"${confirm.record.title ?? confirm.record.key}" will be deleted. This cannot be undone.`
+            ? table.softDeletes
+              ? `"${confirm.record.title ?? confirm.record.key}" will be moved to the trash.`
+              : `"${confirm.record.title ?? confirm.record.key}" will be deleted. This cannot be undone.`
+            : confirm?.kind === "force"
+              ? `"${confirm.record.title ?? confirm.record.key}" will be deleted permanently. This cannot be undone.`
             : confirm?.kind === "action"
               ? confirm.action.confirm
               : ""}
@@ -346,7 +405,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
           <Button variant="outline" onClick={() => setConfirm(null)}>
             Cancel
           </Button>
-          <Button variant={confirm?.kind === "delete" ? "destructive" : "default"} onClick={() => void confirmed()}>
+          <Button variant={confirm?.kind === "delete" || confirm?.kind === "force" ? "destructive" : "default"} onClick={() => void confirmed()}>
             Confirm
           </Button>
         </div>

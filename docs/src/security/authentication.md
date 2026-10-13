@@ -32,7 +32,8 @@ async fn create_post(auth: Auth, Json(input): Json<NewPost>) -> AppResult<Status
   re-issue, sign-out), so a slow response can never restore a replaced cookie.
 - The session id is regenerated at sign-in and whenever credentials change.
 - Sessions expire after `session_lifetime_minutes` of inactivity; `serve` deletes
-  expired rows hourly (`session:prune` does it on demand).
+  expired rows hourly (`session:prune` does it on demand; `idempotency:prune`
+  does the same for idempotency receipts).
 - Anonymous sessions (a CSRF token before sign-in) live a **fixed**
   `anonymous_session_lifetime_minutes` (15): activity never extends them.
   Creating one is throttled per IP (`anonymous_sessions_per_ip`, 30/min) and

@@ -36,6 +36,8 @@ pub struct Field {
     pub(crate) filterable: bool,
     pub(crate) belongs_to: Option<&'static str>,
     pub(crate) max_length: Option<usize>,
+    pub(crate) max_items: Option<usize>,
+    pub(crate) key_value: bool,
     pub(crate) label: Option<String>,
 }
 
@@ -54,6 +56,8 @@ impl Field {
             filterable: false,
             belongs_to: None,
             max_length: None,
+            max_items: None,
+            key_value: false,
             label: None,
         }
     }
@@ -120,6 +124,21 @@ impl Field {
     /// Maximum length in characters (strings), enforced on every write.
     pub fn max_length(mut self, max: usize) -> Self {
         self.max_length = Some(max);
+        self
+    }
+
+    /// Holds key/value pairs: a JSON object of text values, checked on every
+    /// write whatever the form shows (implied by a `KeyValue` input).
+    pub fn key_value(mut self) -> Self {
+        self.key_value = true;
+        self
+    }
+
+    /// Most key/value pairs (default 50), enforced on every write; makes the
+    /// field a [`Field::key_value`] field.
+    pub fn max_items(mut self, max: usize) -> Self {
+        self.max_items = Some(max);
+        self.key_value = true;
         self
     }
 

@@ -6,7 +6,7 @@ use axum::Router;
 use axum::extract::{FromRequestParts, Path, Query, State};
 use axum::http::request::Parts;
 use axum::http::{Method, StatusCode};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use rustcms_auth::{ADMIN_GUARD, Auth};
 use rustcms_core::{AppError, AppResult, AppState, Json};
 use serde::{Deserialize, Serialize};
@@ -74,6 +74,8 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::GET, format!("{resource}/records/{{key}}")),
         (Method::PATCH, format!("{resource}/records/{{key}}")),
         (Method::DELETE, format!("{resource}/records/{{key}}")),
+        (Method::POST, format!("{resource}/records/{{key}}/restore")),
+        (Method::DELETE, format!("{resource}/records/{{key}}/force")),
         (Method::POST, format!("{resource}/actions/{{action}}")),
         (Method::GET, format!("{resource}/fields/{{field}}/options")),
     ]
@@ -90,6 +92,8 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route(&format!("{resource}/schema"), get(schema))
         .route(&format!("{resource}/records"), get(list).post(create))
         .route(&format!("{resource}/records/{{key}}"), get(find).patch(update).delete(destroy))
+        .route(&format!("{resource}/records/{{key}}/restore"), post(restore))
+        .route(&format!("{resource}/records/{{key}}/force"), delete(force_delete))
         .route(&format!("{resource}/actions/{{action}}"), post(run_action))
         .route(&format!("{resource}/fields/{{field}}/options"), get(options))
 }
@@ -150,7 +154,7 @@ async fn schema(
     Ok(Json(resource(&ctx, &slug)?.schema(&ctx, op, query.key.as_deref()).await?))
 }
 
-/// `page`, `per_page`, `sort`, `search`, `filter[field][op]=value`.
+/// `page`, `per_page`, `sort`, `search`, `trashed`, `filter[field][op]=value`.
 fn list_query(pairs: Vec<(String, String)>) -> AppResult<ListQuery> {
     let mut query = ListQuery { from_query_string: true, ..Default::default() };
     let number = |name: &str, value: &str| {
@@ -164,6 +168,11 @@ fn list_query(pairs: Vec<(String, String)>) -> AppResult<ListQuery> {
             "per_page" => query.per_page = Some(number("per_page", &value)?),
             "sort" => query.sort = Some(value),
             "search" => query.search = Some(value),
+            "trashed" => {
+                query.trashed = serde_json::from_value(Value::String(value)).map_err(|_| {
+                    AppError::from(rustcms_core::ValidationErrors::field("trashed", "must be `with` or `only`"))
+                })?;
+            }
             _ => {
                 let Some(rest) = key.strip_prefix("filter[") else { continue };
                 let parsed = rest.strip_suffix(']').and_then(|r| r.split_once("]["));
@@ -197,11 +206,24 @@ async fn find(
     Ok(Json(DataResponse { data: record }))
 }
 
+/// The request's `Idempotency-Key`, validated.
+fn idempotency_key(headers: &axum::http::HeaderMap) -> AppResult<Option<String>> {
+    match headers.get(crate::idempotency::HEADER) {
+        None => Ok(None),
+        Some(value) => {
+            let text = value.to_str().unwrap_or("\u{0}");
+            crate::idempotency::parse(text).map(Some)
+        }
+    }
+}
+
 async fn create(
     AdminCtx(ctx): AdminCtx,
     Path(slug): Path<String>,
+    headers: axum::http::HeaderMap,
     Json(input): Json<Data>,
 ) -> AppResult<(StatusCode, Json<DataResponse<crate::Envelope>>)> {
+    let ctx = ctx.with_idempotency_key(idempotency_key(&headers)?);
     let record = resource(&ctx, &slug)?.create(&ctx, input).await?;
     Ok((StatusCode::CREATED, Json(DataResponse { data: record })))
 }
@@ -220,6 +242,19 @@ async fn destroy(AdminCtx(ctx): AdminCtx, Path((slug, key)): Path<(String, Strin
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn restore(
+    AdminCtx(ctx): AdminCtx,
+    Path((slug, key)): Path<(String, String)>,
+) -> AppResult<Json<DataResponse<crate::Envelope>>> {
+    let record = resource(&ctx, &slug)?.restore(&ctx, &key).await?;
+    Ok(Json(DataResponse { data: record }))
+}
+
+async fn force_delete(AdminCtx(ctx): AdminCtx, Path((slug, key)): Path<(String, String)>) -> AppResult<StatusCode> {
+    resource(&ctx, &slug)?.force_delete(&ctx, &key).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[derive(Deserialize)]
 struct ActionInput {
     keys: Vec<String>,
@@ -230,8 +265,10 @@ struct ActionInput {
 async fn run_action(
     AdminCtx(ctx): AdminCtx,
     Path((slug, action)): Path<(String, String)>,
+    headers: axum::http::HeaderMap,
     Json(input): Json<ActionInput>,
 ) -> AppResult<Json<ActionOutcome>> {
+    let ctx = ctx.with_idempotency_key(idempotency_key(&headers)?);
     Ok(Json(resource(&ctx, &slug)?.run_action(&ctx, &action, &input.keys, input.data).await?))
 }
 

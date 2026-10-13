@@ -62,7 +62,7 @@ fn url_pairs(query: &str) -> impl Iterator<Item = (&str, &str)> {
     query.split('&').filter(|p| !p.is_empty()).map(|p| p.split_once('=').unwrap_or((p, "")))
 }
 
-/// Published posts (publication date reached), newest first (`posts.view_any`).
+/// Published posts (publication date reached, not trashed), newest first (`posts.view_any`).
 async fn list(
     State(app): State<AppState>,
     auth: Auth,
@@ -72,6 +72,8 @@ async fn list(
     auth.authorize_guard(API_GUARD, "posts.view_any")?;
     let page = page_of(query.as_deref())?;
     let paginator = post::Entity::find()
+        // Trashed posts (soft deletes) are not published.
+        .filter(post::Column::DeletedAt.is_null())
         .filter(post::Column::Published.eq(true))
         .filter(post::Column::PublishedAt.is_not_null())
         .filter(post::Column::PublishedAt.lte(chrono::Utc::now()))

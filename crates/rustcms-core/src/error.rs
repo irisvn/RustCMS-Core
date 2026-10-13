@@ -76,6 +76,15 @@ pub enum AppError {
     /// 405: route exists but not for this method.
     #[error("method not allowed")]
     MethodNotAllowed,
+    /// 409: the write could not run now (e.g. a lock wait timed out); nothing
+    /// was applied and it may be retried. `code` is the stable error code.
+    #[error("conflict: {code}")]
+    Conflict {
+        /// Stable machine-readable code (`write_conflict`, …).
+        code: &'static str,
+        /// Human message.
+        message: &'static str,
+    },
     /// 413: request body exceeds the configured limit.
     #[error("payload too large")]
     PayloadTooLarge,
@@ -106,6 +115,7 @@ impl AppError {
             Self::Unauthenticated => StatusCode::UNAUTHORIZED,
             Self::Forbidden | Self::CsrfMismatch => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
+            Self::Conflict { .. } => StatusCode::CONFLICT,
             Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
@@ -122,6 +132,7 @@ impl AppError {
             Self::Forbidden => "forbidden",
             Self::CsrfMismatch => "csrf_mismatch",
             Self::NotFound => "not_found",
+            Self::Conflict { code, .. } => code,
             Self::MethodNotAllowed => "method_not_allowed",
             Self::PayloadTooLarge => "payload_too_large",
             Self::Validation(_) => "validation_failed",
@@ -138,7 +149,17 @@ impl From<ValidationErrors> for AppError {
 }
 
 impl From<sea_orm::DbErr> for AppError {
+    /// Lock waits that timed out, a busy SQLite database and deadlocks roll the
+    /// write back: 409 `write_conflict` (nothing applied, retryable). Anything
+    /// else is an internal error.
     fn from(err: sea_orm::DbErr) -> Self {
+        let text = err.to_string();
+        if text.contains("lock timeout") || text.contains("database is locked") || text.contains("deadlock detected") {
+            return Self::Conflict {
+                code: "write_conflict",
+                message: "Another change to the same data is in progress. Nothing was saved; try again.",
+            };
+        }
         Self::internal(err)
     }
 }
@@ -167,6 +188,7 @@ impl IntoResponse for AppError {
             Self::Forbidden => "This action is unauthorized.",
             Self::CsrfMismatch => "CSRF token mismatch.",
             Self::NotFound => "Not found.",
+            Self::Conflict { message, .. } => message,
             Self::PayloadTooLarge => "Payload too large.",
             Self::Validation(_) => "The given data was invalid.",
             Self::TooManyRequests { .. } => "Too many attempts. Please try again later.",

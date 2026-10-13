@@ -10,12 +10,15 @@ generators (`make:model`, `make:migration`, `make:resource --generate`,
 `make:policy`, `make:test`) and `route:list`; single-instance deployments (rate
 limits and the permission cache are in memory).
 
-**Not supported in 0.1:** idempotency keys for writes (a response lost in
-transit can still lead a client to retry a committed create; planned for 0.2),
-MySQL, JWT, email verification,
+Since 0.2 (M7): soft deletes, idempotency keys for creates and actions, tabs
+and key/value inputs.
+
+**Not supported yet:** idempotency keys outside resource creates and actions
+(system creates are protected by unique email/name; token issuance and password
+changes are not keyed), MySQL, JWT, email verification,
 managing api-guard roles from an admin session (use `rustcms role:assign`), many-to-many
 relationship editing in the panel, modal-form actions, composite primary keys, sorting by
-related columns, soft deletes, uploads, rich text, password reset, multiple
+related columns, uploads, rich text, password reset, multiple
 instances sharing caches, custom field types.
 
 ## Database notes

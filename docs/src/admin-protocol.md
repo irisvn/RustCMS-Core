@@ -17,6 +17,8 @@ errors included, is `Cache-Control: private, no-store`; unknown paths under
 | GET | `/resources/{slug}/records?…` | `{data: [Envelope], meta}` |
 | POST | `/resources/{slug}/records` | 201 `{data: Envelope}` |
 | GET / PATCH / DELETE | `/resources/{slug}/records/{key}` | `{data: Envelope}` / `{data: Envelope}` / 204 |
+| POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
+| DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
 | POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing}` |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](admin/users-roles.md) |
@@ -39,6 +41,12 @@ SQLite; `%` and `_` are literal), and filters
 `lte`. Values are read by field type: `filter[published][eq]=true`,
 `filter[category_id][in]=1,2`. JSON clients use the strict wire format.
 
+`trashed=with|only` lists trashed records too, or only them, on resources with
+soft deletes (`table.softDeletes`); elsewhere it is a 422. It needs the
+`restore` or `force_delete` ability (schema `abilities.restore` /
+`abilities.forceDelete`), otherwise 403, and a trashed record is listed only if
+the policy allows `view` and `restore` or `force_delete` on it.
+
 ### Schema
 
 `ResourceSchema` = `{schemaVersion, vocabularyVersion, resource, operation,
@@ -52,6 +60,11 @@ kinds that are not nullable, `""`) and client `rules` (`required`, `max_length`
 in characters); the server re-validates everything. List pages request
 `operation=view` without a key. Inputs marked `writeOnly` (writable but not readable, e.g. a
 password) carry no current value; omit them from the payload to keep the stored value.
+
+Vocabulary 2 adds `key_value` inputs (a JSON object of strings; rules
+`max_items` and `max_length` per key and value) and the `tabs` layout, whose
+children are `tab` layouts with a stable `id` and a `label`. Clients that only
+know vocabulary 1 render them as read-only text and sections.
 
 ## Wire format
 
@@ -91,6 +104,9 @@ Record keys are strings in URLs and envelopes (`"42"`, a UUID, or a natural key)
 - `abilities` also holds one entry per action (`"publish": true`).
 - `labels` holds titles of related records. A related record the user may not
   see is shown as `#<key>`.
+- `trashed: true` marks a record in the trash (soft deletes; absent otherwise).
+  Its abilities are `view`, `restore` and `force_delete` only; an active
+  record of a soft-delete resource has `restore` and `force_delete` false.
 
 ## Errors
 
@@ -108,6 +124,28 @@ Record keys are strings in URLs and envelopes (`"42"`, a UUID, or a natural key)
 | 413    | `payload_too_large` |
 | 422    | `validation_failed` |
 | 500    | `internal_error` (details are logged, never returned) |
+
+## Idempotency keys
+
+`POST …/records` (create) and `POST …/actions/{action}` accept an
+`Idempotency-Key` header (1–128 of `A-Z a-z 0-9 _ -`, otherwise 422 on
+`idempotency_key`). The key is claimed in the write's transaction, so the write
+and its receipt commit together or not at all. Repeating the request with the
+same key, by the same user, within 24 hours:
+
+- same request (body compared canonically: key order does not matter) → the
+  first result, not applied again: a create answers its record as the user may
+  see it **now** (key only when no longer visible); an action answers the first
+  run's outcome with `"replayed": true`. Admission is checked again (403 if the
+  user lost the ability). Action outcomes, first or replayed, list processed
+  and denied keys only for records the user may view now;
+- different request → 422 on `idempotency_key`;
+- the first request still running → the retry waits (up to 5 s), then answers
+  409 `write_conflict` (nothing applied; retry later).
+
+Keys are per user, resource and operation. At most 1,000 live keys per user
+(429 beyond). `idempotency:prune` deletes expired receipts (`serve` does it
+hourly). Updates and deletes take no key: repeating them converges.
 
 ## Limits
 
@@ -133,7 +171,10 @@ Record keys are strings in URLs and envelopes (`"42"`, a UUID, or a natural key)
   be represented there, so such values are shown read-only and new ones are
   refused (store large identifiers as strings).
 - A write answered by 5xx/408, a cut-off body or a dropped connection has an
-  unknown outcome: the panel says so and blocks resubmission until the page is reloaded.
+  unknown outcome: the panel says so and blocks other writes to that resource
+  until the page is reloaded. Creates and actions carry an `Idempotency-Key`
+  (a new UUID per submission): the panel offers **Retry safely**, which re-sends
+  the same request with the same key; only a success lifts the pause.
 - `schemaVersion` newer than the client: render read-only. `vocabularyVersion`
   newer: render unknown components as read-only text and never submit them.
 - TypeScript types for every DTO are generated from the server

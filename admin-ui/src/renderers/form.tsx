@@ -1,12 +1,26 @@
 // Renders a form schema: layouts and inputs from the vocabulary. Unknown types
 // fall back to a read-only rendering instead of breaking the page.
 import { Controller, type Control, type FieldErrors } from "react-hook-form";
+import { Plus, X } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import type * as React from "react";
 import type { ComponentSchema, Data, InputSchema, LayoutSchema, SelectOption } from "@/api/types";
+import { Button } from "@/components/ui/button";
 import { Checkbox, Switch } from "@/components/ui/checkbox";
 import { Input, Label, NativeSelect, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { KNOWN_INPUT_TYPES, hasUnsafeInteger, isInput, isTriState, type FormValue, type FormValues } from "@/schema/form";
+import {
+  KNOWN_INPUT_TYPES,
+  encodePair,
+  hasUnsafeInteger,
+  inputsOf,
+  isInput,
+  isTextObject,
+  isTriState,
+  pairsOf,
+  type FormValue,
+  type FormValues,
+} from "@/schema/form";
 import { RelationSelect, RelationValue } from "./relation-select";
 
 export interface FormContext {
@@ -19,10 +33,12 @@ export interface FormContext {
   readOnly?: boolean;
   /** Called when the user changes an input (blind edits submit exactly these). */
   onUserChange?: (name: string) => void;
+  /** Submit attempts so far: each failed one opens the tab of its first error. */
+  submitCount?: number;
 }
 
 export const KNOWN_INPUTS = KNOWN_INPUT_TYPES;
-export const KNOWN_LAYOUTS = new Set(["section", "grid"]);
+export const KNOWN_LAYOUTS = new Set(["section", "grid", "tabs", "tab"]);
 
 const SPAN: Record<number, string> = {
   1: "md:col-span-1",
@@ -63,7 +79,94 @@ function SchemaLayout({ layout, children }: { layout: LayoutSchema; children: Re
 }
 
 function Layout({ layout, ctx }: { layout: LayoutSchema; ctx: FormContext }) {
+  if (layout.type === "tabs") {
+    return <TabsLayout layout={layout} errors={ctx.errors} attempt={ctx.submitCount} render={(tab) => <Components components={tab.components} ctx={ctx} />} />;
+  }
   return <SchemaLayout layout={layout}><Components components={layout.components} ctx={ctx} /></SchemaLayout>;
+}
+
+/**
+ * WAI-ARIA tabs. Every panel stays mounted (drafts survive switching). After
+ * each failed save (and when server errors arrive), the tab holding the first
+ * error is shown; nested tabs do the same, so every enclosing tab opens. The
+ * form then focuses that input.
+ */
+function TabsLayout({ layout, errors, attempt, render }: {
+  layout: LayoutSchema;
+  errors?: FieldErrors<FormValues>;
+  attempt?: number;
+  render: (tab: LayoutSchema) => React.ReactNode;
+}) {
+  const base = useId();
+  const tabs = layout.components.filter((c): c is LayoutSchema => !isInput(c));
+  const [active, setActive] = useState(0);
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const current = Math.min(active, Math.max(tabs.length - 1, 0));
+  const failing = tabs.map((tab) => inputsOf(tab.components).filter((i) => errors?.[i.name]).map((i) => i.name));
+  const signature = failing.map((names) => names.join(",")).join("|");
+  useEffect(() => {
+    const index = failing.findIndex((names) => names.length > 0);
+    if (index >= 0) setActive(index);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature, attempt]);
+  const select = (index: number) => {
+    const next = (index + tabs.length) % tabs.length;
+    setActive(next);
+    refs.current[next]?.focus();
+  };
+  const onKey = (e: React.KeyboardEvent) => {
+    const keys: Record<string, number> = { ArrowRight: current + 1, ArrowLeft: current - 1, Home: 0, End: tabs.length - 1 };
+    if (e.key in keys) {
+      e.preventDefault();
+      select(keys[e.key]!);
+    }
+  };
+  if (tabs.length === 0) return null;
+  return (
+    <div className="col-span-full min-w-0">
+      <div role="tablist" aria-label={layout.label ?? "Sections"} className="flex flex-wrap gap-1 border-b border-border" onKeyDown={onKey}>
+        {tabs.map((tab, i) => {
+          const id = tab.id ?? String(i);
+          const count = failing[i]?.length ?? 0;
+          return (
+            <button
+              key={id}
+              ref={(el) => {
+                refs.current[i] = el;
+              }}
+              type="button"
+              role="tab"
+              id={`${base}-tab-${id}`}
+              aria-selected={i === current}
+              aria-controls={`${base}-panel-${id}`}
+              tabIndex={i === current ? 0 : -1}
+              onClick={() => setActive(i)}
+              className={cn(
+                "-mb-px inline-flex min-h-9 items-center gap-2 border-b-2 px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                i === current ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {tab.label ?? id}
+              {count > 0 && (
+                <span className="rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">
+                  {count}
+                  <span className="sr-only"> {count === 1 ? "error" : "errors"}</span>
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {tabs.map((tab, i) => {
+        const id = tab.id ?? String(i);
+        return (
+          <div key={id} role="tabpanel" id={`${base}-panel-${id}`} aria-labelledby={`${base}-tab-${id}`} hidden={i !== current} className="pt-5">
+            <div className={cn("grid grid-cols-1 gap-x-6 gap-y-6", gridCols(tab.columns))}>{render(tab)}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /** Read only the supplied view schema and record. Defaults are never stored values. */
@@ -74,6 +177,10 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
   record: string;
 }) {
   return <>{components.map((component, index) => {
+    if (!isInput(component) && component.type === "tabs") {
+      return <TabsLayout key={`layout-${index}`} layout={component} render={(tab) =>
+        <ReadOnlyComponents components={tab.components} data={data} slug={slug} record={record} />} />;
+    }
     if (!isInput(component)) {
       return <SchemaLayout key={`layout-${index}`} layout={component}>
         <ReadOnlyComponents components={component.components} data={data} slug={slug} record={record} />
@@ -94,6 +201,16 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
       // Option labels first: a select may offer booleans with their own labels.
       const option = component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(value));
       content = option?.label ?? (typeof value === "boolean" ? (value ? "Yes" : "No") : readOnlyText(value));
+    } else if (component.type === "key_value" && isTextObject(value)) {
+      const entries = Object.entries(value);
+      content = entries.length === 0 ? <span className="text-muted-foreground">No entries</span> : (
+        <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-1">
+          {entries.map(([k, v]) => [
+            <dt key={`k-${k}`} className="font-medium">{k}</dt>,
+            <dd key={`v-${k}`} className="break-words">{v}</dd>,
+          ])}
+        </dl>
+      );
     } else if (typeof value === "boolean") content = value ? "Yes" : "No";
     else if (component.type === "text_input" && component.mode === "password") {
       // A readable password-mode field is still not shown in clear.
@@ -231,7 +348,7 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
     case "checkbox_list": {
       const selected = Array.isArray(value) ? value : [];
       return (
-        <div id={id} role="group" aria-label={input.label} aria-invalid={invalid || undefined} aria-describedby={describedBy} className="flex flex-col gap-2.5">
+        <div id={id} tabIndex={-1} role="group" aria-label={input.label} aria-invalid={invalid || undefined} aria-describedby={describedBy} className="flex flex-col gap-2.5 focus-visible:outline-none">
           {(input.options ?? []).map((o) => {
             const encoded = encodeOption(o);
             return (
@@ -281,8 +398,56 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
           ))}
         </NativeSelect>
       );
+    case "key_value":
+      return <KeyValueEditor id={id} label={input.label} nullable={input.nullable} value={value} onChange={onChange} onBlur={onBlur} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
     default:
       // Unknown component (newer vocabulary): show the value, never edit it.
       return <Input {...common} value={Array.isArray(value) ? value.join(", ") : String(value)} disabled readOnly data-fallback="true" />;
   }
+}
+
+/** Editable key/value rows; duplicates and empty keys are reported by validation. */
+function KeyValueEditor({ id, label, nullable, value, onChange, onBlur, disabled, invalid, describedBy }: {
+  id: string;
+  label: string;
+  nullable: boolean;
+  value: FormValue;
+  onChange: (value: FormValue) => void;
+  onBlur: () => void;
+  disabled?: boolean;
+  invalid: boolean;
+  describedBy?: string;
+}) {
+  // A stored value that is not text pairs: shown as is (the input is disabled).
+  if (typeof value === "string" && value !== "") {
+    return <pre id={id} tabIndex={-1} className="overflow-x-auto rounded-md bg-muted p-3 text-xs" data-fallback="true">{value}</pre>;
+  }
+  const pairs = pairsOf(value);
+  const set = (next: [string, string][]) => onChange(next.map(([k, v]) => encodePair(k, v)));
+  const edit = (index: number, part: 0 | 1, text: string) =>
+    set(pairs.map((pair, i) => (i === index ? (part === 0 ? [text, pair[1]] : [pair[0], text]) : pair)));
+  return (
+    <div id={id} tabIndex={-1} role="group" aria-label={label} aria-invalid={invalid || undefined} aria-describedby={describedBy} className="flex flex-col gap-2 focus-visible:outline-none">
+      {pairs.length === 0 && <p className="text-sm text-muted-foreground">{Array.isArray(value) ? "No entries." : "Not set."}</p>}
+      {pairs.map(([k, v], i) => (
+        <div key={i} className="flex min-w-0 items-center gap-2">
+          <Input aria-label={`Key ${i + 1}`} value={k} disabled={disabled} onBlur={onBlur} onChange={(e) => edit(i, 0, e.target.value)} className="min-w-0 flex-1" />
+          <Input aria-label={`Value ${i + 1}`} value={v} disabled={disabled} onBlur={onBlur} onChange={(e) => edit(i, 1, e.target.value)} className="min-w-0 flex-[2]" />
+          <Button size="icon" variant="ghost" aria-label={`Remove entry ${i + 1}`} disabled={disabled} onClick={() => set(pairs.filter((_, j) => j !== i))}>
+            <X />
+          </Button>
+        </div>
+      ))}
+      <div>
+        <Button size="sm" variant="outline" disabled={disabled} onClick={() => set([...pairs, ["", ""]])}>
+          <Plus /> Add entry
+        </Button>
+        {nullable && Array.isArray(value) && (
+          <Button size="sm" variant="ghost" className="ml-2" disabled={disabled} onClick={() => onChange("")}>
+            Clear (not set)
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 }
