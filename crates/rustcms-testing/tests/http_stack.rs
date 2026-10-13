@@ -1,4 +1,8 @@
 //! The HTTP stack of `rustcms-core`, driven through `TestApp`.
+//!
+//! SQLite only, on purpose: these tests cover middleware, limits and routing,
+//! which do not depend on the database. Database behaviour is covered by the
+//! `db_test!` suites of the other crates, on both databases.
 
 use std::net::SocketAddr;
 use std::sync::Arc;

@@ -9,7 +9,9 @@
 ## Before opening a PR
 
 `just ci` must pass. It runs fmt, clippy (`-D warnings`), every supported feature
-combination, the test matrix (SQLite + PostgreSQL) and docs.
+combination, the test matrix (SQLite + PostgreSQL), docs, generated files and the
+SPA tests. CI also runs `just test-cli`, `just e2e`, `just msrv` and the security
+audit; run them when your change touches those areas.
 
 ## Definition of done
 

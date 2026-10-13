@@ -7,6 +7,8 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/api/client";
 import { usePanel } from "@/api/queries";
 import {
+  ROLES,
+  USERS,
   groupPermissions,
   useCreateRole,
   useCreateUser,
@@ -25,10 +27,10 @@ import {
 } from "@/api/system";
 import type { PermissionInfo, SystemRole } from "@/api/types";
 import { Page, PageHeader } from "@/components/layout";
-import { ErrorState, Loading } from "@/components/states";
+import { ErrorState, Loading, PausedBanner } from "@/components/states";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox, Switch } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
@@ -75,8 +77,7 @@ function Field({ id, label, errors, children }: {
   );
 }
 
-const linkButton =
-  "inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
+const linkButton = buttonVariants();
 
 // ---------------------------------------------------------------------------
 // Users
@@ -114,6 +115,7 @@ export function UsersPage() {
             New user
           </Link>
         )} />
+      <PausedBanner scope={USERS} />
       <Card className="min-w-0 overflow-hidden">
         <div className="flex flex-col gap-2 border-b border-border p-4 sm:p-5">
           <Label htmlFor="search-users">Search users</Label>
@@ -265,6 +267,7 @@ export function UserCreatePage() {
   return (
     <Page>
       <PageHeader title="New user" description="Create a user and choose their initial access." eyebrow="System" />
+      <PausedBanner scope={USERS} />
       <form className="flex w-full max-w-2xl flex-col gap-6" onSubmit={(e) => void submit(e)} noValidate>
         {created && <Alert>{created} was created.</Alert>}
         {errors.form && <Alert variant="destructive">{errors.form}</Alert>}
@@ -388,6 +391,7 @@ export function UserPage({ id }: { id: string }) {
             Delete user
           </Button>
         )} />
+      <PausedBanner scope={USERS} />
       {u.superAdmin && <div><Badge>super admin</Badge></div>}
       {u.isSelf && (
         <Alert>
@@ -609,6 +613,7 @@ export function RolesPage() {
             New role
           </Link>
         )} />
+      <PausedBanner scope={ROLES} />
       <Card className="min-w-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table aria-label="Roles" className="w-full min-w-[480px] text-sm">
@@ -717,6 +722,7 @@ export function RoleCreatePage() {
     <Page>
       <PageHeader title="New role" description="Name this role and choose the permissions it grants."
         eyebrow="System" />
+      <PausedBanner scope={ROLES} />
       <form className="flex min-w-0 flex-col gap-6" onSubmit={(e) => void submit(e)} noValidate>
         {errors.form && <Alert variant="destructive">{errors.form}</Alert>}
         <Card>
@@ -805,6 +811,7 @@ export function RolePage({ id }: { id: string }) {
             Delete role
           </Button>
         )} />
+      <PausedBanner scope={ROLES} />
       {r.isSystem && <div><Badge>system</Badge></div>}
       {notice && <Alert variant={notice.variant}>{notice.text}</Alert>}
       {stale && (

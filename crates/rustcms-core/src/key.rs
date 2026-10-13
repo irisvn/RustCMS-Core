@@ -1,4 +1,5 @@
-//! The application key (`APP_KEY`), used to sign cookies and derive secrets.
+//! The application key (`APP_KEY`). It keys admin session ids (see
+//! `rustcms_auth::AuthState::session_id`): rotating it signs everyone out.
 
 use std::fmt;
 

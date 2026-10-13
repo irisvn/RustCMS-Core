@@ -17,7 +17,7 @@ hứng từ Laravel và FilamentPHP:
 ## 1. Khởi động nhanh
 
 ### Yêu cầu
-- **Rust** stable (≥ 1.90). Trên máy anh: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
+- **Rust** stable (≥ 1.94). Trên máy anh: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
 - Tuỳ chọn: **Docker** để test với PostgreSQL; **Node 20+** chỉ khi sửa mã nguồn admin SPA.
 
 ### Chạy app demo (blog có sẵn dữ liệu)
@@ -75,7 +75,7 @@ just test-matrix              # test Rust trên SQLite + PostgreSQL
 just test-ui                  # test SPA (Vitest)
 just e2e                      # test trình duyệt (Playwright) — máy anh: PLAYWRIGHT_CHANNEL=chrome
 just dev                      # Rust :8000 + Vite :5173 (mở http://localhost:5173/admin/)
-just ci                       # toàn bộ CI ở local
+just ci                       # phần lớn CI; thêm `just test-cli`, `just e2e`, `just msrv`
 just publish-check            # đóng gói + verify các crate cho crates.io
 ```
 
@@ -211,4 +211,5 @@ cảm (password, token…) và kiểu chưa hỗ trợ bị bỏ qua kèm cảnh
 - Giao thức admin (server ↔ SPA): `docs/src/admin-protocol.md`
 - Lệnh CLI: `docs/src/cli.md`
 - Quyết định kiến trúc: `docs/adr/0001–0006`
+- Báo cáo review: `docs/reports/` (vd. `2026-10-13-codebase-review.vi.md`)
 - Xem docs dạng web: `mdbook serve docs` → http://localhost:3000

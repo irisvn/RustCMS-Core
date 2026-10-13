@@ -5,7 +5,7 @@ members = ["crates/*", "examples/demo"]
 [workspace.package]
 version = "0.1.0-alpha.0"
 edition = "2024"
-rust-version = "1.90"
+rust-version = "1.94"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/irisvn/rustcms"
 homepage = "https://github.com/irisvn/rustcms"
@@ -40,6 +40,7 @@ minijinja = { version = "3.0", features = ["serde"] }
 include_dir = "0.7.4"
 argon2 = "0.6"
 sha2 = "0.11"
+hmac = "0.13"
 subtle = "2.6"
 hex = "0.4"
 moka = { version = "0.12", features = ["future"] }

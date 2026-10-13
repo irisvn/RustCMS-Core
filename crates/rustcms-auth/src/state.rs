@@ -4,12 +4,13 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use rustcms_core::{AppError, AppResult, Principal};
+use rustcms_core::{AppError, AppKey, AppResult, Principal};
 
 use crate::config::{AuthConfig, origin_of};
 use crate::password::Passwords;
 use crate::rate_limit::RateLimiter;
 use crate::rbac::PermissionResolver;
+use crate::secret::hmac_sha256_hex;
 
 /// Guard of the admin panel (session cookie).
 pub const ADMIN_GUARD: &str = "admin";
@@ -85,11 +86,14 @@ pub struct AuthState {
     pub gate: Gate,
     pub(crate) allowed_origins: Vec<String>,
     pub(crate) secure_cookies: bool,
+    /// Keys session ids to `APP_KEY`: a new key orphans every stored session.
+    session_key: AppKey,
 }
 
 impl AuthState {
-    /// Builds the state for an application served at `app_url`.
-    pub fn new(config: AuthConfig, app_url: &str, gate: Gate) -> Self {
+    /// Builds the state for an application served at `app_url` with `key`
+    /// (`APP_KEY`), which keys session ids: rotating it signs everyone out.
+    pub fn new(config: AuthConfig, app_url: &str, key: &AppKey, gate: Gate) -> Self {
         let allowed_origins = if config.admin_origins.is_empty() {
             origin_of(app_url).into_iter().collect()
         } else {
@@ -104,8 +108,15 @@ impl AuthState {
             gate,
             allowed_origins,
             secure_cookies,
+            session_key: key.clone(),
             config,
         }
+    }
+
+    /// Database id of the session whose cookie holds `token`: an HMAC under
+    /// `APP_KEY`, so neither a database leak nor a key change yields a usable id.
+    pub fn session_id(&self, token: &str) -> String {
+        hmac_sha256_hex(self.session_key.bytes(), token)
     }
 
     /// Whether `path` belongs to the admin panel (session guard).
@@ -147,7 +158,8 @@ mod tests {
 
     #[test]
     fn admin_path_matching() {
-        let state = AuthState::new(AuthConfig::default(), "https://cms.example.com", Gate::default());
+        let state =
+            AuthState::new(AuthConfig::default(), "https://cms.example.com", &AppKey::generate(), Gate::default());
         assert!(state.is_admin_path("/admin"));
         assert!(state.is_admin_path("/admin/api/auth/me"));
         assert!(!state.is_admin_path("/administrator"));

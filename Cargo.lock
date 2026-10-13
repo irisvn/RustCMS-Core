@@ -2507,6 +2507,7 @@ dependencies = [
  "clap",
  "futures",
  "hex",
+ "hmac",
  "moka",
  "rand 0.10.3",
  "rustcms-core",

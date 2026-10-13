@@ -104,7 +104,7 @@ Record keys are strings in URLs and envelopes (`"42"`, a UUID, or a natural key)
 | 401    | `unauthenticated`   |
 | 403    | `forbidden`         |
 | 403    | `csrf_mismatch` (missing or stale `X-CSRF-Token`: fetch `/auth/csrf` again; do not replay blindly) |
-| 404    | `not_found` (also for records outside the user's scope) |
+| 404    | `not_found` (also for records outside the user's scope; a user without the ability gets 403 for any key) |
 | 413    | `payload_too_large` |
 | 422    | `validation_failed` |
 | 500    | `internal_error` (details are logged, never returned) |

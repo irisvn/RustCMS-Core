@@ -14,6 +14,10 @@ describe("wire format", () => {
     expect(fromText("i32", "42")).toBe(42);
     expect(fromText("f64", "0.5")).toBe(0.5);
     expect(checkText("i32", "abc")).not.toBeNull();
+    expect(checkText("i32", "2147483647")).toBeNull();
+    expect(checkText("i32", "-2147483648")).toBeNull();
+    expect(checkText("i32", "2147483648")).not.toBeNull();
+    expect(checkText("i32", "-2147483649")).not.toBeNull();
     expect(fromText("i32", "")).toBeNull();
   });
 

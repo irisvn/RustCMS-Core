@@ -84,3 +84,14 @@ it("keeps the raw key selectable and makes a failed label lookup explicit", asyn
   expect(await screen.findByText("Label unavailable")).toBeInTheDocument();
   await waitFor(() => expect(screen.queryByText("Loading label…")).toBeNull());
 });
+
+it("labels static boolean options and never shows password-mode values", () => {
+  mount([
+    input("featured", { type: "select", valueType: "bool", options: [{ value: true, label: "Featured" }, { value: false, label: "Regular" }] }),
+    input("pin", { mode: "password" }),
+  ], { featured: true, pin: "1234" });
+  expect(screen.getByText("Featured")).toBeInTheDocument();
+  expect(screen.queryByText("Yes")).toBeNull();
+  expect(screen.queryByText("1234")).toBeNull();
+  expect(screen.getByLabelText("Hidden value")).toBeInTheDocument();
+});

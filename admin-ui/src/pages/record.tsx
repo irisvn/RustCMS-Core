@@ -36,7 +36,11 @@ export function FormPage({ slug, recordKey }: { slug: string; recordKey?: string
   const editing = recordKey !== undefined;
   const schema = useSchema(slug, editing ? "edit" : "create", recordKey);
   // An editor may update without viewing: then the form starts empty (only changed fields are sent).
-  const viewable = !editing || schema.data?.abilities.view === true;
+  // A blind form, once shown, stays blind (and mounted) if a refetch grants `view`:
+  // loading the record would replace the page and lose the draft.
+  const identity = `${slug}:${recordKey ?? ""}`;
+  const shownBlind = useRef<string | null>(null);
+  const viewable = !editing || (schema.data?.abilities.view === true && shownBlind.current !== identity);
   const record = useRecord(slug, recordKey ?? "", { enabled: editing && viewable && !!schema.data });
 
   if (schema.isLoading || (editing && viewable && record.isLoading)) return <Loading />;
@@ -48,11 +52,12 @@ export function FormPage({ slug, recordKey }: { slug: string; recordKey?: string
     return <ErrorState error={new ApiError(403, { code: "forbidden", message: "" })} />;
   }
   const refreshError = schema.error ?? (editing && viewable ? record.error : null);
+  if (editing && !viewable) shownBlind.current = identity;
   return (
     <RecordForm
       refreshError={refreshError}
       // Keyed by identity only: refetches (window focus, failed saves) never reset a draft.
-      key={`${slug}:${recordKey ?? ""}`}
+      key={identity}
       slug={slug}
       recordKey={recordKey}
       schema={schema.data}

@@ -107,3 +107,18 @@ it("never acts on rows of the previous page while the next one loads", async () 
   await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
   await waitFor(() => expect(actions).toEqual([{ keys: ["c"], data: {} }]));
 });
+
+it("follows the URL search on back and forward", async () => {
+  mount("?search=first");
+  const box = await screen.findByLabelText("Search");
+  expect(box).toHaveValue("first");
+  await act(() => router.navigate({ to: "/r/$slug", params: { slug: "posts" }, search: { search: "second" } }));
+  await waitFor(() => expect(screen.getByLabelText("Search")).toHaveValue("second"));
+  await act(() => router.history.back());
+  await waitFor(() => expect(screen.getByLabelText("Search")).toHaveValue("first"));
+  // Typing still drives the URL, and the box keeps what is typed.
+  await userEvent.clear(screen.getByLabelText("Search"));
+  await userEvent.type(screen.getByLabelText("Search"), "typed");
+  await waitFor(() => expect(router.state.location.search).toEqual({ search: "typed" }));
+  expect(screen.getByLabelText("Search")).toHaveValue("typed");
+});

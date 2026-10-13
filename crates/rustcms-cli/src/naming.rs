@@ -42,11 +42,12 @@ pub fn plural(word: &str) -> String {
     }
 }
 
-/// Rust keywords: cannot be module names.
+/// Rust keywords, including reserved ones (edition 2024): cannot be module or crate names.
 const KEYWORDS: &[&str] = &[
-    "as", "async", "await", "box", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false",
-    "fn", "for", "gen", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
-    "self", "static", "struct", "super", "trait", "true", "try", "type", "unsafe", "use", "where", "while", "yield",
+    "abstract", "as", "async", "await", "become", "box", "break", "const", "continue", "crate", "do", "dyn", "else",
+    "enum", "extern", "false", "final", "fn", "for", "gen", "if", "impl", "in", "let", "loop", "macro", "match", "mod",
+    "move", "mut", "override", "priv", "pub", "ref", "return", "self", "static", "struct", "super", "trait", "true",
+    "try", "type", "typeof", "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
 ];
 
 /// PascalCase model name whose module name is not a keyword.
@@ -81,6 +82,9 @@ pub fn validate_package(name: &str) -> anyhow::Result<()> {
             && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_'),
         "`{name}` is not a valid package name (lowercase letters, digits, `-`, `_`)"
     );
+    // The crate name appears as a path in the generated code (`use blog::…`).
+    let crate_name = name.replace('-', "_");
+    ensure!(!KEYWORDS.contains(&crate_name.as_str()), "`{name}` is a Rust keyword: choose another package name");
     Ok(())
 }
 
@@ -109,5 +113,7 @@ mod tests {
         assert!(validate_snake("../evil").is_err());
         assert!(validate_package("my-blog").is_ok());
         assert!(validate_package("My Blog").is_err());
+        assert!(validate_package("async").is_err(), "keywords break `use <crate>::…`");
+        assert!(validate_package("my-type").is_ok());
     }
 }

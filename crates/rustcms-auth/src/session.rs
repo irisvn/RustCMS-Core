@@ -22,7 +22,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 
 use crate::entities::session as entity;
-use crate::secret::{random_string, sha256_hex};
+use crate::secret::random_string;
 use crate::state::AuthState;
 
 const TOKEN_LEN: usize = 43;
@@ -146,7 +146,7 @@ impl Session {
 /// Loads the session named by the request cookie.
 pub(crate) async fn load<C: ConnectionTrait>(auth: &AuthState, db: &C, headers: &HeaderMap) -> AppResult<Session> {
     let Some(token) = cookie(headers, &auth.config.cookie_name) else { return Ok(Session::default()) };
-    let id = sha256_hex(&token);
+    let id = auth.session_id(&token);
     let row = entity::Entity::find_by_id(id.clone()).filter(entity::Column::ExpiresAt.gt(Utc::now())).one(db).await?;
     let Some(row) = row else { return Ok(Session::default()) };
     let data: Data = serde_json::from_str(&row.data).unwrap_or_default();
@@ -197,7 +197,7 @@ pub(crate) async fn persist(
     if destroy {
         if let (Some(id), Some(lineage)) = (stored_id, lineage) {
             end(db, &id, &lineage).await?;
-            return Ok(Some(set_cookie(auth, "", 0)));
+            return Ok(Some(clear_cookie(auth)));
         }
         return Ok(None);
     }
@@ -210,9 +210,9 @@ pub(crate) async fn persist(
                 let deleted = entity::Entity::delete_by_id(old).exec(&txn).await?.rows_affected;
                 if deleted == 0 {
                     // Signed out by a concurrent request: do not sign the browser back in.
-                    return Ok(Some(set_cookie(auth, "", 0)));
+                    return Ok(Some(clear_cookie(auth)));
                 }
-                let token = insert(&txn, &data, expires_at, Some(lineage.clone())).await?;
+                let token = insert(auth, &txn, &data, expires_at, Some(lineage.clone())).await?;
                 txn.commit().await?;
                 state_lineage(session, lineage);
                 token
@@ -222,21 +222,22 @@ pub(crate) async fn persist(
                 if let Some(old) = old {
                     entity::Entity::delete_by_id(old).exec(db).await?;
                 }
-                let token = insert(db, &data, expires_at, None).await?;
-                state_lineage(session, sha256_hex(&token));
+                let token = insert(auth, db, &data, expires_at, None).await?;
+                state_lineage(session, auth.session_id(&token));
                 token
             }
         };
         let mut state = session.state();
-        state.stored_id = Some(sha256_hex(&token));
+        state.stored_id = Some(auth.session_id(&token));
         state.token = Some(token.clone());
         state.stored_expires_at = Some(expires_at);
         state.changed = false;
         state.regenerate = false;
         state.restamp = false;
-        return Ok(Some(set_cookie(auth, &token, lifetime.num_seconds())));
+        return Ok(Some(set_cookie(auth, &token)));
     }
-    if let (Some(id), Some(token)) = (stored_id, token)
+    if let Some(id) = stored_id
+        && token.is_some()
         && (changed || touch)
     {
         // Anonymous sessions keep their original expiry.
@@ -264,22 +265,17 @@ pub(crate) async fn persist(
                 }
             }
         };
-        let renewed = match renewed {
-            Ok(result) => result,
-            Err(err) if !changed => {
-                tracing::warn!(%err, "session renewal failed; keeping the response");
-                return Ok(None);
-            }
-            Err(err) => return Err(err.into()),
-        };
-        // Another request ended or rotated this session meanwhile: keep it ended
-        // and the handler's response intact.
-        if renewed.rows_affected == 0 {
-            return Ok(None);
+        match renewed {
+            Err(err) if changed => return Err(err.into()),
+            Err(err) => tracing::warn!(%err, "session renewal failed; keeping the response"),
+            // No row updated: another request ended or rotated this session
+            // meanwhile, and it stays that way.
+            Ok(_) => {}
         }
-        // Re-send the cookie so the browser's expiry slides with the server's.
-        let max_age = (expires_at - Utc::now()).num_seconds().max(0);
-        return Ok(Some(set_cookie(auth, &token, max_age)));
+        // The cookie value is unchanged and carries no expiry (see `set_cookie`):
+        // nothing is re-sent, so a slow response can never put back a cookie
+        // that a newer one replaced.
+        return Ok(None);
     }
     Ok(None)
 }
@@ -328,7 +324,7 @@ pub async fn create_for_user<C: ConnectionTrait>(
 ) -> AppResult<(String, String)> {
     let csrf = random_string(40);
     let data = Data { user_id: Some(user_id), auth_version, csrf: Some(csrf.clone()) };
-    let token = insert(db, &data, Utc::now() + lifetime(auth), None).await?;
+    let token = insert(auth, db, &data, Utc::now() + lifetime(auth), None).await?;
     Ok((token, csrf))
 }
 
@@ -338,6 +334,7 @@ pub async fn prune_expired<C: ConnectionTrait>(db: &C) -> AppResult<u64> {
 }
 
 async fn insert<C: ConnectionTrait>(
+    auth: &AuthState,
     db: &C,
     data: &Data,
     expires_at: DateTime<Utc>,
@@ -345,7 +342,7 @@ async fn insert<C: ConnectionTrait>(
 ) -> AppResult<String> {
     let token = random_string(TOKEN_LEN);
     entity::ActiveModel {
-        id: Set(sha256_hex(&token)),
+        id: Set(auth.session_id(&token)),
         data: Set(encode(data)),
         expires_at: Set(expires_at),
         lineage: Set(lineage),
@@ -372,10 +369,22 @@ fn lifetime(auth: &AuthState) -> Duration {
     Duration::minutes(i64::try_from(auth.config.session_lifetime_minutes).unwrap_or(i64::MAX / 120_000))
 }
 
-fn set_cookie(auth: &AuthState, value: &str, max_age: i64) -> HeaderValue {
+/// The session cookie. It lives until the browser closes: expiry (idle for
+/// signed-in sessions, fixed for anonymous ones) is enforced by the server, so
+/// the cookie is only sent when its value changes.
+fn set_cookie(auth: &AuthState, value: &str) -> HeaderValue {
+    cookie_header(auth, value, "")
+}
+
+/// Removes the session cookie.
+fn clear_cookie(auth: &AuthState) -> HeaderValue {
+    cookie_header(auth, "", "; Max-Age=0")
+}
+
+fn cookie_header(auth: &AuthState, value: &str, max_age: &str) -> HeaderValue {
     let secure = if auth.secure_cookies { "; Secure" } else { "" };
     let cookie = format!(
-        "{}={value}; Path={}; Max-Age={max_age}; HttpOnly; SameSite=Lax{secure}",
+        "{}={value}; Path={}{max_age}; HttpOnly; SameSite=Lax{secure}",
         auth.config.cookie_name, auth.config.admin_path
     );
     HeaderValue::from_str(&cookie).unwrap_or_else(|_| HeaderValue::from_static(""))

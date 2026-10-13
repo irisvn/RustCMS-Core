@@ -2,6 +2,7 @@
 
 - [ ] `APP_ENV=production`, `APP_DEBUG=false`.
 - [ ] `APP_KEY` generated once (`key:generate`), stored as a secret, never committed.
+      Rotating it signs every admin out (API tokens stay valid).
 - [ ] `APP_URL` is the public **https** URL (enables `Secure` cookies and the default allowed origin).
 - [ ] `auth.admin_origins` lists every origin serving the admin panel, nothing else.
 - [ ] `http.trusted_proxies` lists only your load balancers, so throttling sees real client IPs.

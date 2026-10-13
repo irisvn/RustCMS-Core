@@ -4,8 +4,10 @@ import { useApi, useSession } from "./context";
 import { guardedWrite } from "./queries";
 import type { PermissionInfo, SystemRole, SystemUser, UserPage } from "./types";
 
-const USERS = "system:users";
-const ROLES = "system:roles";
+/** Write scopes (see `guardedWrite`): a write with an unknown outcome pauses its scope. */
+export const USERS = "system:users";
+export const ROLES = "system:roles";
+export const ACCOUNT = "account";
 const enc = encodeURIComponent;
 
 export function useUsers(search: string, page: number) {
@@ -119,7 +121,7 @@ export function useDeleteRole() {
 function useRotation<I>(path: string, body: (input: I) => unknown) {
   const api = useApi();
   const session = useSession();
-  return useSystemWrite("account", (input: I) => session.rotating(() => api.post<void>(path, body(input))));
+  return useSystemWrite(ACCOUNT, (input: I) => session.rotating(() => api.post<void>(path, body(input))));
 }
 
 export function useChangePassword() {

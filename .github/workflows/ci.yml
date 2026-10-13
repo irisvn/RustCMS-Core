@@ -36,6 +36,15 @@ jobs:
         with: { tool: just }
       - run: just features
 
+  # The declared `rust-version` (keep in sync with `Cargo.toml`).
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets
+
   test-rust:
     runs-on: ubuntu-latest
     services:

@@ -13,6 +13,8 @@ use crate::secret::{ct_eq, random_string, sha256_hex};
 
 /// Prefix identifying rustcms tokens (lets secret scanners and the guard recognise them).
 pub const PREFIX: &str = "rcms_";
+/// Longest token lifetime that can be requested, in days (about ten years).
+pub const MAX_LIFETIME_DAYS: u32 = 3650;
 const SECRET_LEN: usize = 40;
 const LAST_USED_EVERY_SECS: i64 = 60;
 
@@ -23,6 +25,15 @@ pub struct IssuedToken {
     pub token: entity::Model,
     /// `rcms_<id>_<secret>`.
     pub plain_text: String,
+}
+
+/// Expiry of a token issued now for `days` (1 to [`MAX_LIFETIME_DAYS`]);
+/// `None` when `days` is outside that range.
+pub fn expiry_in_days(days: u32) -> Option<DateTime<Utc>> {
+    if !(1..=MAX_LIFETIME_DAYS).contains(&days) {
+        return None;
+    }
+    Utc::now().checked_add_signed(Duration::days(i64::from(days)))
 }
 
 /// Issues a token for `user_id` with `abilities` (`["*"]` = all of the user's permissions).

@@ -21,6 +21,7 @@ base64.workspace = true
 chrono.workspace = true
 clap.workspace = true
 hex.workspace = true
+hmac.workspace = true
 moka.workspace = true
 rand.workspace = true
 sea-orm.workspace = true

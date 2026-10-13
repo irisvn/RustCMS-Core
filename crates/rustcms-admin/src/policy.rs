@@ -35,6 +35,17 @@ pub trait Policy: Send + Sync {
     fn view_depends_on_record(&self) -> bool {
         true
     }
+
+    /// Whether the user may perform `ability` on *some* record, checked before
+    /// a record is looked up by key. Refusing here answers 403 whether or not
+    /// the key exists, so a user without the ability cannot probe which keys
+    /// exist. The default admits everyone and leaves the decision to
+    /// [`Policy::allows`] on the record (then a missing key answers 404 and a
+    /// denied one 403): override it when the ability needs a permission
+    /// regardless of the record, or hide records with `Resource::scope()`.
+    async fn admits(&self, _ctx: &Ctx, _ability: &str) -> bool {
+        true
+    }
 }
 
 /// Default policy: `{slug}.{ability}` must be granted to the user.
@@ -53,6 +64,10 @@ impl PermissionPolicy {
 impl Policy for PermissionPolicy {
     async fn allows(&self, ctx: &Ctx, ability: &str, _record: Option<&Data>) -> bool {
         ctx.can(&format!("{}.{}", self.slug, ability))
+    }
+
+    async fn admits(&self, ctx: &Ctx, ability: &str) -> bool {
+        self.allows(ctx, ability, None).await
     }
 
     fn view_depends_on_record(&self) -> bool {

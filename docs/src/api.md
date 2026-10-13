@@ -40,6 +40,12 @@ listing published posts with `posts.view_any`, creating drafts with
 `posts.create`, strict input (`deny_unknown_fields`), and tests in
 `examples/demo/tests/api.rs`.
 
-Revocation (password change, sign-out everywhere, disabling) applies to the next
-request; a write already running with the old credentials still commits (like
-admin resource writes). See [Credential revocation](security/revocation.md).
+Token lifetimes are 1 to 3,650 days (`expires_in_days`, `--expires-days`);
+without one, a token lasts until revoked.
+
+Revocation (password change, sign-out everywhere, disabling) applies from the
+next request. A request already running is not aborted: your endpoints, like
+admin resource writes, finish with the credentials checked when they started.
+Account and RBAC changes made through `RbacService` are the exception: they
+re-check the credential version under lock and are refused. See
+[Credential revocation](security/revocation.md).

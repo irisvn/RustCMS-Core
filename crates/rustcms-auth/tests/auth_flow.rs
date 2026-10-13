@@ -33,6 +33,7 @@ db_test!(login_requires_csrf_and_rotates_the_session, migrate = Migrator, |db: T
     assert!(
         set_cookie.contains("HttpOnly") && set_cookie.contains("SameSite=Lax") && set_cookie.contains("Path=/admin")
     );
+    assert!(!set_cookie.contains("Max-Age"), "expiry is enforced by the server: {set_cookie}");
     let after = client.cookie(COOKIE).unwrap();
     assert_ne!(before, after, "session id regenerated on login (fixation)");
 
@@ -52,6 +53,24 @@ db_test!(login_requires_csrf_and_rotates_the_session, migrate = Migrator, |db: T
 fn cookie_request(uri: &str, token: &str) -> axum::http::Request<axum::body::Body> {
     axum::http::Request::get(uri).header("cookie", format!("{COOKIE}={token}")).body(axum::body::Body::empty()).unwrap()
 }
+
+db_test!(rotating_the_app_key_signs_everyone_out, migrate = Migrator, |db: TestDb| async move {
+    let (app, seed) = setup(db.clone()).await;
+    let client = app.acting_as(&seed.member).await;
+    let me = app.admin_api("auth/me");
+    client.get(&me).await.assert_status(StatusCode::OK);
+    let token = client.cookie(COOKIE).expect("session cookie");
+
+    // Reverse check: another instance with the same key accepts the cookie.
+    let mut same = rustcms_testing::test_config(db.url());
+    same.app.key = app.state().config().app.key.clone();
+    let same = rustcms_testing::TestApp::with_config(support::build, same, db.clone()).await;
+    same.request(cookie_request(&me, &token)).await.assert_status(StatusCode::OK);
+
+    // After `key:generate --force` (a new random key), the cookie is dead.
+    let rotated = rustcms_testing::TestApp::new(support::build, db).await;
+    rotated.request(cookie_request(&me, &token)).await.assert_status(StatusCode::UNAUTHORIZED);
+});
 
 db_test!(state_changes_need_allowed_origin_and_csrf, migrate = Migrator, |db: TestDb| async move {
     let (app, seed) = setup(db).await;
@@ -188,6 +207,20 @@ db_test!(api_tokens_are_scoped_and_strict, migrate = Migrator, |db: TestDb| asyn
     client.send(Method::DELETE, "/api/v1/auth/token", None).await.assert_status(StatusCode::NO_CONTENT);
     client.get("/api/v1/posts").await.assert_status(StatusCode::UNAUTHORIZED);
     narrow.get("/api/v1/posts").await.assert_status(StatusCode::OK);
+});
+
+db_test!(token_lifetimes_are_bounded, migrate = Migrator, |db: TestDb| async move {
+    let (app, seed) = setup(db).await;
+    let request = |days: u64| json!({ "email": seed.reader.email, "password": PASSWORD, "token_name": "cli", "expires_in_days": days });
+    for days in [0, 3651, u64::from(u32::MAX)] {
+        let response = app.client().post_json("/api/v1/auth/token", &request(days)).await;
+        response.assert_status(StatusCode::UNPROCESSABLE_ENTITY).assert_validation_error("expires_in_days");
+    }
+    assert!(
+        rustcms_auth::entities::personal_access_token::Entity::find().all(app.state().db()).await.unwrap().is_empty()
+    );
+    // Reverse check: the longest lifetime is accepted.
+    app.client().post_json("/api/v1/auth/token", &request(3650)).await.assert_status(StatusCode::CREATED);
 });
 
 db_test!(expired_tokens_and_sessions_are_rejected, migrate = Migrator, |db: TestDb| async move {
@@ -467,6 +500,23 @@ db_test!(renewal_failure_keeps_the_committed_response, migrate = Migrator, |db: 
     response.assert_status(StatusCode::CREATED);
 });
 
+// A renewal response that arrives late must not overwrite a cookie rotated
+// meanwhile (e.g. by a password change in another tab): renewals send none.
+db_test!(sliding_renewal_does_not_resend_the_cookie, migrate = Migrator, |db: TestDb| async move {
+    let (app, seed) = setup(db).await;
+    let browser = app.acting_as(&seed.member).await;
+    session::Entity::update_many()
+        .col_expr(session::Column::ExpiresAt, Expr::value(Utc::now() + Duration::minutes(10)))
+        .exec(app.state().db())
+        .await
+        .unwrap();
+    let response = browser.get(&app.admin_api("auth/me")).await;
+    response.assert_status(StatusCode::OK);
+    assert!(!response.headers.contains_key("set-cookie"), "{:?}", response.headers.get("set-cookie"));
+    let row = session::Entity::find().one(app.state().db()).await.unwrap().unwrap();
+    assert!((row.expires_at - Utc::now()).num_minutes() >= 118, "the server-side expiry still slides");
+});
+
 db_test!(anonymous_sessions_have_a_fixed_lifetime, migrate = Migrator, |db: TestDb| async move {
     let (app, seed) = setup(db).await;
     let db = app.state().db().clone();
@@ -548,14 +598,13 @@ db_test!(logout_and_reissue_race_leaves_no_session, migrate = Migrator, |db: Tes
 // Deterministic interleaving: a re-issue (A → C) is mid-transaction when sign-out
 // of A starts. Sign-out must wait for it and end C as well.
 db_test!(sign_out_waits_for_an_in_flight_reissue, migrate = Migrator, |db: TestDb| async move {
-    use rustcms_auth::secret::sha256_hex;
     use sea_orm::ActiveModelTrait;
     let (app, seed) = setup(db).await;
     let auth = auth(&app);
     let db = app.state().db().clone();
     let (a, _) =
         rustcms_auth::session::create_for_user(&auth, &db, seed.member.id, seed.member.auth_version).await.unwrap();
-    let a = sha256_hex(&a);
+    let a = auth.session_id(&a);
 
     let reissue = rustcms_core::db::begin_write(&db).await.unwrap();
     rustcms_auth::session::lock_lineage(&reissue, &a).await.unwrap();

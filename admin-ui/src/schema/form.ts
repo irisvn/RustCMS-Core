@@ -162,7 +162,8 @@ export function zodSchema(inputs: InputSchema[]) {
         break;
       default:
         shape[input.name] = z.string().superRefine((text, ctx) => {
-          if (input.disabled) return;
+          // Hidden inputs cannot be corrected by the user (nor show an error): the server decides.
+          if (input.disabled || input.type === "hidden") return;
           if (text === "") {
             if (required) ctx.addIssue({ code: "custom", message: "is required" });
             return;

@@ -90,9 +90,14 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
     else if (component.type === "select" && component.relationship &&
       (typeof value === "string" || (typeof value === "number" && Number.isSafeInteger(value)))) {
       content = <RelationValue slug={slug} field={component.name} record={record} value={JSON.stringify(value)} />;
+    } else if (component.type === "select") {
+      // Option labels first: a select may offer booleans with their own labels.
+      const option = component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(value));
+      content = option?.label ?? (typeof value === "boolean" ? (value ? "Yes" : "No") : readOnlyText(value));
     } else if (typeof value === "boolean") content = value ? "Yes" : "No";
-    else if (component.type === "select") {
-      content = component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(value))?.label ?? readOnlyText(value);
+    else if (component.type === "text_input" && component.mode === "password") {
+      // A readable password-mode field is still not shown in clear.
+      content = <span aria-label="Hidden value">••••••••</span>;
     } else if (component.type === "checkbox_list" && Array.isArray(value)) {
       content = value.length === 0 ? "Empty list" : <ul className="space-y-1">{value.map((item, i) =>
         <li key={i}>{component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(item))?.label ?? readOnlyText(item)}</li>,

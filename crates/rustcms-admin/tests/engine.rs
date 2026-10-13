@@ -1089,3 +1089,102 @@ db_test!(lists_follow_the_default_sort_without_a_sort_parameter, |db: TestDb| as
     let asc = ListQuery { sort: Some("title".into()), ..Default::default() };
     assert_eq!(titles(posts.list(&ctx, &asc).await.unwrap()), [json!("a"), json!("b"), json!("c")]);
 });
+
+db_test!(write_responses_respect_the_scope_after_the_write, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
+    let categories = fx.resource("categories");
+    let writer = fx.ctx(editor("7").with(&["categories.create", "categories.update"]));
+
+    let hidden = categories.create(&writer, data(json!({"name": "Hidden plan", "slug": "plan"}))).await.unwrap();
+    assert!(hidden.data.is_empty() && hidden.title.is_none() && hidden.labels.is_empty(), "{hidden:?}");
+    assert!(hidden.abilities.is_empty(), "nothing is said about a record out of scope");
+
+    let open = categories.create(&writer, data(json!({"name": "Open", "slug": "open"}))).await.unwrap();
+    assert_eq!(open.data["name"], json!("Open"), "reverse check: in scope, the record is returned");
+    let moved = categories.update(&writer, &open.key, data(json!({"name": "Hidden now"}))).await.unwrap();
+    assert_eq!(moved.key, open.key);
+    assert!(moved.data.is_empty() && moved.title.is_none(), "{moved:?}");
+
+    // Whoever may see hidden categories gets the data.
+    let admin_ctx = fx.ctx(admin());
+    assert_eq!(categories.find(&admin_ctx, &hidden.key).await.unwrap().data["name"], json!("Hidden plan"));
+});
+
+db_test!(lookups_by_key_do_not_reveal_existence_without_the_ability, |db: TestDb| async move {
+    use rustcms_admin::SchemaOperation;
+    let fx = Fixture::new(db).await;
+    let tags = fx.resource("tags");
+    tags.create(&fx.ctx(admin()), data(json!({"slug": "rust", "label": "Rust"}))).await.unwrap();
+
+    let nobody = fx.ctx(editor("9").without_all());
+    for key in ["rust", "missing"] {
+        assert!(matches!(tags.find(&nobody, key).await, Err(AppError::Forbidden)), "find {key}");
+        assert!(matches!(tags.update(&nobody, key, Data::new()).await, Err(AppError::Forbidden)), "update {key}");
+        assert!(matches!(tags.delete(&nobody, key).await, Err(AppError::Forbidden)), "delete {key}");
+        for op in [SchemaOperation::View, SchemaOperation::Edit] {
+            assert!(matches!(tags.schema(&nobody, op, Some(key)).await, Err(AppError::Forbidden)), "schema {key}");
+        }
+    }
+
+    // Reverse check: with the ability, a missing key is still 404.
+    let viewer = fx.ctx(editor("7"));
+    assert!(matches!(tags.find(&viewer, "missing").await, Err(AppError::NotFound)));
+    assert_eq!(tags.find(&viewer, "rust").await.unwrap().data["label"], json!("Rust"));
+
+    // A blind edit (update without view) still works and returns no data.
+    let blind = fx.ctx(editor("9").without_all().with(&["tags.update"]));
+    let updated = tags.update(&blind, "rust", data(json!({"label": "Rust 2"}))).await.unwrap();
+    assert_eq!(updated.key, "rust");
+    assert!(updated.data.is_empty());
+    assert!(matches!(tags.update(&blind, "missing", Data::new()).await, Err(AppError::NotFound)));
+});
+
+pub mod gauge {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "gauges")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i32,
+        pub narrow: f32,
+        pub wide: f64,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+struct Gauges;
+
+impl rustcms_admin::Resource for Gauges {
+    type Entity = gauge::Entity;
+    const SLUG: &'static str = "gauges";
+
+    fn meta() -> rustcms_admin::ResourceMeta {
+        rustcms_admin::ResourceMeta::new("Gauge")
+    }
+
+    fn fields() -> Vec<rustcms_admin::Field> {
+        vec![rustcms_admin::Field::column(gauge::Column::Narrow), rustcms_admin::Field::column(gauge::Column::Wide)]
+    }
+}
+
+db_test!(floats_out_of_f32_range_are_rejected, |db: TestDb| async move {
+    use sea_orm::{ConnectionTrait, Schema};
+    let backend = db.conn().get_database_backend();
+    db.conn().execute(&Schema::new(backend).create_table_from_entity(gauge::Entity)).await.unwrap();
+    let registry = rustcms_admin::Registry::new().register::<Gauges>().finish();
+    let ctx = rustcms_admin::Ctx::new(db.conn().clone(), admin(), registry.clone());
+    let gauges = registry.get("gauges").unwrap();
+
+    let err = gauges.create(&ctx, data(json!({"narrow": 1e100, "wide": 1.0}))).await.unwrap_err();
+    assert_eq!(field_errors(err), vec![("narrow".to_owned(), vec!["is out of range".to_owned()])]);
+
+    // Reverse check: in range for `f32`, and any finite `f64` for `f64`.
+    let created = gauges.create(&ctx, data(json!({"narrow": 1.5, "wide": 1e100}))).await.unwrap();
+    assert_eq!(created.data["narrow"], json!(1.5));
+    assert_eq!(created.data["wide"], json!(1e100));
+});

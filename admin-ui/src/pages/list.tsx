@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { useUncertain } from "@/api/context";
 import { useDeleteRecord, useRecords, useRunAction, useSchema } from "@/api/queries";
 import type { ActionOutcome, ActionSchema, Envelope } from "@/api/types";
-import { ErrorState, Loading, VersionBanner, compatibility } from "@/components/states";
+import { ErrorState, Loading, PausedBanner, VersionBanner, compatibility } from "@/components/states";
 import { Page, PageHeader } from "@/components/layout";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -65,6 +65,15 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   const filtersId = useId();
   const [searchText, setSearchText] = useState(search.search ?? "");
   const debouncedSearch = useDebounced(searchText, 300);
+  // The URL can change without the box (back/forward, a link): the box follows,
+  // unless the change is the one this box made (text typed since then is kept).
+  const urlSearch = search.search ?? "";
+  const [seenSearch, setSeenSearch] = useState(urlSearch);
+  const [pushedSearch, setPushedSearch] = useState<string | null>(null);
+  if (urlSearch !== seenSearch) {
+    setSeenSearch(urlSearch);
+    if (urlSearch !== pushedSearch) setSearchText(urlSearch);
+  }
 
   const setSearch = (changes: Record<string, string | undefined>, resetPage = true) => {
     const next: ListSearch = { ...search };
@@ -77,7 +86,10 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   };
 
   useEffect(() => {
-    if ((search.search ?? "") !== debouncedSearch) setSearch({ search: debouncedSearch || undefined });
+    if (urlSearch !== debouncedSearch) {
+      setPushedSearch(debouncedSearch);
+      setSearch({ search: debouncedSearch || undefined });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch]);
 
@@ -146,14 +158,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
       )} />
       <VersionBanner schema={s} />
       {notice && <Alert variant={notice.variant}>{notice.text}</Alert>}
-      {uncertain && (
-        <Alert variant="warning">
-          Actions are paused until you reload the page and check the result.{" "}
-          <button type="button" className="underline" onClick={() => window.location.reload()}>
-            Reload
-          </button>
-        </Alert>
-      )}
+      <PausedBanner scope={slug} />
 
       <Card>
         <div className="space-y-4 border-b border-border p-4 sm:p-5">

@@ -1,6 +1,7 @@
 # Credential revocation
 
-The contract below is tested row by row (`credential_revocation_table`).
+The contract below is tested row by row (`credential_revocation_table`; the
+`APP_KEY` row by `rotating_the_app_key_signs_everyone_out`).
 
 | Event                          | Current session  | Other sessions | API tokens                     |
 |--------------------------------|------------------|----------------|--------------------------------|
@@ -10,6 +11,7 @@ The contract below is tested row by row (`credential_revocation_table`).
 | User disabled (`RbacService::set_user_active`) | ended | ended   | all revoked                    |
 | User deleted                   | ended            | ended          | deleted                        |
 | One token revoked              | —                | —              | that token                     |
+| `APP_KEY` rotated              | ended            | ended          | kept                           |
 | Roles or permissions changed   | kept             | kept           | kept; new permissions apply on the next request |
 
 Mechanism: account changes bump `users.auth_version` in the same transaction;

@@ -116,7 +116,15 @@ hidden from the schema) for users without that permission.
   visibility rules in `scope()` and return `false` from
   `Policy::view_depends_on_record` to keep SQL pagination.
 - **`scope()`** restricts which records exist for the user. It applies to lists,
-  lookups, writes, actions and relationship options and labels.
+  lookups, writes, actions and relationship options and labels — and to the
+  response of a write: a record the write moved out of the user's scope comes
+  back as its key only.
+- **No existence probing.** Requests by key (`find`, schema of a record, update,
+  delete, actions, options of a record) first ask `Policy::admits(ctx, ability)`;
+  refused, they answer 403 whether or not the key exists. The default policy
+  admits holders of `{slug}.{ability}`. Custom policies admit everyone by default
+  (then a missing key is 404 and a denied record 403): override `admits` when an
+  ability needs a permission regardless of the record.
 - **Relationships:** a `belongs_to` key sent by a client must be visible to that
   user in the target resource, otherwise the request fails with 422.
 

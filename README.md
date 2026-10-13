@@ -62,7 +62,7 @@ docker compose up -d --wait   # PostgreSQL on localhost:55439
 just test-matrix              # Rust tests on SQLite and PostgreSQL
 just test-ui                  # admin SPA unit tests (Node 20+)
 just e2e                      # browser tests against the demo
-just ci                       # everything CI runs (+ `just test-cli`)
+just ci                       # most of CI; also `just test-cli`, `just e2e`, `just msrv`
 ```
 
 - Docs: `docs/` (mdBook) — [getting started](docs/src/getting-started.md),

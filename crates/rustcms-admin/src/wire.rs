@@ -142,7 +142,14 @@ impl FieldKind {
             Self::I64 => vec![Value::BigInt(Some(parse_i64(expect_str(json)?)?))],
             Self::F64 => {
                 let n = json.as_f64().ok_or(DecodeError("must be a number".into()))?;
-                vec![Value::Double(Some(n)), Value::Float(Some(n as f32))]
+                // An `f32` column only takes values that stay finite as `f32`;
+                // without that candidate, `apply` reports the value as out of range.
+                let narrow = n as f32;
+                let mut candidates = vec![Value::Double(Some(n))];
+                if narrow.is_finite() {
+                    candidates.push(Value::Float(Some(narrow)));
+                }
+                candidates
             }
             Self::Bool => vec![Value::Bool(Some(json.as_bool().ok_or(DecodeError("must be true or false".into()))?))],
             Self::Decimal => {

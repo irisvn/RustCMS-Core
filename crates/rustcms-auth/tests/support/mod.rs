@@ -64,12 +64,11 @@ async fn logout_after_reissue(
     headers: axum::http::HeaderMap,
 ) -> AppResult<String> {
     use rustcms_auth::entities::session as entity;
-    use rustcms_auth::secret::sha256_hex;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
     let cookie =
         headers["cookie"].to_str().unwrap().split("rustcms_session=").nth(1).unwrap().split(';').next().unwrap();
-    let a = sha256_hex(cookie);
     let state = app.service::<AuthState>().unwrap();
+    let a = state.session_id(cookie);
     let mut previous = a.clone();
     let mut latest = String::new();
     for _ in 0..2 {
@@ -77,11 +76,11 @@ async fn logout_after_reissue(
             rustcms_auth::session::create_for_user(&state, app.db(), auth.0.user.id, auth.0.user.auth_version).await?;
         entity::Entity::update_many()
             .col_expr(entity::Column::Lineage, sea_orm::sea_query::Expr::value(a.clone()))
-            .filter(entity::Column::Id.eq(sha256_hex(&token)))
+            .filter(entity::Column::Id.eq(state.session_id(&token)))
             .exec(app.db())
             .await?;
         entity::Entity::delete_by_id(previous).exec(app.db()).await?;
-        previous = sha256_hex(&token);
+        previous = state.session_id(&token);
         latest = token;
     }
     session.logout();

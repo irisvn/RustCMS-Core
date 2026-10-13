@@ -30,10 +30,25 @@ db_test!(assignment_needs_its_own_permission, migrate = Migrator, |db: TestDb| a
     let auth = auth(&app);
     let rbac = RbacService::new(app.state().db(), &auth.resolver);
 
-    // users.update alone does not allow assigning roles.
-    let mut updater = principal(&app, ADMIN_GUARD, &seed.editor).await;
-    updater.permissions.remove("roles.assign");
-    forbidden(rbac.assign_role(Actor::User(&updater), seed.member.id, seed.moderator_role.id).await);
+    // users.update alone does not allow assigning roles, even a role whose
+    // permissions the actor holds. Grants live in the database (the service
+    // reloads them), so the actor gets them through a real role.
+    let without = names(&["users.view", "users.update", "posts.view", "posts.delete"]);
+    let mut with = without.clone();
+    with.push("roles.assign".into());
+    for (name, permissions, allowed) in [("updater", without, false), ("assigner", with, true)] {
+        let role = rbac.create_role(Actor::System, ADMIN_GUARD, name, &permissions).await.unwrap();
+        let user = UserFactory::new().create(app.state().db()).await;
+        rbac.assign_role(Actor::System, user.id, role.id).await.unwrap();
+        let actor = principal(&app, ADMIN_GUARD, &user).await;
+        let result = rbac.assign_role(Actor::User(&actor), seed.member.id, seed.moderator_role.id).await;
+        if allowed {
+            result.expect("reverse check: with roles.assign the same assignment works");
+            rbac.revoke_role(Actor::System, seed.member.id, seed.moderator_role.id).await.unwrap();
+        } else {
+            forbidden(result);
+        }
+    }
 
     // roles.assign does not allow assigning a role with permissions the actor lacks (posts.delete).
     let editor = principal(&app, ADMIN_GUARD, &seed.editor).await;

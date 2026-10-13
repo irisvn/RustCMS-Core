@@ -170,3 +170,29 @@ db_test!(failed_migration_rolls_back_and_can_be_retried, |db: TestDb| async move
     failing::Migrator::up(db.conn(), None).await.expect("retry succeeds");
     assert!(has_table(&db, "half_done").await);
 });
+
+// `migrate:fresh` drops every table, including application tables whose foreign
+// keys would refuse the drop (SQLite checks them on `DROP TABLE`, per connection;
+// the parent sorts first, so it is dropped while the child still references it).
+// The configured pool has two connections: the command must not use them.
+db_test!(fresh_drops_tables_with_foreign_keys, |db: TestDb| async move {
+    let config =
+        rustcms_core::config::DatabaseConfig { url: db.url().to_owned(), max_connections: 2, log_statements: false };
+    let conn = rustcms_core::db::connect(&config).await.unwrap();
+    Migrator::up(&conn, None).await.unwrap();
+    for sql in [
+        "CREATE TABLE a_parents (id INTEGER PRIMARY KEY)",
+        "CREATE TABLE b_children (id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES a_parents (id))",
+        "INSERT INTO a_parents (id) VALUES (1)",
+        "INSERT INTO b_children (id, parent_id) VALUES (1, 1)",
+    ] {
+        conn.execute_unprepared(sql).await.unwrap();
+    }
+    UserFactory::new().create(&conn).await;
+    conn.close().await.unwrap();
+
+    rustcms_core::db::migrate_fresh::<Migrator>(&config).await.expect("fresh succeeds with foreign keys on");
+    assert!(!has_table(&db, "b_children").await && !has_table(&db, "a_parents").await);
+    assert!(has_table(&db, "users").await);
+    assert!(user::Entity::find().all(db.conn()).await.unwrap().is_empty());
+});

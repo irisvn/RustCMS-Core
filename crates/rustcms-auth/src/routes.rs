@@ -7,7 +7,6 @@ use axum::Router;
 use axum::extract::State;
 use axum::http::{Method, StatusCode};
 use axum::routing::{any, delete, get, post};
-use chrono::{Duration, Utc};
 use rustcms_core::models::user;
 use rustcms_core::{AppError, AppResult, AppState, ClientIp, Json, Principal, ValidationErrors};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -270,9 +269,13 @@ async fn issue_token(
     if input.abilities.len() > MAX_ABILITIES || input.abilities.iter().any(|a| a.is_empty() || a.len() > 255) {
         errors.add("abilities", format!("must be at most {MAX_ABILITIES} non-empty names"));
     }
+    let expires_at = input.expires_in_days.map(tokens::expiry_in_days);
+    if expires_at.is_some_and(|e| e.is_none()) {
+        errors.add("expires_in_days", format!("must be between 1 and {}", tokens::MAX_LIFETIME_DAYS));
+    }
     errors.into_result()?;
+    let expires_at = expires_at.flatten();
     let user = attempt(&app, &auth, ip, &input.email, input.password).await?;
-    let expires_at = input.expires_in_days.map(|days| Utc::now() + Duration::days(i64::from(days)));
     // A concurrent password change between verification and insert means the
     // credentials no longer match: answer as for a wrong password.
     let issued =

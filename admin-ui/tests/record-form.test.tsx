@@ -131,6 +131,19 @@ describe("edit form", () => {
     expect(recordFetches).toBe(0);
   });
 
+  it("keeps a blind draft when a refetch grants view", async () => {
+    viewable = false;
+    const { queryClient } = mount("/r/gadgets/records/1/edit");
+    await userEvent.type(await screen.findByLabelText("Notes"), "draft");
+    viewable = true;
+    await act(() => queryClient.invalidateQueries());
+    await waitFor(() => expect(screen.getByLabelText("Notes")).toHaveValue("draft"));
+    expect(screen.getByText(/may update this record but not view it/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(patches).toEqual([{ notes: "draft" }]));
+    expect(recordFetches).toBe(0);
+  });
+
   it("never shows data produced for another account", async () => {
     const assign = vi.fn();
     vi.stubGlobal("location", { ...window.location, assign });

@@ -1,8 +1,10 @@
 import { type FormEvent, useState } from "react";
 import { ApiError } from "@/api/client";
-import { useChangePassword, useLogoutOthers } from "@/api/system";
+import { useUncertain } from "@/api/context";
+import { ACCOUNT, useChangePassword, useLogoutOthers } from "@/api/system";
 import { usePanel } from "@/api/queries";
 import { Page, PageHeader } from "@/components/layout";
+import { PausedBanner } from "@/components/states";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +13,11 @@ import { Input, Label } from "@/components/ui/input";
 type Notice = { variant: "default" | "destructive"; text: string } | null;
 
 function errorsOf(e: unknown): { fields: Record<string, string[]>; text: string | null } {
-  if (e instanceof ApiError && e.status === 422) return { fields: e.fieldErrors, text: null };
+  if (e instanceof ApiError && e.status === 422) {
+    // Form-level messages have no field to sit under; with neither, the message says why.
+    const text = e.formErrors.length ? e.formErrors.join(" ") : Object.keys(e.fieldErrors).length ? null : e.message;
+    return { fields: e.fieldErrors, text };
+  }
   return { fields: {}, text: e instanceof Error ? e.message : "Something went wrong." };
 }
 
@@ -26,6 +32,8 @@ export function AccountPage() {
   const [pwFields, setPwFields] = useState<Record<string, string[]>>({});
   const [otherFields, setOtherFields] = useState<Record<string, string[]>>({});
   const [notice, setNotice] = useState<Notice>(null);
+  // After a password change with an unknown outcome, repeating it could fail confusingly or sign out.
+  const paused = useUncertain(ACCOUNT);
 
   const submitPassword = async (e: FormEvent) => {
     e.preventDefault();
@@ -63,6 +71,7 @@ export function AccountPage() {
     <Page>
       <PageHeader title="Your account" description="Manage your profile, password, and signed-in sessions."
         eyebrow="Settings" />
+      <PausedBanner scope={ACCOUNT} />
       {notice && <Alert variant={notice.variant}>{notice.text}</Alert>}
       <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <Card className="min-w-0">
@@ -123,7 +132,7 @@ export function AccountPage() {
                   {error(pwFields, "password_confirmation", "confirm-new-password-error")}
                 </div>
                 <div className="border-t border-border pt-5">
-                  <Button type="submit" disabled={change.isPending}>
+                  <Button type="submit" disabled={paused || change.isPending}>
                     Change password
                   </Button>
                 </div>
@@ -148,7 +157,7 @@ export function AccountPage() {
                   {error(otherFields, "confirm_password", "confirm-password-error")}
                 </div>
                 <div className="border-t border-border pt-5">
-                  <Button type="submit" variant="outline" disabled={!confirmPw || others.isPending}>
+                  <Button type="submit" variant="outline" disabled={paused || !confirmPw || others.isPending}>
                     Sign out other sessions
                   </Button>
                 </div>

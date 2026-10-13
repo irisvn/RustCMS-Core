@@ -4,8 +4,13 @@ pg_url := env_var_or_default("RUSTCMS_TEST_PG", "postgres://postgres:postgres@lo
 default:
     @just --list
 
-# Everything CI runs, except the slow scaffold test (`just test-cli`) and `just e2e`.
+# Most of CI. Not included: the slow scaffold test (`just test-cli`), `just e2e`,
+# `just msrv` (needs the 1.94 toolchain) and the security audit (cargo-deny, npm audit).
 ci: lint features test-matrix doc generated test-ui
+
+# Compiles with the declared minimum Rust version (`rustup toolchain install 1.94`).
+msrv:
+    cargo +1.94 check --workspace --all-targets
 
 lint:
     cargo fmt --all --check

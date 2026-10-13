@@ -1,6 +1,7 @@
 import { Ban, FileQuestion, Loader2, TriangleAlert } from "lucide-react";
 import type * as React from "react";
 import { ApiError } from "@/api/client";
+import { useUncertain } from "@/api/context";
 import { Alert } from "@/components/ui/alert";
 import { SCHEMA_VERSION, VOCABULARY_VERSION, type ResourceSchema } from "@/api/types";
 
@@ -56,6 +57,20 @@ export function VersionBanner({ schema }: { schema: ResourceSchema }) {
     <Alert variant="warning">
       The admin bundle is older than the server; update it to use every feature.
       {readOnly && " Editing is disabled until then."}
+    </Alert>
+  );
+}
+
+/** Shown while writes of `scope` are paused after a write with an unknown outcome. */
+export function PausedBanner({ scope }: { scope: string }) {
+  const uncertain = useUncertain(scope);
+  if (!uncertain) return null;
+  return (
+    <Alert variant="warning">
+      Actions are paused until you reload the page and check the result.{" "}
+      <button type="button" className="underline" onClick={() => window.location.reload()}>
+        Reload
+      </button>
     </Alert>
   );
 }

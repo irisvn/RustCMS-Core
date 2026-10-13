@@ -25,7 +25,7 @@ export const isNumericString = (kind: WireKind) => kind === "i64" || kind === "d
 export function checkText(kind: WireKind, text: string): string | null {
   switch (kind) {
     case "i32":
-      return /^-?\d+$/.test(text) && Math.abs(Number(text)) <= 2 ** 31 ? null : "must be an integer";
+      return /^-?\d+$/.test(text) && Number(text) >= -(2 ** 31) && Number(text) <= 2 ** 31 - 1 ? null : "must be an integer";
     case "i64":
       return I64.test(text) ? null : "must be an integer";
     case "f64":

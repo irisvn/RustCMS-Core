@@ -194,6 +194,12 @@ impl<R: Resource> ResourceAdapter<R> {
         Ok(unique.into_iter().filter_map(|k| self.pk_kind.decode_key(k).ok()).collect())
     }
 
+    /// Refuses before any lookup by key when the policy does not admit
+    /// `ability` at all (see [`Policy::admits`]).
+    async fn admit(&self, ctx: &Ctx, ability: &str) -> AppResult<()> {
+        if self.policy.admits(ctx, ability).await { Ok(()) } else { Err(AppError::Forbidden) }
+    }
+
     async fn find_model<C: ConnectionTrait>(&self, ctx: &Ctx, conn: &C, key: &str) -> AppResult<Model<R>> {
         let key = self.pk_kind.decode_key(key).map_err(|_| AppError::NotFound)?;
         R::scope(Entity::<R>::find(), ctx).filter(self.pk.eq(key)).one(conn).await?.ok_or(AppError::NotFound)
@@ -307,6 +313,11 @@ impl<R: Resource> ResourceAdapter<R> {
                 }
             };
             if !candidates.into_iter().any(|v| model.try_set(column.column, v).is_ok()) {
+                // Only a number too large for an `f32` column (see `FieldKind::decode`).
+                if column.kind == FieldKind::F64 {
+                    errors.add(name.as_str(), "is out of range");
+                    continue;
+                }
                 return Err(AppError::internal(format!("`{}`: column `{name}` does not match its wire kind", R::SLUG)));
             }
         }
@@ -676,12 +687,28 @@ impl<R: Resource> ResourceAdapter<R> {
                 .saturating_sub(RESPONSE_MARGIN)
                 .min(POST_COMMIT_HYDRATION)
         });
-        let hydrated = tokio::time::timeout(budget, self.envelopes(ctx, vec![model])).await;
+        let key_only = |key: String| Envelope {
+            key,
+            title: None,
+            abilities: BTreeMap::new(),
+            data: Data::new(),
+            labels: BTreeMap::new(),
+        };
+        // Re-read in scope: a write may move the record out of the user's scope
+        // (e.g. a new owner), and then the response shows nothing of it.
+        let hydrate = async {
+            match self.find_model(ctx, &ctx.db, &key).await {
+                Ok(model) => Ok(self.envelopes(ctx, vec![model]).await?.remove(0)),
+                Err(AppError::NotFound) => Ok(key_only(key.clone())),
+                Err(err) => Err(err),
+            }
+        };
+        let hydrated = tokio::time::timeout(budget, hydrate).await;
         match hydrated.unwrap_or_else(|_| Err(AppError::internal("post-commit hydration timed out"))) {
-            Ok(mut envelopes) => envelopes.remove(0),
+            Ok(envelope) => envelope,
             Err(err) => {
                 tracing::warn!(resource = R::SLUG, %key, %err, "write committed; response without record data");
-                Envelope { key, title: None, abilities: BTreeMap::new(), data: Data::new(), labels: BTreeMap::new() }
+                key_only(key)
             }
         }
     }
@@ -933,6 +960,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         abilities.insert("viewAny", self.policy.allows(ctx, ability::VIEW_ANY, None).await);
         abilities.insert("create", self.policy.allows(ctx, ability::CREATE, None).await);
         if let Some(key) = key {
+            let admission = if op == SchemaOperation::Edit { ability::UPDATE } else { ability::VIEW };
+            self.admit(ctx, admission).await?;
             let record = Self::record(&self.find_model(ctx, &ctx.db, key).await?);
             for name in [ability::VIEW, ability::UPDATE, ability::DELETE] {
                 abilities.insert(name, self.policy.allows(ctx, name, Some(&record)).await);
@@ -1021,6 +1050,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         // still decide which records appear.
         let usable = match record {
             Some(key) => {
+                if !self.policy.admits(ctx, ability::UPDATE).await && !self.policy.admits(ctx, ability::VIEW).await {
+                    return Err(AppError::Forbidden);
+                }
                 let record = Self::record(&self.find_model(ctx, &ctx.db, key).await?);
                 (field.can_write(Operation::Update, ctx)
                     && self.policy.allows(ctx, ability::UPDATE, Some(&record)).await)
@@ -1132,6 +1164,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     }
 
     async fn find(&self, ctx: &Ctx, key: &str) -> AppResult<Envelope> {
+        self.admit(ctx, ability::VIEW).await?;
         let model = self.find_model(ctx, &ctx.db, key).await?;
         if !self.policy.allows(ctx, ability::VIEW, Some(&Self::record(&model))).await {
             return Err(AppError::Forbidden);
@@ -1167,6 +1200,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     }
 
     async fn update(&self, ctx: &Ctx, key: &str, input: Data) -> AppResult<Envelope> {
+        self.admit(ctx, ability::UPDATE).await?;
         let input = self.accept_input(ctx, Operation::Update, input)?;
         let (txn, wctx) = self.begin(ctx).await?;
         let model = self.find_authorized_locked(&wctx, &txn, key, ability::UPDATE).await?;
@@ -1185,6 +1219,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     }
 
     async fn delete(&self, ctx: &Ctx, key: &str) -> AppResult<()> {
+        self.admit(ctx, ability::DELETE).await?;
         let (txn, wctx) = self.begin(ctx).await?;
         let model = self.find_authorized_locked(&wctx, &txn, key, ability::DELETE).await?;
         Entity::<R>::delete_many()
@@ -1203,6 +1238,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if action.required_permission.is_some_and(|p| !ctx.can(p)) {
             return Err(AppError::Forbidden);
         }
+        self.admit(ctx, action.ability).await?;
         let (txn, wctx) = self.begin(ctx).await?;
         // Lock only records the user may act on, then re-read just those under
         // the lock: a record that became visible meanwhile is never processed

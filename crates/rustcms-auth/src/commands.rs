@@ -2,7 +2,6 @@
 
 use anyhow::{Context, bail};
 use async_trait::async_trait;
-use chrono::{Duration, Utc};
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use rustcms_core::models::user;
 use rustcms_core::{AppCommand, AppState};
@@ -46,6 +45,9 @@ impl AppCommand for MakeUser {
         let password = arg(args, "password").cloned().unwrap_or_else(|| random_string(20));
         if password.chars().count() < auth.config.password_min_length {
             bail!("password must be at least {} characters", auth.config.password_min_length);
+        }
+        if password.len() > crate::routes::MAX_PASSWORD_LEN {
+            bail!("password may not be longer than {} bytes", crate::routes::MAX_PASSWORD_LEN);
         }
         let new = NewUser {
             name: arg(args, "name").map_or("", String::as_str),
@@ -93,8 +95,8 @@ impl AppCommand for TokenCreate {
             .arg(
                 Arg::new("expires-days")
                     .long("expires-days")
-                    .value_parser(clap::value_parser!(u32))
-                    .help("Lifetime in days"),
+                    .value_parser(clap::value_parser!(u32).range(1..=i64::from(crate::tokens::MAX_LIFETIME_DAYS)))
+                    .help("Lifetime in days (1 to 3650)"),
             )
     }
 
@@ -108,7 +110,10 @@ impl AppCommand for TokenCreate {
         let abilities: Vec<String> = arg(args, "abilities")
             .map(|a| a.split(',').map(str::trim).filter(|a| !a.is_empty()).map(str::to_owned).collect())
             .unwrap_or_default();
-        let expires_at = args.get_one::<u32>("expires-days").map(|d| Utc::now() + Duration::days(i64::from(*d)));
+        let expires_at = match args.get_one::<u32>("expires-days") {
+            Some(days) => Some(crate::tokens::expiry_in_days(*days).context("--expires-days is out of range")?),
+            None => None,
+        };
         let name = arg(args, "name").cloned().unwrap_or_default();
         let issued = crate::tokens::issue(state.db(), user.id, &name, &abilities, expires_at).await?;
         println!("{}", issued.plain_text);

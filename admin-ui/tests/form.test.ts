@@ -103,6 +103,14 @@ describe("form values", () => {
     expect(payloadOf(inputs, { ...defaultValues(inputs), token: "0199d3a4-1b2c-7d3e-8f40-123456789abc" })).toHaveProperty("token");
   });
 
+  it("never blocks a submit on a hidden input the user cannot fill", async () => {
+    const token = { ...input(createSchema, "token"), rules: [{ rule: "required" }] } as InputSchema;
+    expect((await zodSchema([token]).safeParseAsync({ token: "" })).success).toBe(true);
+    // Reverse check: the same rule on a visible input is enforced.
+    const visible = { ...token, type: "text_input" } as InputSchema;
+    expect((await zodSchema([visible]).safeParseAsync({ token: "" })).success).toBe(false);
+  });
+
   it("never submits disabled or unknown inputs", () => {
     const fake: InputSchema[] = [
       { ...input(editSchema, "name"), disabled: true },

@@ -75,6 +75,25 @@ it("connects password validation errors to their matching input", async () => {
   expect(screen.getByLabelText("Current password")).not.toHaveAttribute("aria-invalid", "true");
 });
 
+it("shows form-level validation messages", async () => {
+  server.use(http.post("*/admin/api/auth/password", () =>
+    HttpResponse.json({ message: "The given data was invalid.", code: "validation_failed", errors: {}, formErrors: ["Your account changed meanwhile."] }, { status: 422 }),
+  ));
+  mount();
+  await userEvent.type(await screen.findByLabelText("New password", { selector: "#new-password" }), "long enough");
+  await userEvent.click(screen.getByRole("button", { name: "Change password" }));
+  expect(await screen.findByText("Your account changed meanwhile.")).toBeInTheDocument();
+});
+
+it("pauses account changes after one with an unknown outcome", async () => {
+  server.use(http.post("*/admin/api/auth/password", () => new HttpResponse(null, { status: 504 })));
+  mount();
+  await userEvent.type(await screen.findByLabelText("New password", { selector: "#new-password" }), "long enough");
+  await userEvent.click(screen.getByRole("button", { name: "Change password" }));
+  expect(await screen.findByText(/Actions are paused/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Change password" })).toBeDisabled();
+});
+
 it("a 401 for a request sent before a password change does not sign the tab out", async () => {
   const { session, toLogin } = mount();
   await screen.findByLabelText("Current password");

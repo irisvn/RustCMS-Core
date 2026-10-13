@@ -1,5 +1,6 @@
 //! Random secrets, hashing and constant-time comparison.
 
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -13,6 +14,13 @@ pub fn random_string(len: usize) -> String {
 /// Lowercase hex SHA-256.
 pub fn sha256_hex(input: &str) -> String {
     hex::encode(Sha256::digest(input.as_bytes()))
+}
+
+/// Lowercase hex HMAC-SHA256 of `input` under `key`.
+pub fn hmac_sha256_hex(key: &[u8], input: &str) -> String {
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC takes keys of any length");
+    mac.update(input.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
 }
 
 /// Constant-time string equality.
@@ -34,5 +42,10 @@ mod tests {
         assert!(ct_eq("same", "same"));
         assert!(!ct_eq("same", "sane"));
         assert!(!ct_eq("same", "same!"));
+        // RFC 4231, test case 1.
+        assert_eq!(
+            hmac_sha256_hex(&[0x0b; 20], "Hi There"),
+            "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+        );
     }
 }

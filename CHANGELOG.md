@@ -6,6 +6,42 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- Write responses re-read the record in scope: a create or update that moves a
+  record out of the user's `scope()` returns only its key.
+- `Policy::admits(ctx, ability)` is checked before any lookup by key; the default
+  policy refuses users without `{slug}.{ability}` with 403 whether or not the key
+  exists (no existence probing). Blind edits (update without view) still work.
+- **Breaking:** admin session ids are HMAC-SHA256 of the cookie keyed with
+  `APP_KEY` (`AuthState::new` takes the key; `AuthState::session_id`). Rotating
+  `APP_KEY` signs every admin out, as `key:generate` always said. Upgrading
+  signs existing sessions out once. API tokens are unaffected.
+- `make:resource --generate` checks secret and owner column names under both the
+  Rust field name and `column_name`.
+- Token lifetimes are limited to 1–3,650 days (`expires_in_days` → 422,
+  `token:create --expires-days`); huge values no longer panic.
+- Numbers too large for an `f32` column are rejected (422) instead of stored as
+  infinity.
+
+### Fixed
+- The session cookie no longer carries `Max-Age` and is not re-sent on sliding
+  renewal (expiry is enforced by the server), so a late response cannot restore
+  a cookie replaced by a newer one.
+- `make:resource --generate` emits a required input for natural `String` keys;
+  `rustcms new` refuses Rust keywords as package names; `make:user` enforces the
+  maximum password length.
+- Admin UI: a blind-edit draft survives a refetch that grants `view`; the list
+  search box follows back/forward; Account shows form-level errors and the
+  paused-writes banner (as do System pages); read-only details label boolean
+  select options and mask password-mode values; hidden required inputs no longer
+  block submit; the i32 check accepts exactly `-2^31..2^31-1`.
+
+### Changed
+- MSRV is Rust 1.94 (required by SeaORM 2.0.4), checked in CI (`just msrv`).
+- `rustcms_core::db::migrate_fresh` backs `migrate:fresh` (one connection, so
+  SQLite foreign keys stay off for every drop).
+- Docs: revocation semantics, `just ci` scope, review report in `docs/reports/`.
+
 ### Changed
 - Admin UI redesigned with a monochrome, shadcn-block-inspired layout: collapsible
   desktop sidebar, native mobile navigation drawer, breadcrumbs, authorized

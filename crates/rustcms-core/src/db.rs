@@ -23,6 +23,24 @@ pub async fn connect(config: &DatabaseConfig) -> Result<DatabaseConnection, DbEr
     Database::connect(options).await
 }
 
+/// Drops every table and runs all migrations (`migrate:fresh`).
+///
+/// SQLite checks foreign keys on `DROP TABLE`: dropping every table in any
+/// order needs them off. The pragma is per connection, so everything runs on
+/// one connection (a pool could run the drops elsewhere).
+pub async fn migrate_fresh<M: sea_orm_migration::MigratorTrait>(config: &DatabaseConfig) -> Result<(), DbErr> {
+    let db = connect(&DatabaseConfig { max_connections: 1, ..config.clone() }).await?;
+    let sqlite = db.get_database_backend() == DbBackend::Sqlite;
+    if sqlite {
+        db.execute_unprepared("PRAGMA foreign_keys = OFF").await?;
+    }
+    let result = M::fresh(&db).await;
+    if sqlite {
+        db.execute_unprepared("PRAGMA foreign_keys = ON").await?;
+    }
+    result
+}
+
 /// Returns `true` when the database answers a trivial query.
 pub async fn ping(db: &DatabaseConnection) -> bool {
     db.execute_unprepared("SELECT 1").await.is_ok()

@@ -25,7 +25,11 @@ async fn create_post(auth: Auth, Json(input): Json<NewPost>) -> AppResult<Status
 
 - The cookie (`rustcms_session`, `HttpOnly`, `SameSite=Lax`, `Path=<admin_path>`,
   `Secure` when `APP_URL` is https) holds 43 random characters. The database
-  stores only their SHA-256.
+  stores only their HMAC-SHA256 keyed with `APP_KEY`: rotating the key
+  (`key:generate --force`) signs every admin out (API tokens are kept).
+- The cookie has no `Max-Age`: it lasts until the browser closes, and expiry is
+  enforced by the server. It is sent only when its value changes (sign-in,
+  re-issue, sign-out), so a slow response can never restore a replaced cookie.
 - The session id is regenerated at sign-in and whenever credentials change.
 - Sessions expire after `session_lifetime_minutes` of inactivity; `serve` deletes
   expired rows hourly (`session:prune` does it on demand).

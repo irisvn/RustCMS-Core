@@ -123,11 +123,20 @@ fn generate(columns: &[Column], belongs_to: &BTreeMap<String, String>) -> Genera
     };
     for column in columns {
         let name = &column.db_name;
+        // Checks look at both names: `#[sea_orm(column_name)]` may rename either.
+        let names = [column.name.as_str(), name.as_str()];
+        let col = format!("Column::{}", pascal_case(&column.name));
         if column.primary_key {
             // Database-generated integer keys need nothing; others are declared.
             match column.ty.as_str() {
                 "i32" | "i64" => {}
-                "String" => out.key = Some("KeyStrategy::Natural".into()),
+                "String" => {
+                    // Natural keys are typed in on create (the edit form omits them).
+                    out.key = Some("KeyStrategy::Natural".into());
+                    out.fields.push(format!("Field::column({col}).required().searchable().sortable(),"));
+                    out.columns.push(format!("TextColumn::make(\"{name}\"),"));
+                    out.form.push(format!("TextInput::make(\"{name}\"),"));
+                }
                 _ => out.warnings.push(format!(
                     "primary key `{name}` ({}): set `.key(KeyStrategy::AppGenerated(…))` in meta() unless the database generates it",
                     column.ty
@@ -135,10 +144,10 @@ fn generate(columns: &[Column], belongs_to: &BTreeMap<String, String>) -> Genera
             }
             continue;
         }
-        if MANAGED.contains(&name.as_str()) {
+        if names.iter().any(|n| MANAGED.contains(n)) {
             continue;
         }
-        if SENSITIVE.iter().any(|s| name.contains(s)) {
+        if SENSITIVE.iter().any(|s| names.iter().any(|n| n.contains(s))) {
             out.warnings.push(format!("`{name}` looks secret: not exposed (add it by hand if needed, as write-only)"));
             continue;
         }
@@ -146,9 +155,8 @@ fn generate(columns: &[Column], belongs_to: &BTreeMap<String, String>) -> Genera
             out.warnings.push(format!("`{name}`: type `{}` is not supported by the admin panel; skipped", column.ty));
             continue;
         }
-        let col = format!("Column::{}", pascal_case(&column.name));
         let mut field = format!("Field::column({col})");
-        if OWNERS.contains(&name.as_str()) && !belongs_to.contains_key(name) {
+        if names.iter().any(|n| OWNERS.contains(n)) && !belongs_to.contains_key(name) {
             // Shown, never written by clients: set it in `mutate_before_create`.
             out.fields
                 .push(format!("{field}.guarded().readable(|_| true), // set by the server (mutate_before_create)"));
@@ -445,7 +453,21 @@ impl ActiveModelBehavior for ActiveModel {}
         let model = "pub struct Model {\n    #[sea_orm(primary_key, auto_increment = false)]\n    pub slug: String,\n    pub label: String,\n}\n";
         let g = generate(&parse_model(model).unwrap(), &BTreeMap::new());
         assert_eq!(g.key.as_deref(), Some("KeyStrategy::Natural"));
-        assert!(!g.form.iter().any(|f| f.contains("slug")));
+        assert!(g.form.iter().any(|f| f.contains("TextInput::make(\"slug\")")), "the key is typed in: {:?}", g.form);
+        assert!(g.fields.iter().any(|f| f.contains("Column::Slug).required()")), "{:?}", g.fields);
+        assert_eq!(g.title.as_deref(), Some("label"), "the title stays a non-key column");
+    }
+
+    #[test]
+    fn renamed_columns_are_checked_under_both_names() {
+        let model = "pub struct Model {\n    #[sea_orm(primary_key)]\n    pub id: i32,\n    pub title: String,\n    #[sea_orm(column_name = \"pw\")]\n    pub password_hash: String,\n    #[sea_orm(column_name = \"api_key\")]\n    pub credential: String,\n    #[sea_orm(column_name = \"writer\")]\n    pub author_id: i64,\n    #[sea_orm(column_name = \"user_id\")]\n    pub writer: i64,\n}\n";
+        let g = generate(&parse_model(model).unwrap(), &BTreeMap::new());
+        let all = format!("{}\n{}", g.fields.join("\n"), g.form.join("\n"));
+        assert!(!all.contains("PasswordHash") && !all.contains("\"pw\""), "{all}");
+        assert!(!all.contains("Credential") && !all.contains("api_key"), "{all}");
+        assert!(g.fields.iter().any(|f| f.contains("Column::AuthorId).guarded()")), "{all}");
+        assert!(g.fields.iter().any(|f| f.contains("Column::Writer).guarded()")), "{all}");
+        assert!(!g.form.iter().any(|f| f.contains("writer") || f.contains("user_id")), "{all}");
     }
 
     fn project() -> (tempfile::TempDir, Project) {

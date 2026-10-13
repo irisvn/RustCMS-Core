@@ -155,7 +155,7 @@ Issue an API token for a user (printed once)
 | `--email` | Owner email |
 | `--name` | Token label |
 | `--abilities` | Comma-separated abilities (default: `*`) |
-| `--expires-days` | Lifetime in days |
+| `--expires-days` | Lifetime in days (1 to 3650) |
 
 ### `permission:sync`
 
