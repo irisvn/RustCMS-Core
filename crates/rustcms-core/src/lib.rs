@@ -11,6 +11,7 @@ pub mod http;
 pub mod key;
 pub mod models;
 pub mod principal;
+pub mod storage;
 pub mod telemetry;
 
 pub use app::{App, AppBuilder, AppCommand, AppState, Inject, RouteInfo, ServiceProvider};

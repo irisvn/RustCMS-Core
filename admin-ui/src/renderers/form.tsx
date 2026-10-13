@@ -22,6 +22,9 @@ import {
   type FormValues,
 } from "@/schema/form";
 import { RelationSelect, RelationValue } from "./relation-select";
+import { FileUploadWidget, MediaThumb } from "./media";
+import { RichEditorWidget, RichTextView } from "./rich-text";
+import { asDocument } from "@/lib/rich-text";
 
 export interface FormContext {
   slug: string;
@@ -35,6 +38,8 @@ export interface FormContext {
   onUserChange?: (name: string) => void;
   /** Submit attempts so far: each failed one opens the tab of its first error. */
   submitCount?: number;
+  /** An input starts or ends background work (an upload): no saving meanwhile. */
+  onBusy?: (name: string, busy: boolean) => void;
 }
 
 export const KNOWN_INPUTS = KNOWN_INPUT_TYPES;
@@ -201,6 +206,11 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
       // Option labels first: a select may offer booleans with their own labels.
       const option = component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(value));
       content = option?.label ?? (typeof value === "boolean" ? (value ? "Yes" : "No") : readOnlyText(value));
+    } else if (component.type === "file_upload" && (typeof value === "string" || Array.isArray(value))) {
+      const ids = (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === "string");
+      content = <div className="flex flex-wrap gap-3">{ids.map((id) => <MediaThumb key={id} id={id} />)}</div>;
+    } else if (component.type === "rich_editor" && asDocument(value)) {
+      content = <RichTextView doc={asDocument(value)!} />;
     } else if (component.type === "key_value" && isTextObject(value)) {
       const entries = Object.entries(value);
       content = entries.length === 0 ? <span className="text-muted-foreground">No entries</span> : (
@@ -398,6 +408,10 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
           ))}
         </NativeSelect>
       );
+    case "file_upload":
+      return <FileUploadWidget id={id} input={input} value={value} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} onBusy={(busy) => ctx.onBusy?.(input.name, busy)} />;
+    case "rich_editor":
+      return <RichEditorWidget id={id} label={input.label} value={text} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} nullable={input.nullable} onBusy={(busy) => ctx.onBusy?.(input.name, busy)} />;
     case "key_value":
       return <KeyValueEditor id={id} label={input.label} nullable={input.nullable} value={value} onChange={onChange} onBlur={onBlur} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
     default:

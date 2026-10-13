@@ -20,6 +20,8 @@ errors included, is `Cache-Control: private, no-store`; unknown paths under
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
 | POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing}` |
+| POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (media library enabled) |
+| GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](admin/users-roles.md) |
 
@@ -60,6 +62,11 @@ kinds that are not nullable, `""`) and client `rules` (`required`, `max_length`
 in characters); the server re-validates everything. List pages request
 `operation=view` without a key. Inputs marked `writeOnly` (writable but not readable, e.g. a
 password) carry no current value; omit them from the payload to keep the stored value.
+
+Vocabulary 3 adds `file_upload` inputs (`media: {multiple, maxItems, accept,
+maxSize?}`; the value is a media id, or a list of ids) and `rich_editor`
+inputs (the value is a rich text document, see
+[Media, uploads & rich text](admin/media.md)).
 
 Vocabulary 2 adds `key_value` inputs (a JSON object of strings; rules
 `max_items` and `max_length` per key and value) and the `tabs` layout, whose

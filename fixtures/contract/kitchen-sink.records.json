@@ -23,6 +23,7 @@
         "local_at": "2026-10-12T09:30:00",
         "name": "Widget",
         "notes": "Line one\nLine two",
+        "photo": null,
         "price": "10.50",
         "ratio": 0.5,
         "serial": "9007199254740993",

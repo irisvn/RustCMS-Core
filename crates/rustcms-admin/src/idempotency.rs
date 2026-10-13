@@ -159,6 +159,15 @@ pub(crate) async fn complete<C: ConnectionTrait>(txn: &C, claim: &Claim, result:
     Ok(())
 }
 
+/// The committed result for `claim`, if any (outside a claim: e.g. before
+/// storing an upload). The same key with another request is a 422.
+pub(crate) async fn existing<C: ConnectionTrait>(db: &C, claim: &Claim) -> AppResult<Option<Value>> {
+    match entity::Entity::find_by_id(claim.id.clone()).one(db).await? {
+        Some(row) if row.expires_at > Utc::now() && row.result.is_some() => receipt(db, claim).await.map(Some),
+        _ => Ok(None),
+    }
+}
+
 /// The committed result for `claim`. The same key with another request is a 422.
 pub(crate) async fn receipt<C: ConnectionTrait>(db: &C, claim: &Claim) -> AppResult<Value> {
     let row = entity::Entity::find_by_id(claim.id.clone()).one(db).await?.ok_or(AppError::Conflict {

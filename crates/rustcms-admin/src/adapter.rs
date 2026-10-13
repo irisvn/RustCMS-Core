@@ -142,6 +142,28 @@ impl<R: Resource> ResourceAdapter<R> {
             );
         }
         check_layouts(slug, &form.components, None);
+        for field in &fields {
+            assert!(
+                !field.rich_text || columns[&field.name].kind == FieldKind::Json,
+                "resource `{slug}`: rich text field `{}` needs a JSON column",
+                field.name
+            );
+            // A default would be stored without passing the reference checks.
+            assert!(
+                !(field.rich_text || field.media.is_some()) || columns[&field.name].default.is_none(),
+                "resource `{slug}`: media and rich text field `{}` may not have a column default",
+                field.name
+            );
+            if let Some(rule) = &field.media {
+                let expected = if rule.multiple { FieldKind::Json } else { FieldKind::Uuid };
+                assert!(
+                    columns[&field.name].kind == expected,
+                    "resource `{slug}`: media field `{}` needs a {} column",
+                    field.name,
+                    if rule.multiple { "JSON" } else { "UUID" }
+                );
+            }
+        }
         // Key/value fields: declared on the field, or implied by a `KeyValue` input.
         // Either way the bounds hold on every write, whatever the form shows.
         let inputs: HashSet<&str> =
@@ -306,6 +328,20 @@ impl<R: Resource> ResourceAdapter<R> {
             .collect())
     }
 
+    /// A rich text field holds a valid document.
+    fn check_rich_text(&self, name: &str, value: &serde_json::Value, errors: &mut ValidationErrors) -> bool {
+        if value.is_null() || !self.field(name).is_some_and(|f| f.rich_text) {
+            return true;
+        }
+        match crate::rich_text::parse(value) {
+            Ok(_) => true,
+            Err(e) => {
+                errors.add(name, e.0);
+                false
+            }
+        }
+    }
+
     /// A key/value field holds an object of strings within its bounds.
     fn check_key_value(&self, name: &str, value: &serde_json::Value, errors: &mut ValidationErrors) -> bool {
         let Some(&(max_items, max_length)) = self.key_values.get(name) else { return true };
@@ -351,7 +387,8 @@ impl<R: Resource> ResourceAdapter<R> {
                 }
             } else if let Err(e) = column.kind.decode(value) {
                 errors.add(name.as_str(), e.0);
-            } else if !self.check_key_value(name, value, &mut errors) {
+            } else if !self.check_key_value(name, value, &mut errors) || !self.check_rich_text(name, value, &mut errors)
+            {
             } else if let (Some(max), Some(text)) = (field.max_length, value.as_str())
                 && text.chars().count() > max
             {
@@ -367,6 +404,104 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         errors.into_result()?;
         Ok(input)
+    }
+
+    /// The final check of what a write stores (after hooks): related records
+    /// and media must be visible to the user, media must match its field.
+    async fn check_written(&self, ctx: &Ctx, txn: &DatabaseTransaction, data: &Data) -> AppResult<()> {
+        self.check_relations(ctx, txn, data).await?;
+        self.check_media(ctx, txn, data).await
+    }
+
+    /// Media references: well-formed, existing, not trashed, visible to the
+    /// user, and of an accepted type and size. The referenced rows are locked
+    /// (shared, in id order) so they cannot be trashed meanwhile.
+    async fn check_media(&self, ctx: &Ctx, txn: &DatabaseTransaction, data: &Data) -> AppResult<()> {
+        use crate::media::entity as media;
+        let mut errors = ValidationErrors::new();
+        let images_only = crate::field::MediaRule {
+            multiple: true,
+            max_items: usize::MAX,
+            accept: vec!["image/*".to_owned()],
+            max_size: None,
+        };
+        let mut wanted: Vec<(&Field, &crate::field::MediaRule, Vec<uuid::Uuid>)> = Vec::new();
+        for field in self.fields.iter().filter(|f| f.rich_text) {
+            let Some(value) = data.get(&field.name).filter(|v| !v.is_null()) else { continue };
+            match crate::rich_text::parse(value) {
+                Ok(doc) => {
+                    let ids = crate::rich_text::media_ids(&doc);
+                    if !ids.is_empty() {
+                        wanted.push((field, &images_only, ids));
+                    }
+                }
+                Err(e) => errors.add(field.name.as_str(), e.0),
+            }
+        }
+        for field in &self.fields {
+            let (Some(rule), Some(value)) = (&field.media, data.get(&field.name)) else { continue };
+            let texts: Vec<Option<&str>> = match value {
+                serde_json::Value::Null => continue,
+                serde_json::Value::String(id) if !rule.multiple => vec![Some(id.as_str())],
+                serde_json::Value::Array(items) if rule.multiple => items.iter().map(|v| v.as_str()).collect(),
+                _ => {
+                    errors.add(field.name.as_str(), "is invalid");
+                    continue;
+                }
+            };
+            let ids: Option<Vec<uuid::Uuid>> =
+                texts.iter().map(|t| t.and_then(|t| uuid::Uuid::parse_str(t).ok())).collect();
+            match ids {
+                Some(ids) if ids.len() > rule.max_items => {
+                    errors.add(field.name.as_str(), format!("may not have more than {} items", rule.max_items));
+                }
+                Some(ids) if ids.iter().collect::<HashSet<_>>().len() != ids.len() => {
+                    errors.add(field.name.as_str(), "may not list the same file twice");
+                }
+                Some(ids) => wanted.push((field, rule, ids)),
+                None => errors.add(field.name.as_str(), "is invalid"),
+            }
+        }
+        errors.into_result()?;
+        if wanted.is_empty() {
+            return Ok(());
+        }
+        let library = ctx.registry.get(crate::media::SLUG).ok_or_else(|| {
+            AppError::internal(format!("`{}`: media fields need the media library (`AdminProvider::media`)", R::SLUG))
+        })?;
+        let mut all: Vec<uuid::Uuid> = wanted.iter().flat_map(|(_, _, ids)| ids.iter().copied()).collect();
+        all.sort_unstable();
+        all.dedup();
+        // Visibility first: records the user cannot see are never locked.
+        let keys: Vec<String> = all.iter().map(uuid::Uuid::to_string).collect();
+        let visible = library.keys_in_scope(ctx, txn, &keys).await?;
+        let lockable: Vec<uuid::Uuid> = all.iter().copied().filter(|id| visible.contains(&id.to_string())).collect();
+        let mut select =
+            media::Entity::find().filter(media::Column::Id.is_in(lockable)).order_by(media::Column::Id, Order::Asc);
+        if txn.get_database_backend() == DbBackend::Postgres {
+            select = select.lock_shared();
+        }
+        // Re-read under the lock: trashed meanwhile means unavailable.
+        let rows: HashMap<uuid::Uuid, media::Model> = select.all(txn).await?.into_iter().map(|m| (m.id, m)).collect();
+        let mut errors = ValidationErrors::new();
+        for (field, rule, ids) in wanted {
+            for id in ids {
+                let usable = rows.get(&id).filter(|m| m.deleted_at.is_none() && visible.contains(&id.to_string()));
+                let message = match usable {
+                    None => Some("refers to a file that is not available".to_owned()),
+                    Some(m) if !rule.accepts(&m.mime) => Some(format!("does not accept {} files", m.mime)),
+                    Some(m) if rule.max_size.is_some_and(|max| u64::try_from(m.size).unwrap_or(u64::MAX) > max) => {
+                        Some("refers to a file that is too large".to_owned())
+                    }
+                    Some(_) => None,
+                };
+                if let Some(message) = message {
+                    errors.add(field.name.as_str(), message);
+                    break;
+                }
+            }
+        }
+        errors.into_result()
     }
 
     /// Client-supplied foreign keys must point to records the user can see.
@@ -412,7 +547,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 continue;
             }
             // Hooks may change values: limits hold for what is actually written.
-            if !self.check_key_value(name, value, &mut errors) {
+            if !self.check_key_value(name, value, &mut errors) || !self.check_rich_text(name, value, &mut errors) {
                 continue;
             }
             let max_length = self.field(name).and_then(|f| f.max_length);
@@ -1073,6 +1208,12 @@ impl<R: Resource> ResourceAdapter<R> {
             mode: input.mode,
             options: input.options.clone(),
             relationship: field.belongs_to.map(|resource| Relationship { resource }),
+            media: field.media.as_ref().map(|rule| crate::schema::MediaSchema {
+                multiple: rule.multiple,
+                max_items: rule.max_items,
+                accept: rule.accept.clone(),
+                max_size: rule.max_size,
+            }),
         })
     }
 
@@ -1458,8 +1599,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             return Ok(self.committed_key_envelope(ctx, key.to_owned()).await);
         }
         let input = self.accept_input(ctx, Operation::Create, input)?;
-        self.check_relations(&wctx, &txn, &input).await?;
         let data = R::mutate_before_create(&wctx, &txn, input).await?;
+        // What is written, hooks included: references are checked last.
+        self.check_written(&wctx, &txn, &data).await?;
 
         let mut active = <<Entity<R> as EntityTrait>::ActiveModel as ActiveModelBehavior>::new();
         self.apply(&mut active, &data, Operation::Create)?;
@@ -1490,8 +1632,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let input = self.accept_input(ctx, Operation::Update, input)?;
         let (txn, wctx) = self.begin(ctx).await?;
         let model = self.find_authorized_locked(&wctx, &txn, key, ability::UPDATE, Trashed::Without).await?;
-        self.check_relations(&wctx, &txn, &input).await?;
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
+        self.check_written(&wctx, &txn, &data).await?;
         let model = if data.is_empty() {
             model
         } else {
@@ -1537,10 +1679,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let relations: Data = self
             .fields
             .iter()
-            .filter(|f| f.belongs_to.is_some())
+            .filter(|f| f.belongs_to.is_some() || f.media.is_some() || f.rich_text)
             .filter_map(|f| record.get(&f.name).map(|v| (f.name.clone(), v.clone())))
             .collect();
-        self.check_relations(&wctx, &txn, &relations).await?;
+        self.check_written(&wctx, &txn, &relations).await?;
         let mut active = model.into_active_model();
         self.set_marker(&mut active, false)?;
         let model = active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?;
@@ -1561,6 +1703,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             .exec(txn.as_ref())
             .await
             .map_err(|e| self.map_db_err(e))?;
+        R::after_force_delete(&wctx, &txn, &model).await?;
         Self::commit(txn, wctx).await?;
         Ok(())
     }

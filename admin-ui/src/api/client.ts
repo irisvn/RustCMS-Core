@@ -136,7 +136,9 @@ export class ApiClient {
 
   async request<T>(method: string, path: string, body?: unknown, extra?: Record<string, string>): Promise<T> {
     const headers: Record<string, string> = { ...extra, Accept: "application/json" };
-    if (body !== undefined) headers["Content-Type"] = "application/json";
+    // Multipart bodies (uploads) get their boundary from the browser.
+    const multipart = typeof FormData !== "undefined" && body instanceof FormData;
+    if (body !== undefined && !multipart) headers["Content-Type"] = "application/json";
     const generation = this.generation;
     // An answer to a request from an earlier session state (before a sign-in,
     // sign-out or account change) never reaches identity or auth handling: it
@@ -161,7 +163,7 @@ export class ApiClient {
       response = await doFetch(this.opts.apiPath + path, {
         method,
         headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? undefined : multipart ? (body as FormData) : JSON.stringify(body),
         credentials: "same-origin",
         cache: "no-store",
       });

@@ -114,7 +114,7 @@ describe("form values", () => {
   it("never submits disabled or unknown inputs", () => {
     const fake: InputSchema[] = [
       { ...input(editSchema, "name"), disabled: true },
-      { ...input(editSchema, "notes"), type: "rich_editor" as InputSchema["type"] },
+      { ...input(editSchema, "notes"), type: "future_widget" as InputSchema["type"] },
     ];
     expect(payloadOf(fake, { name: "x", notes: "y" })).toEqual({});
   });

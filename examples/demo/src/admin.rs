@@ -65,13 +65,19 @@ impl Resource for PostResource {
             Field::column(post::Column::AuthorId).guarded().readable(|_| true),
             Field::column(post::Column::Published).filterable().sortable(),
             Field::column(post::Column::PublishedAt).sortable().filterable(),
+            Field::column(post::Column::Cover).media().accept(&["image/*"]),
+            Field::column(post::Column::Content).rich_text(),
         ]
     }
 
     fn form() -> Form {
         Form::new().columns(2).schema(components![
-            Section::make("Content")
-                .schema(components![TextInput::make("title").placeholder("A catchy title"), Textarea::make("body"),]),
+            Section::make("Content").schema(components![
+                TextInput::make("title").placeholder("A catchy title"),
+                Textarea::make("body"),
+                FileUpload::make("cover"),
+                RichEditor::make("content"),
+            ]),
             Section::make("Publishing").schema(components![
                 SelectInput::make("category_id"),
                 Toggle::make("published"),

@@ -42,6 +42,7 @@ pub mod gadget {
         pub secret: String,
         pub deleted_at: Option<DateTimeUtc>,
         pub specs: Option<Json>,
+        pub photo: Option<Uuid>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -82,6 +83,7 @@ impl Resource for GadgetResource {
             Field::column(C::Secret).readable(|_| false),
             Field::column(C::DeletedAt).guarded().readable(|_| true),
             Field::column(C::Specs).max_items(5).max_length(40),
+            Field::column(C::Photo).media().accept(&["image/*"]).max_size(1_000_000),
         ]
     }
 
@@ -108,7 +110,7 @@ impl Resource for GadgetResource {
                     DateTimePicker::make("local_at"),
                     DateTimePicker::make("happened_at"),
                 ]),
-                Tab::make("Specs").schema(components![KeyValue::make("specs")]),
+                Tab::make("Specs").schema(components![KeyValue::make("specs"), FileUpload::make("photo")]),
             ]),
             Hidden::make("token"),
             TextInput::make("secret").password(),
@@ -139,12 +141,18 @@ impl Resource for GadgetResource {
 
 async fn registry(db: &TestDb) -> Arc<Registry> {
     let schema = Schema::new(db.conn().get_database_backend());
-    for statement in
-        [schema.create_table_from_entity(category::Entity), schema.create_table_from_entity(gadget::Entity)]
-    {
+    for statement in [
+        schema.create_table_from_entity(category::Entity),
+        schema.create_table_from_entity(gadget::Entity),
+        schema.create_table_from_entity(rustcms_admin::media::entity::Entity),
+    ] {
         db.conn().execute(&statement).await.unwrap();
     }
-    Registry::new().register::<CategoryResource>().register::<GadgetResource>().finish()
+    Registry::new()
+        .register::<CategoryResource>()
+        .register::<GadgetResource>()
+        .register::<rustcms_admin::media::MediaResource>()
+        .finish()
 }
 
 db_test!(kitchen_sink_contract, |db: TestDb| async move {
@@ -218,6 +226,7 @@ db_test!(kitchen_sink_contract, |db: TestDb| async move {
         "date_time_picker",
         "hidden",
         "key_value",
+        "file_upload",
         "section",
         "grid",
         "tabs",

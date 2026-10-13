@@ -82,7 +82,7 @@ describe.each([
 it("renders unknown components as a read-only fallback", () => {
   const schema = structuredClone(create) as unknown as ResourceSchema;
   const notes = inputsOf(schema.form.components).find((i) => i.name === "notes")!;
-  const unknown = { ...notes, type: "rich_editor" };
+  const unknown = { ...notes, type: "future_widget" };
   schema.form.components = [unknown as ComponentSchema];
   const { container } = render(
     <Providers>

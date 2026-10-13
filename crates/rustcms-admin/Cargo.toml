@@ -29,6 +29,8 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+infer.workspace = true
+imagesize.workspace = true
 hex.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
@@ -46,6 +48,7 @@ chrono.workspace = true
 rustcms-testing = { path = "../rustcms-testing" }
 rustcms-migration = { path = "../rustcms-migration" }
 toml.workspace = true
+base64.workspace = true
 tokio.workspace = true
 insta.workspace = true
 proptest.workspace = true

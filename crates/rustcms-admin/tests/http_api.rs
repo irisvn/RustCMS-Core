@@ -20,7 +20,7 @@ db_test!(panel_lists_what_the_user_may_see, |db: TestDb| async move {
         |body: Value| body["navigation"].as_array().unwrap().iter().map(|r| r["slug"].clone()).collect::<Vec<_>>();
     let admin = app.acting_as(&users.admin).await.get(&api(&app, "panel")).await;
     admin.assert_status(StatusCode::OK).assert_json("/brand", json!("Test CMS"));
-    assert_eq!(nav(admin.json()), [json!("categories"), json!("notes"), json!("posts"), json!("tags")]);
+    assert_eq!(nav(admin.json()), [json!("categories"), json!("media"), json!("notes"), json!("posts"), json!("tags")]);
     assert_eq!(
         nav(app.acting_as(&users.editor).await.get(&api(&app, "panel")).await.json()),
         [json!("categories"), json!("notes"), json!("posts")]

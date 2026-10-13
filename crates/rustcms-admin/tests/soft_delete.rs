@@ -319,3 +319,98 @@ db_test!(a_custom_local_datetime_marker_works, |db: TestDb| async move {
     memos.restore(&ctx, &memo.key).await.unwrap();
     assert_eq!(memos.list(&ctx, &ListQuery::default()).await.unwrap().meta.total, 1);
 });
+
+/// Inserts a media row as if uploaded by `owner` (no file needed for reference checks).
+async fn media(fx: &Fixture, owner: i64, mime: &str, size: i64) -> String {
+    use rustcms_admin::media::entity;
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    let id = uuid::Uuid::now_v7();
+    entity::ActiveModel {
+        id: Set(id),
+        disk: Set("local".into()),
+        key: Set(format!("2026/10/{id}.bin")),
+        name: Set("f".into()),
+        mime: Set(mime.into()),
+        size: Set(size),
+        sha256: Set("0".repeat(64)),
+        width: Set(None),
+        height: Set(None),
+        owner_id: Set(owner),
+        created_at: Set(chrono::Utc::now()),
+        deleted_at: Set(None),
+    }
+    .insert(fx.db.conn())
+    .await
+    .unwrap();
+    id.to_string()
+}
+
+db_test!(media_references_are_checked_on_every_write, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
+    let notes = fx.resource("notes");
+    let writer = fx.ctx(editor("7").with(&["notes.create", "notes.view", "media.view_any", "media.view"]));
+    let mine = media(&fx, 7, "image/png", 100).await;
+    let theirs = media(&fx, 8, "image/png", 100).await;
+    let pdf = media(&fx, 7, "application/pdf", 100).await;
+    let big = media(&fx, 7, "image/png", 20_000).await;
+    let missing = uuid::Uuid::now_v7().to_string();
+
+    let created = notes.create(&writer, data(json!({"title": "A", "cover": mine, "attachments": [pdf, mine]}))).await;
+    assert_eq!(created.unwrap().data["cover"], json!(mine));
+    for (field, value) in [
+        ("cover", json!(theirs)),
+        ("cover", json!(missing)),
+        ("cover", json!(pdf)),
+        ("cover", json!(big)),
+        ("cover", json!("not-a-uuid")),
+        ("attachments", json!([mine, mine])),
+        ("attachments", json!([mine, pdf, big])),
+        ("attachments", json!("not-a-list")),
+    ] {
+        let err = notes.create(&writer, data(json!({"title": format!("{field}-{value}"), field: value}))).await;
+        assert_eq!(field_errors(err.unwrap_err()), [field], "{field} = {value}");
+    }
+    // Without `media.view`, not even one's own uploads can be referenced.
+    let blind = fx.ctx(editor("7").with(&["notes.create"]));
+    assert_eq!(
+        field_errors(notes.create(&blind, data(json!({"title": "B", "cover": mine}))).await.unwrap_err()),
+        ["cover"]
+    );
+
+    // A trashed media item cannot be referenced, nor a record restored onto it.
+    let admin_ctx = fx.ctx(admin());
+    let note = notes.create(&writer, data(json!({"title": "C", "cover": mine}))).await.unwrap();
+    notes.delete(&admin_ctx, &note.key).await.unwrap();
+    fx.resource("media").delete(&admin_ctx, &mine).await.unwrap();
+    assert_eq!(
+        field_errors(notes.create(&writer, data(json!({"title": "D", "cover": mine}))).await.unwrap_err()),
+        ["cover"]
+    );
+    assert_eq!(field_errors(notes.restore(&admin_ctx, &note.key).await.unwrap_err()), ["cover"]);
+});
+
+db_test!(rich_text_is_a_validated_document_with_visible_images, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
+    let notes = fx.resource("notes");
+    let writer = fx.ctx(editor("7").with(&["notes.create", "notes.view", "media.view_any", "media.view"]));
+    let image = media(&fx, 7, "image/png", 10).await;
+    let pdf = media(&fx, 7, "application/pdf", 10).await;
+    let theirs = media(&fx, 8, "image/png", 10).await;
+    let body = |media: &str| {
+        json!({"type": "doc", "version": 1, "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": "Hi"}]},
+            {"type": "image", "attrs": {"media": media, "alt": "x"}}
+        ]})
+    };
+    let created = notes.create(&writer, data(json!({"title": "Doc", "body": body(&image)}))).await.unwrap();
+    assert_eq!(created.data["body"], body(&image));
+    for (title, value) in [
+        ("pdf", body(&pdf)),
+        ("theirs", body(&theirs)),
+        ("html", json!("<p>Hi</p>")),
+        ("script", json!({"type": "doc", "version": 1, "content": [{"type": "script"}]})),
+    ] {
+        let err = notes.create(&writer, data(json!({"title": title, "body": value}))).await.unwrap_err();
+        assert_eq!(field_errors(err), ["body"], "{title}");
+    }
+});

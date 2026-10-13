@@ -2,6 +2,7 @@
 // everything; these rules only give earlier feedback.
 import { z } from "zod";
 import type { ComponentSchema, InputSchema, JsonValue } from "@/api/types";
+import { asDocument } from "@/lib/rich-text";
 import { checkText, fromText, toText, type WireKind } from "@/lib/wire";
 
 // No `new Function` (zod's JIT probes it): the panel's CSP forbids eval.
@@ -33,7 +34,8 @@ export const isTextObject = (value: unknown): value is Record<string, string> =>
 
 /** A stored key/value that is not an object of text: shown, never rewritten. */
 const foreignKeyValue = (input: InputSchema, value: unknown) =>
-  input.type === "key_value" && value !== null && value !== undefined && !isTextObject(value);
+  value !== null && value !== undefined &&
+  ((input.type === "key_value" && !isTextObject(value)) || (input.type === "rich_editor" && !asDocument(value)));
 
 /**
  * The form with JSON inputs made read-only where the stored value would lose
@@ -59,8 +61,10 @@ export function pairsOf(value: FormValue): [string, string][] {
 
 export const encodePair = (key: string, value: string) => JSON.stringify([key, value]);
 
-/** Input types of vocabulary version 2. */
+/** Input types of vocabulary version 3. */
 export const KNOWN_INPUT_TYPES = new Set<string>([
+  "file_upload",
+  "rich_editor",
   "key_value",
   "text_input",
   "textarea",
@@ -99,6 +103,13 @@ export function toFormValue(input: InputSchema, value: unknown): FormValue {
       return Array.isArray(value) ? value.map(encode) : [];
     case "select":
       return value === null || value === undefined ? "" : encode(value);
+    case "file_upload":
+      // One media id ("" when not set), or the ordered list of ids.
+      if (input.media?.multiple) return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+      return typeof value === "string" ? value : "";
+    case "rich_editor":
+      // The document as JSON text ("" when not set); anything else is shown read-only.
+      return value === null || value === undefined ? "" : JSON.stringify(value);
     case "key_value":
       // "" is null (not set); a list (possibly empty) is an object. Anything else
       // stays as its JSON text: shown read-only (`protectLossyJson`), never sent.
@@ -122,6 +133,11 @@ export function fromFormValue(input: InputSchema, value: FormValue): unknown {
     case "checkbox_list":
       return (value as string[]).map((v) => JSON.parse(v) as JsonValue);
     case "select":
+      return value === "" ? null : (JSON.parse(value as string) as JsonValue);
+    case "file_upload":
+      if (input.media?.multiple) return Array.isArray(value) ? value : [];
+      return value === "" ? null : value;
+    case "rich_editor":
       return value === "" ? null : (JSON.parse(value as string) as JsonValue);
     case "key_value": {
       if (!Array.isArray(value)) return null;
@@ -187,6 +203,21 @@ export function zodSchema(inputs: InputSchema[]) {
       case "toggle":
       case "checkbox":
         shape[input.name] = z.boolean();
+        break;
+      case "file_upload": {
+        const max = input.media?.maxItems ?? 1;
+        shape[input.name] = z.union([z.string(), z.array(z.string())]).superRefine((value, ctx) => {
+          if (input.disabled) return;
+          const count = Array.isArray(value) ? value.length : value === "" ? 0 : 1;
+          if (required && count === 0) ctx.addIssue({ code: "custom", message: "is required" });
+          if (count > max) ctx.addIssue({ code: "custom", message: `may not have more than ${max} items` });
+        });
+        break;
+      }
+      case "rich_editor":
+        shape[input.name] = z.string().superRefine((value, ctx) => {
+          if (!input.disabled && required && value === "") ctx.addIssue({ code: "custom", message: "is required" });
+        });
         break;
       case "key_value": {
         const items = input.rules.find((r) => r.rule === "max_items");

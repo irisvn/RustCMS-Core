@@ -91,6 +91,9 @@ pub mod note {
         pub title: String,
         pub category_id: Option<i32>,
         pub deleted_at: Option<DateTimeUtc>,
+        pub cover: Option<Uuid>,
+        pub attachments: Option<Json>,
+        pub body: Option<Json>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -115,6 +118,9 @@ impl Resource for NoteResource {
             Field::column(note::Column::Title).required().searchable(),
             Field::column(note::Column::CategoryId).belongs_to("categories"),
             Field::column(note::Column::DeletedAt).guarded().readable(|_| true),
+            Field::column(note::Column::Cover).media().accept(&["image/*"]).max_size(10_000),
+            Field::column(note::Column::Attachments).media_list(2),
+            Field::column(note::Column::Body).rich_text(),
         ]
     }
 
@@ -361,6 +367,7 @@ impl Fixture {
             .register::<PostResource>()
             .register::<TagResource>()
             .register::<NoteResource>()
+            .register::<rustcms_admin::media::MediaResource>()
             .finish();
         Self { db, registry }
     }
@@ -388,6 +395,8 @@ pub async fn create_tables(conn: &sea_orm::DatabaseConnection) {
         schema.create_table_from_entity(post::Entity),
         schema.create_table_from_entity(tag::Entity),
         schema.create_table_from_entity(note::Entity),
+        // Also created by the framework migrations some tests run first.
+        schema.create_table_from_entity(rustcms_admin::media::entity::Entity).if_not_exists().to_owned(),
     ] {
         conn.execute(&statement).await.expect("create table");
     }

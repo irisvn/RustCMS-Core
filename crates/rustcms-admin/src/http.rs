@@ -78,6 +78,8 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::DELETE, format!("{resource}/records/{{key}}/force")),
         (Method::POST, format!("{resource}/actions/{{action}}")),
         (Method::GET, format!("{resource}/fields/{{field}}/options")),
+        (Method::POST, format!("{base}/media")),
+        (Method::GET, format!("{base}/media/{{id}}/file")),
     ]
     .into_iter()
     .chain(crate::system::routes(admin_path))
@@ -96,6 +98,8 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route(&format!("{resource}/records/{{key}}/force"), delete(force_delete))
         .route(&format!("{resource}/actions/{{action}}"), post(run_action))
         .route(&format!("{resource}/fields/{{field}}/options"), get(options))
+        .route(&format!("{base}/media"), post(crate::media::upload))
+        .route(&format!("{base}/media/{{id}}/file"), get(crate::media::file))
 }
 
 /// Request context for admin handlers: an authenticated admin-guard user.
@@ -207,7 +211,7 @@ async fn find(
 }
 
 /// The request's `Idempotency-Key`, validated.
-fn idempotency_key(headers: &axum::http::HeaderMap) -> AppResult<Option<String>> {
+pub(crate) fn idempotency_key(headers: &axum::http::HeaderMap) -> AppResult<Option<String>> {
     match headers.get(crate::idempotency::HEADER) {
         None => Ok(None),
         Some(value) => {

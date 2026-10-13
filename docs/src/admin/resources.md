@@ -66,6 +66,7 @@ fn table() -> Table {
 
 | Inputs | `TextInput` (`.email()`, `.password()`, `.url()`), `Textarea`, `NumberInput`, `SelectInput`, `Toggle`, `Checkbox`, `CheckboxList`, `DatePicker`, `DateTimePicker`, `Hidden`, `KeyValue` |
 |---|---|
+| Media | `FileUpload` (for `Field::media()` / `media_list(n)`), `RichEditor` (for `Field::rich_text()`) — see [Media, uploads & rich text](media.md) |
 | Layouts | `Section::make(label)`, `Grid::make(columns)`, `Tabs::make()` with `Tab::make(label)` children |
 | Columns | `TextColumn`, `BadgeColumn` (`.color(value, "success")`), `BooleanColumn`, `DateColumn` |
 | Filters | `SelectFilter`, `TernaryFilter`, `DateRangeFilter` (field must be `.filterable()`) |

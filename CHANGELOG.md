@@ -6,6 +6,25 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.2 — M8)
+- **Storage** (`rustcms::storage`): `Storage` trait, local driver (symlink-safe)
+  and S3-compatible driver (feature `s3`), `StorageProvider`, `[storage]`.
+  `AppBuilder::body_limit(method, path, bytes)` for one route's body limit.
+- **Media library** (`AdminProvider::media()`): `media` resource (soft deletes,
+  owner scope, `media.manage_all`), `POST {admin}/api/media` multipart uploads
+  (type from content, fixed allowlist, pixel budget, concurrency and rate limits,
+  idempotency keys), `GET {admin}/api/media/{id}/file` authorized downloads with
+  safe headers, crash-safe cleanup (`media:prune`, worker). Migrations `media`,
+  `media_uploads`, `media_deletions`. `Resource::after_force_delete` hook.
+- **Media fields** (`Field::media()`, `media_list(n)`, `accept`, `max_size`) and
+  **rich text** (`Field::rich_text()`, `rustcms_admin::rich_text`): a validated
+  JSON document, exported as escaped HTML. Inputs `FileUpload`, `RichEditor`
+  (TipTap, CSP-clean); vocabulary 3. ADR 0008.
+
+### Changed (0.2 — M8)
+- Relationship checks (`belongs_to`) now run after `mutate_before_*` hooks, on
+  what is actually written, together with media checks.
+
 ### Added (0.2 — M7)
 - **Soft deletes**: `ResourceMeta::soft_deletes()` / `soft_deletes_column(..)`.
   Delete moves records to the trash; trashed records are hidden on every path

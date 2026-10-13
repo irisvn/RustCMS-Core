@@ -46,8 +46,12 @@ struct Payload {
 fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
     app.provider(GreeterProvider);
+    // `/big` (POST only) may receive 1,000 bytes, whatever `http.body_limit` is.
+    app.body_limit(axum::http::Method::POST, "/big", 1_000);
     app.routes(|r| {
-        r.route("/echo", post(|Json(v): Json<Value>| async move { Json(v) }))
+        r.route("/big", post(|bytes: axum::body::Bytes| async move { bytes.len().to_string() }))
+            .route("/big/other", post(|bytes: axum::body::Bytes| async move { bytes.len().to_string() }))
+            .route("/echo", post(|Json(v): Json<Value>| async move { Json(v) }))
             .route("/typed", post(|Json(_): Json<Payload>| async { "ok" }))
             .route(
                 "/raw",
@@ -183,4 +187,27 @@ async fn health_reports_database_outage() {
         .await
         .assert_status(StatusCode::SERVICE_UNAVAILABLE)
         .assert_json("/database", json!("unavailable"));
+}
+
+#[tokio::test]
+async fn a_route_can_have_its_own_body_limit() {
+    let app = app_with(|c| c.with("http.body_limit", 64).unwrap()).await;
+    let post = |path: &str, size: usize, declared: bool| {
+        let mut builder = Request::post(path);
+        if declared {
+            builder = builder.header("content-length", size);
+        }
+        builder.body(Body::from(vec![b'x'; size])).unwrap()
+    };
+    // The exact method and path get the larger limit, declared or chunked.
+    assert_eq!(text(&app.request(post("/big", 900, true)).await), "900");
+    assert_eq!(text(&app.request(post("/big", 900, false)).await), "900");
+    for (path, size) in [("/big", 1_001), ("/big/other", 100), ("/bytes", 100)] {
+        app.request(post(path, size, true))
+            .await
+            .assert_status(StatusCode::PAYLOAD_TOO_LARGE)
+            .assert_json("/code", json!("payload_too_large"));
+    }
+    // Chunked bodies over the route's own limit are cut there too.
+    app.request(post("/big", 1_001, false)).await.assert_status(StatusCode::PAYLOAD_TOO_LARGE);
 }

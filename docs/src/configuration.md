@@ -30,6 +30,10 @@ Sources, last one wins:
 
 Boot fails with a clear message when `APP_KEY` is missing or malformed.
 
+### `[storage]` (`config/storage.toml`)
+
+Uploads (media library): see [Media, uploads & rich text](admin/media.md).
+
 ### `[auth]` (`config/auth.toml`)
 
 | Key                                  | Default            |                                         |

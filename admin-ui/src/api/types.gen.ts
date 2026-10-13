@@ -2,7 +2,7 @@
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
-export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value";
+export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value" | "file_upload" | "rich_editor";
 
 export type LayoutType = "section" | "grid" | "tabs" | "tab";
 
@@ -63,6 +63,54 @@ export type Relationship = {
  * Slug of the related resource (options come from the field's options endpoint).
  */
 resource: string, };
+
+export type MediaSchema = { 
+/**
+ * Several media, in order (a list of ids).
+ */
+multiple: boolean, 
+/**
+ * Most items.
+ */
+maxItems: number, 
+/**
+ * Accepted MIME types (`image/*`); empty accepts every uploadable type.
+ */
+accept: Array<string>, 
+/**
+ * Largest accepted file, in bytes.
+ */
+maxSize?: number, };
+
+export type MediaItem = { 
+/**
+ * Id (UUID).
+ */
+id: string, 
+/**
+ * Original file name.
+ */
+name: string, 
+/**
+ * MIME type.
+ */
+mime: string, 
+/**
+ * Size in bytes.
+ */
+size: number, 
+/**
+ * Image width.
+ */
+width?: number, 
+/**
+ * Image height.
+ */
+height?: number, 
+/**
+ * Shown inline (an image) rather than downloaded.
+ */
+inline: boolean, };
 
 export type InputSchema = { 
 /**
@@ -128,7 +176,11 @@ options?: Array<SelectOption>,
 /**
  * Related resource for `belongs_to` fields.
  */
-relationship?: Relationship, };
+relationship?: Relationship, 
+/**
+ * Media references (`file_upload` inputs).
+ */
+media?: MediaSchema, };
 
 export type LayoutSchema = { 
 /**

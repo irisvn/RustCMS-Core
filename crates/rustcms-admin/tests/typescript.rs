@@ -24,6 +24,8 @@ fn bindings() -> String {
         SchemaOperation::decl(&cfg),
         Rule::decl(&cfg),
         Relationship::decl(&cfg),
+        rustcms_admin::schema::MediaSchema::decl(&cfg),
+        rustcms_admin::media::MediaItem::decl(&cfg),
         InputSchema::decl(&cfg),
         LayoutSchema::decl(&cfg),
         ComponentSchema::decl(&cfg),

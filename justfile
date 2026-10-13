@@ -28,6 +28,7 @@ features:
     cargo check -p rustcms-auth
     cargo check -p rustcms --no-default-features --features sqlite
     cargo check -p rustcms --no-default-features --features postgres
+    cargo check -p rustcms --features s3
 
 # Tests on SQLite (temp files) and PostgreSQL (docker compose).
 test-matrix:

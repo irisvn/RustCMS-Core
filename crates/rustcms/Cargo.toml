@@ -14,6 +14,8 @@ categories.workspace = true
 default = ["sqlite", "postgres"]
 sqlite = ["rustcms-core/sqlite", "rustcms-admin/sqlite"]
 postgres = ["rustcms-core/postgres", "rustcms-admin/postgres"]
+# S3-compatible storage for uploads (`storage.disk = "s3"`).
+s3 = ["rustcms-core/s3"]
 
 [dependencies]
 rustcms-core.workspace = true

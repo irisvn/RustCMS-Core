@@ -209,6 +209,16 @@ pub trait Resource: Send + Sync + 'static {
     ) -> AppResult<()> {
         Ok(())
     }
+
+    /// Runs in the transaction that deletes a trashed record for good (soft
+    /// deletes): e.g. queue the removal of files the record owned.
+    async fn after_force_delete(
+        _ctx: &Ctx,
+        _txn: &DatabaseTransaction,
+        _record: &<Self::Entity as EntityTrait>::Model,
+    ) -> AppResult<()> {
+        Ok(())
+    }
 }
 
 /// Operator of a list filter.

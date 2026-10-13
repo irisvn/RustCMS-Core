@@ -9,11 +9,19 @@ use rustcms_testing::{Factory, TestApp, TestDb, UserFactory};
 use super::{CategoryResource, NoteResource, PostResource, TagResource};
 
 pub fn build(config: Config) -> AppBuilder {
+    // Each app stores its uploads in its own temporary directory, with small limits.
+    let root = std::env::temp_dir().join(format!("rustcms-media-{}", uuid::Uuid::now_v7()));
+    let config = config
+        .with("storage.root", root.to_string_lossy())
+        .and_then(|c| c.with("storage.max_upload_bytes", 64 * 1024))
+        .expect("storage config");
     let mut app = AppBuilder::new(config);
+    app.provider(rustcms_core::storage::StorageProvider);
     app.provider(AuthProvider::new().permission(ADMIN_GUARD, "posts.update_own", "posts"));
     app.provider(
         AdminProvider::new()
             .brand("Test CMS")
+            .media()
             .resource::<CategoryResource>()
             .resource::<PostResource>()
             .resource::<TagResource>()

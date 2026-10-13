@@ -26,6 +26,7 @@
 - [Resources](admin/resources.md)
 - [The panel (SPA)](admin/spa.md)
 - [Users, roles & account](admin/users-roles.md)
+- [Media, uploads & rich text](admin/media.md)
 
 # API
 

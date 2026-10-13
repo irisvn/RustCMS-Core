@@ -227,6 +227,24 @@
                 ],
                 "type": "key_value",
                 "valueType": "json"
+              },
+              {
+                "columnSpan": 1,
+                "disabled": true,
+                "label": "Photo",
+                "media": {
+                  "accept": [
+                    "image/*"
+                  ],
+                  "maxItems": 1,
+                  "maxSize": 1000000,
+                  "multiple": false
+                },
+                "name": "photo",
+                "nullable": true,
+                "rules": [],
+                "type": "file_upload",
+                "valueType": "uuid"
               }
             ],
             "id": "specs",
@@ -388,5 +406,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 2
+  "vocabularyVersion": 3
 }

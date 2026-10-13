@@ -97,13 +97,38 @@ pub fn resolve_client_ip<'a>(
     chain.iter().rev().find(|ip| !is_trusted(ip)).or(chain.first()).copied().unwrap_or(peer)
 }
 
-/// Caps every request body at `limit` bytes, whatever reads it.
+/// A body limit for one method and exact path (see `AppBuilder::body_limit`).
+#[derive(Debug, Clone)]
+pub(crate) struct BodyLimit {
+    pub(crate) method: axum::http::Method,
+    pub(crate) path: String,
+    pub(crate) bytes: usize,
+}
+
+#[derive(Clone)]
+struct BodyLimits {
+    default: usize,
+    routes: std::sync::Arc<Vec<BodyLimit>>,
+}
+
+impl BodyLimits {
+    /// The limit of this request: its exact route's, otherwise the default.
+    fn of(&self, req: &Request) -> usize {
+        self.routes
+            .iter()
+            .find(|r| r.method == req.method() && r.path == req.uri().path())
+            .map_or(self.default, |r| r.bytes)
+    }
+}
+
+/// Caps every request body at its limit, whatever reads it.
 ///
 /// A declared `Content-Length` above the limit is rejected before the handler
 /// runs; other bodies (chunked) are wrapped so reading past the limit fails.
 /// Any 413 produced downstream (e.g. by axum's `Bytes` extractor) is rendered
 /// in the standard JSON error format.
-async fn limit_body(State(limit): State<usize>, req: Request, next: Next) -> Response {
+async fn limit_body(State(limits): State<BodyLimits>, req: Request, next: Next) -> Response {
+    let limit = limits.of(&req);
     let declared = req.headers().get(header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()?.parse::<u64>().ok());
     if declared.is_some_and(|len| len > limit as u64) {
         return AppError::PayloadTooLarge.into_response();
@@ -156,8 +181,17 @@ async fn health(State(state): State<AppState>) -> (StatusCode, Json<Health>) {
     }
 }
 
-pub(crate) fn router(state: AppState, routes: Vec<RouteFn>, middleware: Vec<MiddlewareFn>) -> Router {
+pub(crate) fn router(
+    state: AppState,
+    routes: Vec<RouteFn>,
+    middleware: Vec<MiddlewareFn>,
+    body_limits: Vec<BodyLimit>,
+) -> Router {
     let http = state.config().http.clone();
+    // Extractors may read up to the largest limit; `limit_body` enforces each
+    // request's own limit around the body itself.
+    let largest = body_limits.iter().map(|r| r.bytes).fold(http.body_limit, usize::max);
+    let limits = BodyLimits { default: http.body_limit, routes: std::sync::Arc::new(body_limits) };
     let mut router = Router::new();
     for add in routes {
         router = add(router);
@@ -169,8 +203,8 @@ pub(crate) fn router(state: AppState, routes: Vec<RouteFn>, middleware: Vec<Midd
     router
         .fallback(|| async { AppError::NotFound })
         .method_not_allowed_fallback(|| async { AppError::MethodNotAllowed })
-        .layer(DefaultBodyLimit::max(http.body_limit))
-        .layer(middleware::from_fn_with_state(http.body_limit, limit_body))
+        .layer(DefaultBodyLimit::max(largest))
+        .layer(middleware::from_fn_with_state(limits, limit_body))
         .layer(middleware::from_fn_with_state(Duration::from_secs(http.timeout_secs), with_deadline))
         .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(http.timeout_secs)))
         .layer(middleware::from_fn_with_state(state.clone(), client_ip))

@@ -44,6 +44,10 @@ pub enum InputType {
     Hidden,
     /// Pairs of text keys and values, stored as a JSON object of strings (vocabulary 2).
     KeyValue,
+    /// Uploads to the media library; the value is a media id or a list of ids (vocabulary 3).
+    FileUpload,
+    /// Rich text document editor (vocabulary 3).
+    RichEditor,
 }
 
 /// An option of a select, checkbox list or select filter.
@@ -175,6 +179,10 @@ input_types! {
     Hidden => Hidden,
     /// Key/value pairs on a JSON column (an object of strings).
     KeyValue => KeyValue,
+    /// File upload for a `Field::media()` / `Field::media_list()` field.
+    FileUpload => FileUpload,
+    /// Rich text editor for a `Field::rich_text()` field.
+    RichEditor => RichEditor,
 }
 
 /// Layout kinds.

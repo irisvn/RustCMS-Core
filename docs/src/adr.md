@@ -9,3 +9,4 @@ Architecture decisions live in [`docs/adr/`](https://github.com/irisvn/rustcms/t
 - 0005 — Own session store, synchronizer CSRF, deterministic guards
 - 0006 — Admin SPA delivery: committed assets, runtime meta, strict CSP
 - 0007 — Idempotency keys for creates and actions
+- 0008 — Media storage and rich text documents

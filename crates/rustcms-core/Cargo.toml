@@ -14,6 +14,8 @@ categories.workspace = true
 default = []
 sqlite = ["sea-orm/sqlx-sqlite", "sea-orm-migration/sqlx-sqlite"]
 postgres = ["sea-orm/sqlx-postgres", "sea-orm-migration/sqlx-postgres"]
+# S3-compatible storage (`storage.disk = "s3"`).
+s3 = ["dep:object_store", "object_store/aws", "dep:futures-util"]
 
 [dependencies]
 anyhow.workspace = true
@@ -33,6 +35,10 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
+cap-std.workspace = true
+object_store = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true

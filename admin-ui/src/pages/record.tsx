@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Pencil, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { ApiError } from "@/api/client";
 import { useUncertain } from "@/api/context";
@@ -115,6 +115,17 @@ function RecordForm({
   const [origin] = useState(() => crypto.randomUUID());
   const save = useSaveRecord(slug, recordKey, origin);
   const [formErrors, setFormErrors] = useState<string[]>([]);
+  // Inputs with background work (uploads): saving waits for them.
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const onBusy = useCallback((name: string, working: boolean) => {
+    setBusy((current) => {
+      if (current.has(name) === working) return current;
+      const next = new Set(current);
+      if (working) next.add(name);
+      else next.delete(name);
+      return next;
+    });
+  }, []);
   // After a write with an unknown outcome, resubmitting could create a duplicate.
   const uncertain = useUncertain(slug);
 
@@ -129,6 +140,7 @@ function RecordForm({
     );
 
   const submit = form.handleSubmit(async (values) => {
+    if (busy.size > 0) return;
     setFormErrors([]);
     const changed = Object.fromEntries(inputs.map((i) => [i.name, dirty.current(i.name)]));
     const payload = payloadOf(inputs, values, changed);
@@ -206,13 +218,14 @@ function RecordForm({
               // Also while paused: a retry re-sends the earlier submission, not later edits.
               readOnly: readOnly || save.isPending || uncertain,
               submitCount: form.formState.submitCount,
+              onBusy,
               onUserChange: (name) => touched.current.add(name),
             }}
           />
         </CardContent>
       </Card>
       <div className="flex flex-wrap items-center gap-3 border-t border-border pt-5">
-        <Button type="submit" disabled={readOnly || uncertain || save.isPending || form.formState.isSubmitting}>
+        <Button type="submit" disabled={readOnly || uncertain || busy.size > 0 || save.isPending || form.formState.isSubmitting}>
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create"}
         </Button>
         <Link to="/r/$slug" params={{ slug }} className={linkClass}>

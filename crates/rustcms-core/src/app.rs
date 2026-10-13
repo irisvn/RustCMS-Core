@@ -107,6 +107,7 @@ pub struct AppBuilder {
     commands: Vec<Arc<dyn AppCommand>>,
     middleware: Vec<MiddlewareFn>,
     described: Vec<RouteInfo>,
+    body_limits: Vec<http::BodyLimit>,
 }
 
 /// A route as listed by `route:list`.
@@ -135,6 +136,7 @@ impl AppBuilder {
                 path: "/health".into(),
                 source: "core".into(),
             }],
+            body_limits: Vec::new(),
         }
     }
 
@@ -193,6 +195,13 @@ impl AppBuilder {
         self
     }
 
+    /// A body limit of its own (bytes) for requests with exactly this method and
+    /// path (e.g. an upload route); every other request keeps `http.body_limit`.
+    pub fn body_limit(&mut self, method: axum::http::Method, path: impl Into<String>, bytes: usize) -> &mut Self {
+        self.body_limits.push(http::BodyLimit { method, path: path.into(), bytes });
+        self
+    }
+
     /// Adds a console command.
     pub fn command(&mut self, command: impl AppCommand) -> &mut Self {
         self.commands.push(Arc::new(command));
@@ -223,7 +232,7 @@ impl AppBuilder {
         for provider in &self.providers {
             provider.boot(&state).await?;
         }
-        let router = http::router(state.clone(), self.routes, self.middleware);
+        let router = http::router(state.clone(), self.routes, self.middleware, self.body_limits);
         Ok(App { state, router })
     }
 }

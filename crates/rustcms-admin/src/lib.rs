@@ -11,10 +11,12 @@ pub mod context;
 pub mod field;
 pub mod http;
 pub mod idempotency;
+pub mod media;
 pub mod policy;
 mod provider;
 pub mod registry;
 pub mod resource;
+pub mod rich_text;
 pub mod schema;
 pub mod spa;
 pub mod system;
@@ -34,9 +36,9 @@ pub use resource::{
 };
 pub use schema::{ResourceInfo, ResourceSchema, SchemaOperation};
 pub use ui::{
-    BadgeColumn, BooleanColumn, Checkbox, CheckboxList, DateColumn, DatePicker, DateRangeFilter, DateTimePicker, Form,
-    Grid, Hidden, KeyValue, NumberInput, Section, SelectFilter, SelectInput, Tab, Table, Tabs, TernaryFilter,
-    TextColumn, TextInput, Textarea, Toggle,
+    BadgeColumn, BooleanColumn, Checkbox, CheckboxList, DateColumn, DatePicker, DateRangeFilter, DateTimePicker,
+    FileUpload, Form, Grid, Hidden, KeyValue, NumberInput, RichEditor, Section, SelectFilter, SelectInput, Tab, Table,
+    Tabs, TernaryFilter, TextColumn, TextInput, Textarea, Toggle,
 };
 
 /// A JSON object in wire format (input, hook data, trusted records).

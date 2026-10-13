@@ -25,11 +25,12 @@ use crate::{spa, system};
 pub struct AdminProvider {
     brand: String,
     registry: Mutex<Option<Registry>>,
+    media: bool,
 }
 
 impl Default for AdminProvider {
     fn default() -> Self {
-        Self { brand: "rustcms".into(), registry: Mutex::new(Some(Registry::new())) }
+        Self { brand: "rustcms".into(), registry: Mutex::new(Some(Registry::new())), media: false }
     }
 }
 
@@ -37,6 +38,13 @@ impl AdminProvider {
     /// Empty panel.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Enables the media library (uploads, `FileUpload` inputs, rich text
+    /// images). Register [`rustcms_core::storage::StorageProvider`] first.
+    pub fn media(mut self) -> Self {
+        self.media = true;
+        self.resource::<crate::media::MediaResource>()
     }
 
     /// Name shown in the panel.
@@ -74,6 +82,25 @@ impl ServiceProvider for AdminProvider {
             }
         }
         let admin_path = auth.config.admin_path.clone();
+        if self.media {
+            let storage = app
+                .service::<std::sync::Arc<dyn rustcms_core::storage::Storage>>()
+                .expect("register StorageProvider before AdminProvider::media()")
+                .as_ref()
+                .clone();
+            let config = app
+                .service::<rustcms_core::storage::StorageConfig>()
+                .expect("register StorageProvider before AdminProvider::media()")
+                .as_ref()
+                .clone();
+            auth.permissions.declare(ADMIN_GUARD, "media.manage_all", Some(crate::media::SLUG));
+            // The upload route alone accepts bodies up to the upload limit (plus multipart framing).
+            let limit = usize::try_from(config.max_upload_bytes).unwrap_or(usize::MAX).saturating_add(64 * 1024);
+            app.body_limit(axum::http::Method::POST, format!("{}/api/media", admin_path.trim_end_matches('/')), limit);
+            let uploads = tokio::sync::Semaphore::new(config.max_concurrent_uploads.max(1));
+            app.bind(crate::media::MediaState { storage, config, uploads });
+            app.command(MediaPrune);
+        }
         app.describe_routes("admin", http::routes(&admin_path));
         app.describe_routes("admin", spa::routes(&admin_path));
         app.bind(AdminPanel { brand: self.brand.clone(), registry });
@@ -84,6 +111,18 @@ impl ServiceProvider for AdminProvider {
     }
 
     async fn boot(&self, state: &AppState) -> anyhow::Result<()> {
+        if let Some(media) = state.service::<crate::media::MediaState>() {
+            let db = state.db().clone();
+            tokio::spawn(async move {
+                let mut every = tokio::time::interval(MEDIA_PRUNE_EVERY);
+                loop {
+                    every.tick().await;
+                    if let Err(err) = crate::media::prune(&db, media.storage.as_ref()).await {
+                        tracing::warn!(%err, "media pruning failed");
+                    }
+                }
+            });
+        }
         let db = state.db().clone();
         tokio::spawn(async move {
             let mut every = tokio::time::interval_at(tokio::time::Instant::now() + PRUNE_EVERY, PRUNE_EVERY);
@@ -96,6 +135,27 @@ impl ServiceProvider for AdminProvider {
                 }
             }
         });
+        Ok(())
+    }
+}
+
+/// How often queued media deletions and abandoned uploads are processed.
+const MEDIA_PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// `media:prune`: deletes queued media objects and abandoned uploads.
+struct MediaPrune;
+
+#[async_trait]
+impl AppCommand for MediaPrune {
+    fn definition(&self) -> Command {
+        Command::new("media:prune").about("Delete queued media files and abandoned uploads")
+    }
+
+    async fn run(&self, state: &AppState, _: &ArgMatches) -> anyhow::Result<()> {
+        let media =
+            state.service::<crate::media::MediaState>().ok_or_else(|| anyhow::anyhow!("media is not enabled"))?;
+        let deleted = crate::media::prune(state.db(), media.storage.as_ref()).await?;
+        println!("{deleted} media files deleted");
         Ok(())
     }
 }

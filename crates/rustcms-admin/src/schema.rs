@@ -11,7 +11,7 @@ use crate::ui::{ColumnType, FilterType, InputType, LayoutType, SelectOption};
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 1;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 2;
+pub const VOCABULARY_VERSION: u32 = 3;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -133,6 +133,27 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship: Option<Relationship>,
+    /// Media references (`file_upload` inputs).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media: Option<MediaSchema>,
+}
+
+/// What a media input accepts (checked again by the server on every write).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct MediaSchema {
+    /// Several media, in order (a list of ids).
+    pub multiple: bool,
+    /// Most items.
+    pub max_items: usize,
+    /// Accepted MIME types (`image/*`); empty accepts every uploadable type.
+    pub accept: Vec<String>,
+    /// Largest accepted file, in bytes.
+    #[cfg_attr(feature = "ts", ts(optional, type = "number"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<u64>,
 }
 
 /// A layout.
@@ -161,6 +182,8 @@ pub struct LayoutSchema {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(untagged)]
+// A serialized DTO, built once per schema request: the size difference does not matter.
+#[allow(clippy::large_enum_variant)]
 pub enum ComponentSchema {
     /// Input.
     Input(InputSchema),

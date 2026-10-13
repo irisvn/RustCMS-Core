@@ -369,6 +369,80 @@ path = "/admin/api/resources/posts/records?trashed=only"
 actor = "admin"
 status = 422
 
+# Media library (uploads are multipart; see tests/media.rs for upload behaviour).
+[[case]]
+route = "POST /admin/api/media"
+path = "/admin/api/media"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "POST /admin/api/media"
+path = "/admin/api/media"
+actor = "token"
+status = 403
+
+[[case]]
+route = "POST /admin/api/media"
+path = "/admin/api/media"
+actor = "foreign"
+status = 403
+
+[[case]]
+route = "POST /admin/api/media"
+path = "/admin/api/media"
+actor = "member"
+status = 403
+
+[[case]]
+route = "POST /admin/api/media"
+path = "/admin/api/media"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "POST /admin/api/media"
+path = "/admin/api/media"
+actor = "admin"
+status = 422
+body = '{"file": "x"}'
+
+[[case]]
+route = "GET /admin/api/media/{id}/file"
+path = "/admin/api/media/0199d3a4-1b2c-7d3e-8f40-123456789abc/file"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/media/{id}/file"
+path = "/admin/api/media/0199d3a4-1b2c-7d3e-8f40-123456789abc/file"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/media/{id}/file"
+path = "/admin/api/media/0199d3a4-1b2c-7d3e-8f40-123456789abc/file"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/media/{id}/file"
+path = "/admin/api/media/0199d3a4-1b2c-7d3e-8f40-123456789abc/file"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/media/{id}/file"
+path = "/admin/api/media/0199d3a4-1b2c-7d3e-8f40-123456789abc/file"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "GET /admin/api/media/{id}/file"
+path = "/admin/api/media/not-a-uuid/file"
+actor = "admin"
+status = 404
+
 [[case]]
 route = "GET /admin/api/system/users"
 path = "/admin/api/system/users"
