@@ -25,13 +25,23 @@ test("admin manages posts end to end", async ({ page, watch: _ }) => {
   await expect(page.getByText("is required")).toBeVisible();
   await page.getByLabel("Title").fill("Hello from Playwright");
   await page.getByLabel("Body").fill("Written by a robot.");
+  // Tabs: category and publishing on the second, key/value attributes on the third.
+  await page.getByRole("tab", { name: "Publishing" }).click();
   await page.getByRole("combobox").click();
   await page.getByPlaceholder("Search…").fill("Gui");
   await page.getByRole("button", { name: "Guides" }).click();
   await page.getByRole("switch", { name: "Published" }).click();
+  await page.getByRole("tab", { name: "Attributes" }).click();
+  await page.getByRole("button", { name: "Add entry" }).click();
+  await page.getByLabel("Key 1").fill("reading_time");
+  await page.getByLabel("Value 1").fill("3 min");
   await page.getByRole("button", { name: "Create" }).click();
   await expect(page.getByRole("heading", { name: "Hello from Playwright" })).toBeVisible();
+  await page.getByRole("main").getByRole("tab", { name: "Publishing" }).click();
   await expect(page.getByRole("main").getByText("Guides", { exact: true })).toBeVisible();
+  await page.getByRole("main").getByRole("tab", { name: "Attributes" }).click();
+  await expect(page.getByRole("main").getByText("3 min", { exact: true })).toBeVisible();
+  await page.getByRole("main").getByRole("tab", { name: "Content" }).click();
 
   // Edit only what changed.
   await page.getByRole("link", { name: "Edit" }).click();

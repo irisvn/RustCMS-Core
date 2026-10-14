@@ -1,4 +1,5 @@
-//! Posts: soft deletes, an owner scope, a policy, a bulk action and hooks.
+//! Posts: soft deletes, an owner scope, a policy, a bulk action, hooks, and a
+//! tabbed form with key/value attributes.
 
 use std::sync::Arc;
 
@@ -31,23 +32,27 @@ impl Resource for PostResource {
             Field::column(post::Column::PublishedAt).sortable().filterable(),
             Field::column(post::Column::Cover).media().accept(&["image/*"]),
             Field::column(post::Column::Content).rich_text(),
+            Field::column(post::Column::Attributes).key_value().max_items(20).max_length(200),
         ]
     }
 
     fn form() -> Form {
-        Form::new().columns(2).schema(components![
-            Section::make("Content").schema(components![
+        Form::new().schema(components![Tabs::make().schema(components![
+            Tab::make("Content").schema(components![
                 TextInput::make("title").placeholder("A catchy title"),
                 Textarea::make("body"),
                 FileUpload::make("cover"),
                 RichEditor::make("content"),
             ]),
-            Section::make("Publishing").schema(components![
+            Tab::make("Publishing").columns(2).schema(components![
                 SelectInput::make("category_id"),
                 Toggle::make("published"),
                 DateTimePicker::make("published_at"),
             ]),
-        ])
+            Tab::make("Attributes").schema(components![
+                KeyValue::make("attributes").help("Extra details shown with the post, e.g. reading_time = 5 min"),
+            ]),
+        ])])
     }
 
     fn table() -> Table {

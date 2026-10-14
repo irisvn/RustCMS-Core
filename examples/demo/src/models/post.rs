@@ -18,6 +18,7 @@ pub struct Model {
     pub deleted_at: Option<DateTimeUtc>,
     pub cover: Option<Uuid>,
     pub content: Option<Json>,
+    pub attributes: Option<Json>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

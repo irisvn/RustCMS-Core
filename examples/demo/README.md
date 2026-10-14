@@ -1,7 +1,9 @@
 # demo
 
-A small blog built with rustcms: categories, posts with an ownership policy
-(editors edit only their own posts), a publish action, and a token API.
+A small blog built with rustcms: categories (with their posts and a custom
+color widget), posts with an ownership policy (editors edit only their own
+posts), soft deletes, a publish action, a tabbed form (content, publishing,
+key/value attributes), cover images and rich text, and a token/JWT API.
 
 ```sh
 cp .env.example .env && cargo run -- key:generate   # first time only

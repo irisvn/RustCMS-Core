@@ -111,7 +111,11 @@ for (const width of viewports) {
             expect(await table.evaluate((element) => element.parentElement!.scrollWidth > element.parentElement!.clientWidth)).toBe(true);
           }
         }
-        if (name === "record") await expect(page.getByRole("main").getByText("Guides", { exact: true })).toBeVisible();
+        if (name === "record") {
+          // The post's form has tabs; the category is under "Publishing".
+          await page.getByRole("main").getByRole("tab", { name: "Publishing" }).click();
+          await expect(page.getByRole("main").getByText("Guides", { exact: true })).toBeVisible();
+        }
         await capture(page, name!, width, colorScheme);
         await fitsViewport(page);
       }

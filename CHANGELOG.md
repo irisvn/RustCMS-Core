@@ -22,6 +22,10 @@ All notable changes are documented here. The format follows
   `FOR UPDATE SKIP LOCKED` (ADR 0012).
 - `TestDb::reopen()` for tests with two instances on one database.
 
+### Changed (demo)
+- The demo's post form uses tabs (Content, Publishing, Attributes) and a
+  key/value `attributes` column (new migration; seeded).
+
 ### Changed (0.2 — M11)
 - `RateLimiter::reserve`, `release` and `clear` are async; `session:prune` also
   removes ended JWT sign-ins.

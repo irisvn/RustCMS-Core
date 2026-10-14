@@ -106,6 +106,10 @@ pub async fn seed(state: &AppState) -> anyhow::Result<()> {
             author_id: Set(Some(if i % 3 == 0 { editor.id } else { admin.id })),
             published: Set(i % 2 == 0),
             published_at: Set((i % 2 == 0).then(|| now - chrono::Duration::days(i as i64))),
+            attributes: Set(Some(serde_json::json!({
+                "reading_time": format!("{} min", 2 + i % 7),
+                "audience": if i % 2 == 0 { "everyone" } else { "developers" },
+            }))),
             created_at: Set(now),
             updated_at: Set(now),
             ..Default::default()

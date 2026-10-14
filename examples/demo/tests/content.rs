@@ -47,9 +47,9 @@ db_test!(migrations_roll_back_and_forward_keeping_ids, migrate = Migrator, |db: 
     db.conn().execute_unprepared(insert).await.unwrap();
     db.conn().execute_unprepared(insert).await.unwrap();
     db.conn().execute_unprepared("DELETE FROM posts WHERE id = 2").await.unwrap();
-    // Back to before the categories migration (categories, deleted_at, media, color):
-    // its rebuild (SQLite, PostgreSQL) or in-place change (MySQL) is undone.
-    Migrator::down(db.conn(), Some(4)).await.unwrap();
+    // Back to before the categories migration (categories, deleted_at, media, color,
+    // attributes): its rebuild (SQLite, PostgreSQL) or in-place change (MySQL) is undone.
+    Migrator::down(db.conn(), Some(5)).await.unwrap();
     assert!(!sea_orm_migration::SchemaManager::new(db.conn()).has_table("categories").await.unwrap());
     db.conn().execute_unprepared(insert).await.unwrap();
     assert_eq!(max_id().await, Some(3), "rollback keeps the id high-water mark");
@@ -74,4 +74,45 @@ db_test!(seeding_completes_after_an_interrupted_run, migrate = Migrator, |db: Te
     demo::seed::seed(state).await.unwrap();
     assert_eq!(category::Entity::find().count(state.db()).await.unwrap(), 3);
     assert_eq!(post::Entity::find().count(state.db()).await.unwrap(), 30);
+});
+
+db_test!(posts_keep_key_value_attributes, migrate = Migrator, |db: TestDb| async move {
+    use rustcms::axum::http::StatusCode;
+    use sea_orm::{ColumnTrait, QueryFilter};
+    use serde_json::json;
+    let app = TestApp::new(app::build, db).await;
+    demo::seed::seed(app.state()).await.unwrap();
+    let admin = rustcms::models::user::Entity::find()
+        .filter(rustcms::models::user::Column::Email.eq("admin@example.test"))
+        .one(app.state().db())
+        .await
+        .unwrap()
+        .unwrap();
+    let panel = app.acting_as(&admin).await;
+    let records = app.admin_api("resources/posts/records");
+
+    // The form has the three tabs, the last one with the key/value input.
+    let schema = panel.get(&app.admin_api("resources/posts/schema")).await.json().to_string();
+    for needle in ["\"Content\"", "\"Publishing\"", "\"Attributes\"", "key_value"] {
+        assert!(schema.contains(needle), "{needle} missing from the posts schema");
+    }
+
+    let attributes = json!({"reading_time": "5 min", "audience": "everyone"});
+    let created = panel.post_json(&records, &json!({"title": "With attributes", "attributes": attributes})).await;
+    created.assert_status(StatusCode::CREATED);
+    let id = created.json()["data"]["key"].as_str().unwrap().to_owned();
+    let stored = post::Entity::find_by_id(id.parse::<i64>().unwrap()).one(app.state().db()).await.unwrap().unwrap();
+    assert_eq!(stored.attributes, Some(attributes));
+
+    // Bounds hold on every write: values are text, at most 20 pairs of 200 characters.
+    let too_many: serde_json::Map<_, _> = (0..21).map(|i| (format!("k{i}"), json!("v"))).collect();
+    for bad in [json!({"n": 1}), json!(too_many), json!({"long": "x".repeat(201)}), json!(["a"])] {
+        panel
+            .post_json(&records, &json!({"title": "Bad", "attributes": bad}))
+            .await
+            .assert_validation_error("attributes");
+    }
+    // Seeded posts have attributes too.
+    let seeded = post::Entity::find().one(app.state().db()).await.unwrap().unwrap();
+    assert!(seeded.attributes.is_some());
 });
