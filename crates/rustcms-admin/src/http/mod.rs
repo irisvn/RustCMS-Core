@@ -20,6 +20,8 @@ pub struct AdminPanel {
     pub registry: Arc<Registry>,
     /// Translations of labels (framework and application catalogs).
     pub translator: Arc<rustcms_core::i18n::Translator>,
+    /// Settings pages.
+    pub settings: Arc<crate::settings::SettingsRegistry>,
 }
 
 /// `GET panel`.
@@ -34,6 +36,8 @@ pub struct PanelResponse {
     pub navigation: Vec<crate::ResourceInfo>,
     /// System pages the user may open.
     pub system: crate::system::SystemLinks,
+    /// Settings pages the user may open.
+    pub settings: Vec<crate::settings::SettingsLink>,
 }
 
 /// The signed-in user in [`PanelResponse`].
@@ -80,6 +84,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
     ]
     .into_iter()
     .chain(crate::system::routes(admin_path))
+    .chain(crate::settings::routes(admin_path))
     .collect()
 }
 

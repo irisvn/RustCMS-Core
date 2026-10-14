@@ -45,6 +45,7 @@
 - [Custom fields](admin/custom-fields.md)
 - [Users, roles & account](admin/users-roles.md)
 - [Languages (i18n)](admin/i18n.md)
+- [Settings](admin/settings.md)
 
 # APIs
 

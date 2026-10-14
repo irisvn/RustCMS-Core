@@ -40,11 +40,11 @@ server. The model must be in `src/models/<snake_name>.rs`.
 // Cargo.toml: clap = "4", anyhow = "1"
 use clap::{Arg, ArgMatches, Command};
 use rustcms::prelude::*;
-use rustcms::{AppCommand, AppState};
+use rustcms::{AppCommand, AppState, async_trait};
 
 pub struct SyncInvoices;
 
-#[rustcms::async_trait]
+#[async_trait]
 impl AppCommand for SyncInvoices {
     fn definition(&self) -> Command {
         Command::new("invoices:sync")

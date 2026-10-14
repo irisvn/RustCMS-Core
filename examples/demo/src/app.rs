@@ -22,6 +22,7 @@ pub fn build(config: Config) -> AppBuilder {
             .resource::<crate::admin::category::CategoryResource>()
             .resource::<crate::admin::post::PostResource>()
             // rustcms:resources
+            .settings::<crate::settings::SiteSettings>()
             // The `demo/color` widget of the category form.
             .extension_script("demo-color", include_str!("../assets/admin/demo/color.js"))
             .extension_style("demo-color", include_str!("../assets/admin/demo/color.css"))

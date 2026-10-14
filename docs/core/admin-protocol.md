@@ -33,6 +33,7 @@ saves the choice (422 for a language not offered). The shell's
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../guide/src/admin/users-roles.md) |
+| GET / PUT | `/settings/{group}` | `SettingsResponse`; PUT `{version, data}` (see below) |
 
 Options are available to users who may use the field. When a record-level
 policy hides more than 1,000 candidates before 50 visible ones are found, the
@@ -71,6 +72,22 @@ kinds that are not nullable, `""`) and client `rules` (`required`, `max_length`
 in characters); the server re-validates everything. List pages request
 `operation=view` without a key. Inputs marked `writeOnly` (writable but not readable, e.g. a
 password) carry no current value; omit them from the payload to keep the stored value.
+
+Vocabulary 5 adds `secret` inputs (settings pages): the value is never sent;
+`SettingsResponse.secrets` gives each one's state (`set`, `unset`,
+`unreadable`), and a save sends a string (replace), `null` (clear) or nothing
+(keep). `PanelResponse.settings` lists the pages the user may view.
+
+### Settings
+
+`GET /settings/{group}` answers `{schemaVersion, vocabularyVersion, group,
+label, form, data, secrets, version, abilities: {update}}` (`version` is an
+i64 string, `"0"` when never saved). `PUT` takes `{version, data}` with only
+the settings to change; a stale version is a 422 form issue `stale`; an
+unreadable secret not replaced or cleared is a 422 `unreadable_secret` on it.
+Without `view` (and `update` for PUT) the answer is 403 before the body is
+read; an unknown group is 404 only for users who may view some group.
+Fixtures: `fixtures/contract/settings.json`, `settings.vi.json`.
 
 Vocabulary 4 adds `custom` inputs: `widget` (`vendor/name`) and optional
 `props` (JSON), edited by a widget from an extension script (see

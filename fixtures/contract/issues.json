@@ -184,6 +184,9 @@
   "not_allowed": [
     "is not allowed"
   ],
+  "not_option": [
+    "is not one of the options"
+  ],
   "number": [
     "must be a number"
   ],
@@ -261,6 +264,9 @@
   ],
   "unreadable": [
     "could not be read"
+  ],
+  "unreadable_secret": [
+    "cannot be decrypted; replace or clear it"
   ],
   "unsupported_key": [
     "unsupported key type"

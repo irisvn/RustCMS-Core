@@ -13,6 +13,7 @@ show the log yet: query the table directly.
 | Roles | `role.created`, `role.permissions_changed`, `role.deleted` | `role`, its id |
 | Users | `user.created`, `user.updated`, `user.deleted`, `user.activated`, `user.deactivated`, `user.roles_changed`, `user.permissions_changed`, `user.password_reset` | `user`, its id |
 | Permissions | `permission.synced` (meta `{created, orphaned, restored, regrouped}`) | `permission` |
+| Settings | `settings.updated` (secrets as `"[redacted]"`) | `settings`, the group |
 | Account | `auth.password_changed`, `auth.signed_out_everywhere`, `token.created`, `token.revoked` | `user`, its id |
 | Sign-ins | `auth.signed_in`, `auth.signed_out`, `auth.sign_in_failed`, `auth.sign_in_failed_burst`, `jwt.signed_in`, `jwt.signed_out`, `jwt.reuse_detected` | `user` (`session` for failures) |
 
@@ -46,7 +47,7 @@ Data changes are recorded **in the transaction of the change**: the entry
 commits with it and disappears with it on rollback. If the entry cannot be
 written, the change fails too. This covers every write the admin engine makes
 (create, update, trash, restore, force delete, creates through a relation,
-actions), uploads, every `RbacService` method, API tokens issued or revoked,
+actions), uploads, settings, every `RbacService` method, API tokens issued or revoked,
 and the console commands `make:user`, `role:assign`, `token:create` and
 `permission:sync`.
 

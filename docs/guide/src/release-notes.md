@@ -18,6 +18,10 @@ RustCMS is in pre-release. The current published version is
   transaction; sign-ins, sign-outs and JWT events recorded best effort;
   redacted by declaration; `audit:prune` and hourly retention
   ([Audit log](digging-deeper/audit-log.md)).
+- **Settings**: groups of settings as Rust structs, edited in the panel
+  (`settings.<group>.view` / `.update`), read with `rustcms::settings::get`;
+  secrets encrypted and never sent to the browser
+  ([Settings](admin/settings.md)).
 - **Databases**: MySQL 8.4 alongside SQLite and PostgreSQL.
 - **APIs**: `ApiRoutes` with declared access, `Validated<T>`, `Pagination`,
   `Throttle<N>`, `make:api`; JWT access tokens with rotating refresh tokens.

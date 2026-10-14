@@ -26,45 +26,19 @@ impl<R: Resource> ResourceAdapter<R> {
         self.column(field).kind.from_query(&serde_json::Value::String(key.to_owned()))
     }
 
-    /// A rich text field holds a valid document.
-    pub(super) fn check_rich_text(&self, name: &str, value: &serde_json::Value, errors: &mut ValidationErrors) -> bool {
-        if value.is_null() || !self.field(name).is_some_and(|f| f.rich_text) {
-            return true;
+    /// The rule a field's values satisfy (`required` only for client input).
+    pub(super) fn rule(&self, name: &str, required: bool) -> InputRule<'_> {
+        let column = self.column(name);
+        let field = self.field(name);
+        InputRule {
+            kind: column.kind,
+            nullable: column.nullable,
+            required,
+            max_length: field.and_then(|f| f.max_length),
+            key_value: self.key_values.get(name).copied(),
+            rich_text: field.is_some_and(|f| f.rich_text),
+            options: None,
         }
-        match crate::rich_text::parse(value) {
-            Ok(_) => true,
-            Err(e) => {
-                errors.add(name, e.0);
-                false
-            }
-        }
-    }
-
-    /// A key/value field holds an object of strings within its bounds.
-    pub(super) fn check_key_value(&self, name: &str, value: &serde_json::Value, errors: &mut ValidationErrors) -> bool {
-        let Some(&(max_items, max_length)) = self.key_values.get(name) else { return true };
-        if value.is_null() {
-            return true;
-        }
-        let Some(object) = value.as_object() else {
-            errors.add(name, "must be an object of text values");
-            return false;
-        };
-        let message = if object.len() > max_items {
-            format!("may not have more than {max_items} items")
-        } else if object.keys().any(|k| k.trim().is_empty()) {
-            "may not have an empty key".to_owned()
-        } else if object.keys().any(|k| k.chars().count() > KEY_LENGTH) {
-            format!("may not have keys longer than {KEY_LENGTH} characters")
-        } else if object.values().any(|v| !v.is_string()) {
-            "must be an object of text values".to_owned()
-        } else if object.values().any(|v| v.as_str().is_some_and(|t| t.chars().count() > max_length)) {
-            format!("may not have values longer than {max_length} characters")
-        } else {
-            return true;
-        };
-        errors.add(name, message);
-        false
     }
 
     /// Validates client input against field permissions and types.
@@ -78,20 +52,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 errors.add(name.as_str(), "is not allowed");
                 continue;
             };
-            let column = self.column(name);
-            if value.is_null() {
-                if field.required || !column.nullable {
-                    errors.add(name.as_str(), "is required");
-                }
-            } else if let Err(e) = column.kind.decode(value) {
-                errors.add(name.as_str(), e.0);
-            } else if !self.check_key_value(name, value, &mut errors) || !self.check_rich_text(name, value, &mut errors)
-            {
-            } else if let (Some(max), Some(text)) = (field.max_length, value.as_str())
-                && text.chars().count() > max
-            {
-                errors.add(name.as_str(), format!("may not be longer than {max} characters"));
-            }
+            check_input(name, &self.rule(name, field.required), value, &mut errors);
         }
         if op == Operation::Create {
             for field in self.fields.iter().filter(|f| f.required && f.can_write(op, ctx)) {
@@ -127,28 +88,11 @@ impl<R: Resource> ResourceAdapter<R> {
                     R::SLUG
                 )));
             }
-            if value.is_null() && !column.nullable {
-                errors.add(name.as_str(), "is required");
-                continue;
-            }
             // Hooks may change values: limits hold for what is actually written.
-            if !self.check_key_value(name, value, &mut errors) || !self.check_rich_text(name, value, &mut errors) {
+            if !check_written(name, &self.rule(name, false), value, &mut errors) {
                 continue;
             }
-            let max_length = self.field(name).and_then(|f| f.max_length);
-            if let (Some(max), Some(text)) = (max_length, value.as_str())
-                && text.chars().count() > max
-            {
-                errors.add(name.as_str(), format!("may not be longer than {max} characters"));
-                continue;
-            }
-            let candidates = match column.kind.decode(value) {
-                Ok(candidates) => candidates,
-                Err(e) => {
-                    errors.add(name.as_str(), e.0);
-                    continue;
-                }
-            };
+            let Ok(candidates) = column.kind.decode(value) else { continue };
             if !candidates.into_iter().any(|v| model.try_set(column.column, v).is_ok()) {
                 // Only a number too large for an `f32` column (see `FieldKind::decode`).
                 if column.kind == FieldKind::F64 {

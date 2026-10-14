@@ -15,7 +15,7 @@ values follow the [wire format](wire-format.md).
 
 | Method | Path | Response |
 |---|---|---|
-| GET | `/panel` | `PanelResponse` `{brand, user, navigation: [ResourceInfo]}` (resources with `view_any`) |
+| GET | `/panel` | `PanelResponse` `{brand, user, navigation: [ResourceInfo], system, settings}` (resources with `view_any`, settings pages with `view`) |
 | GET | `/resources/{slug}/schema?operation=create\|edit\|view&key=` | `ResourceSchema` for this user |
 | GET | `/resources/{slug}/records?…` | `{data: [Envelope], meta}` |
 | POST | `/resources/{slug}/records` | 201 `{data: Envelope}` |
@@ -29,6 +29,7 @@ values follow the [wire format](wire-format.md).
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../admin/users-roles.md) |
+| GET / PUT | `/settings/{group}` | settings pages, see [Settings](../admin/settings.md#api) |
 
 Options are available to users who may use the field. When a record-level
 policy hides more than 1,000 candidates before 50 visible ones are found, the

@@ -5,4 +5,5 @@ pub(crate) mod adapter;
 pub mod context;
 pub mod idempotency;
 pub mod registry;
+pub(crate) mod validate;
 pub mod wire;

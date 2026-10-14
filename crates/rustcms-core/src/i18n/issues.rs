@@ -47,6 +47,8 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     ("taken", "has already been taken"),
     ("confirmation", "does not match"),
     ("empty", "is empty"),
+    ("not_option", "is not one of the options"),
+    ("unreadable_secret", "cannot be decrypted; replace or clear it"),
     ("given_twice", "may only be given once"),
     // Lengths and counts.
     ("max_length", "may not be longer than {max} characters"),

@@ -48,6 +48,10 @@ fn bindings() -> String {
         UserPage::decl(&cfg),
         SystemRole::decl(&cfg),
         PermissionInfo::decl(&cfg),
+        rustcms_admin::settings::SettingsLink::decl(&cfg),
+        rustcms_admin::settings::SecretStatus::decl(&cfg),
+        rustcms_admin::settings::SettingsAbilities::decl(&cfg),
+        rustcms_admin::settings::SettingsResponse::decl(&cfg),
         PanelResponse::decl(&cfg),
         DataResponse::<ts_rs::Dummy>::decl(&cfg),
     ];

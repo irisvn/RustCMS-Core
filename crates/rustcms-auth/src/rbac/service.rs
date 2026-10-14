@@ -103,34 +103,7 @@ impl<'a> RbacService<'a> {
     /// user's grants inside it, so authorization uses current permissions, not
     /// the snapshot taken when the request was authenticated.
     async fn begin(&self, actor: Actor<'_>) -> AppResult<(DatabaseTransaction, Fresh)> {
-        let txn = rustcms_core::db::begin_write(self.db).await?;
-        if txn.get_database_backend() == DbBackend::Postgres {
-            // A stuck lock holder must not pin every RBAC request (and the pool) forever
-            // (MySQL: `begin_write` sets the same wait).
-            txn.execute_unprepared("SET LOCAL lock_timeout = '10s'").await?;
-        }
-        lock(&txn).await?;
-        let fresh = match actor {
-            Actor::System => Fresh(None),
-            Actor::User(p) => {
-                let id: i64 = p.id.parse().map_err(|_| AppError::Forbidden)?;
-                // The actor's row is held (shared) until commit, so revoking their
-                // credentials waits for this change, or this change sees it.
-                let mut find = user::Entity::find_by_id(id);
-                if txn.get_database_backend() != DbBackend::Sqlite {
-                    find = find.lock_shared();
-                }
-                let user = find
-                    .one(&txn)
-                    .await?
-                    // Fail closed: a principal without its credential version cannot prove it is current.
-                    .filter(|u| u.is_active && p.auth_version == Some(u.auth_version))
-                    .ok_or(AppError::Forbidden)?;
-                let grants = load_grants(&txn, &p.guard, user.id).await?;
-                Fresh(Some(Principal { permissions: grants.permissions, super_admin: grants.super_admin, ..p.clone() }))
-            }
-        };
-        Ok((txn, fresh))
+        begin_locked(self.db, actor).await
     }
 
     /// Creates a role in `guard` with `permissions`.
@@ -768,6 +741,50 @@ impl<'a> RbacService<'a> {
         self.commit(txn).await?;
         Ok(report)
     }
+}
+
+/// Opens a write transaction holding the RBAC lock (the first lock of the
+/// transaction) and reloads `actor`'s grants inside it.
+async fn begin_locked(db: &DatabaseConnection, actor: Actor<'_>) -> AppResult<(DatabaseTransaction, Fresh)> {
+    let txn = rustcms_core::db::begin_write(db).await?;
+    if txn.get_database_backend() == DbBackend::Postgres {
+        // A stuck lock holder must not pin every RBAC request (and the pool) forever
+        // (MySQL: `begin_write` sets the same wait).
+        txn.execute_unprepared("SET LOCAL lock_timeout = '10s'").await?;
+    }
+    lock(&txn).await?;
+    let fresh = match actor {
+        Actor::System => Fresh(None),
+        Actor::User(p) => {
+            let id: i64 = p.id.parse().map_err(|_| AppError::Forbidden)?;
+            // The actor's row is held (shared) until commit, so revoking their
+            // credentials waits for this change, or this change sees it.
+            let mut find = user::Entity::find_by_id(id);
+            if txn.get_database_backend() != DbBackend::Sqlite {
+                find = find.lock_shared();
+            }
+            let user = find
+                .one(&txn)
+                .await?
+                // Fail closed: a principal without its credential version cannot prove it is current.
+                .filter(|u| u.is_active && p.auth_version == Some(u.auth_version))
+                .ok_or(AppError::Forbidden)?;
+            let grants = load_grants(&txn, &p.guard, user.id).await?;
+            Fresh(Some(Principal { permissions: grants.permissions, super_admin: grants.super_admin, ..p.clone() }))
+        }
+    };
+    Ok((txn, fresh))
+}
+
+/// Opens a write transaction for a change `principal` makes outside RBAC
+/// (settings): it holds the RBAC lock, so no role or permission change runs
+/// meanwhile, and returns the principal as it is now (active, same
+/// credentials, current grants), or 403. Use the returned principal to
+/// authorize the change.
+pub async fn begin_as(db: &DatabaseConnection, principal: &Principal) -> AppResult<(DatabaseTransaction, Principal)> {
+    let (txn, fresh) = begin_locked(db, Actor::User(principal)).await?;
+    let current = fresh.0.ok_or(AppError::Forbidden)?;
+    Ok((txn, current))
 }
 
 pub(super) fn forbidden<T>() -> AppResult<T> {

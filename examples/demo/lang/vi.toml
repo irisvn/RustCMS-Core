@@ -12,6 +12,14 @@
 "A catchy title" = "Một tiêu đề hấp dẫn"
 "Extra details shown with the post, e.g. reading_time = 5 min" = "Thông tin thêm hiển thị cùng bài viết, ví dụ reading_time = 5 phút"
 
+"Site" = "Trang web"
+"Site name" = "Tên trang"
+"Tagline" = "Khẩu hiệu"
+"Comments open" = "Cho phép bình luận"
+"Posts per page" = "Số bài mỗi trang"
+"Between 1 and 100" = "Từ 1 đến 100"
+"Mail password" = "Mật khẩu mail"
+
 [posts]
 # "Content" is also a navigation group; on the post form it is the first tab.
 "Content" = "Nội dung"

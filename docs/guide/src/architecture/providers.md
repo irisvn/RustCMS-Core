@@ -23,9 +23,11 @@ runs once the database is connected.
 
 ```rust,ignore
 // Cargo.toml: anyhow = "1"
+use rustcms::async_trait;
+
 struct BillingProvider;
 
-#[rustcms::async_trait]
+#[async_trait]
 impl ServiceProvider for BillingProvider {
     fn register(&self, app: &mut AppBuilder) {
         let config: StripeConfig = app.config().section("stripe").expect("[stripe] settings");

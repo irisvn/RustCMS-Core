@@ -54,6 +54,7 @@ base64.workspace = true
 tokio.workspace = true
 insta.workspace = true
 proptest.workspace = true
+http-body = "1"
 
 [lints]
 workspace = true

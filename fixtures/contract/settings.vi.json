@@ -1,0 +1,155 @@
+{
+  "abilities": {
+    "update": true
+  },
+  "data": {
+    "class_size": 30,
+    "level": "basic",
+    "links": {},
+    "motto": null,
+    "open": true,
+    "site_name": "Academy",
+    "starts": null
+  },
+  "form": {
+    "columns": 1,
+    "components": [
+      {
+        "columns": 1,
+        "components": [
+          {
+            "columnSpan": 1,
+            "disabled": false,
+            "label": "Site name",
+            "name": "site_name",
+            "nullable": false,
+            "rules": [
+              {
+                "rule": "required"
+              },
+              {
+                "rule": "max_length",
+                "value": 20
+              }
+            ],
+            "type": "text_input",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "disabled": false,
+            "label": "Motto",
+            "name": "motto",
+            "nullable": true,
+            "rules": [],
+            "type": "textarea",
+            "valueType": "string"
+          }
+        ],
+        "label": "Site",
+        "type": "section"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Open",
+        "name": "open",
+        "nullable": false,
+        "rules": [],
+        "type": "toggle",
+        "valueType": "bool"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "help": "Learners per class",
+        "label": "Class size",
+        "name": "class_size",
+        "nullable": false,
+        "rules": [],
+        "type": "number_input",
+        "valueType": "i32"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Level",
+        "name": "level",
+        "nullable": false,
+        "options": [
+          {
+            "label": "Basic",
+            "value": "basic"
+          },
+          {
+            "label": "Advanced",
+            "value": "advanced"
+          }
+        ],
+        "rules": [],
+        "type": "select",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Links",
+        "name": "links",
+        "nullable": false,
+        "rules": [
+          {
+            "rule": "max_items",
+            "value": 3
+          },
+          {
+            "rule": "max_length",
+            "value": 1000
+          }
+        ],
+        "type": "key_value",
+        "valueType": "json"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Starts",
+        "name": "starts",
+        "nullable": true,
+        "rules": [],
+        "type": "date_picker",
+        "valueType": "date"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Mật khẩu SMTP",
+        "name": "smtp_password",
+        "nullable": false,
+        "rules": [],
+        "type": "secret",
+        "valueType": "string",
+        "writeOnly": true
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Api key",
+        "name": "api_key",
+        "nullable": false,
+        "rules": [],
+        "type": "secret",
+        "valueType": "string",
+        "writeOnly": true
+      }
+    ]
+  },
+  "group": "general",
+  "label": "Chung",
+  "schemaVersion": 1,
+  "secrets": {
+    "api_key": "unset",
+    "smtp_password": "unset"
+  },
+  "version": "0",
+  "vocabularyVersion": 5
+}

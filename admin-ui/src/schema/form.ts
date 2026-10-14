@@ -70,8 +70,9 @@ export function pairsOf(value: FormValue): [string, string][] {
 
 export const encodePair = (key: string, value: string) => JSON.stringify([key, value]);
 
-/** Input types of vocabulary version 4. */
+/** Input types of vocabulary version 5. */
 export const KNOWN_INPUT_TYPES = new Set<string>([
+  "secret",
   "custom",
   "file_upload",
   "rich_editor",
@@ -193,6 +194,8 @@ export function payloadOf(
   for (const input of inputs) {
     // Disabled inputs are not writable; unknown (newer) input types are never submitted.
     if (input.disabled || !KNOWN_INPUT_TYPES.has(input.type)) continue;
+    // Secrets are sent from their explicit intent (keep, replace, clear), never from the form value.
+    if (input.type === "secret") continue;
     // A custom input is sent only through its widget, and only when set.
     if (input.type === "custom" && (!widget(input.widget) || values[input.name] === "")) continue;
     if (dirty && !dirty[input.name]) continue;

@@ -3,8 +3,8 @@
 ## From 0.1.0-alpha.0 to the next release
 
 1. Update the `rustcms` dependency, then run `rustcms migrate` (new tables for
-   media, JWT sign-ins, idempotency keys, locks, the audit log, and
-   `users.locale`).
+   media, JWT sign-ins, idempotency keys, locks, the audit log, settings,
+   and `users.locale`).
 2. Rust API changes:
    - API routes: move them to `ApiRoutes` with an explicit `Access` per route
      ([Routing](basics/routing.md)); register them with
@@ -18,6 +18,9 @@
      an `&AuditContext`; `credentials::issue_token` and
      `jwt_session::{issue, rotate, logout}` a `&RequestMeta` (both in
      `rustcms::audit`; `RequestMeta` is also an extractor).
+   - `InputType` has a `Secret` variant and `AdminPanel` a `settings` field
+     (exhaustive matches and struct literals need them); admin clients see
+     `vocabularyVersion` 5.
    - Resource slugs are limited to 64 bytes and action names to 57 (boot
      fails beyond); `Ctx::new` records writes as its principal.
    - Tests that build tables from entities instead of running migrations also

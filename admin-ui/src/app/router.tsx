@@ -16,6 +16,7 @@ import { LoginPage } from "@/pages/login";
 import { FormPage, ViewPage } from "@/pages/record";
 import { Dashboard, Shell } from "@/pages/shell";
 import { AccountPage } from "@/pages/account";
+import { SettingsPage } from "@/pages/settings";
 import { RoleCreatePage, RolePage, RolesPage, UserCreatePage, UserPage, UsersPage } from "@/pages/system";
 import type { Session } from "./session";
 
@@ -131,6 +132,14 @@ const systemRole = createRoute({
     return <RolePage key={id} id={id} />;
   },
 });
+const settings = createRoute({
+  getParentRoute: () => app,
+  path: "/settings/$group",
+  component: function Settings() {
+    const { group } = settings.useParams();
+    return <SettingsPage key={group} group={group} />;
+  },
+});
 const account = createRoute({ getParentRoute: () => app, path: "/account", component: AccountPage });
 
 const routeTree = root.addChildren([
@@ -147,6 +156,7 @@ const routeTree = root.addChildren([
     systemRoles,
     systemRoleCreate,
     systemRole,
+    settings,
     account,
   ]),
 ]);

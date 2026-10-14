@@ -35,6 +35,9 @@ pub enum InputType {
     RichEditor,
     /// A widget from an application extension script (vocabulary 4).
     Custom,
+    /// A secret setting: shows whether it is set, never its value; replaced
+    /// or cleared explicitly (vocabulary 5).
+    Secret,
 }
 
 /// An option of a select, checkbox list or select filter.
@@ -204,4 +207,6 @@ input_types! {
     FileUpload => FileUpload,
     /// Rich text editor for a `Field::rich_text()` field.
     RichEditor => RichEditor,
+    /// Secret setting (`SettingField::secret`): set, replace or clear, never shown.
+    SecretInput => Secret,
 }

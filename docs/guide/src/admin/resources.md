@@ -77,8 +77,8 @@ fields as columns.
 
 ## Hooks
 
-Hooks are async methods of the resource (put `#[rustcms::async_trait]` on the
-`impl`). Every write runs in one transaction:
+Hooks are async methods of the resource (`use rustcms::async_trait;` and put
+`#[async_trait]` on the `impl`; an attribute path cannot start with `rustc…`). Every write runs in one transaction:
 
 1. reject undeclared or non-writable keys (422),
 2. type-check values against the [wire format](../reference/wire-format.md),

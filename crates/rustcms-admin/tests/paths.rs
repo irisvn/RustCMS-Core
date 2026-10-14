@@ -70,6 +70,8 @@ fn the_admin_route_list_is_unchanged() {
         "DELETE /admin/api/system/roles/{id}",
         "PUT /admin/api/system/roles/{id}/permissions",
         "GET /admin/api/system/permissions",
+        "GET /admin/api/settings/{group}",
+        "PUT /admin/api/settings/{group}",
     ];
     assert_eq!(listed, expected);
 }

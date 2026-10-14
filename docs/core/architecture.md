@@ -44,18 +44,18 @@ on the admin engine, so it can change without touching them.
 | `resources/` | what applications declare: `Resource`, `Field`, `Action`, `Policy`, list `query` types |
 | `forms/`, `tables/` | builders (`TextInput::make`, `Table::new`, …); `ui` re-exports both |
 | `panel/` | `AdminProvider` and the SPA shell (assets, extensions) |
-| `engine/` | the generic engine: `Registry`/`DynResource`, `Ctx`, wire format, idempotency |
+| `engine/` | the generic engine: `Registry`/`DynResource`, `Ctx`, wire format, idempotency, `validate` (value checks shared by resources and settings) |
 | `engine/adapter/` | `ResourceAdapter<R>`: `input` (acceptance), `references` (checks after hooks), `read`, `write` (transactions, locks), `schema`, `operations` (the `DynResource` impl), `audit` (snapshots, redaction, entries) |
 | `http/` | routes and handlers: `resources`, `relations`, `actions`, `extract` (`AdminCtx`) |
 | `contract/` | the DTOs the SPA receives (`ResourceSchema`, …); also reachable as `schema` |
-| `features/` | built-in features: `media/`, `rich_text/`, `system/` (users and roles) |
+| `features/` | built-in features: `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
 
 ### rustcms-auth
 
 | Module | Role |
 |---|---|
 | `guards/` | `guard` (`Auth`, `MaybeAuth`), `session`, `tokens`, `jwt` (access tokens), `jwt_session` (refresh families), `credentials` (revocation) |
-| `rbac/` | `service` (`RbacService`, every change), `rules` (no escalation), `resolver` (grants cache keyed by the database generation), `queries` |
+| `rbac/` | `service` (`RbacService`, every change; `begin_as` for writes outside RBAC under its lock), `rules` (no escalation), `resolver` (grants cache keyed by the database generation), `queries` |
 | `http/` | the auth routes |
 | `console/` | `user:create`, `role:assign`, … |
 | `support/` | password hashing, secret comparison, rate limits, `audit` (sign-in events) |
@@ -64,7 +64,7 @@ on the admin engine, so it can change without touching them.
 ### rustcms-core
 
 Small modules stay at the top (`app`, `config`, `console`, `error`, `http`,
-`key`, `principal`, `telemetry`, `models`, `i18n` (locale, catalogs, issue codes), `audit` (entries, diff, bounds, prune; ADR 0014), `jobs` (periodic jobs run by one
+`key`, `principal`, `telemetry`, `models`, `i18n` (locale, catalogs, issue codes), `audit` (entries, diff, bounds, prune; ADR 0014), `settings` (groups, `Secret`, encrypted storage; ADR 0015), `jobs` (periodic jobs run by one
 instance), `redis` with feature `redis`). Two are directories:
 
 - `db/`: `connect`, `check` (MySQL setup), `transactions`, `locks` (named locks).

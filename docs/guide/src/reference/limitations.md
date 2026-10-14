@@ -7,7 +7,9 @@ What RustCMS does not do yet, and behaviours to know before relying on it.
 - Many-to-many relationship editing in the panel (attach/detach through a
   pivot table): use a resource for the pivot table, or an action.
 - Actions with a form (modal input), import and export, dashboard widgets.
-- Settings pages, an audit log viewer in the panel, mail, password reset and email verification.
+- An audit log viewer in the panel, mail, password reset and email verification.
+- Settings of kinds other than text, integer (`i32`), boolean, select, key/value,
+  date and secret (store larger numbers or decimals as text).
 - Translations of content (only the interface is translated: English, Vietnamese).
 - Composite primary keys; sorting by related columns.
 - Image resizing and thumbnails, range requests, public media URLs (add your

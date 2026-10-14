@@ -20,7 +20,9 @@ s3 = ["dep:object_store", "object_store/aws", "dep:futures-util"]
 redis = ["dep:redis"]
 
 [dependencies]
+aes-gcm.workspace = true
 anyhow.workspace = true
+hmac.workspace = true
 form_urlencoded = "1"
 async-trait.workspace = true
 axum.workspace = true

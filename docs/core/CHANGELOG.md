@@ -13,6 +13,26 @@ All notable changes are documented here. The format follows
   (architecture, admin protocol, ADRs, reports, this changelog, review
   checklist, contributor guides). `CHANGELOG.md` moved to `docs/core/`.
 
+### Added (0.3 — M14a)
+- **Settings pages** (ADR 0015): groups as Rust structs (`rustcms::settings::
+  Settings`, `get`, `load`), edited in the panel (`AdminProvider::settings`,
+  `SettingsPage`, `SettingField`; kinds text, textarea, integer, boolean,
+  select, key/value, date, secret), stored one row per group (`settings`, new
+  migration) with optimistic versions; permissions `settings.<group>.view` /
+  `.update`; audit `settings.updated`.
+- `Secret`: AES-256-GCM with a key derived from `APP_KEY`, bound to group,
+  field and version; never serialized or sent; explicit replace / clear.
+- Vocabulary 5: `secret` input (`SecretInput`); `PanelResponse.settings`;
+  issue codes `not_option`, `unreadable_secret`.
+- `rustcms_auth::rbac::begin_as`: a write transaction under the RBAC lock
+  with the actor's current grants; `AppKey::derive`.
+
+### Changed (0.3 — M14a)
+- Value checks of resources moved to `engine::validate` (`check_input`,
+  `check_written`), shared with settings; behaviour unchanged.
+- Docs: `#[rustcms::async_trait]` (which Rust rejects: attribute paths may not
+  start with `rustc`) replaced by `use rustcms::async_trait;` + `#[async_trait]`.
+
 ### Added (0.3 — M13)
 - **Audit log** (`audit_logs`, new migration; ADR 0014): resource writes,
   actions, relation creates, uploads, every `RbacService` change, account

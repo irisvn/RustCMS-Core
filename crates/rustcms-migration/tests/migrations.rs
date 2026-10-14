@@ -81,6 +81,19 @@ db_test!(upgrade_adds_audit_logs, |db: TestDb| async move {
     assert!(has_table(&db, "audit_logs").await);
 });
 
+// M13 → M14: the settings table appears empty, and rolls back cleanly.
+db_test!(upgrade_adds_settings, |db: TestDb| async move {
+    Migrator::up(db.conn(), Some(before("create_settings_table"))).await.unwrap();
+    assert!(!has_table(&db, "settings").await);
+    Migrator::up(db.conn(), None).await.unwrap();
+    assert!(rustcms_core::models::setting::Entity::find().all(db.conn()).await.unwrap().is_empty());
+    Migrator::down(db.conn(), Some(from("create_settings_table"))).await.unwrap();
+    assert!(!has_table(&db, "settings").await);
+    assert!(has_table(&db, "audit_logs").await, "earlier tables are kept");
+    Migrator::up(db.conn(), None).await.unwrap();
+    assert!(has_table(&db, "settings").await);
+});
+
 // M1 → M2: users created before the auth tables keep working; system roles are seeded.
 db_test!(upgrade_from_m1_adds_auth_tables, |db: TestDb| async move {
     Migrator::up(db.conn(), Some(2)).await.unwrap();
@@ -115,9 +128,16 @@ db_test!(down_then_up_is_clean, |db: TestDb| async move {
     Migrator::up(db.conn(), None).await.unwrap();
     UserFactory::new().create(db.conn()).await;
     Migrator::down(db.conn(), None).await.unwrap();
-    for table in
-        ["users", "sessions", "personal_access_tokens", "roles", "permissions", "model_has_roles", "audit_logs"]
-    {
+    for table in [
+        "users",
+        "sessions",
+        "personal_access_tokens",
+        "roles",
+        "permissions",
+        "model_has_roles",
+        "audit_logs",
+        "settings",
+    ] {
         assert!(!has_table(&db, table).await, "{table} dropped");
     }
     Migrator::up(db.conn(), None).await.unwrap();

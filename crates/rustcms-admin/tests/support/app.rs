@@ -6,7 +6,97 @@ use rustcms_core::models::user;
 use rustcms_core::{AppBuilder, Config};
 use rustcms_testing::{Factory, TestApp, TestDb, UserFactory};
 
+use rustcms_admin::{Ctx, Section, SettingField, SettingsMeta, SettingsPage, TextInput, components};
+use rustcms_core::ValidationErrors;
+use rustcms_core::settings::{Secret, Settings};
+use serde::{Deserialize, Serialize};
+
 use super::{CategoryResource, NoteResource, PostResource, TagResource};
+
+/// A settings group of every kind (`settings.general.*`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneralSettings {
+    pub site_name: String,
+    pub motto: Option<String>,
+    pub open: bool,
+    pub class_size: i32,
+    pub level: String,
+    pub links: std::collections::BTreeMap<String, String>,
+    pub starts: Option<chrono::NaiveDate>,
+    pub smtp_password: Secret,
+    pub api_key: Secret,
+}
+
+impl Default for GeneralSettings {
+    fn default() -> Self {
+        Self {
+            site_name: "Academy".into(),
+            motto: None,
+            open: true,
+            class_size: 30,
+            level: "basic".into(),
+            links: Default::default(),
+            starts: None,
+            smtp_password: Secret::default(),
+            api_key: Secret::default(),
+        }
+    }
+}
+
+impl Settings for GeneralSettings {
+    const GROUP: &'static str = "general";
+}
+
+#[async_trait::async_trait]
+impl SettingsPage for GeneralSettings {
+    fn meta() -> SettingsMeta {
+        SettingsMeta::new("General").icon("settings")
+    }
+
+    fn fields() -> Vec<SettingField> {
+        vec![
+            SettingField::text("site_name").required().max_length(20),
+            SettingField::text("motto").nullable(),
+            SettingField::boolean("open"),
+            SettingField::integer("class_size").help("Learners per class"),
+            SettingField::select("level", [("basic", "Basic"), ("advanced", "Advanced")]),
+            SettingField::key_value("links").max_items(3),
+            SettingField::date("starts").nullable(),
+            SettingField::secret("smtp_password").label("SMTP password"),
+            SettingField::secret("api_key").audit_redact(),
+        ]
+    }
+
+    fn form() -> rustcms_admin::Form {
+        rustcms_admin::Form::new().schema(components![
+            Section::make("Site")
+                .schema(components![TextInput::make("site_name"), rustcms_admin::Textarea::make("motto")]),
+            rustcms_admin::Toggle::make("open"),
+            rustcms_admin::NumberInput::make("class_size"),
+            rustcms_admin::SelectInput::make("level"),
+            rustcms_admin::KeyValue::make("links"),
+            rustcms_admin::DatePicker::make("starts"),
+            rustcms_admin::SecretInput::make("smtp_password"),
+            rustcms_admin::SecretInput::make("api_key"),
+        ])
+    }
+
+    async fn validate(ctx: &Ctx, settings: &Self) -> Result<(), ValidationErrors> {
+        // Runs inside the write (its transaction, the user's current grants).
+        if ctx.txn.is_none() {
+            return Err(ValidationErrors::field("site_name", "is invalid"));
+        }
+        // A careless message quoting a secret: the server redacts it.
+        if settings.site_name == "leak" {
+            let quoted = settings.smtp_password.expose().unwrap_or_default();
+            return Err(ValidationErrors::field("site_name", format!("clashes with {quoted}")));
+        }
+        if settings.class_size < 1 {
+            return Err(ValidationErrors::field("class_size", "is out of range"));
+        }
+        Ok(())
+    }
+}
 
 /// Vietnamese labels of the test resources (`[posts]` overrides for that resource).
 pub const VI: &str = r#"
@@ -15,6 +105,8 @@ pub const VI: &str = r#"
 "Title" = "Tiêu đề"
 "Category" = "Danh mục"
 "Categories" = "Danh mục"
+"General" = "Chung"
+"SMTP password" = "Mật khẩu SMTP"
 
 [posts]
 "Content" = "Nội dung bài"
@@ -41,6 +133,7 @@ pub fn build(config: Config) -> AppBuilder {
             .resource::<PostResource>()
             .resource::<TagResource>()
             .resource::<NoteResource>()
+            .settings::<GeneralSettings>()
             .translations("vi", VI),
     );
     app

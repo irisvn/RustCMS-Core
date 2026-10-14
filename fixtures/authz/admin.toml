@@ -513,6 +513,58 @@ status = 404
 body = '{"title": "x"}'
 
 [[case]]
+route = "GET /admin/api/settings/{group}"
+path = "/admin/api/settings/general"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/settings/{group}"
+path = "/admin/api/settings/general"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/settings/{group}"
+path = "/admin/api/settings/general"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/settings/{group}"
+path = "/admin/api/settings/general"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "PUT /admin/api/settings/{group}"
+path = "/admin/api/settings/general"
+actor = "member"
+status = 403
+body = '{"version": "0", "data": {"site_name": "x"}}'
+
+[[case]]
+route = "PUT /admin/api/settings/{group}"
+path = "/admin/api/settings/general"
+actor = "editor"
+status = 403
+body = '{"version": "0", "data": {"site_name": "x"}}'
+
+[[case]]
+route = "PUT /admin/api/settings/{group}"
+path = "/admin/api/settings/general"
+actor = "foreign"
+status = 403
+body = '{"version": "0", "data": {"site_name": "x"}}'
+
+[[case]]
+route = "PUT /admin/api/settings/{group}"
+path = "/admin/api/settings/general"
+actor = "admin"
+status = 200
+body = '{"version": "0", "data": {"site_name": "x"}}'
+
+[[case]]
 route = "GET /admin/api/system/users"
 path = "/admin/api/system/users"
 actor = "guest"

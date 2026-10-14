@@ -52,14 +52,14 @@ export function NotFoundPage() {
  * Compatibility of a schema with this bundle: a newer structure is shown read-only
  * (it could be misread on submit); a newer vocabulary only renders fallbacks.
  */
-export function compatibility(schema: ResourceSchema) {
+export function compatibility(schema: Pick<ResourceSchema, "schemaVersion" | "vocabularyVersion">) {
   return {
     readOnly: schema.schemaVersion > SCHEMA_VERSION,
     outdated: schema.schemaVersion > SCHEMA_VERSION || schema.vocabularyVersion > VOCABULARY_VERSION,
   };
 }
 
-export function VersionBanner({ schema }: { schema: ResourceSchema }) {
+export function VersionBanner({ schema }: { schema: Pick<ResourceSchema, "schemaVersion" | "vocabularyVersion"> }) {
   const t = useT();
   const { readOnly, outdated } = compatibility(schema);
   if (!outdated) return null;

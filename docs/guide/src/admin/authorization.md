@@ -37,9 +37,11 @@ Without a policy, every ability requires the permission `{slug}.{ability}`.
 A custom policy decides per record:
 
 ```rust,ignore
+use rustcms::async_trait;
+
 pub struct PostPolicy;
 
-#[rustcms::async_trait]
+#[async_trait]
 impl Policy for PostPolicy {
     async fn allows(&self, ctx: &Ctx, ability: &str, record: Option<&Data>) -> bool {
         let own = record.and_then(|r| r.get("author_id")) == Some(&json!(ctx.principal.id));

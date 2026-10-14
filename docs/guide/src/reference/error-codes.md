@@ -47,6 +47,8 @@ A message that follows none of these templates has the code `custom` and
 | `control_characters` | `may not contain control characters` |
 | `name_format` | `must be at most {max} characters, without control characters` |
 | `text_object` | `must be an object of text values` |
+| `not_option` | `is not one of the options` |
+| `unreadable_secret` | `cannot be decrypted; replace or clear it` |
 | `empty_key` | `may not have an empty key` |
 | `key_length` | `may not have keys longer than {max} characters` |
 | `value_length` | `may not have values longer than {max} characters` |

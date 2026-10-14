@@ -36,6 +36,7 @@ pub(super) async fn panel(
         user: PanelUser { id: auth.user.id.to_string(), name: auth.user.name.clone(), email: auth.user.email.clone() },
         navigation,
         system: crate::system::SystemLinks::of(&ctx.principal),
+        settings: panel.settings.links(&ctx),
     }))
 }
 

@@ -2,7 +2,7 @@
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
-export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value" | "file_upload" | "rich_editor" | "custom";
+export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value" | "file_upload" | "rich_editor" | "custom" | "secret";
 
 export type LayoutType = "section" | "grid" | "tabs" | "tab";
 
@@ -615,6 +615,66 @@ groupLabel?: string,
  */
 grantable: boolean, };
 
+export type SettingsLink = { 
+/**
+ * The group (URL segment).
+ */
+group: string, 
+/**
+ * Title.
+ */
+label: string, 
+/**
+ * Icon name.
+ */
+icon?: string, };
+
+export type SecretStatus = "set" | "unset" | "unreadable";
+
+export type SettingsAbilities = { 
+/**
+ * Save changes.
+ */
+update: boolean, };
+
+export type SettingsResponse = { 
+/**
+ * See [`SCHEMA_VERSION`].
+ */
+schemaVersion: number, 
+/**
+ * See [`VOCABULARY_VERSION`].
+ */
+vocabularyVersion: number, 
+/**
+ * The group.
+ */
+group: string, 
+/**
+ * Title.
+ */
+label: string, 
+/**
+ * The form (inputs disabled without `update`).
+ */
+form: FormSchema, 
+/**
+ * Values of the settings other than secrets (defaults for unsaved ones).
+ */
+data: Record<string, JsonValue>, 
+/**
+ * State of each secret; their values are never sent.
+ */
+secrets: { [key in string]: SecretStatus }, 
+/**
+ * Version to send back when saving (`"0"`: never saved).
+ */
+version: string, 
+/**
+ * What the user may do.
+ */
+abilities: SettingsAbilities, };
+
 export type PanelResponse = { 
 /**
  * Name shown in the panel.
@@ -631,7 +691,11 @@ navigation: Array<ResourceInfo>,
 /**
  * System pages the user may open.
  */
-system: SystemLinks, };
+system: SystemLinks, 
+/**
+ * Settings pages the user may open.
+ */
+settings: Array<SettingsLink>, };
 
 export type DataResponse<T> = { 
 /**

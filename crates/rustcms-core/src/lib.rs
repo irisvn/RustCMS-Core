@@ -16,6 +16,7 @@ pub mod models;
 pub mod principal;
 #[cfg(feature = "redis")]
 pub mod redis;
+pub mod settings;
 pub mod storage;
 pub mod telemetry;
 

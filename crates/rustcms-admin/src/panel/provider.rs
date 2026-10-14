@@ -29,6 +29,7 @@ pub struct AdminProvider {
     media: bool,
     extensions: Vec<crate::spa::Extension>,
     translator: Translator,
+    settings: crate::settings::SettingsRegistry,
 }
 
 /// Locales the panel's interface is written in (`admin-ui/src/i18n`).
@@ -46,6 +47,7 @@ impl Default for AdminProvider {
             media: false,
             extensions: Vec::new(),
             translator,
+            settings: crate::settings::SettingsRegistry::default(),
         }
     }
 }
@@ -108,6 +110,16 @@ impl AdminProvider {
         self
     }
 
+    /// Adds a settings page for group `T` (permissions `settings.<group>.view`
+    /// and `settings.<group>.update`).
+    ///
+    /// # Panics
+    /// On a misconfigured page (see [`crate::SettingsPage`]) or a group added twice.
+    pub fn settings<T: crate::SettingsPage>(mut self) -> Self {
+        self.settings.register::<T>();
+        self
+    }
+
     /// Name shown in the panel.
     pub fn brand(mut self, brand: impl Into<String>) -> Self {
         self.brand = brand.into();
@@ -142,6 +154,11 @@ impl ServiceProvider for AdminProvider {
                 auth.permissions.declare(ADMIN_GUARD, &permission, Some(resource.slug()));
             }
         }
+        for page in self.settings.all() {
+            for permission in crate::settings::permissions(page.group()) {
+                auth.permissions.declare(ADMIN_GUARD, &permission, Some("settings"));
+            }
+        }
         let admin_path = auth.config.admin_path.clone();
         if self.media {
             let storage = app
@@ -169,12 +186,13 @@ impl ServiceProvider for AdminProvider {
             panic!("app.locales lists {other:?}, but the admin panel is only written in {PANEL_LOCALES:?}");
         }
         let translator = std::sync::Arc::new(self.translator.clone());
-        app.bind(AdminPanel { brand: self.brand.clone(), registry, translator });
+        let settings = std::sync::Arc::new(self.settings.clone());
+        app.bind(AdminPanel { brand: self.brand.clone(), registry, translator, settings });
         let extensions = std::sync::Arc::new(self.extensions.clone());
         let locales = spa::Locales { default: app.config().app.locale.clone(), all: app.config().app.locales.clone() };
         app.routes(move |router| {
             spa::router(
-                system::router(http::router(router, &admin_path), &admin_path),
+                crate::settings::router(system::router(http::router(router, &admin_path), &admin_path), &admin_path),
                 &admin_path,
                 extensions,
                 &locales,
@@ -328,6 +346,7 @@ fn missing_translations(panel: &AdminPanel, locale: &str, permission_groups: &[S
                 .map(|(_, s)| s)
         })
         .collect();
+    missing.extend(panel.settings.display_strings().into_iter().filter(|s| !translated(None, s)));
     // Permission groups that are not resources are shown in words (`users` → "Users").
     for group in permission_groups {
         let source = crate::system::roles::group_source(group);

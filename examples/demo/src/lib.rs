@@ -7,3 +7,4 @@ pub mod migrations;
 pub mod models;
 pub mod policies;
 pub mod seed;
+pub mod settings;

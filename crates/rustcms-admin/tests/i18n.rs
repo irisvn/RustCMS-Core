@@ -108,7 +108,12 @@ fn missing_labels_are_looked_up_as_they_are_shown() {
     let registry = Registry::new().register::<rustcms_admin::media::MediaResource>().finish();
     let mut translator = Translator::default();
     translator.add("vi", "[media]\n\"Content\" = \"Nội dung\"\n\"Media\" = \"Thư viện\"").unwrap();
-    let panel = AdminPanel { brand: "x".into(), registry, translator: std::sync::Arc::new(translator) };
+    let panel = AdminPanel {
+        brand: "x".into(),
+        registry,
+        translator: std::sync::Arc::new(translator),
+        settings: Default::default(),
+    };
     let missing = panel.missing_translations("vi", &["users".into(), "media".into()]);
     assert!(missing.contains(&"Content".to_owned()), "{missing:?}");
     assert!(!missing.contains(&"Media".to_owned()), "{missing:?}");

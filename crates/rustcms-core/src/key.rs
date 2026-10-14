@@ -43,6 +43,14 @@ impl AppKey {
         &self.0
     }
 
+    /// `HMAC-SHA256(APP_KEY, purpose)`: a key for one purpose only.
+    pub fn derive(&self, purpose: &str) -> [u8; LEN] {
+        use hmac::{KeyInit, Mac};
+        let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(&self.0).expect("HMAC takes keys of any length");
+        mac.update(purpose.as_bytes());
+        mac.finalize().into_bytes().into()
+    }
+
     /// The `base64:...` form, for writing to `.env`.
     pub fn encode(&self) -> String {
         format!("{PREFIX}{}", STANDARD.encode(self.0))
