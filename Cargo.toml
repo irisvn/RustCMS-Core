@@ -19,7 +19,7 @@ rustcms-migration = { path = "crates/rustcms-migration", version = "0.1.0-alpha.
 rustcms-testing = { path = "crates/rustcms-testing", version = "0.1.0-alpha.0" }
 rustcms-auth = { path = "crates/rustcms-auth", version = "0.1.0-alpha.0" }
 
-# Pinned: SeaORM API churns between majors (see docs/adr/0001).
+# Pinned: SeaORM API churns between majors (see docs/core/adr/0001).
 sea-orm = { version = "=2.0.4", default-features = false, features = [
     "macros", "runtime-tokio-rustls", "with-chrono", "with-uuid", "with-rust_decimal", "with-json",
 ] }

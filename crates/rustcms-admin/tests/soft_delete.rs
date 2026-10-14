@@ -308,6 +308,14 @@ db_test!(a_custom_local_datetime_marker_works, |db: TestDb| async move {
     use sea_orm::{EntityTrait, Schema};
     let backend = db.conn().get_database_backend();
     rustcms_testing::create_table(db.conn(), &Schema::new(backend).create_table_from_entity(memo::Entity)).await;
+    rustcms_testing::create_table(
+        db.conn(),
+        &Schema::new(backend)
+            .create_table_from_entity(rustcms_core::models::audit_log::Entity)
+            .if_not_exists()
+            .to_owned(),
+    )
+    .await;
     let registry = rustcms_admin::Registry::new().register::<Memos>().finish();
     let ctx = rustcms_admin::Ctx::new(db.conn().clone(), admin(), registry.clone());
     let memos = registry.get("memos").unwrap();

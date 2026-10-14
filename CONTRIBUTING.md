@@ -17,5 +17,5 @@ audit; run them when your change touches those areas.
 
 - New behaviour has tests, including denied and failing paths.
 - Database tests use `db_test!` so they run on SQLite and PostgreSQL.
-- Docs and rustdoc are updated; record architecture decisions in `docs/adr/`.
-- `CHANGELOG.md` has an entry.
+- Docs and rustdoc are updated; record architecture decisions in `docs/core/adr/`; user-facing changes update `docs/guide/`, and `docs/core/CHANGELOG.md`.
+- `docs/core/CHANGELOG.md` has an entry.

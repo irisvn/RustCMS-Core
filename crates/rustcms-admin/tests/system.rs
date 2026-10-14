@@ -350,7 +350,9 @@ db_test!(changes_by_a_revoked_caller_are_refused, |db: TestDb| async move {
     // Authenticated as the admin...
     let caller = auth.resolver.principal(db, ADMIN_GUARD, &users.admin, None).await.unwrap();
     // ...whose sessions are revoked while the request is still running (e.g. hashing).
-    rustcms_auth::credentials::logout_everywhere(db, &users.admin).await.unwrap();
+    rustcms_auth::credentials::logout_everywhere(db, &users.admin, &rustcms_core::audit::AuditContext::system(None))
+        .await
+        .unwrap();
     let hash = rustcms_auth::password::hash_blocking("chosen by an attacker").unwrap();
     let refused = service.reset_password(Actor::User(&caller), users.member.id, hash).await.unwrap_err();
     assert_eq!(refused.status(), StatusCode::FORBIDDEN);

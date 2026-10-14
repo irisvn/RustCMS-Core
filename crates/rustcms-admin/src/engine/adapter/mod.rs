@@ -1,6 +1,7 @@
 //! Generic CRUD engine: one monomorphized [`ResourceAdapter`] per resource,
 //! erased to [`DynResource`] for the HTTP layer.
 
+mod audit;
 mod input;
 mod operations;
 mod read;
@@ -124,6 +125,13 @@ impl<R: Resource> ResourceAdapter<R> {
             );
             assert!(seen.insert(field.name.as_str()), "resource `{slug}`: field `{}` declared twice", field.name);
         }
+        // The audit log names resources and actions as they are declared.
+        assert!(slug.len() <= 64, "resource `{slug}`: slugs are at most 64 bytes");
+        assert!(
+            !(meta.audit && fields.iter().any(|f| f.name == pk_name && f.audit_redact)),
+            "resource `{slug}`: the primary key identifies records in the audit log and cannot be \
+             `.audit_redact()`; use an opaque key or `ResourceMeta::audit(false)`"
+        );
         if let Some(title) = &meta.title_field {
             assert!(seen.contains(title.as_str()), "resource `{slug}`: title field `{title}` is not a field");
         }
@@ -227,6 +235,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let mut action_names = HashSet::new();
         for action in &actions {
             assert!(action_names.insert(action.name), "resource `{slug}`: action `{}` declared twice", action.name);
+            assert!(action.name.len() <= 57, "resource `{slug}`: action `{}` is longer than 57 bytes", action.name);
             assert!(
                 ![
                     ability::VIEW_ANY,

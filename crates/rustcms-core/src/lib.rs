@@ -3,6 +3,7 @@
 #![warn(missing_docs)]
 
 pub mod app;
+pub mod audit;
 pub mod config;
 pub mod console;
 pub mod db;
@@ -24,4 +25,4 @@ pub use console::Console;
 pub use error::{AppError, AppResult, ValidationErrors};
 pub use http::{ApiPage, ClientIp, Json, Pagination, Validate, Validated};
 pub use key::AppKey;
-pub use principal::Principal;
+pub use principal::{Credential, Principal};

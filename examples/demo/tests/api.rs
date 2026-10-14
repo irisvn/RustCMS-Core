@@ -68,6 +68,12 @@ db_test!(api_access_comes_from_api_guard_permissions_only, migrate = Migrator, |
     let admin = user_by_email(&app, "admin@example.test").await;
     let reader = app.with_token(&admin, &["posts.view_any"]).await;
     reader.get("/api/v1/posts").await.assert_status(StatusCode::OK);
-    rustcms::auth::credentials::logout_everywhere(app.state().db(), &admin).await.unwrap();
+    rustcms::auth::credentials::logout_everywhere(
+        app.state().db(),
+        &admin,
+        &rustcms::audit::AuditContext::system(None),
+    )
+    .await
+    .unwrap();
     reader.get("/api/v1/posts").await.assert_status(StatusCode::UNAUTHORIZED);
 });

@@ -403,6 +403,7 @@ pub async fn create_tables(conn: &sea_orm::DatabaseConnection) {
         schema.create_table_from_entity(note::Entity),
         // Also created by the framework migrations some tests run first.
         schema.create_table_from_entity(rustcms_admin::media::entity::Entity).if_not_exists().to_owned(),
+        schema.create_table_from_entity(rustcms_core::models::audit_log::Entity).if_not_exists().to_owned(),
     ] {
         rustcms_testing::create_table(conn, &statement).await;
     }

@@ -1,5 +1,5 @@
 //! Schema DTOs: the contract between the server and admin clients
-//! (`docs/src/admin-protocol.md`). Bump [`SCHEMA_VERSION`] on breaking changes
+//! (`docs/core/admin-protocol.md`). Bump [`SCHEMA_VERSION`] on breaking changes
 //! of the structure and [`VOCABULARY_VERSION`] when component types change.
 
 use std::collections::BTreeMap;

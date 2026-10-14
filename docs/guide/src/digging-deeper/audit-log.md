@@ -1,0 +1,195 @@
+# Audit log
+
+RustCMS records who changed what, and from where, in the `audit_logs` table
+(created by `rustcms migrate`). It needs no setup. The admin panel does not
+show the log yet: query the table directly.
+
+## What is recorded
+
+| Source | Events | Subject |
+|---|---|---|
+| Resources (admin panel) | `created`, `updated`, `trashed`, `deleted`, `restored`, `force_deleted`, `action:<name>` | the resource slug and record key |
+| Media library | `uploaded` (meta `{mime, size}`) | `media`, the media id |
+| Roles | `role.created`, `role.permissions_changed`, `role.deleted` | `role`, its id |
+| Users | `user.created`, `user.updated`, `user.deleted`, `user.activated`, `user.deactivated`, `user.roles_changed`, `user.permissions_changed`, `user.password_reset` | `user`, its id |
+| Permissions | `permission.synced` (meta `{created, orphaned, restored, regrouped}`) | `permission` |
+| Account | `auth.password_changed`, `auth.signed_out_everywhere`, `token.created`, `token.revoked` | `user`, its id |
+| Sign-ins | `auth.signed_in`, `auth.signed_out`, `auth.sign_in_failed`, `auth.sign_in_failed_burst`, `jwt.signed_in`, `jwt.signed_out`, `jwt.reuse_detected` | `user` (`session` for failures) |
+
+A change that changes nothing (saving an unchanged form, assigning a role the
+user already has) records nothing. A refused or failed write records nothing.
+Role and permission changes record the user's whole set before and after
+(`{"roles": [[1], [1, 4]]}`), not only the difference. If a hook deletes the
+record it just saved, or moves it to the trash, a `deleted` or `trashed`
+entry follows.
+
+Each entry holds:
+
+| Column | |
+|---|---|
+| `at`, `event`, `subject_type`, `subject_key` | when, what, on which record |
+| `actor_kind` | `user`, `system` (console, jobs) or `guest` (failed sign-ins, a replayed refresh token) |
+| `actor_user_id`, `actor_guard` | the acting user (no foreign key: entries outlive users) |
+| `credential` | `session`, `token:<id>`, `jwt:<family>` or `console:<command>` |
+| `ip`, `user_agent`, `request_id` | the client address (after [trusted proxies](../getting-started/configuration.md)), its user agent (cut to 255 characters), and the request id |
+| `changes` | `{field: [old, new]}` for the fields that changed |
+| `meta` | facts specific to the event (an action's result, a relation's parent, …) |
+
+The request id is the client's `X-Request-Id` when it is a plain token (up to
+64 of `A-Z a-z 0-9 . _ - :`, sent once); otherwise RustCMS generates one. It is
+also returned in the response and written to the logs, so an entry can be
+matched with a log line.
+
+## Guarantees
+
+Data changes are recorded **in the transaction of the change**: the entry
+commits with it and disappears with it on rollback. If the entry cannot be
+written, the change fails too. This covers every write the admin engine makes
+(create, update, trash, restore, force delete, creates through a relation,
+actions), uploads, every `RbacService` method, API tokens issued or revoked,
+and the console commands `make:user`, `role:assign`, `token:create` and
+`permission:sync`.
+
+Sign-ins and sign-outs (session and JWT) are not data changes: they are
+recorded on their own once the session is saved or the sign-in ended, **best
+effort**. A replayed refresh token ends its sign-in first, then records
+`jwt.reuse_detected` (once: later replays change nothing). If that write fails it is logged
+as a warning and the request still succeeds, and a crash at the wrong moment
+can lose the entry.
+
+Not recorded:
+
+- what your hooks and actions write **beyond the records they were given**
+  (another table, other records) — record it yourself, see below;
+- migrations, seeding, and SQL run outside the application.
+
+Retries are safe: a create or action replayed with the same
+[idempotency key](../reference/admin-api.md) records nothing again.
+
+### Actions
+
+An action records one `action:<name>` entry per selected record it
+processed, with the changes of the record's declared fields. If the action
+moved the record to the trash, the entry's meta is `{"result": "trashed"}`;
+if it deleted it, `{"result": "deleted"}` without the former values (as for a
+delete).
+
+## What is stored, and what is not
+
+Only declared fields are compared. A field's values are replaced by
+`"[redacted]"` (the entry still says it changed) when the field:
+
+- is marked `.audit_redact()`,
+- has a `readable(...)` rule, or is `guarded()`,
+- is edited with a password input (`TextInput::make(..).password()`).
+
+The decision depends on the declaration only, never on who is acting. The
+parent of a record created through a relation (`meta.parent`) is redacted
+when its foreign key field is. A primary key cannot be `.audit_redact()`
+(boot fails): it names the record in every entry; use an opaque key, or
+`.audit(false)`. Keys longer than 255 characters are stored as their start
+and a digest.
+
+```rust,ignore
+fn fields() -> Vec<Field> {
+    vec![
+        Field::column(customer::Column::Name),
+        Field::column(customer::Column::TaxId).audit_redact(),
+    ]
+}
+```
+
+Values are bounded so an entry never makes a valid write fail: a text over
+1,000 characters is kept as `{truncated, length, sha256}`, a rich text
+document as `{document, bytes, sha256}`, long lists and deep values are cut.
+An entry holds at most 64 KiB of `changes` and `meta` together (meta at most
+16 KiB); beyond, only the names of the changed fields are kept.
+
+RustCMS never stores passwords or their hashes, API tokens, JWTs, refresh
+tokens, cookies, CSRF tokens or session ids. Event meta is a fixed set of
+fields per event, never free-form request data.
+
+To skip a resource entirely (a log table of your own, a cache):
+
+```rust,ignore
+fn meta() -> ResourceMeta {
+    ResourceMeta::new("Page view").audit(false)
+}
+```
+
+## Recording your own events
+
+Inside a hook or an action, `ctx.audit` records an entry in the same
+transaction, with the same actor and request:
+
+```rust,ignore
+use rustcms::audit::AuditEntry;
+
+Action::<order::Entity>::new("refund", |ctx, txn, orders, _data| {
+    Box::pin(async move {
+        for order in orders {
+            refund_payment(txn, &order).await?;
+            ctx.audit(txn, AuditEntry::new("order.refunded", "orders").key(order.id)).await?;
+        }
+        Ok(())
+    })
+})
+```
+
+In your own routes, build the context from the signed-in user and the
+request, and record in your transaction:
+
+```rust,ignore
+use rustcms::audit::{self, AuditActor, AuditContext, AuditEntry, RequestMeta};
+
+async fn close_course(auth: Auth, request: RequestMeta, State(app): State<AppState>) -> AppResult<StatusCode> {
+    let txn = rustcms::db::begin_write(app.db()).await?;
+    // … the change …
+    let context = AuditContext::new(AuditActor::user(&auth.0.principal), request);
+    audit::record(&txn, &context, AuditEntry::new("course.closed", "courses").key(42)).await?;
+    txn.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+```
+
+`AuditEntry::changes` takes a `{field: [old, new]}` object
+(`audit::diff` builds one from two snapshots) and `AuditEntry::meta` any
+serializable struct; both are bounded like the built-in entries. Do not put
+secrets in them.
+
+## Failed sign-ins
+
+`auth.sign_in_failed` has the same shape whatever the reason (unknown email,
+wrong password, deactivated account): a guest actor and meta
+`{email, guard}`. Requests refused by throttling record nothing. Beyond
+`audit.sign_in_failures_per_minute` failures in a minute (per instance), the
+rest are counted and recorded as one `auth.sign_in_failed_burst` entry
+(`{count}`) with the first failure of a later minute.
+
+## Retention
+
+Entries older than `audit.retention_days` (default 365) are deleted every
+hour by `serve`, and by `rustcms audit:prune`.
+
+`[audit]` (`config/audit.toml`):
+
+| Key | Default | |
+|---|---|---|
+| `retention_days` | `365` | 1 to 36,500 |
+| `sign_in_failures_per_minute` | `600` | per instance |
+
+## Personal data
+
+Entries hold personal data: user ids, IP addresses, user agents, names and
+emails in user changes, and the email typed in failed sign-ins (which may be
+someone else's address, or a password typed in the wrong box). Restrict
+access to the table and its backups, keep the retention as short as you can,
+and include the table when you answer erasure requests, for example:
+
+```sql
+DELETE FROM audit_logs WHERE actor_user_id = 42 OR (subject_type = 'user' AND subject_key = '42');
+```
+
+The log is append-only for the application (nothing in RustCMS updates an
+entry), not tamper-proof: anyone with write access to the database can change
+it. Ship it to external storage if you need that.

@@ -3,10 +3,13 @@
 use std::net::IpAddr;
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::Router;
 use axum::extract::State;
 use axum::http::{HeaderMap, Method, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{any, delete, get, post};
+use rustcms_core::audit::{AuditActor, AuditContext, AuditEntry, RequestMeta};
 use rustcms_core::models::user;
 use rustcms_core::{AppError, AppResult, AppState, ClientIp, Json, Principal, ValidationErrors};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -14,10 +17,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::credentials;
-use crate::guard::Auth;
+use crate::guard::{Auth, MaybeAuth};
 use crate::guards::jwt_session;
 use crate::session::Session;
-use crate::state::{ADMIN_GUARD, AuthState};
+use crate::state::{ADMIN_GUARD, API_GUARD, AuthState};
 use crate::tokens;
 
 const BAD_CREDENTIALS: &str = "These credentials do not match our records.";
@@ -182,6 +185,8 @@ async fn attempt(
     ip: IpAddr,
     email: &str,
     password: String,
+    request: &RequestMeta,
+    guard: &str,
 ) -> AppResult<user::Model> {
     let mut errors = ValidationErrors::new();
     if email.len() > MAX_EMAIL_LEN {
@@ -207,7 +212,12 @@ async fn attempt(
             auth.limiter.release(&ip_key).await.ok();
             Ok(user)
         }
-        None => Err(ValidationErrors::field("email", BAD_CREDENTIALS).into()),
+        None => {
+            // One shape whatever the reason (unknown email, wrong password,
+            // disabled user): the audit log tells no more than the answer.
+            crate::audit::sign_in_failed(app, auth, request, &email, guard).await;
+            Err(ValidationErrors::field("email", BAD_CREDENTIALS).into())
+        }
     }
 }
 
@@ -232,19 +242,31 @@ async fn login(
     State(app): State<AppState>,
     ClientIp(ip): ClientIp,
     headers: HeaderMap,
+    request: RequestMeta,
     session: Session,
     Json(input): Json<Credentials>,
-) -> AppResult<Json<Me>> {
+) -> AppResult<(Extension<crate::audit::AfterSession>, Json<Me>)> {
     let auth = auth_state(&app)?;
-    let user = attempt(&app, &auth, ip, &input.email, input.password).await?;
+    let user = attempt(&app, &auth, ip, &input.email, input.password, &request, ADMIN_GUARD).await?;
     session.login(user.id, user.auth_version);
     let principal = auth.resolver.principal(app.db(), ADMIN_GUARD, &user, None).await?;
-    Ok(Json(me_of(&app, &headers, &user, &principal)))
+    // Recorded once the session is stored (the guard does it after this handler).
+    let actor = AuditActor::signed_in(user.id, ADMIN_GUARD, Some(rustcms_core::Credential::Session));
+    let entry = AuditEntry::new("auth.signed_in", "user").key(user.id);
+    let after = crate::audit::AfterSession(AuditContext::new(actor, request), entry);
+    Ok((Extension(after), Json(me_of(&app, &headers, &user, &principal))))
 }
 
-async fn logout(session: Session) -> StatusCode {
+async fn logout(session: Session, MaybeAuth(current): MaybeAuth, request: RequestMeta) -> Response {
     session.logout();
-    StatusCode::NO_CONTENT
+    match current {
+        Some(current) => {
+            let context = AuditContext::new(AuditActor::user(&current.principal), request);
+            let entry = AuditEntry::new("auth.signed_out", "user").key(current.user.id);
+            (Extension(crate::audit::AfterSession(context, entry)), StatusCode::NO_CONTENT).into_response()
+        }
+        None => StatusCode::NO_CONTENT.into_response(),
+    }
 }
 
 async fn me(State(app): State<AppState>, headers: HeaderMap, Auth(auth): Auth) -> Json<Me> {
@@ -277,6 +299,7 @@ pub async fn confirm_password(auth: &AuthState, user: &user::Model, password: St
 async fn change_password(
     State(app): State<AppState>,
     Auth(current): Auth,
+    request: RequestMeta,
     session: Session,
     Json(input): Json<PasswordChange>,
 ) -> AppResult<StatusCode> {
@@ -294,9 +317,15 @@ async fn change_password(
     }
     errors.into_result()?;
     let hash = auth.passwords.hash(input.password).await?;
-    let version =
-        credentials::change_password(app.db(), &current.user, hash, auth.config.revoke_tokens_on_password_change)
-            .await?;
+    let audit = AuditContext::new(AuditActor::user(&current.principal), request);
+    let version = credentials::change_password(
+        app.db(),
+        &current.user,
+        hash,
+        auth.config.revoke_tokens_on_password_change,
+        &audit,
+    )
+    .await?;
     session.restamp(version);
     Ok(StatusCode::NO_CONTENT)
 }
@@ -310,12 +339,14 @@ struct Confirm {
 async fn logout_others(
     State(app): State<AppState>,
     Auth(current): Auth,
+    request: RequestMeta,
     session: Session,
     Json(input): Json<Confirm>,
 ) -> AppResult<StatusCode> {
     let auth = auth_state(&app)?;
     confirm_password(&auth, &current.user, input.password).await?;
-    let version = credentials::logout_everywhere(app.db(), &current.user).await?;
+    let audit = AuditContext::new(AuditActor::user(&current.principal), request);
+    let version = credentials::logout_everywhere(app.db(), &current.user, &audit).await?;
     session.restamp(version);
     Ok(StatusCode::NO_CONTENT)
 }
@@ -333,6 +364,7 @@ struct TokenRequest {
 async fn issue_token(
     State(app): State<AppState>,
     ClientIp(ip): ClientIp,
+    request: RequestMeta,
     Json(input): Json<TokenRequest>,
 ) -> AppResult<(StatusCode, Json<Value>)> {
     let auth = auth_state(&app)?;
@@ -350,11 +382,12 @@ async fn issue_token(
     }
     errors.into_result()?;
     let expires_at = expires_at.flatten();
-    let user = attempt(&app, &auth, ip, &input.email, input.password).await?;
+    let user = attempt(&app, &auth, ip, &input.email, input.password, &request, API_GUARD).await?;
     // A concurrent password change between verification and insert means the
     // credentials no longer match: answer as for a wrong password.
-    let issued =
-        credentials::issue_token(app.db(), &user, name, &input.abilities, expires_at).await.map_err(|e| match e {
+    let issued = credentials::issue_token(app.db(), &user, name, &input.abilities, expires_at, &request)
+        .await
+        .map_err(|e| match e {
             AppError::Unauthenticated => ValidationErrors::field("email", BAD_CREDENTIALS).into(),
             other => other,
         })?;
@@ -366,9 +399,14 @@ async fn issue_token(
     ))
 }
 
-async fn revoke_token(State(app): State<AppState>, Auth(current): Auth) -> AppResult<StatusCode> {
+async fn revoke_token(State(app): State<AppState>, Auth(current): Auth, request: RequestMeta) -> AppResult<StatusCode> {
     let token_id = current.token_id.ok_or(AppError::Unauthenticated)?;
-    tokens::revoke(app.db(), token_id).await?;
+    // The revocation and its entry commit together.
+    let txn = rustcms_core::db::begin_write(app.db()).await?;
+    tokens::revoke(&txn, token_id).await?;
+    let context = AuditContext::new(AuditActor::user(&current.principal), request);
+    rustcms_core::audit::record(&txn, &context, AuditEntry::new("token.revoked", "user").key(current.user.id)).await?;
+    txn.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -407,6 +445,7 @@ fn jwt_enabled(auth: &AuthState) -> AppResult<()> {
 async fn issue_jwt(
     State(app): State<AppState>,
     ClientIp(ip): ClientIp,
+    request: RequestMeta,
     Json(input): Json<JwtRequest>,
 ) -> AppResult<(StatusCode, Json<Value>)> {
     let auth = auth_state(&app)?;
@@ -423,9 +462,9 @@ async fn issue_jwt(
         )
         .into());
     }
-    let user = attempt(&app, &auth, ip, &input.email, input.password).await?;
+    let user = attempt(&app, &auth, ip, &input.email, input.password, &request, API_GUARD).await?;
     auth.limiter.reserve(&[(&format!("jwt-issue:{}", user.id), JWT_ISSUES_PER_USER)]).await?;
-    let issued = jwt_session::issue(&auth, app.db(), &user, input.abilities.as_deref().unwrap_or_default())
+    let issued = jwt_session::issue(&auth, app.db(), &user, input.abilities.as_deref().unwrap_or_default(), &request)
         .await
         .map_err(|e| match e {
             // The credentials changed since they were checked: as for a wrong password.
@@ -458,12 +497,13 @@ async fn refresh_limits(app: &AppState, auth: &AuthState, ip: IpAddr, token: &st
 async fn refresh_jwt(
     State(app): State<AppState>,
     ClientIp(ip): ClientIp,
+    request: RequestMeta,
     Json(input): Json<RefreshRequest>,
 ) -> AppResult<Json<Value>> {
     let auth = auth_state(&app)?;
     jwt_enabled(&auth)?;
     refresh_limits(&app, &auth, ip, &input.refresh_token).await?;
-    Ok(jwt_response(jwt_session::rotate(&auth, app.db(), &input.refresh_token).await?))
+    Ok(jwt_response(jwt_session::rotate(&auth, app.db(), &input.refresh_token, &request).await?))
 }
 
 /// `POST /api/v1/auth/jwt/logout`: ends the sign-in of a refresh token (works
@@ -471,11 +511,12 @@ async fn refresh_jwt(
 async fn logout_jwt(
     State(app): State<AppState>,
     ClientIp(ip): ClientIp,
+    request: RequestMeta,
     Json(input): Json<RefreshRequest>,
 ) -> AppResult<StatusCode> {
     let auth = auth_state(&app)?;
     jwt_enabled(&auth)?;
     refresh_limits(&app, &auth, ip, &input.refresh_token).await?;
-    jwt_session::logout(&auth, app.db(), &input.refresh_token).await?;
+    jwt_session::logout(&auth, app.db(), &input.refresh_token, &request).await?;
     Ok(StatusCode::NO_CONTENT)
 }

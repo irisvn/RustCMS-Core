@@ -1,4 +1,4 @@
-// Wire format (docs/src/admin-protocol.md, ADR 0003). Values stay in wire form
+// Wire format (docs/core/admin-protocol.md, ADR 0003). Values stay in wire form
 // inside forms: i64 and decimal are strings and never pass through `Number`.
 
 import { formatDateTime, t } from "@/i18n";

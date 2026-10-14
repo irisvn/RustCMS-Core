@@ -91,6 +91,30 @@ pub(super) async fn held_roles<C: ConnectionTrait>(db: &C, user_id: i64, guard: 
         .collect())
 }
 
+/// Names of the permissions granted directly to a user in `guard`.
+pub(super) async fn direct_permissions<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    guard: &str,
+) -> AppResult<BTreeSet<String>> {
+    let granted: Vec<i64> = user_perm::Entity::find()
+        .filter(user_perm::Column::ModelType.eq(USER_MODEL))
+        .filter(user_perm::Column::ModelId.eq(user_id.to_string()))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|p| p.permission_id)
+        .collect();
+    Ok(permission::Entity::find()
+        .filter(permission::Column::Id.is_in(granted))
+        .filter(permission::Column::GuardName.eq(guard))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|p| p.name)
+        .collect())
+}
+
 /// Makes `role_ids` the user's roles in `guard`: each added or removed role is
 /// checked (`roles.assign`, same guard, protected roles by super admins, only
 /// permissions the actor holds), and a guard keeps an active super admin.

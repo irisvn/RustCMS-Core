@@ -390,6 +390,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         }
         let model = active.insert(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?;
         R::after_save(&wctx, &txn, &model).await?;
+        // As stored once the hooks ran.
+        self.audit_outcome(&wctx, &txn, "created", None, &model, false, true).await?;
         if let Some(claim) = &claim {
             crate::idempotency::complete(txn.as_ref(), claim, &serde_json::json!({ "key": self.key_of(&model) }))
                 .await?;
@@ -403,6 +405,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let input = self.accept_input(ctx, Operation::Update, input)?;
         let (txn, wctx) = self.begin(ctx).await?;
         let model = self.find_authorized_locked(&wctx, &txn, key, ability::UPDATE, Trashed::Without).await?;
+        let before = self.audit_snapshot(&model);
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
         self.check_written(&wctx, &txn, &data).await?;
         let model = if data.is_empty() {
@@ -413,6 +416,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?
         };
         R::after_save(&wctx, &txn, &model).await?;
+        // Nothing changed: nothing to record.
+        self.audit_outcome(&wctx, &txn, "updated", Some(&before), &model, false, false).await?;
         Self::commit(txn, wctx).await?;
         Ok(self.committed_envelope(ctx, model).await)
     }
@@ -421,6 +426,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.admit(ctx, ability::DELETE).await?;
         let (txn, wctx) = self.begin(ctx).await?;
         let model = self.find_authorized_locked(&wctx, &txn, key, ability::DELETE, Trashed::Without).await?;
+        let event = if self.soft.is_some() { "trashed" } else { "deleted" };
+        self.audit_write(&wctx, &txn, event, &self.key_of(&model), None, None).await?;
         if self.soft.is_some() {
             // To the trash: related records are kept (no database cascade runs).
             let mut active = model.into_active_model();
@@ -454,10 +461,12 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             .filter_map(|f| record.get(&f.name).map(|v| (f.name.clone(), v.clone())))
             .collect();
         self.check_written(&wctx, &txn, &relations).await?;
+        let before = self.audit_snapshot(&model);
         let mut active = model.into_active_model();
         self.set_marker(&mut active, false)?;
         let model = active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?;
         R::after_save(&wctx, &txn, &model).await?;
+        self.audit_outcome(&wctx, &txn, "restored", Some(&before), &model, false, true).await?;
         Self::commit(txn, wctx).await?;
         Ok(self.committed_envelope(ctx, model).await)
     }
@@ -475,6 +484,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             .await
             .map_err(|e| self.map_db_err(e))?;
         R::after_force_delete(&wctx, &txn, &model).await?;
+        self.audit_write(&wctx, &txn, "force_deleted", &self.key_of(&model), None, None).await?;
         Self::commit(txn, wctx).await?;
         Ok(())
     }
@@ -537,7 +547,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         outcome.missing =
             keys.iter().filter(|k| !seen.contains(*k)).cloned().collect::<BTreeSet<_>>().into_iter().collect();
         if !allowed.is_empty() {
+            let before: Vec<_> =
+                allowed.iter().map(|m| (self.key_of(m), self.audit_snapshot(m), self.trashed(m))).collect();
             (action.handler)(&wctx, txn.as_ref(), allowed, data).await?;
+            self.audit_action(&wctx, &txn, name, before).await?;
         }
         outcome.processed.sort();
         outcome.denied.sort();

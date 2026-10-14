@@ -60,6 +60,7 @@ pub struct ResourceMeta {
     pub(crate) title_field: Option<String>,
     pub(crate) constraints: Vec<ConstraintMap>,
     pub(crate) soft_delete: Option<String>,
+    pub(crate) audit: bool,
 }
 
 impl ResourceMeta {
@@ -74,7 +75,14 @@ impl ResourceMeta {
             title_field: None,
             constraints: Vec::new(),
             soft_delete: None,
+            audit: true,
         }
+    }
+
+    /// Whether writes to this resource are recorded in the audit log (on by default).
+    pub fn audit(mut self, enabled: bool) -> Self {
+        self.audit = enabled;
+        self
     }
 
     /// Sets the primary key strategy.

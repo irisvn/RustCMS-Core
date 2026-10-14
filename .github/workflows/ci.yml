@@ -92,7 +92,7 @@ jobs:
       - run: cargo test --workspace --doc
       - run: cargo doc --workspace --no-deps
         env: { RUSTDOCFLAGS: -D warnings }
-      - run: mdbook build docs
+      - run: mdbook build docs/guide
 
   generated:
     runs-on: ubuntu-latest
@@ -102,12 +102,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: admin-ui/package-lock.json }
-      - run: cargo run -q -p rustcms-cli -- docs:cli > docs/src/cli.md
+      - run: cargo run -q -p rustcms-cli -- docs:cli > docs/guide/src/reference/cli.md
       - run: UPDATE_TYPES=1 cargo test -q -p rustcms-admin --features ts --test typescript
       - run: npm ci && npm run build
         working-directory: admin-ui
       # Untracked files count too (a new hashed asset not committed).
-      - run: test -z "$(git status --porcelain -- docs/src/cli.md admin-ui/src/api/types.gen.ts crates/rustcms-admin/assets fixtures)" || (git status --porcelain; exit 1)
+      - run: test -z "$(git status --porcelain -- docs/guide/src/reference/cli.md admin-ui/src/api/types.gen.ts crates/rustcms-admin/assets fixtures)" || (git status --porcelain; exit 1)
       # Published crates embed the built panel, never the placeholder.
       - run: cargo package -p rustcms-admin --list --allow-dirty | grep -q '^assets/index.html$'
 

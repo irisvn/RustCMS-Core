@@ -125,6 +125,10 @@ pub(crate) async fn upload(
     if let Some(claim) = &claim {
         crate::idempotency::complete(&txn, claim, &serde_json::json!({ "key": row.id.to_string() })).await?;
     }
+    let entry = rustcms_core::audit::AuditEntry::new("uploaded", SLUG)
+        .key(row.id)
+        .meta(UploadMeta { mime: &row.mime, size: row.size });
+    ctx.audit(&txn, entry).await?;
     txn.commit().await?;
     Ok((StatusCode::CREATED, Json(crate::http::DataResponse { data: MediaItem::from(&row) })))
 }
@@ -194,4 +198,11 @@ pub(super) async fn receive(
         return Err(bad("is empty"));
     }
     Ok((staged, name, hex::encode(hasher.finalize()), size, head))
+}
+
+/// What the audit log keeps of an upload (never its name or content).
+#[derive(serde::Serialize)]
+struct UploadMeta<'a> {
+    mime: &'a str,
+    size: i64,
 }

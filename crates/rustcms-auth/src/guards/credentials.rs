@@ -6,8 +6,9 @@
 //! password change or revocation cannot be undone or bypassed.
 
 use chrono::{DateTime, Utc};
+use rustcms_core::audit::{AuditActor, AuditContext, AuditEntry, RequestMeta};
 use rustcms_core::models::user;
-use rustcms_core::{AppError, AppResult};
+use rustcms_core::{AppError, AppResult, Credential};
 use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, Set,
@@ -67,6 +68,7 @@ pub async fn change_password(
     snapshot: &user::Model,
     new_hash: String,
     revoke_api_tokens: bool,
+    audit: &AuditContext,
 ) -> AppResult<i64> {
     let txn = rustcms_core::db::begin_write(db).await?;
     let current = lock_unchanged(&txn, snapshot).await?;
@@ -74,15 +76,22 @@ pub async fn change_password(
     model.password = Set(new_hash);
     model.update(&txn).await?;
     let version = revoke_all(&txn, snapshot.id, revoke_api_tokens).await?;
+    rustcms_core::audit::record(&txn, audit, AuditEntry::new("auth.password_changed", "user").key(snapshot.id)).await?;
     txn.commit().await?;
     Ok(version)
 }
 
 /// Ends every session and token of the user verified as `snapshot`; returns the new `auth_version`.
-pub async fn logout_everywhere(db: &DatabaseConnection, snapshot: &user::Model) -> AppResult<i64> {
+pub async fn logout_everywhere(
+    db: &DatabaseConnection,
+    snapshot: &user::Model,
+    audit: &AuditContext,
+) -> AppResult<i64> {
     let txn = rustcms_core::db::begin_write(db).await?;
     lock_unchanged(&txn, snapshot).await?;
     let version = revoke_all(&txn, snapshot.id, true).await?;
+    let entry = AuditEntry::new("auth.signed_out_everywhere", "user").key(snapshot.id);
+    rustcms_core::audit::record(&txn, audit, entry).await?;
     txn.commit().await?;
     Ok(version)
 }
@@ -96,10 +105,33 @@ pub async fn issue_token(
     name: &str,
     abilities: &[String],
     expires_at: Option<DateTime<Utc>>,
+    request: &RequestMeta,
 ) -> AppResult<IssuedToken> {
     let txn = rustcms_core::db::begin_write(db).await?;
     lock_unchanged(&txn, snapshot).await?;
     let issued = tokens::issue(&txn, snapshot.id, name, abilities, expires_at).await?;
+    let actor = AuditActor::signed_in(snapshot.id, crate::API_GUARD, Some(Credential::Token(issued.token.id)));
+    let context = AuditContext::new(actor, request.clone());
+    rustcms_core::audit::record(&txn, &context, token_created(&issued)).await?;
     txn.commit().await?;
     Ok(issued)
+}
+
+/// What the audit log keeps of a new API token (never its secret).
+#[derive(serde::Serialize)]
+struct TokenMeta<'a> {
+    name: &'a str,
+    abilities: Vec<String>,
+    expires_at: Option<DateTime<Utc>>,
+}
+
+/// The `token.created` entry of `issued`.
+pub(crate) fn token_created(issued: &IssuedToken) -> AuditEntry {
+    let mut abilities: Vec<String> = tokens::abilities(&issued.token).into_iter().collect();
+    abilities.sort();
+    AuditEntry::new("token.created", "user").key(issued.token.user_id).meta(TokenMeta {
+        name: &issued.token.name,
+        abilities,
+        expires_at: issued.token.expires_at,
+    })
 }

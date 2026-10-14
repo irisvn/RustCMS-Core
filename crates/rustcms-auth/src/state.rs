@@ -92,6 +92,8 @@ pub struct AuthState {
     pub(crate) jwt_key: crate::guards::jwt::JwtKey,
     /// Keys refresh-token hashes (derived from `APP_KEY`).
     pub(crate) refresh_key: [u8; 32],
+    /// Failed sign-ins of the current minute: `(minute, recorded, skipped)`.
+    pub(crate) failed_sign_ins: std::sync::Mutex<(i64, u64, u64)>,
 }
 
 impl AuthState {
@@ -115,6 +117,7 @@ impl AuthState {
             session_key: key.clone(),
             jwt_key: crate::guards::jwt::JwtKey::derive(key),
             refresh_key: crate::guards::jwt::derive(key, "rustcms/refresh/v1"),
+            failed_sign_ins: std::sync::Mutex::default(),
             config,
         }
     }

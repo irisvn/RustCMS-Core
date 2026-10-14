@@ -105,11 +105,13 @@ fn framework_messages_have_codes() {
 
 #[test]
 fn codes_are_documented() {
-    let docs = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/src/admin/i18n.md"))
-        .unwrap_or_default();
+    let docs = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/guide/src/reference/error-codes.md"),
+    )
+    .unwrap_or_default();
     let undocumented: Vec<&str> =
         TEMPLATES.iter().map(|(code, _)| *code).filter(|code| !docs.contains(&format!("`{code}`"))).collect();
-    assert!(undocumented.is_empty(), "add to docs/src/admin/i18n.md: {undocumented:?}");
+    assert!(undocumented.is_empty(), "add to docs/guide/src/reference/error-codes.md: {undocumented:?}");
 }
 
 /// `fixtures/contract/issues.json`: the codes and English templates the panel

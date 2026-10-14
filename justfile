@@ -58,14 +58,14 @@ test-reset-db:
 doc:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
     cargo test --workspace --doc
-    mdbook build docs
+    mdbook build docs/guide
 
 # Generated files are up to date (CLI docs, TypeScript types, built admin assets).
 generated:
-    cargo run -q -p rustcms-cli -- docs:cli > docs/src/cli.md
+    cargo run -q -p rustcms-cli -- docs:cli > docs/guide/src/reference/cli.md
     UPDATE_TYPES=1 cargo test -q -p rustcms-admin --features ts --test typescript
     cd admin-ui && npm run build
-    test -z "$(git status --porcelain -- docs/src/cli.md admin-ui/src/api/types.gen.ts crates/rustcms-admin/assets fixtures)"
+    test -z "$(git status --porcelain -- docs/guide/src/reference/cli.md admin-ui/src/api/types.gen.ts crates/rustcms-admin/assets fixtures)"
 
 # Admin SPA: install dependencies (Node 20+).
 admin-install:

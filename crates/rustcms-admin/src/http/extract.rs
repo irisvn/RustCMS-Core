@@ -23,7 +23,11 @@ impl FromRequestParts<AppState> for AdminCtx {
         let panel = state.service::<AdminPanel>().ok_or_else(|| AppError::internal("AdminProvider not registered"))?;
         let locale =
             rustcms_auth::routes::display_locale(state, &parts.headers, auth.principal.locale.as_deref()).to_owned();
+        let audit = rustcms_core::audit::AuditContext::new(
+            rustcms_core::audit::AuditActor::user(&auth.principal),
+            rustcms_core::audit::RequestMeta::from_parts(parts),
+        );
         let ctx = Ctx::new(state.db().clone(), auth.principal, panel.registry.clone());
-        Ok(Self(ctx.with_locale(locale, panel.translator.clone())))
+        Ok(Self(ctx.with_locale(locale, panel.translator.clone()).with_audit(audit)))
     }
 }

@@ -25,6 +25,31 @@ pub struct Principal {
     pub auth_version: Option<i64>,
     /// The admin interface language the user chose (`users.locale`), if any.
     pub locale: Option<String>,
+    /// The credential this request was authenticated with (for the audit log).
+    pub credential: Option<Credential>,
+}
+
+/// How a principal was authenticated, as recorded in the audit log. Never a
+/// secret: a session is just `session`, a token or JWT sign-in its id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Credential {
+    /// An admin session cookie.
+    Session,
+    /// A personal access token, by id.
+    Token(i64),
+    /// A JWT sign-in, by refresh family id.
+    Jwt(String),
+}
+
+impl Credential {
+    /// `session`, `token:<id>` or `jwt:<family>`.
+    pub fn label(&self) -> String {
+        match self {
+            Self::Session => "session".into(),
+            Self::Token(id) => format!("token:{id}"),
+            Self::Jwt(family) => format!("jwt:{family}"),
+        }
+    }
 }
 
 impl Principal {
@@ -52,6 +77,7 @@ mod tests {
             token_abilities: token.map(|t| t.iter().map(|a| a.to_string()).collect()),
             auth_version: None,
             locale: None,
+            credential: None,
         }
     }
 

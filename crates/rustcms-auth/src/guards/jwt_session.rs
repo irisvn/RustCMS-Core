@@ -20,6 +20,8 @@ use crate::entities::{jwt_family as family, jwt_refresh_token as refresh};
 use crate::guards::jwt::{self, Claims};
 use crate::secret::{ct_eq, hmac_sha256_hex, random_string};
 use crate::state::AuthState;
+use rustcms_core::Credential;
+use rustcms_core::audit::{AuditActor, AuditContext, AuditEntry, RequestMeta};
 
 /// Prefix of refresh tokens: `rcmsr_<id>_<secret>`.
 pub const REFRESH_PREFIX: &str = "rcmsr_";
@@ -133,6 +135,7 @@ pub async fn issue(
     db: &DatabaseConnection,
     snapshot: &user::Model,
     abilities: &[String],
+    request: &RequestMeta,
 ) -> AppResult<Issued> {
     let txn = rustcms_core::db::begin_write(db).await?;
     let user = crate::credentials::lock_unchanged(&txn, snapshot).await?;
@@ -151,7 +154,17 @@ pub async fn issue(
     .await?;
     let issued = next_pair(auth, &txn, &family, now).await?;
     txn.commit().await?;
+    audit(db, request, &family, "jwt.signed_in").await;
     Ok(issued)
+}
+
+/// Records a JWT event of `family`, acted by its user with that sign-in, once
+/// the change committed: best effort, like every sign-in event (ADR 0014), so
+/// a failing log never undoes a sign-out or a revocation.
+async fn audit(db: &DatabaseConnection, request: &RequestMeta, family: &family::Model, event: &str) {
+    let actor = AuditActor::signed_in(family.user_id, crate::API_GUARD, Some(Credential::Jwt(family.id.clone())));
+    let context = AuditContext::new(actor, request.clone());
+    rustcms_core::audit::record_detached(db, &context, AuditEntry::new(event, "user").key(family.user_id)).await;
 }
 
 /// The token row of `plain` if its secret matches (constant time), and its family.
@@ -194,14 +207,15 @@ fn live(family: &family::Model, user: &user::Model, now: DateTime<Utc>) -> bool 
         && user.auth_version == family.auth_version
 }
 
-async fn revoke_family(txn: &DatabaseTransaction, family_id: &str, now: DateTime<Utc>) -> AppResult<()> {
-    family::Entity::update_many()
+/// Ends a family; whether it was still live.
+async fn revoke_family(txn: &DatabaseTransaction, family_id: &str, now: DateTime<Utc>) -> AppResult<bool> {
+    let result = family::Entity::update_many()
         .col_expr(family::Column::RevokedAt, Expr::value(now))
         .filter(family::Column::Id.eq(family_id))
         .filter(family::Column::RevokedAt.is_null())
         .exec(txn)
         .await?;
-    Ok(())
+    Ok(result.rows_affected > 0)
 }
 
 /// The family of a valid refresh token, after its secret was checked (for
@@ -212,15 +226,30 @@ pub async fn family_of(auth: &AuthState, db: &DatabaseConnection, plain: &str) -
 
 /// Exchanges a refresh token for a new pair. A token used before (a replay,
 /// or a client retrying after a lost response) ends its family: 401.
-pub async fn rotate(auth: &AuthState, db: &DatabaseConnection, plain: &str) -> AppResult<Issued> {
+pub async fn rotate(
+    auth: &AuthState,
+    db: &DatabaseConnection,
+    plain: &str,
+    request: &RequestMeta,
+) -> AppResult<Issued> {
     let (token, family) = verify_secret(auth, db, plain).await?;
     let txn = rustcms_core::db::begin_write(db).await?;
     let (user, family, token) = lock_all(&txn, token.id, &family.id, family.user_id).await?;
     let now = Utc::now();
     if token.used_at.is_some() {
-        // Theft detection: whoever holds the newer token loses it too.
-        revoke_family(&txn, &family.id, now).await?;
+        // Theft detection: whoever holds the newer token loses it too. Recorded
+        // as a guest: the replay may come from someone else than the user.
+        // The revocation commits first: the log never holds it back. Recorded
+        // once, when it ended a live family (later replays change nothing).
+        let ended = revoke_family(&txn, &family.id, now).await?;
         txn.commit().await?;
+        if ended {
+            let entry = AuditEntry::new("jwt.reuse_detected", "user")
+                .key(family.user_id)
+                .meta(FamilyMeta { family: &family.id });
+            let guest = AuditContext::new(AuditActor::guest(), request.clone());
+            rustcms_core::audit::record_detached(db, &guest, entry).await;
+        }
         return Err(AppError::Unauthenticated);
     }
     if !live(&family, &user, now) || token.expires_at <= now {
@@ -235,12 +264,15 @@ pub async fn rotate(auth: &AuthState, db: &DatabaseConnection, plain: &str) -> A
 }
 
 /// Ends the family of a refresh token (any of its tokens, used or not).
-pub async fn logout(auth: &AuthState, db: &DatabaseConnection, plain: &str) -> AppResult<()> {
+pub async fn logout(auth: &AuthState, db: &DatabaseConnection, plain: &str, request: &RequestMeta) -> AppResult<()> {
     let (token, family) = verify_secret(auth, db, plain).await?;
     let txn = rustcms_core::db::begin_write(db).await?;
     let (_, family, _) = lock_all(&txn, token.id, &family.id, family.user_id).await?;
-    revoke_family(&txn, &family.id, Utc::now()).await?;
+    let ended = revoke_family(&txn, &family.id, Utc::now()).await?;
     txn.commit().await?;
+    if ended {
+        audit(db, request, &family, "jwt.signed_out").await;
+    }
     Ok(())
 }
 
@@ -324,4 +356,10 @@ mod tests {
             assert_eq!(parse_refresh(&bad), None, "{bad}");
         }
     }
+}
+
+/// The sign-in an event is about.
+#[derive(serde::Serialize)]
+struct FamilyMeta<'a> {
+    family: &'a str,
 }

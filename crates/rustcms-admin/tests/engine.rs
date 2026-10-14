@@ -1208,6 +1208,14 @@ db_test!(floats_out_of_f32_range_are_rejected, |db: TestDb| async move {
     use sea_orm::Schema;
     let backend = db.conn().get_database_backend();
     rustcms_testing::create_table(db.conn(), &Schema::new(backend).create_table_from_entity(gauge::Entity)).await;
+    rustcms_testing::create_table(
+        db.conn(),
+        &Schema::new(backend)
+            .create_table_from_entity(rustcms_core::models::audit_log::Entity)
+            .if_not_exists()
+            .to_owned(),
+    )
+    .await;
     let registry = rustcms_admin::Registry::new().register::<Gauges>().finish();
     let ctx = rustcms_admin::Ctx::new(db.conn().clone(), admin(), registry.clone());
     let gauges = registry.get("gauges").unwrap();

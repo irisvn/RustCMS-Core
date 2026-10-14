@@ -3,7 +3,7 @@
 *.db
 .env
 node_modules/
-/docs/book
+/docs/guide/book
 .idea/
 .codex/
 /admin-ui/playwright-report/

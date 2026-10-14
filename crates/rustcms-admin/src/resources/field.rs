@@ -41,6 +41,7 @@ pub struct Field {
     pub(crate) media: Option<MediaRule>,
     pub(crate) rich_text: bool,
     pub(crate) label: Option<String>,
+    pub(crate) audit_redact: bool,
 }
 
 impl Field {
@@ -63,7 +64,16 @@ impl Field {
             media: None,
             rich_text: false,
             label: None,
+            audit_redact: false,
         }
+    }
+
+    /// Never stores this field's values in the audit log (`"[redacted]"`).
+    /// Fields with a `readable` rule, guarded fields that are not readable and
+    /// password inputs are redacted anyway.
+    pub fn audit_redact(mut self) -> Self {
+        self.audit_redact = true;
+        self
     }
 
     /// Declares a field from a typed SeaORM column.

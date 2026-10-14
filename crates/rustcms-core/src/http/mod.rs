@@ -28,7 +28,7 @@ use tower_http::trace::TraceLayer;
 use crate::app::{AppState, MiddlewareFn, RouteFn};
 use crate::error::AppError;
 
-const REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
+pub(crate) const REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
 
 /// JSON body extractor and response, with rustcms errors:
 /// an oversized body is a 413, malformed JSON a 400, a shape mismatch a 422.
@@ -218,7 +218,25 @@ pub(crate) fn router(
             tracing::info_span!("request", method = %req.method(), path = %req.uri().path(), request_id = %id)
         }))
         .layer(SetRequestIdLayer::new(REQUEST_ID, MakeRequestUuid))
+        .layer(middleware::from_fn(sanitize_request_id))
         .with_state(state)
+}
+
+/// Keeps a client's `x-request-id` only when it is a short token (letters,
+/// digits, `.`, `_`, `-`, `:`; at most 64): otherwise a new one is made, so
+/// logs and the audit log never hold arbitrary client text there.
+async fn sanitize_request_id(mut req: Request, next: Next) -> Response {
+    let valid = |value: &axum::http::HeaderValue| {
+        let bytes = value.as_bytes();
+        !bytes.is_empty()
+            && bytes.len() <= 64
+            && bytes.iter().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b':'))
+    };
+    if req.headers().get_all(REQUEST_ID).iter().count() > 1 || req.headers().get(REQUEST_ID).is_some_and(|v| !valid(v))
+    {
+        req.headers_mut().remove(REQUEST_ID);
+    }
+    next.run(req).await
 }
 
 #[cfg(test)]

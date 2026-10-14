@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use rustcms_core::Principal;
+use rustcms_core::audit::{AuditActor, AuditContext, AuditEntry, RequestMeta};
 use rustcms_core::i18n::Translator;
 use sea_orm::{DatabaseConnection, DatabaseExecutor, DatabaseTransaction};
 
@@ -28,11 +29,15 @@ pub struct Ctx {
     pub locale: String,
     /// The application's catalogs (see [`Ctx::t`]).
     pub translator: Arc<Translator>,
+    /// Who acts, from where: the audit log's actor and request.
+    pub audit_context: AuditContext,
 }
 
 impl Ctx {
     /// Context outside any write.
+    /// Writes are audited as `principal` (no request facts: see [`Ctx::with_audit`]).
     pub fn new(db: DatabaseConnection, principal: Principal, registry: Arc<Registry>) -> Self {
+        let audit_context = AuditContext::new(AuditActor::user(&principal), RequestMeta::default());
         Self {
             db,
             principal,
@@ -42,7 +47,21 @@ impl Ctx {
             bound: None,
             locale: "en".into(),
             translator: Arc::default(),
+            audit_context,
         }
+    }
+
+    /// The same context, audited as `audit_context`.
+    pub fn with_audit(mut self, audit_context: AuditContext) -> Self {
+        self.audit_context = audit_context;
+        self
+    }
+
+    /// Records `entry` in the audit log, in the transaction `txn` of the change
+    /// it describes (for writes a hook or an action makes beyond the records
+    /// the engine records itself).
+    pub async fn audit(&self, txn: &DatabaseTransaction, entry: AuditEntry) -> rustcms_core::AppResult<()> {
+        rustcms_core::audit::record(txn, &self.audit_context, entry).await
     }
 
     /// The same context in `locale`, translated with `translator`.

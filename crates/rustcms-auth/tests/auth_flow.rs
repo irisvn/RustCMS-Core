@@ -253,7 +253,7 @@ db_test!(expired_tokens_and_sessions_are_rejected, migrate = Migrator, |db: Test
     assert_eq!(rustcms_auth::session::prune_expired(app.state().db()).await.unwrap(), 1);
 });
 
-// Every row of the revocation table in docs/src/security/revocation.md.
+// Every row of the revocation table in docs/guide/src/security/revocation.md.
 db_test!(credential_revocation_table, migrate = Migrator, |db: TestDb| async move {
     let (app, seed) = setup(db).await;
     let me = app.admin_api("auth/me");
@@ -369,22 +369,27 @@ db_test!(stale_credential_snapshots_are_refused, migrate = Migrator, |db: TestDb
 
     // A password change commits between verification and the operation.
     let new_hash = rustcms_auth::password::hash_blocking("changed elsewhere 1").unwrap();
-    credentials::change_password(db, &snapshot, new_hash, true).await.unwrap();
+    credentials::change_password(db, &snapshot, new_hash, true, &rustcms_core::audit::AuditContext::system(None))
+        .await
+        .unwrap();
 
-    let stale_token = credentials::issue_token(db, &snapshot, "late", &[], None).await;
+    let stale_token = credentials::issue_token(db, &snapshot, "late", &[], None, &Default::default()).await;
     assert!(matches!(stale_token, Err(rustcms_core::AppError::Unauthenticated)), "{stale_token:?}");
-    let stale_change = credentials::change_password(db, &snapshot, "x".into(), true).await;
+    let stale_change =
+        credentials::change_password(db, &snapshot, "x".into(), true, &rustcms_core::audit::AuditContext::system(None))
+            .await;
     assert!(matches!(stale_change, Err(rustcms_core::AppError::Unauthenticated)));
-    let stale_logout = credentials::logout_everywhere(db, &snapshot).await;
+    let stale_logout =
+        credentials::logout_everywhere(db, &snapshot, &rustcms_core::audit::AuditContext::system(None)).await;
     assert!(matches!(stale_logout, Err(rustcms_core::AppError::Unauthenticated)));
 
     let fresh = reload(&app, &seed.member).await;
-    credentials::issue_token(db, &fresh, "ok", &[], None).await.expect("fresh snapshot works");
+    credentials::issue_token(db, &fresh, "ok", &[], None, &Default::default()).await.expect("fresh snapshot works");
 
     // Disabled users too.
     let auth = auth(&app);
     RbacService::new(db, &auth.resolver).set_user_active(Actor::System, fresh.id, false).await.unwrap();
-    assert!(credentials::issue_token(db, &fresh, "late", &[], None).await.is_err());
+    assert!(credentials::issue_token(db, &fresh, "late", &[], None, &Default::default()).await.is_err());
 });
 
 // Password changes racing token issuance: no token issued with the old password survives.
@@ -397,13 +402,18 @@ db_test!(token_issuance_cannot_outlive_a_password_change, migrate = Migrator, |d
     for i in 0..10 {
         let (db, snapshot) = (db.clone(), snapshot.clone());
         tasks.spawn(async move {
-            credentials::issue_token(&db, &snapshot, &format!("t{i}"), &[], None).await.ok().map(|t| t.plain_text)
+            credentials::issue_token(&db, &snapshot, &format!("t{i}"), &[], None, &Default::default())
+                .await
+                .ok()
+                .map(|t| t.plain_text)
         });
     }
     let hash = rustcms_auth::password::hash_blocking("rotated password 1").unwrap();
     let (db2, snap2) = (db.clone(), snapshot.clone());
     tasks.spawn(async move {
-        credentials::change_password(&db2, &snap2, hash, true).await.unwrap();
+        credentials::change_password(&db2, &snap2, hash, true, &rustcms_core::audit::AuditContext::system(None))
+            .await
+            .unwrap();
         None
     });
     let mut issued = Vec::new();
@@ -655,7 +665,13 @@ db_test!(a_stale_request_does_not_end_the_rotated_session, migrate = Migrator, |
     let before = sessions().await;
     // Credentials move on while this browser still holds the previous stamp
     // (as when a parallel request of the same tab is changing the password).
-    rustcms_auth::credentials::logout_everywhere(app.state().db(), &seed.member).await.unwrap();
+    rustcms_auth::credentials::logout_everywhere(
+        app.state().db(),
+        &seed.member,
+        &rustcms_core::audit::AuditContext::system(None),
+    )
+    .await
+    .unwrap();
     browser.get(&app.admin_api("auth/me")).await.assert_status(StatusCode::UNAUTHORIZED);
     // The stale request is anonymous but destroys nothing: a re-issue in flight survives.
     assert_eq!(sessions().await, before);

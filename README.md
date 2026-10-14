@@ -5,7 +5,7 @@ Laravel and FilamentPHP: declare resources in Rust, get an authorized CRUD API
 and an admin panel (React, embedded in your binary — no Node needed to use it).
 
 > **Status: 0.1 pre-release.** Feature-complete for the 0.1 scope
-> ([support boundary](docs/src/support-boundary.md)); not yet published to crates.io.
+> ([limitations](docs/guide/src/reference/limitations.md)); not yet published to crates.io.
 
 ```rust,ignore
 impl Resource for PostResource {
@@ -65,10 +65,9 @@ just e2e                      # browser tests against the demo
 just ci                       # most of CI; also `just test-cli`, `just e2e`, `just msrv`
 ```
 
-- Docs: `docs/` (mdBook) — [getting started](docs/src/getting-started.md),
-  [resources](docs/src/admin/resources.md), [API](docs/src/api.md)
-- Admin protocol: [`docs/src/admin-protocol.md`](docs/src/admin-protocol.md)
-- Decisions: [`docs/adr/`](docs/adr) · review checklist: [`docs/review-checklist.md`](docs/review-checklist.md)
+- Developer guide (public, mdBook): [`docs/guide/`](docs/guide/src/SUMMARY.md) — `mdbook serve docs/guide`
+- Core docs (private): [`docs/core/`](docs/core/README.md) — architecture, admin protocol, ADRs,
+  reports, [CHANGELOG](docs/core/CHANGELOG.md), review checklist
 
 ## License
 

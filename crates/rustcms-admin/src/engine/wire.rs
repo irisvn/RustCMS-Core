@@ -1,4 +1,4 @@
-//! Wire format between the admin API and its clients (`docs/admin-protocol.md`).
+//! Wire format between the admin API and its clients (`docs/core/admin-protocol.md`).
 //!
 //! Every column the admin exposes has a [`FieldKind`] derived from its SeaORM
 //! [`ColumnType`]. Decoding is strict: a value of the wrong JSON shape is a

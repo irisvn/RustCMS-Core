@@ -170,7 +170,7 @@ pub(super) async fn create_user(
     let role_ids = ids_of("roleIds", &input.role_ids)?;
     // Everything cheap first (input, duplicate email, roles), so typos cost no hashing.
     check_password(&auth, "password", &input.password)?;
-    let rbac = RbacService::new(app.db(), &auth.resolver);
+    let rbac = RbacService::new(app.db(), &auth.resolver).audited(ctx.audit_context.clone());
     rbac.check_new_user(Actor::User(&ctx.principal), &input.name, &input.email, ADMIN_GUARD, &role_ids).await?;
     reserve_hashing(&auth, &ctx.principal, "create", auth.config.attempts_per_ip).await?;
     let new = NewUser {
@@ -224,6 +224,7 @@ pub(super) async fn update_user(
         confirmed = true;
     }
     let updated = RbacService::new(app.db(), &auth.resolver)
+        .audited(ctx.audit_context.clone())
         .update_profile_if(
             Actor::User(&ctx.principal),
             id,
@@ -247,7 +248,10 @@ pub(super) async fn delete_user(
 ) -> AppResult<StatusCode> {
     let id = id_of(&id)?;
     let auth = auth(&app)?;
-    RbacService::new(app.db(), &auth.resolver).delete_user(Actor::User(&ctx.principal), id).await?;
+    RbacService::new(app.db(), &auth.resolver)
+        .audited(ctx.audit_context.clone())
+        .delete_user(Actor::User(&ctx.principal), id)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -275,6 +279,7 @@ pub(super) async fn set_roles(
     let role_ids = ids_of("roleIds", &input.role_ids)?;
     let expected = ids_of("roleIds", &input.expected_role_ids)?;
     RbacService::new(app.db(), &auth.resolver)
+        .audited(ctx.audit_context.clone())
         .set_user_roles_if(Actor::User(&ctx.principal), id, ADMIN_GUARD, &role_ids, Some(&expected))
         .await?;
     changed_user(&app, &ctx.principal, id, StatusCode::OK).await
@@ -297,6 +302,7 @@ pub(super) async fn set_active(
     let id = id_of(&id)?;
     let auth = auth(&app)?;
     RbacService::new(app.db(), &auth.resolver)
+        .audited(ctx.audit_context.clone())
         .set_user_active_if(Actor::User(&ctx.principal), id, input.active, Some(input.expected))
         .await?;
     changed_user(&app, &ctx.principal, id, StatusCode::OK).await
@@ -322,6 +328,9 @@ pub(super) async fn reset_password(
     check_password(&auth, "password", &input.password)?;
     reserve_hashing(&auth, &ctx.principal, "reset", auth.config.attempts_per_identifier).await?;
     let hash = auth.passwords.hash(input.password).await?;
-    RbacService::new(app.db(), &auth.resolver).reset_password(Actor::User(&ctx.principal), id, hash).await?;
+    RbacService::new(app.db(), &auth.resolver)
+        .audited(ctx.audit_context.clone())
+        .reset_password(Actor::User(&ctx.principal), id, hash)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }

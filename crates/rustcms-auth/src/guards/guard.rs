@@ -136,7 +136,8 @@ async fn admin(app: &AppState, auth: &Arc<AuthState>, mut req: Request, next: Ne
         match user.filter(|u| u.is_active) {
             Some(user) if user.auth_version == session.auth_version() => {
                 signed_in = Some(user.id);
-                let principal = auth.resolver.principal(app.db(), ADMIN_GUARD, &user, None).await?;
+                let mut principal = auth.resolver.principal(app.db(), ADMIN_GUARD, &user, None).await?;
+                principal.credential = Some(rustcms_core::Credential::Session);
                 req.extensions_mut().insert(Authenticated { principal, user, token_id: None, jwt_family: None });
             }
             // Credentials moved on: this request is anonymous. The session is not
@@ -154,8 +155,13 @@ async fn admin(app: &AppState, auth: &Arc<AuthState>, mut req: Request, next: Ne
     if let Some(id) = signed_in {
         response.headers_mut().insert(USER_HEADER, HeaderValue::from(id));
     }
+    let after = response.extensions_mut().remove::<crate::audit::AfterSession>();
     if let Some(cookie) = session::persist(auth, app.db(), &session).await? {
         response.headers_mut().append(header::SET_COOKIE, cookie);
+    }
+    // Sign-ins and sign-outs are recorded only once the session is stored.
+    if let Some(crate::audit::AfterSession(context, entry)) = after {
+        rustcms_core::audit::record_detached(app.db(), &context, entry).await;
     }
     Ok(response)
 }
@@ -167,14 +173,16 @@ async fn api(app: &AppState, mut req: Request, next: Next) -> AppResult<Response
         let auth = app.service::<AuthState>().ok_or_else(|| AppError::internal("AuthProvider not registered"))?;
         let authenticated = if bearer.starts_with(tokens::PREFIX) {
             let (token, user) = tokens::authenticate(app.db(), bearer).await?;
-            let principal =
+            let mut principal =
                 auth.resolver.principal(app.db(), API_GUARD, &user, Some(tokens::abilities(&token))).await?;
+            principal.credential = Some(rustcms_core::Credential::Token(token.id));
             Authenticated { principal, user, token_id: Some(token.id), jwt_family: None }
         } else if auth.config.jwt.enabled && jwt::looks_like_jwt(bearer) {
             let verified = jwt_session::verify_access(&auth, app.db(), bearer).await?;
             // Always `Some`: a JWT never carries more than its family's abilities.
-            let principal =
+            let mut principal =
                 auth.resolver.principal(app.db(), API_GUARD, &verified.user, Some(verified.abilities)).await?;
+            principal.credential = Some(rustcms_core::Credential::Jwt(verified.family.clone()));
             Authenticated { principal, user: verified.user, token_id: None, jwt_family: Some(verified.family) }
         } else {
             return Err(AppError::Unauthenticated);

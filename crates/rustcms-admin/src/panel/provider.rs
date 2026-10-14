@@ -269,7 +269,7 @@ struct LangMissing;
 impl AppCommand for LangMissing {
     fn definition(&self) -> Command {
         Command::new("lang:missing")
-            .about("List the admin labels without a translation, as TOML to add to lang/<locale>.toml")
+            .about("List the admin labels without a translation, as TOML to add to the catalog (lang/vi.toml, …)")
             .arg(clap::Arg::new("locale").required(true).help("Language, e.g. `vi`"))
     }
 
@@ -338,4 +338,10 @@ fn missing_translations(panel: &AdminPanel, locale: &str, permission_groups: &[S
     missing.sort();
     missing.dedup();
     missing
+}
+
+/// Definitions of the console commands the panel adds (`media:prune` only
+/// with `media()`), for the generated CLI reference.
+pub fn command_definitions() -> Vec<Command> {
+    vec![IdempotencyPrune.definition(), MediaPrune.definition(), LangMissing.definition()]
 }

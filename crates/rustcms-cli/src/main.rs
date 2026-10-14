@@ -31,7 +31,7 @@ enum Command {
         #[arg(long, default_value = ".")]
         path: PathBuf,
         /// Use a local rustcms checkout instead of crates.io (written verbatim, relative to the new app)
-        #[arg(long)]
+        #[arg(long, hide = true)]
         rustcms_path: Option<String>,
         /// Do not declare a standalone `[workspace]` (for apps inside another workspace)
         #[arg(long)]
@@ -115,7 +115,8 @@ fn main() -> ExitCode {
         Command::MakeWidget { name } => project::Project::find().and_then(|p| generate::make_widget(&p, &name)),
         Command::DocsCli => {
             let auth = clap::Command::new("auth").subcommands(rustcms_auth::commands::definitions());
-            print!("{}", docs::markdown(&Cli::command(), &rustcms_core::console::command(), &auth));
+            let admin = clap::Command::new("admin").subcommands(rustcms_admin::panel::provider::command_definitions());
+            print!("{}", docs::markdown(&Cli::command(), &rustcms_core::console::command(), &auth, &admin));
             Ok(ExitCode::SUCCESS)
         }
         Command::App(args) => project::Project::find().and_then(|p| p.forward(&args)),

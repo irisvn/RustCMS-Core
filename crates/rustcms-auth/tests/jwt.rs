@@ -78,7 +78,13 @@ db_test!(revocation_applies_from_the_next_request, migrate = Migrator, |db: Test
 
     // Sign-out everywhere ends every sign-in.
     let two = sign_in(&app, "admin@example.test", None).await;
-    rustcms_auth::credentials::logout_everywhere(app.state().db(), &seed.admin).await.unwrap();
+    rustcms_auth::credentials::logout_everywhere(
+        app.state().db(),
+        &seed.admin,
+        &rustcms_core::audit::AuditContext::system(None),
+    )
+    .await
+    .unwrap();
     me(&app, &two["accessToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
     refresh(&app, &two["refreshToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
 
@@ -249,7 +255,15 @@ db_test!(a_password_change_ends_every_sign_in, migrate = Migrator, |db: TestDb| 
     let signed = sign_in(&app, "admin@example.test", None).await;
     // Also when API tokens are kept (`revoke_tokens_on_password_change = false`).
     let hash = auth(&app).passwords.hash("another password 123".into()).await.unwrap();
-    rustcms_auth::credentials::change_password(app.state().db(), &seed.admin, hash, false).await.unwrap();
+    rustcms_auth::credentials::change_password(
+        app.state().db(),
+        &seed.admin,
+        hash,
+        false,
+        &rustcms_core::audit::AuditContext::system(None),
+    )
+    .await
+    .unwrap();
     me(&app, &signed["accessToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
     refresh(&app, &signed["refreshToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
 });

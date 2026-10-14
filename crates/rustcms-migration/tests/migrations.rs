@@ -17,6 +17,16 @@ async fn insert_user(db: &TestDb, email: &str) {
     db.conn().execute_unprepared(&sql).await.unwrap();
 }
 
+/// Number of migrations up to (excluding) the one whose name contains `name`.
+fn before(name: &str) -> u32 {
+    Migrator::migrations().iter().position(|m| m.name().contains(name)).expect("migration exists") as u32
+}
+
+/// Number of migrations applied after (and including) the one named `name`.
+fn from(name: &str) -> u32 {
+    Migrator::migrations().len() as u32 - before(name)
+}
+
 async fn find_user(db: &TestDb, email: &str) -> user::Model {
     use sea_orm::{ColumnTrait, QueryFilter};
     user::Entity::find().filter(user::Column::Email.eq(email)).one(db.conn()).await.unwrap().unwrap()
@@ -42,19 +52,33 @@ db_test!(upgrade_keeps_existing_users, |db: TestDb| async move {
 
 // 0.2 → 0.3: users keep working and follow the browser's language until they choose.
 db_test!(upgrade_from_0_2_adds_user_locale, |db: TestDb| async move {
-    let all = Migrator::migrations().len() as u32;
-    Migrator::up(db.conn(), Some(all - 1)).await.unwrap();
+    Migrator::up(db.conn(), Some(before("add_locale_to_users"))).await.unwrap();
     insert_user(&db, "ada@example.test").await;
     Migrator::up(db.conn(), None).await.unwrap();
     assert_eq!(find_user(&db, "ada@example.test").await.locale, None);
     // Re-runnable and reversible.
-    Migrator::down(db.conn(), Some(1)).await.unwrap();
+    Migrator::down(db.conn(), Some(from("add_locale_to_users"))).await.unwrap();
     assert!(!SchemaManager::new(db.conn()).has_column("users", "locale").await.unwrap());
     Migrator::up(db.conn(), None).await.unwrap();
     let mut user: user::ActiveModel = find_user(&db, "ada@example.test").await.into();
     user.locale = Set(Some("vi".into()));
     user.update(db.conn()).await.unwrap();
     assert_eq!(find_user(&db, "ada@example.test").await.locale.as_deref(), Some("vi"));
+});
+
+// M12 → M13: the audit log table appears empty, and rolls back cleanly.
+db_test!(upgrade_adds_audit_logs, |db: TestDb| async move {
+    Migrator::up(db.conn(), Some(before("create_audit_logs_table"))).await.unwrap();
+    assert!(!has_table(&db, "audit_logs").await);
+    insert_user(&db, "ada@example.test").await;
+    Migrator::up(db.conn(), None).await.unwrap();
+    assert!(has_table(&db, "audit_logs").await);
+    assert!(rustcms_core::models::audit_log::Entity::find().all(db.conn()).await.unwrap().is_empty());
+    Migrator::down(db.conn(), Some(from("create_audit_logs_table"))).await.unwrap();
+    assert!(!has_table(&db, "audit_logs").await);
+    assert!(find_user(&db, "ada@example.test").await.is_active, "rollback keeps users");
+    Migrator::up(db.conn(), None).await.unwrap();
+    assert!(has_table(&db, "audit_logs").await);
 });
 
 // M1 → M2: users created before the auth tables keep working; system roles are seeded.
@@ -91,7 +115,9 @@ db_test!(down_then_up_is_clean, |db: TestDb| async move {
     Migrator::up(db.conn(), None).await.unwrap();
     UserFactory::new().create(db.conn()).await;
     Migrator::down(db.conn(), None).await.unwrap();
-    for table in ["users", "sessions", "personal_access_tokens", "roles", "permissions", "model_has_roles"] {
+    for table in
+        ["users", "sessions", "personal_access_tokens", "roles", "permissions", "model_has_roles", "audit_logs"]
+    {
         assert!(!has_table(&db, table).await, "{table} dropped");
     }
     Migrator::up(db.conn(), None).await.unwrap();

@@ -71,6 +71,14 @@ async fn items(db: &TestDb) -> (Ctx, std::sync::Arc<dyn rustcms_admin::DynResour
     use sea_orm::Schema;
     let backend = db.conn().get_database_backend();
     rustcms_testing::create_table(db.conn(), &Schema::new(backend).create_table_from_entity(item::Entity)).await;
+    rustcms_testing::create_table(
+        db.conn(),
+        &Schema::new(backend)
+            .create_table_from_entity(rustcms_core::models::audit_log::Entity)
+            .if_not_exists()
+            .to_owned(),
+    )
+    .await;
     let registry = Registry::new().register::<Items>().finish();
     let ctx = Ctx::new(db.conn().clone(), admin(), registry.clone());
     (ctx, registry.get("items").unwrap().clone())
@@ -224,6 +232,14 @@ db_test!(key_value_bounds_do_not_depend_on_the_form, |db: TestDb| async move {
     use sea_orm::Schema;
     let backend = db.conn().get_database_backend();
     rustcms_testing::create_table(db.conn(), &Schema::new(backend).create_table_from_entity(item::Entity)).await;
+    rustcms_testing::create_table(
+        db.conn(),
+        &Schema::new(backend)
+            .create_table_from_entity(rustcms_core::models::audit_log::Entity)
+            .if_not_exists()
+            .to_owned(),
+    )
+    .await;
     let registry = Registry::new().register::<ApiOnlyKeyValue>().finish();
     let ctx = Ctx::new(db.conn().clone(), admin(), registry.clone());
     let items = registry.get("api_only").unwrap();

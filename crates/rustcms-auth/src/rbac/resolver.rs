@@ -88,6 +88,7 @@ impl PermissionResolver {
             token_abilities,
             auth_version: Some(user.auth_version),
             locale: user.locale.clone(),
+            credential: None,
         })
     }
 

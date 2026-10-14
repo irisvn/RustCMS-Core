@@ -151,6 +151,7 @@ async fn registry(db: &TestDb) -> Arc<Registry> {
         schema.create_table_from_entity(category::Entity),
         schema.create_table_from_entity(gadget::Entity),
         schema.create_table_from_entity(rustcms_admin::media::entity::Entity),
+        schema.create_table_from_entity(rustcms_core::models::audit_log::Entity).if_not_exists().to_owned(),
         schema.create_table_from_entity(support::note::Entity),
     ] {
         if db.backend() == rustcms_testing::Backend::Mysql {

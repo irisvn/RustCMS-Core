@@ -3,6 +3,24 @@
 
 use super::*;
 
+use rustcms_core::audit::{AuditActor, AuditContext, AuditEntry};
+use serde_json::json;
+
+/// The guard a change applies to.
+#[derive(serde::Serialize)]
+struct GuardMeta<'a> {
+    guard: &'a str,
+}
+
+/// How many permissions a sync created and orphaned.
+#[derive(serde::Serialize)]
+struct SyncMeta {
+    created: usize,
+    orphaned: usize,
+    restored: usize,
+    regrouped: usize,
+}
+
 /// Who performs an RBAC change.
 #[derive(Debug, Clone, Copy)]
 pub enum Actor<'a> {
@@ -38,12 +56,29 @@ pub struct SyncReport {
 pub struct RbacService<'a> {
     db: &'a DatabaseConnection,
     resolver: &'a PermissionResolver,
+    audit: Option<AuditContext>,
 }
 
 impl<'a> RbacService<'a> {
     /// Service over `db`, evicting `resolver` after each change.
     pub fn new(db: &'a DatabaseConnection, resolver: &'a PermissionResolver) -> Self {
-        Self { db, resolver }
+        Self { db, resolver, audit: None }
+    }
+
+    /// Records changes with this actor and request in the audit log (without
+    /// it: the acting principal, or the application for [`Actor::System`]).
+    pub fn audited(mut self, audit: AuditContext) -> Self {
+        self.audit = Some(audit);
+        self
+    }
+
+    /// Records `entry` in the transaction of the change.
+    async fn audit(&self, txn: &DatabaseTransaction, actor: Actor<'_>, entry: AuditEntry) -> AppResult<()> {
+        let context = self.audit.clone().unwrap_or_else(|| match actor {
+            Actor::User(principal) => AuditContext::new(AuditActor::user(principal), Default::default()),
+            Actor::System => AuditContext::system(None),
+        });
+        rustcms_core::audit::record(txn, &context, entry).await
     }
 
     /// Commits and always evicts cached grants: if COMMIT reached the server but
@@ -141,6 +176,11 @@ impl<'a> RbacService<'a> {
         for id in wanted.values() {
             role_perm::ActiveModel { role_id: Set(role.id), permission_id: Set(*id) }.insert(&txn).await?;
         }
+        let names: Vec<&String> = wanted.keys().collect();
+        let entry = AuditEntry::new("role.created", "role").key(role.id).changes(json!({
+            "name": [null, role.name], "guard": [null, role.guard_name], "permissions": [null, names],
+        }));
+        self.audit(&txn, actor, entry).await?;
         self.commit(txn).await?;
         Ok(role)
     }
@@ -195,6 +235,12 @@ impl<'a> RbacService<'a> {
         for id in wanted.values() {
             role_perm::ActiveModel { role_id: Set(role.id), permission_id: Set(*id) }.insert(&txn).await?;
         }
+        if wanted_names != current_names {
+            let entry = AuditEntry::new("role.permissions_changed", "role")
+                .key(role.id)
+                .changes(json!({ "permissions": [current_names, wanted_names] }));
+            self.audit(&txn, actor, entry).await?;
+        }
         self.commit(txn).await?;
         Ok(())
     }
@@ -220,6 +266,10 @@ impl<'a> RbacService<'a> {
         grantable(actor, &role.guard_name, permissions.keys())?;
         user_role::Entity::delete_many().filter(user_role::Column::RoleId.eq(role.id)).exec(&txn).await?;
         role::Entity::delete_by_id(role.id).exec(&txn).await?;
+        let entry = AuditEntry::new("role.deleted", "role")
+            .key(role.id)
+            .changes(json!({ "name": [role.name, null], "guard": [role.guard_name, null] }));
+        self.audit(&txn, actor, entry).await?;
         self.commit(txn).await?;
         Ok(())
     }
@@ -236,6 +286,7 @@ impl<'a> RbacService<'a> {
         protected(actor, &role)?;
         grantable(actor, &role.guard_name, active_permissions(&txn, role.id).await?.keys())?;
         if !holds_role(&txn, &user_id.to_string(), role.id).await? {
+            let before = held_roles(&txn, user_id, &role.guard_name).await?;
             dormant_grants(&txn, actor, role.id).await?;
             user_role::ActiveModel {
                 role_id: Set(role.id),
@@ -244,6 +295,11 @@ impl<'a> RbacService<'a> {
             }
             .insert(&txn)
             .await?;
+            let entry = AuditEntry::new("user.roles_changed", "user")
+                .key(user_id)
+                .changes(json!({ "roles": [before, held_roles(&txn, user_id, &role.guard_name).await?] }))
+                .meta(GuardMeta { guard: &role.guard_name });
+            self.audit(&txn, actor, entry).await?;
         }
         self.commit(txn).await?;
         Ok(())
@@ -259,7 +315,8 @@ impl<'a> RbacService<'a> {
         same_guard(actor, &role.guard_name)?;
         protected(actor, &role)?;
         grantable(actor, &role.guard_name, active_permissions(&txn, role.id).await?.keys())?;
-        user_role::Entity::delete_many()
+        let before = held_roles(&txn, user_id, &role.guard_name).await?;
+        let removed = user_role::Entity::delete_many()
             .filter(user_role::Column::RoleId.eq(role.id))
             .filter(user_role::Column::ModelType.eq(USER_MODEL))
             .filter(user_role::Column::ModelId.eq(user_id.to_string()))
@@ -267,6 +324,13 @@ impl<'a> RbacService<'a> {
             .await?;
         if role.is_super_admin() {
             ensure_super_admin_remains(&txn, &role.guard_name).await?;
+        }
+        if removed.rows_affected > 0 {
+            let entry = AuditEntry::new("user.roles_changed", "user")
+                .key(user_id)
+                .changes(json!({ "roles": [before, held_roles(&txn, user_id, &role.guard_name).await?] }))
+                .meta(GuardMeta { guard: &role.guard_name });
+            self.audit(&txn, actor, entry).await?;
         }
         self.commit(txn).await?;
         Ok(())
@@ -288,6 +352,7 @@ impl<'a> RbacService<'a> {
             .await?
             .is_some();
         if !exists {
+            let before = direct_permissions(&txn, user_id, guard).await?;
             user_perm::ActiveModel {
                 permission_id: Set(permission_id),
                 model_type: Set(USER_MODEL.into()),
@@ -295,6 +360,11 @@ impl<'a> RbacService<'a> {
             }
             .insert(&txn)
             .await?;
+            let entry = AuditEntry::new("user.permissions_changed", "user")
+                .key(user_id)
+                .changes(json!({ "permissions": [before, direct_permissions(&txn, user_id, guard).await?] }))
+                .meta(GuardMeta { guard });
+            self.audit(&txn, actor, entry).await?;
         }
         self.commit(txn).await?;
         Ok(())
@@ -309,12 +379,20 @@ impl<'a> RbacService<'a> {
         same_guard(actor, guard)?;
         let ids = permission_ids(&txn, guard, &[name.to_owned()]).await?;
         grantable(actor, guard, ids.keys())?;
-        user_perm::Entity::delete_many()
+        let before = direct_permissions(&txn, user_id, guard).await?;
+        let removed = user_perm::Entity::delete_many()
             .filter(user_perm::Column::PermissionId.eq(ids[name]))
             .filter(user_perm::Column::ModelType.eq(USER_MODEL))
             .filter(user_perm::Column::ModelId.eq(user_id.to_string()))
             .exec(&txn)
             .await?;
+        if removed.rows_affected > 0 {
+            let entry = AuditEntry::new("user.permissions_changed", "user")
+                .key(user_id)
+                .changes(json!({ "permissions": [before, direct_permissions(&txn, user_id, guard).await?] }))
+                .meta(GuardMeta { guard });
+            self.audit(&txn, actor, entry).await?;
+        }
         self.commit(txn).await?;
         Ok(())
     }
@@ -348,9 +426,14 @@ impl<'a> RbacService<'a> {
             return stale();
         }
         let guards = super_admin_guards(&txn, user_id).await?;
+        let was_active = target.is_active;
         let mut model: user::ActiveModel = target.into();
         model.is_active = Set(active);
         model.update(&txn).await?;
+        if was_active != active {
+            let event = if active { "user.activated" } else { "user.deactivated" };
+            self.audit(&txn, actor, AuditEntry::new(event, "user").key(user_id)).await?;
+        }
         if !active {
             crate::credentials::revoke_all(&txn, user_id, true).await?;
         }
@@ -367,9 +450,13 @@ impl<'a> RbacService<'a> {
         let actor = fresh.actor();
         require(actor, "users.delete")?;
         not_self(actor, user_id)?;
-        lock_user(&txn, user_id).await?;
+        let target = lock_user(&txn, user_id).await?;
         guard_target(&txn, actor, user_id).await?;
         let guards = super_admin_guards(&txn, user_id).await?;
+        let entry = AuditEntry::new("user.deleted", "user")
+            .key(user_id)
+            .changes(json!({ "name": [target.name, null], "email": [target.email, null] }));
+        self.audit(&txn, actor, entry).await?;
         let model_id = user_id.to_string();
         user_role::Entity::delete_many()
             .filter(user_role::Column::ModelType.eq(USER_MODEL))
@@ -393,7 +480,13 @@ impl<'a> RbacService<'a> {
     /// in one transaction: on any failure, nothing is created.
     pub async fn create_user(&self, actor: Actor<'_>, new: NewUser<'_>) -> AppResult<user::Model> {
         let (txn, fresh) = self.begin(actor).await?;
+        let super_admin = new.super_admin_guard.map(str::to_owned);
         let user = create_user_in(&txn, fresh.actor(), new).await?;
+        let mut changes = json!({ "name": [null, user.name], "email": [null, user.email] });
+        if let Some(guard) = super_admin {
+            changes["super_admin"] = json!([null, guard]);
+        }
+        self.audit(&txn, fresh.actor(), AuditEntry::new("user.created", "user").key(user.id).changes(changes)).await?;
         self.commit(txn).await?;
         Ok(user)
     }
@@ -410,9 +503,13 @@ impl<'a> RbacService<'a> {
         let (txn, fresh) = self.begin(actor).await?;
         let actor = fresh.actor();
         let user = create_user_in(&txn, actor, new).await?;
+        let mut changes = json!({ "name": [null, user.name], "email": [null, user.email] });
         if !role_ids.is_empty() {
             apply_roles(&txn, actor, user.id, guard, role_ids).await?;
+            changes["roles"] = json!([null, held_roles(&txn, user.id, guard).await?]);
         }
+        let entry = AuditEntry::new("user.created", "user").key(user.id).changes(changes).meta(GuardMeta { guard });
+        self.audit(&txn, actor, entry).await?;
         self.commit(txn).await?;
         Ok(user)
     }
@@ -451,7 +548,16 @@ impl<'a> RbacService<'a> {
         {
             return stale();
         }
+        let before = held_roles(&txn, user_id, guard).await?;
         apply_roles(&txn, actor, user_id, guard, role_ids).await?;
+        let after = held_roles(&txn, user_id, guard).await?;
+        if before != after {
+            let entry = AuditEntry::new("user.roles_changed", "user")
+                .key(user_id)
+                .changes(json!({ "roles": [before, after] }))
+                .meta(GuardMeta { guard });
+            self.audit(&txn, actor, entry).await?;
+        }
         self.commit(txn).await?;
         Ok(())
     }
@@ -521,6 +627,7 @@ impl<'a> RbacService<'a> {
         {
             return invalid("email", "has already been taken");
         }
+        let before = json!({ "name": target.name, "email": target.email });
         let mut model: user::ActiveModel = target.into();
         model.name = Set(name.trim().to_owned());
         model.email = Set(email);
@@ -534,6 +641,11 @@ impl<'a> RbacService<'a> {
         // session is re-issued by the handler with the new version).
         if email_changed {
             user.auth_version = crate::credentials::revoke_all(&txn, user_id, true).await?;
+        }
+        let after = json!({ "name": user.name, "email": user.email });
+        let changes = rustcms_core::audit::diff(before.as_object(), after.as_object(), &|_| false);
+        if changes.as_object().is_some_and(|c| !c.is_empty()) {
+            self.audit(&txn, actor, AuditEntry::new("user.updated", "user").key(user_id).changes(changes)).await?;
         }
         self.commit(txn).await?;
         Ok(user)
@@ -593,6 +705,7 @@ impl<'a> RbacService<'a> {
         model.password = Set(password_hash);
         model.update(&txn).await?;
         crate::credentials::revoke_all(&txn, user_id, true).await?;
+        self.audit(&txn, actor, AuditEntry::new("user.password_reset", "user").key(user_id)).await?;
         self.commit(txn).await?;
         Ok(())
     }
@@ -605,9 +718,16 @@ impl<'a> RbacService<'a> {
         let (txn, _) = self.begin(Actor::System).await?;
         let existing = permission::Entity::find().all(&txn).await?;
         let mut report = SyncReport::default();
+        // Declared again: its grants apply again (or only its group changed).
+        let (mut restored, mut regrouped) = (0, 0);
         for ((guard, name), group) in declared {
             match existing.iter().find(|p| &p.guard_name == guard && &p.name == name) {
                 Some(found) if found.orphaned || &found.group != group => {
+                    if found.orphaned {
+                        restored += 1;
+                    } else {
+                        regrouped += 1;
+                    }
                     let mut model: permission::ActiveModel = found.clone().into();
                     model.orphaned = Set(false);
                     model.group = Set(group.clone());
@@ -635,6 +755,15 @@ impl<'a> RbacService<'a> {
             model.orphaned = Set(true);
             model.update(&txn).await?;
             report.orphaned.push(format!("{}:{}", stale.guard_name, stale.name));
+        }
+        if !report.created.is_empty() || !report.orphaned.is_empty() || restored + regrouped > 0 {
+            let entry = AuditEntry::new("permission.synced", "permission").meta(SyncMeta {
+                created: report.created.len(),
+                orphaned: report.orphaned.len(),
+                restored,
+                regrouped,
+            });
+            self.audit(&txn, Actor::System, entry).await?;
         }
         self.commit(txn).await?;
         Ok(report)

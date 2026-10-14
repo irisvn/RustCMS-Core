@@ -1,0 +1,10 @@
+[book]
+title = "RustCMS"
+description = "Build admin panels and headless CMS backends in Rust."
+authors = ["irisvn"]
+language = "en"
+src = "src"
+
+[output.html]
+# The guide is published on its own: no links to the (private) repository.
+no-section-label = false

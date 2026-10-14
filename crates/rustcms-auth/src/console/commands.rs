@@ -3,6 +3,7 @@
 use anyhow::{Context, bail};
 use async_trait::async_trait;
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use rustcms_core::audit::AuditContext;
 use rustcms_core::models::user;
 use rustcms_core::{AppCommand, AppState};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -58,8 +59,11 @@ impl AppCommand for MakeUser {
                 .then(|| arg(args, "guard").map_or(ADMIN_GUARD, String::as_str)),
         };
         // User and role assignment commit together: a failure leaves nothing behind.
-        let user =
-            RbacService::new(state.db(), &auth.resolver).create_user(Actor::System, new).await.map_err(describe)?;
+        let user = RbacService::new(state.db(), &auth.resolver)
+            .audited(AuditContext::system(Some("make:user")))
+            .create_user(Actor::System, new)
+            .await
+            .map_err(describe)?;
         println!("Created user #{} <{}>", user.id, user.email);
         if generated {
             println!("Password: {password}");
@@ -115,7 +119,11 @@ impl AppCommand for TokenCreate {
             None => None,
         };
         let name = arg(args, "name").cloned().unwrap_or_default();
-        let issued = crate::tokens::issue(state.db(), user.id, &name, &abilities, expires_at).await?;
+        let txn = rustcms_core::db::begin_write(state.db()).await?;
+        let issued = crate::tokens::issue(&txn, user.id, &name, &abilities, expires_at).await?;
+        let entry = crate::credentials::token_created(&issued);
+        rustcms_core::audit::record(&txn, &AuditContext::system(Some("token:create")), entry).await?;
+        txn.commit().await?;
         println!("{}", issued.plain_text);
         Ok(())
     }
@@ -132,7 +140,10 @@ impl AppCommand for PermissionSync {
 
     async fn run(&self, state: &AppState, _: &ArgMatches) -> anyhow::Result<()> {
         let auth = auth(state)?;
-        let report = RbacService::new(state.db(), &auth.resolver).sync_permissions(&auth.permissions.all()).await?;
+        let report = RbacService::new(state.db(), &auth.resolver)
+            .audited(AuditContext::system(Some("permission:sync")))
+            .sync_permissions(&auth.permissions.all())
+            .await?;
         println!("{} created, {} orphaned", report.created.len(), report.orphaned.len());
         for name in &report.created {
             println!("  + {name}");
@@ -193,6 +204,7 @@ impl AppCommand for RoleAssign {
             .await?
             .with_context(|| format!("no role `{name}` in guard `{guard}`"))?;
         RbacService::new(state.db(), &auth.resolver)
+            .audited(AuditContext::system(Some("role:assign")))
             .assign_role(Actor::System, user.id, role.id)
             .await
             .map_err(describe)?;
@@ -209,5 +221,32 @@ pub fn definitions() -> Vec<Command> {
         TokenCreate.definition(),
         PermissionSync.definition(),
         SessionPrune.definition(),
+        AuditPrune.definition(),
     ]
+}
+
+/// `audit:prune`: deletes audit entries older than `audit.retention_days`.
+pub struct AuditPrune;
+
+#[async_trait]
+impl AppCommand for AuditPrune {
+    fn definition(&self) -> Command {
+        Command::new("audit:prune")
+            .about("Delete audit log entries older than audit.retention_days (also done hourly by `serve`)")
+    }
+
+    async fn run(&self, state: &AppState, _: &ArgMatches) -> anyhow::Result<()> {
+        let deleted = prune_audit(state, std::time::Duration::from_secs(3_600)).await?;
+        println!("{deleted} audit entries deleted");
+        Ok(())
+    }
+}
+
+/// Deletes the audit entries past their retention (within `budget`).
+pub(crate) async fn prune_audit(state: &AppState, budget: std::time::Duration) -> anyhow::Result<u64> {
+    let config = rustcms_core::audit::AuditConfig::of(state.config())?;
+    let cutoff = chrono::Duration::try_days(i64::from(config.retention_days))
+        .and_then(|age| chrono::Utc::now().checked_sub_signed(age))
+        .context("audit.retention_days is out of range")?;
+    Ok(rustcms_core::audit::prune(state.db(), cutoff, budget).await?)
 }

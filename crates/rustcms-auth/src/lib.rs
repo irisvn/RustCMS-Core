@@ -23,7 +23,7 @@ pub mod support;
 pub use console::commands;
 pub use guards::{credentials, guard, session, tokens};
 pub use http::routes;
-pub use support::{password, rate_limit, secret};
+pub use support::{audit, password, rate_limit, secret};
 
 pub use config::AuthConfig;
 pub use guard::{Auth, Authenticated, CSRF_HEADER, MaybeAuth};

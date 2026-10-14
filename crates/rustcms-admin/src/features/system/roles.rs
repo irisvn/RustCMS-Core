@@ -149,6 +149,7 @@ pub(super) async fn create_role(
     let auth = auth(&app)?;
     require(&ctx.principal, "roles.create")?;
     let role = RbacService::new(app.db(), &auth.resolver)
+        .audited(ctx.audit_context.clone())
         .create_role(Actor::User(&ctx.principal), ADMIN_GUARD, &input.name, &input.permissions)
         .await?;
     Ok((StatusCode::CREATED, Json(system_role(&app, &ctx.principal, role).await?)))
@@ -160,7 +161,10 @@ pub(super) async fn delete_role(
     Path(id): Path<String>,
 ) -> AppResult<StatusCode> {
     let auth = auth(&app)?;
-    RbacService::new(app.db(), &auth.resolver).delete_role(Actor::User(&ctx.principal), id_of(&id)?).await?;
+    RbacService::new(app.db(), &auth.resolver)
+        .audited(ctx.audit_context.clone())
+        .delete_role(Actor::User(&ctx.principal), id_of(&id)?)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -182,6 +186,7 @@ pub(super) async fn set_permissions(
     let auth = auth(&app)?;
     let id = id_of(&id)?;
     RbacService::new(app.db(), &auth.resolver)
+        .audited(ctx.audit_context.clone())
         .set_role_permissions_if(Actor::User(&ctx.principal), id, &input.permissions, Some(&input.expected_permissions))
         .await?;
     let role = role::Entity::find_by_id(id).one(app.db()).await?.ok_or(AppError::NotFound)?;

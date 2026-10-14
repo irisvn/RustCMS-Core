@@ -103,10 +103,17 @@ impl ServiceProvider for AuthProvider {
         app.describe_routes("auth", [(any.clone(), base.clone()), (any, format!("{base}/{{*rest}}"))]);
         app.routes(move |router| routes::router(router, &admin_path));
         app.middleware(|router, state| router.layer(from_fn_with_state(state, guard::authenticate)));
-        app.command(MakeUser).command(RoleAssign).command(TokenCreate).command(PermissionSync).command(SessionPrune);
+        app.command(MakeUser)
+            .command(RoleAssign)
+            .command(TokenCreate)
+            .command(PermissionSync)
+            .command(SessionPrune)
+            .command(crate::console::commands::AuditPrune);
     }
 
     async fn boot(&self, state: &AppState) -> anyhow::Result<()> {
+        // A bad `[audit]` section stops the boot, not the first pruning.
+        rustcms_core::audit::AuditConfig::of(state.config())?;
         #[cfg(feature = "redis")]
         if let (Some(auth), Some(redis)) = (state.service::<AuthState>(), state.service::<rustcms_core::redis::Redis>())
         {
@@ -121,6 +128,7 @@ impl ServiceProvider for AuthProvider {
             loop {
                 every.tick().await;
                 let db = db.clone();
+                let app_for_job = app.clone();
                 rustcms_core::jobs::exclusive(&app, "auth-prune", PRUNE_EVERY / 2, || async move {
                     match crate::session::prune_expired(&db).await {
                         Ok(n) if n > 0 => tracing::info!(pruned = n, "expired sessions deleted"),
@@ -131,6 +139,12 @@ impl ServiceProvider for AuthProvider {
                         Ok(n) if n > 0 => tracing::info!(pruned = n, "ended JWT sign-ins deleted"),
                         Ok(_) => {}
                         Err(err) => tracing::warn!(%err, "JWT pruning failed"),
+                    }
+                    match crate::console::commands::prune_audit(&app_for_job, std::time::Duration::from_secs(60)).await
+                    {
+                        Ok(n) if n > 0 => tracing::info!(pruned = n, "old audit entries deleted"),
+                        Ok(_) => {}
+                        Err(err) => tracing::warn!(%err, "audit pruning failed"),
                     }
                 })
                 .await;
