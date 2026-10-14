@@ -21,5 +21,7 @@
 - Auth: all RBAC writes go through `RbacService` (crates/rustcms-auth/src/rbac/); never write role/permission tables directly.
 - New auth routes must be added to `rustcms_auth::routes::routes` and to `fixtures/authz/auth.toml` (the oracle test fails otherwise).
 - Admin API routes are listed in `rustcms_admin::http::routes`; each needs a case in `fixtures/authz/admin.toml`.
+- Application API routes use `ApiRoutes` with an explicit `Access` per route (checked before extractors); never
+  authorize inside a handler after reading the body.
 - `fixtures/contract/*.json` is the server↔SPA contract: regenerate with `UPDATE_CONTRACT=1 cargo test -p rustcms-admin` and review the diff.
 - Before review, check changes against `docs/review-checklist.md`; reviews are exhaustive and batched.

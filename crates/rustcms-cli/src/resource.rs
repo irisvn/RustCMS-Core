@@ -24,10 +24,17 @@ pub struct Column {
     pub ty: String,
     pub optional: bool,
     pub primary_key: bool,
+    /// The `Column` variant (`enum_name = "…"`, else the field name in PascalCase).
+    pub variant: String,
+    /// Whether the field is written `r#name`.
+    pub raw: bool,
+    /// Every `#[…]` attribute of the field, joined.
+    pub attrs: String,
 }
 
 /// Columns of `pub struct Model { … }`, with their `#[sea_orm(…)]` attributes
-/// (`primary_key`, `column_name`, `ignore`); comments are ignored.
+/// (`primary_key`, `column_name`, `enum_name`, `ignore`), also when an attribute
+/// spans several lines; comments are ignored.
 pub fn parse_model(source: &str) -> anyhow::Result<Vec<Column>> {
     let start = source.find("pub struct Model").context("no `pub struct Model` in the model file")?;
     let body = &source[start..];
@@ -36,14 +43,19 @@ pub fn parse_model(source: &str) -> anyhow::Result<Vec<Column>> {
     let close = open + body[open..].find('}').context("malformed `struct Model`")?;
     let mut columns = Vec::new();
     let mut attrs = String::new();
+    // Brackets still open in the attribute being read.
+    let mut depth = 0i32;
     for raw in body[open + 1..close].lines() {
         let line = raw.split("//").next().unwrap_or_default().trim();
-        if line.starts_with("#[") {
+        if depth > 0 || line.starts_with("#[") {
             attrs.push_str(line);
+            attrs.push(' ');
+            depth += line.matches('[').count() as i32 - line.matches(']').count() as i32;
             continue;
         }
         let Some(rest) = line.strip_prefix("pub ") else { continue };
         let Some((name, ty)) = rest.split_once(':') else { continue };
+        let raw_ident = name.trim().starts_with("r#");
         let name = name.trim().trim_start_matches("r#").to_owned();
         let ty = ty.trim().trim_end_matches(',').trim();
         let (ty, optional) = match ty.strip_prefix("Option<").and_then(|t| t.strip_suffix('>')) {
@@ -61,9 +73,26 @@ pub fn parse_model(source: &str) -> anyhow::Result<Vec<Column>> {
             .nth(1)
             .and_then(|rest| rest.split('"').nth(1))
             .map_or_else(|| name.clone(), str::to_owned);
-        columns.push(Column { name, db_name, ty, optional, primary_key: taken.contains("primary_key") });
+        let variant = attr_value(&taken, "enum_name").unwrap_or_else(|| pascal_case(&name));
+        columns.push(Column {
+            name,
+            db_name,
+            ty,
+            optional,
+            primary_key: taken.contains("primary_key"),
+            variant,
+            raw: raw_ident,
+            attrs: taken,
+        });
     }
     Ok(columns)
+}
+
+/// The string value of `key = "…"` in attributes.
+pub(crate) fn attr_value(attrs: &str, key: &str) -> Option<String> {
+    let rest = attrs.split(key).nth(1)?;
+    let rest = rest.trim_start().strip_prefix('=')?;
+    rest.split('"').nth(1).map(str::to_owned)
 }
 
 const LONG_TEXT: &[&str] = &["body", "content", "description", "notes", "text", "summary", "excerpt", "bio"];
@@ -128,7 +157,7 @@ fn generate(columns: &[Column], belongs_to: &BTreeMap<String, String>) -> Genera
         let name = &column.db_name;
         // Checks look at both names: `#[sea_orm(column_name)]` may rename either.
         let names = [column.name.as_str(), name.as_str()];
-        let col = format!("Column::{}", pascal_case(&column.name));
+        let col = format!("Column::{}", column.variant);
         if column.primary_key {
             // Database-generated integer keys need nothing; others are declared.
             match column.ty.as_str() {
@@ -482,6 +511,17 @@ impl ActiveModelBehavior for ActiveModel {}
         assert!(!soft("Option<bool>"), "not a timestamp");
         let g = generate(&parse_model(&model("Option<DateTimeUtc>")).unwrap(), &BTreeMap::new());
         assert!(!g.fields.iter().any(|f| f.contains("DeletedAt")), "no field for the marker");
+    }
+
+    #[test]
+    fn attributes_over_several_lines_are_read_whole() {
+        let model = "pub struct Model {\n    #[sea_orm(\n        primary_key,\n        enum_name = \"Key\"\n    )]\n    pub id: i32,\n    #[sea_orm(\n        column_name = \"api_key\"\n    )]\n    pub credential: String,\n    pub r#type: String,\n}\n";
+        let columns = parse_model(model).unwrap();
+        assert!(columns[0].primary_key && columns[0].variant == "Key");
+        assert_eq!(columns[1].db_name, "api_key");
+        assert!(columns[2].raw && columns[2].name == "type");
+        // The secret is not generated as a field.
+        assert!(!generate(&columns, &BTreeMap::new()).fields.iter().any(|f| f.contains("Credential")));
     }
 
     #[test]

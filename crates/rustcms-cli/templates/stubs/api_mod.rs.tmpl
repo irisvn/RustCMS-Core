@@ -1,0 +1,14 @@
+//! `/api/v1/{{ table }}`: {{ label }} records.
+
+use rustcms::prelude::*;
+
+mod handlers;
+mod json;
+
+/// The routes of {{ table }}. Add a `requests.rs` (a `Validate` input) and
+/// `post`/`patch` routes to accept writes.
+pub fn routes() -> ApiRoutes {
+    ApiRoutes::scope()
+        .get("/", Access::can("{{ table }}.view_any"), handlers::list)
+        .get("/{id}", Access::can("{{ table }}.view"), handlers::show)
+}

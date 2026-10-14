@@ -4,20 +4,17 @@ use rustcms::prelude::*;
 
 pub fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
+    // The JSON API (src/http/api); its permissions come from its routes.
+    let api = crate::http::api::routes();
     // Admin sessions under /admin, API tokens elsewhere; declare your permissions here.
-    app.provider(AuthProvider::new());
+    app.provider(AuthProvider::new().api_permissions(&api));
     // Resources appear in the admin panel at /admin (`rustcms make:resource <Model>`).
     app.provider(
         AdminProvider::new()
             .brand("{{ name }}")
             // rustcms:resources
     );
-    app.routes(|router| router.route("/api/v1/ping", get(ping)));
-    // Routes added here are listed by `rustcms route:list` once described.
-    app.describe_routes("app", [(Method::GET, "/api/v1/ping".to_owned())]);
+    // Mounted and listed by `rustcms route:list` from the same declarations.
+    api.register(&mut app);
     app
-}
-
-async fn ping() -> Json<serde_json::Value> {
-    Json(json!({ "pong": true }))
 }

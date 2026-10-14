@@ -18,26 +18,99 @@ abilities, expires_in_days}` (rate limited like sign-in); `DELETE
 
 ## Writing endpoints
 
+An application's API lives in `src/http/api/`, one module per model (Laravel
+keeps the same things in `routes/api.php`, controllers, form requests and API
+resources):
+
+```text
+src/http/api/
+├── mod.rs              routes(): every API route
+└── posts/
+    ├── mod.rs          routes() of posts, with the access each requires
+    ├── handlers.rs     list, create, …            (≈ controller)
+    ├── requests.rs     NewPost + Validate         (≈ form request)
+    └── json.rs         PostJson                   (≈ API resource)
+```
+
+`rustcms make:api Post` writes `posts/` with `list` (newest first when the
+model has `created_at`, else highest key first) and `show`, and registers it.
+`json.rs` follows the wire format (ADR 0003): 64-bit integers, UUIDs and dates
+as strings, decimals at their declared scale, instants in UTC with `Z`; secret
+looking columns (`password`, `token`, …, also behind `column_name`) are left
+out. Models with a composite key are refused; a table name that is not a Rust
+identifier (`stock-items`) keeps its URL and gets a module `stock_items`.
+
+### Routes and access
+
 ```rust,ignore
-async fn list(State(app): State<AppState>, auth: Auth) -> AppResult<Json<Value>> {
-    auth.authorize_guard(API_GUARD, "posts.view_any")?;   // first, before reading input
-                                                           // 403 unless permitted (role ∩ token abilities)
-    // …
+// src/http/api/mod.rs
+pub fn routes() -> ApiRoutes {
+    ApiRoutes::new("/api/v1")
+        .get("/ping", Access::public(), ping)
+        .nest("/posts", posts::routes())
 }
 
-app.routes(|router| router.route("/api/v1/posts", get(list)));
-app.describe_routes("app", [(Method::GET, "/api/v1/posts".into())]); // for `route:list`
+// src/http/api/posts/mod.rs
+pub fn routes() -> ApiRoutes {
+    ApiRoutes::scope()
+        .get("/", Access::can("posts.view_any"), handlers::list)
+        .post("/", Access::can("posts.create"), handlers::create)
+}
+
+// src/app.rs
+let api = crate::http::api::routes();
+app.provider(AuthProvider::new().api_permissions(&api)); // declares posts.view_any, posts.create
+api.register(&mut app);                                  // mounts and lists them (`route:list`)
 ```
 
-Declare API permissions so `permission:sync` creates them:
+Every route states its access; there is no default:
+
+| Access | Allows |
+|---|---|
+| `Access::public()` | anyone |
+| `Access::authenticated()` | any valid API token |
+| `Access::can("posts.create")` | a token whose user has the permission (and whose abilities allow it) |
+
+Access is checked **before the handler runs**, so before any extractor reads
+the request: without the permission a client gets 403 whatever its body, path
+or query (only the global body size limit, 413, comes first). Admin-panel
+sessions are not API credentials (401), and no API route may be able to match
+a path under `auth.admin_path`, captures included (`/{section}/report` is
+refused with the default `/admin`): registration panics. A request with an invalid bearer token
+is 401 everywhere, public routes included. `HEAD` follows `GET`; other methods
+of a path are 405.
+
+`api_permissions` declares each `Access::can` permission on the API guard, in
+the group named before the first `.` (`posts.create` → `posts`); a permission
+you declare yourself with `.permission(API_GUARD, …, group)` keeps your group.
+
+### Input, pages, limits
 
 ```rust,ignore
-AuthProvider::new().permission(API_GUARD, "posts.view_any", "posts")
+pub async fn list(State(app): State<AppState>, page: Pagination) -> AppResult<Json<ApiPage<PostJson>>> {
+    let select = post::Entity::find().order_by_desc(post::Column::Id); // always order a paged list
+    Ok(Json(ApiPage::fetch(select, app.db(), &page, PostJson::from).await?))
+}
+
+pub async fn create(
+    State(app): State<AppState>,
+    auth: Auth,
+    _: Throttle<30>,                       // 30 a minute per user, counted before the body is read
+    Validated(input): Validated<NewPost>,  // parsed, then NewPost::validate
+) -> AppResult<(StatusCode, Json<PostJson>)> { … }
 ```
 
-A complete example is `examples/demo/src/api.rs` (`GET/POST /api/v1/posts`):
-listing published posts with `posts.view_any`, creating drafts with
-`posts.create`, strict input (`deny_unknown_fields`), and tests in
+- `Pagination`: `?page` (1–10,000) and `?per_page` (1–100, default 20); out of
+  range, not a number or given twice → 422 on that field.
+- `ApiPage<T>`: `{data: […], meta: {page, perPage, total, lastPage}}`.
+- `Validated<T>`: the JSON body (413 too large, 400 not JSON, 422 not a `T` —
+  use `#[serde(deny_unknown_fields)]`), then `T::validate`, which may normalize
+  (trim) and returns field errors (422).
+- `Throttle<N>`: N requests a minute per user and route (429 with
+  `Retry-After`). Axum runs it before the body extractor.
+
+A complete example is `examples/demo/src/http/api/posts/` (published posts with
+`posts.view_any`, drafts with `posts.create`), tested in
 `examples/demo/tests/api.rs`.
 
 Token lifetimes are 1 to 3,650 days (`expires_in_days`, `--expires-days`);

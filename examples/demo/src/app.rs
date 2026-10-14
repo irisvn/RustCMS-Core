@@ -7,11 +7,11 @@ use crate::seed::Seed;
 pub fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
     // Admin sessions under /admin, API tokens elsewhere; declare your permissions here.
-    let mut auth = AuthProvider::new().permission(rustcms::auth::ADMIN_GUARD, "posts.update_own", "posts");
-    for permission in crate::api::PERMISSIONS {
-        auth = auth.permission(rustcms::auth::API_GUARD, permission, "posts");
-    }
-    app.provider(auth);
+    // The API's permissions come from its routes.
+    let api = crate::http::api::routes();
+    app.provider(
+        AuthProvider::new().permission(rustcms::auth::ADMIN_GUARD, "posts.update_own", "posts").api_permissions(&api),
+    );
     // Uploads under `storage/app` (see `[storage]`); the panel's media library uses them.
     app.provider(rustcms::storage::StorageProvider);
     // Resources appear in the admin panel at /admin.
@@ -27,12 +27,6 @@ pub fn build(config: Config) -> AppBuilder {
             .extension_style("demo-color", include_str!("../assets/admin/demo/color.css")),
     );
     app.command(Seed);
-    app.routes(|router| router.route("/api/v1/ping", get(ping)));
-    app.describe_routes("app", [(Method::GET, "/api/v1/ping".to_owned())]);
-    crate::api::register(&mut app);
+    api.register(&mut app);
     app
-}
-
-async fn ping() -> Json<serde_json::Value> {
-    Json(json!({ "pong": true }))
 }

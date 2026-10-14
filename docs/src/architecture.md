@@ -98,6 +98,7 @@ in each crate.
 | `app/Filament/Resources/PostResource.php` | `src/admin/post.rs` (`make:resource`) |
 | `app/Models` | `src/models` (`make:model`) |
 | `app/Policies` | `src/policies` (`make:policy`) |
+| `routes/api.php`, `app/Http/Controllers`, form requests, API resources | `src/http/api/<table>/` (`make:api`): `mod.rs` routes, `handlers.rs`, `requests.rs`, `json.rs` |
 | `database/migrations` | `src/migrations` (`make:migration`) |
 | `config/*.php` | `config/*.toml` |
 | `tests/` | `tests/` (`make:test`) |

@@ -1,6 +1,7 @@
 //! `rustcms`: create applications, generate code, and forward runtime commands
 //! (`serve`, `migrate`, …) to the application in the current directory.
 
+mod api;
 mod docs;
 mod generate;
 mod naming;
@@ -75,6 +76,12 @@ enum Command {
         /// Test name in PascalCase, e.g. `PostAdminTest`
         name: String,
     },
+    /// Create a JSON API module for a model in `src/http/api` (list and show)
+    #[command(name = "make:api")]
+    MakeApi {
+        /// Model name in PascalCase (the model must exist in `src/models`)
+        model: String,
+    },
     /// Create an admin widget script in `assets/admin`
     #[command(name = "make:widget")]
     MakeWidget {
@@ -104,6 +111,7 @@ fn main() -> ExitCode {
         Command::MakePolicy { name } => project::Project::find().and_then(|p| resource::make_policy(&p, &name)),
         Command::MakeTest { name } => project::Project::find().and_then(|p| generate::make_test(&p, &name)),
         Command::MakeMigration { name } => project::Project::find().and_then(|p| generate::make_migration(&p, &name)),
+        Command::MakeApi { model } => project::Project::find().and_then(|p| api::make_api(&p, &model)),
         Command::MakeWidget { name } => project::Project::find().and_then(|p| generate::make_widget(&p, &name)),
         Command::DocsCli => {
             let auth = clap::Command::new("auth").subcommands(rustcms_auth::commands::definitions());

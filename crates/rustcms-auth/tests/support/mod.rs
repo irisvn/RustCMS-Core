@@ -14,15 +14,18 @@ use serde_json::{Value, json};
 
 pub const PASSWORD: &str = "correct horse battery";
 
+/// The permissions [`seed`] needs.
+pub fn provider() -> AuthProvider {
+    AuthProvider::new()
+        .permission(API_GUARD, "posts.view", "posts")
+        .permission(API_GUARD, "posts.create", "posts")
+        .permission(ADMIN_GUARD, "posts.view", "posts")
+        .permission(ADMIN_GUARD, "posts.delete", "posts")
+}
+
 pub fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
-    app.provider(
-        AuthProvider::new()
-            .permission(API_GUARD, "posts.view", "posts")
-            .permission(API_GUARD, "posts.create", "posts")
-            .permission(ADMIN_GUARD, "posts.view", "posts")
-            .permission(ADMIN_GUARD, "posts.delete", "posts"),
-    );
+    app.provider(provider());
     app.routes(|r| {
         r.route("/api/v1/posts", get(list_posts).post(create_post))
             .route("/admin/api/ping", post(|_: Auth| async { "pong" }))
@@ -118,6 +121,25 @@ pub struct Seed {
 pub async fn setup(db: TestDb) -> (TestApp, Seed) {
     let app = TestApp::new(build, db).await;
     let seed = seed(&app).await;
+    (app, seed)
+}
+
+/// [`setup`] with another app, giving `seed.reader` one more role per
+/// `(guard, name, permissions)`.
+pub async fn setup_with(
+    build: fn(Config) -> AppBuilder,
+    db: TestDb,
+    roles: &[(&str, &str, &[&str])],
+) -> (TestApp, Seed) {
+    let app = TestApp::new(build, db).await;
+    let seed = seed(&app).await;
+    let auth = auth(&app);
+    let service = RbacService::new(app.state().db(), &auth.resolver);
+    for (guard, name, permissions) in roles {
+        let permissions: Vec<String> = permissions.iter().map(|p| (*p).to_owned()).collect();
+        let role = service.create_role(Actor::System, guard, name, &permissions).await.unwrap();
+        service.assign_role(Actor::System, seed.reader.id, role.id).await.unwrap();
+    }
     (app, seed)
 }
 

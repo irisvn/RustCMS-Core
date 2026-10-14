@@ -61,6 +61,14 @@ Create an integration test in `tests/`
 |---|---|
 | `<name>` | Test name in PascalCase, e.g. `PostAdminTest` |
 
+### `make:api`
+
+Create a JSON API module for a model in `src/http/api` (list and show)
+
+| Argument | Description |
+|---|---|
+| `<model>` | Model name in PascalCase (the model must exist in `src/models`) |
+
 ### `make:widget`
 
 Create an admin widget script in `assets/admin`

@@ -54,6 +54,20 @@ impl AuthProvider {
         self
     }
 
+    /// Declares every permission `routes` require on the API guard (grouped by
+    /// the part before the first `.`), so `permission:sync` creates them. A
+    /// permission already declared with [`Self::permission`] keeps its group.
+    pub fn api_permissions(mut self, routes: &crate::ApiRoutes) -> Self {
+        for permission in routes.permissions() {
+            if self.permissions.iter().any(|(guard, name, _)| guard == crate::API_GUARD && name == permission) {
+                continue;
+            }
+            let group = crate::http::api::group_of(permission);
+            self = self.permission(crate::API_GUARD, permission, group);
+        }
+        self
+    }
+
     /// Defines a gate ability (see [`Gate::define`]).
     pub fn define(self, ability: &str, check: impl Fn(&Principal) -> bool + Send + Sync + 'static) -> Self {
         self.gate

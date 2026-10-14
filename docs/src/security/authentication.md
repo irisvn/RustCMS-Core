@@ -11,15 +11,22 @@ A credential that is present but invalid is a 401: there is no fallback to
 another driver. An admin cookie never authenticates API routes, and a bearer
 token never authenticates admin routes.
 
+For API routes, state the access on the route (`ApiRoutes`, see
+[API](../api.md)): it is checked before the request body is read. In a handler,
+`Auth` gives the user and its permissions:
+
 ```rust,ignore
 use rustcms::prelude::*;
 
-async fn create_post(auth: Auth, Json(input): Json<NewPost>) -> AppResult<StatusCode> {
-    auth.authorize("posts.create")?;   // 403 unless the principal has it
+// Routed with `.post("/", Access::can("posts.create"), create_post)`.
+async fn create_post(auth: Auth, Validated(input): Validated<NewPost>) -> AppResult<StatusCode> {
     // auth.0.user is the user record, auth.principal() the permissions
     Ok(StatusCode::CREATED)
 }
 ```
+
+Checking a permission inside a handler (`auth.authorize(…)`) runs after the
+handler's extractors, so after the body was read: prefer route access.
 
 ## Admin sessions
 

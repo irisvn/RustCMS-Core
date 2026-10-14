@@ -91,8 +91,9 @@ db_test!(instants_keep_microseconds_after_2038, migrate = Migrator, |db: TestDb|
     // Compared in the database too (UTC on every backend).
     let found = user::Entity::find().filter(user::Column::EmailVerifiedAt.gt(Utc::now())).all(db.conn()).await.unwrap();
     assert_eq!(found.len(), 1);
-    // Defaults carry microseconds where the database has them.
-    assert!(read.created_at <= Utc::now() && read.created_at > Utc::now() - chrono::Duration::minutes(5));
+    // The default is the database's own clock: recent, within a margin for
+    // clocks that differ slightly (a server in a VM or container).
+    assert!((read.created_at - Utc::now()).num_seconds().abs() < 300, "{}", read.created_at);
     if db.backend() == Backend::Mysql {
         // Below a microsecond, values are truncated (not rounded).
         let mut active: user::ActiveModel = read.into();

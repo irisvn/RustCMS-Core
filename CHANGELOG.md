@@ -6,6 +6,23 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.2 — R2)
+- **Application API layer:** `ApiRoutes` and `Access` (`public`, `authenticated`,
+  `can`): every API route states its access, checked before the handler's
+  extractors run (so before the body is read); routes are mounted and listed for
+  `route:list` from one declaration; API routes under the admin path are refused.
+  `AuthProvider::api_permissions` declares their permissions. `Throttle<N>`
+  (per user and route, before the body). In `rustcms_core::http`: `Pagination`,
+  `ApiPage<T>`, `Validated<T>` + `Validate`.
+- `rustcms make:api <Model>`: `src/http/api/<table>/` with list and show (JSON from
+  the model's columns, wire format), registered at anchors. New apps have
+  `src/http/api/` (`ping` moved there).
+
+### Changed (0.2 — R2)
+- The demo API moved to `src/http/api/posts/` (handlers, requests, json). Its
+  error shapes follow the framework: malformed JSON is 400 (was 422 on `body`),
+  a body that is not the expected shape is 422 with a form error.
+
 ### Changed (0.2 — R1)
 - Modules grouped by role, large files split (admin `adapter.rs`, `media.rs`,
   `system.rs`, `ui.rs`; auth `rbac.rs`; core `db.rs`, `storage.rs`; SPA system

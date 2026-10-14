@@ -18,6 +18,6 @@ pub use app::{App, AppBuilder, AppCommand, AppState, Inject, RouteInfo, ServiceP
 pub use config::{Config, Environment};
 pub use console::Console;
 pub use error::{AppError, AppResult, ValidationErrors};
-pub use http::{ClientIp, Json};
+pub use http::{ApiPage, ClientIp, Json, Pagination, Validate, Validated};
 pub use key::AppKey;
 pub use principal::Principal;
