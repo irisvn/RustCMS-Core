@@ -10,3 +10,4 @@ Architecture decisions live in [`docs/adr/`](https://github.com/irisvn/rustcms/t
 - 0006 — Admin SPA delivery: committed assets, runtime meta, strict CSP
 - 0007 — Idempotency keys for creates and actions
 - 0008 — Media storage and rich text documents
+- 0009 — Has-many relations and extension widgets

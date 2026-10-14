@@ -111,7 +111,7 @@ db_test!(key_value_inputs_hold_bounded_text_pairs, |db: TestDb| async move {
 db_test!(tabs_and_key_values_in_the_schema, |db: TestDb| async move {
     let (ctx, items) = items(&db).await;
     let schema = serde_json::to_value(items.schema(&ctx, SchemaOperation::Create, None).await.unwrap()).unwrap();
-    assert_eq!(schema["vocabularyVersion"], json!(3));
+    assert_eq!(schema["vocabularyVersion"], json!(4));
     let tabs = &schema["form"]["components"][0];
     assert_eq!(tabs["type"], json!("tabs"));
     let ids: Vec<&Value> = tabs["components"].as_array().unwrap().iter().map(|t| &t["id"]).collect();
@@ -233,3 +233,54 @@ db_test!(key_value_bounds_do_not_depend_on_the_form, |db: TestDb| async move {
     assert_eq!(messages(err)[0].0, "specs");
     items.create(&ctx, data(json!({"name": "x", "specs": {"a": "1"}}))).await.unwrap();
 });
+
+struct BadWidget;
+
+impl Resource for BadWidget {
+    type Entity = item::Entity;
+    const SLUG: &'static str = "bad_widget";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Item")
+    }
+
+    fn fields() -> Vec<Field> {
+        vec![Field::make("name")]
+    }
+
+    fn form() -> Form {
+        Form::new().schema(components![rustcms_admin::CustomInput::make("name", "Acme/Color")])
+    }
+}
+
+#[test]
+#[should_panic(expected = "invalid widget name")]
+fn widget_names_are_checked() {
+    let _ = Registry::new().register::<BadWidget>();
+}
+
+struct HeavyProps;
+
+impl Resource for HeavyProps {
+    type Entity = item::Entity;
+    const SLUG: &'static str = "heavy_props";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Item")
+    }
+
+    fn fields() -> Vec<Field> {
+        vec![Field::make("name")]
+    }
+
+    fn form() -> Form {
+        let props = json!({"blob": "x".repeat(5000)});
+        Form::new().schema(components![rustcms_admin::CustomInput::make("name", "acme/color").props(props)])
+    }
+}
+
+#[test]
+#[should_panic(expected = "exceed 4 KiB")]
+fn widget_props_are_bounded() {
+    let _ = Registry::new().register::<HeavyProps>();
+}

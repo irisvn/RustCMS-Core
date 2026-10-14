@@ -21,7 +21,7 @@ use crate::field::{Field, Operation};
 use crate::policy::{Policy, ability};
 use crate::registry::DynResource;
 use crate::resource::{
-    Envelope, FilterOp, KeyStrategy, Limits, ListQuery, Page, PageMeta, Resource, ResourceMeta, Trashed,
+    Envelope, FilterOp, KeyStrategy, Limits, ListQuery, Page, PageMeta, Relation, Resource, ResourceMeta, Trashed,
 };
 use crate::schema::{
     ActionSchema, BadgeColor, ColumnSchema, ComponentSchema, FilterSchema, FormSchema, InputSchema, LayoutSchema,
@@ -63,6 +63,7 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     soft: Option<(Column<R>, String, FieldKind)>,
     policy: Arc<dyn Policy>,
     actions: Vec<Action<Entity<R>>>,
+    relations: Vec<Relation>,
     form: Form,
     /// Key/value fields: most pairs and longest value.
     key_values: HashMap<String, (usize, usize)>,
@@ -142,6 +143,12 @@ impl<R: Resource> ResourceAdapter<R> {
             );
         }
         check_layouts(slug, &form.components, None);
+        for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
+            let widget = input.widget.as_deref().unwrap_or_default();
+            assert!(crate::ui::valid_widget(widget), "resource `{slug}`: invalid widget name `{widget}`");
+            let size = input.props.as_ref().map_or(0, |p| p.to_string().len());
+            assert!(size <= 4096, "resource `{slug}`: props of widget `{widget}` exceed 4 KiB");
+        }
         for field in &fields {
             assert!(
                 !field.rich_text || columns[&field.name].kind == FieldKind::Json,
@@ -233,6 +240,7 @@ impl<R: Resource> ResourceAdapter<R> {
             pk_kind,
             policy: R::policy(),
             actions,
+            relations: R::relations(),
             form,
             key_values,
             table_ui,
@@ -326,6 +334,48 @@ impl<R: Resource> ResourceAdapter<R> {
                 (m, r)
             })
             .collect())
+    }
+
+    /// Relations the user may list, and whether they may create through them.
+    async fn relation_schemas(&self, ctx: &Ctx) -> Vec<crate::schema::RelationSchema> {
+        let mut out = Vec::new();
+        for relation in &self.relations {
+            let Some(target) = ctx.registry.get(relation.target) else { continue };
+            let (readable, creatable) = target.field_access(ctx, relation.field);
+            if !readable || !target.allows(ctx, ability::VIEW_ANY).await {
+                continue;
+            }
+            out.push(crate::schema::RelationSchema {
+                name: relation.name,
+                label: relation.label.clone().unwrap_or_else(|| humanize(relation.name)),
+                resource: relation.target,
+                field: relation.field,
+                create: creatable && target.allows(ctx, ability::CREATE).await,
+            });
+        }
+        out
+    }
+
+    /// The idempotency claim of a create (through a relation: of that parent).
+    fn create_claim(&self, ctx: &Ctx, input: &Data) -> Option<crate::idempotency::Claim> {
+        let operation = match &ctx.bound {
+            Some((relation, _, parent)) => format!("create:{relation}:{parent}"),
+            None => "create".to_owned(),
+        };
+        ctx.idempotency_key.as_deref().map(|key| {
+            crate::idempotency::Claim::new(
+                &ctx.principal,
+                R::SLUG,
+                &operation,
+                key,
+                &serde_json::Value::Object(input.clone()),
+            )
+        })
+    }
+
+    /// The wire value of field `field` for the parent key `key`.
+    fn fk_value(&self, field: &str, key: &str) -> serde_json::Value {
+        self.column(field).kind.from_query(&serde_json::Value::String(key.to_owned()))
     }
 
     /// A rich text field holds a valid document.
@@ -695,6 +745,14 @@ impl<R: Resource> ResourceAdapter<R> {
 
     fn filter_condition(&self, ctx: &Ctx, query: &ListQuery, errors: &mut ValidationErrors) -> Condition {
         let mut condition = Condition::all();
+        // Children of one record (relation lists): an internal condition, not a client filter.
+        if let Some((field, key)) = &query.parent {
+            let column = self.column(field);
+            match column.kind.decode(&column.kind.from_query(&serde_json::Value::String(key.clone()))) {
+                Ok(values) if !values.is_empty() => condition = condition.add(column.column.eq(values[0].clone())),
+                _ => errors.add_form("invalid parent key"),
+            }
+        }
         if let Some(search) = query.search.as_deref().filter(|s| !s.is_empty()) {
             if search.chars().count() > self.limits.search_len {
                 errors.add("search", format!("may not be longer than {} characters", self.limits.search_len));
@@ -1208,6 +1266,8 @@ impl<R: Resource> ResourceAdapter<R> {
             mode: input.mode,
             options: input.options.clone(),
             relationship: field.belongs_to.map(|resource| Relationship { resource }),
+            widget: input.widget.clone(),
+            props: input.props.clone(),
             media: field.media.as_ref().map(|rule| crate::schema::MediaSchema {
                 multiple: rule.multiple,
                 max_items: rule.max_items,
@@ -1325,6 +1385,50 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.policy.allows(ctx, ability, None).await
     }
 
+    async fn admits(&self, ctx: &Ctx, ability: &str) -> bool {
+        self.policy.admits(ctx, ability).await
+    }
+
+    fn relations(&self) -> &[Relation] {
+        &self.relations
+    }
+
+    fn field_link(&self, name: &str) -> Option<(Option<&'static str>, &'static str)> {
+        self.field(name).map(|f| (f.belongs_to, self.column(name).kind.name()))
+    }
+
+    fn key_kind(&self) -> &'static str {
+        self.pk_kind.name()
+    }
+
+    fn key_name(&self) -> &str {
+        &self.pk_name
+    }
+
+    fn canonical_key(&self, key: &str) -> Option<String> {
+        self.pk_kind.decode_key(key).ok().map(|value| encode_key(&value))
+    }
+
+    fn field_access(&self, ctx: &Ctx, name: &str) -> (bool, bool) {
+        self.field(name).map_or((false, false), |f| (f.can_read(ctx), f.can_write(Operation::Create, ctx)))
+    }
+
+    async fn visible_key(&self, ctx: &Ctx, key: &str) -> AppResult<String> {
+        match self.find(ctx, key).await {
+            Ok(envelope) => Ok(envelope.key),
+            // Denied or hidden: indistinguishable from missing.
+            Err(AppError::Forbidden) => Err(AppError::NotFound),
+            Err(err) => Err(err),
+        }
+    }
+
+    async fn replay_create(&self, ctx: &Ctx, input: &Data) -> AppResult<Option<Envelope>> {
+        let Some(claim) = self.create_claim(ctx, input) else { return Ok(None) };
+        let Some(receipt) = crate::idempotency::existing(&ctx.db, &claim).await? else { return Ok(None) };
+        let key = receipt["key"].as_str().ok_or_else(|| AppError::internal("create receipt without a key"))?;
+        Ok(Some(self.committed_key_envelope(ctx, key.to_owned()).await))
+    }
+
     fn permissions(&self) -> Vec<String> {
         let mut abilities: Vec<&str> =
             vec![ability::VIEW_ANY, ability::VIEW, ability::CREATE, ability::UPDATE, ability::DELETE];
@@ -1379,6 +1483,11 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 components: self.components(ctx, &self.form.components, op),
             },
             table: self.table_schema(ctx).await,
+            relations: if op == SchemaOperation::View && key.is_some() {
+                self.relation_schemas(ctx).await
+            } else {
+                Vec::new()
+            },
         })
     }
 
@@ -1477,7 +1586,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.fields.iter().filter_map(|f| f.belongs_to).collect()
     }
 
-    async fn list(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<Page> {
+    async fn admit_list(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<()> {
         if !self.policy.allows(ctx, ability::VIEW_ANY, None).await {
             return Err(AppError::Forbidden);
         }
@@ -1489,6 +1598,12 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             return Err(ValidationErrors::field("page", "is too large").into());
         }
 
+        if let Some((field, _)) = &query.parent
+            && !self.field(field).is_some_and(|f| f.can_read(ctx))
+        {
+            // The association itself is data the user may not read.
+            return Err(AppError::Forbidden);
+        }
         if query.trashed != Trashed::Without {
             if self.soft.is_none() {
                 return Err(ValidationErrors::field("trashed", "is not supported by this resource").into());
@@ -1498,6 +1613,13 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 return Err(AppError::Forbidden);
             }
         }
+        Ok(())
+    }
+
+    async fn list(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<Page> {
+        self.admit_list(ctx, query).await?;
+        let per_page = query.per_page.unwrap_or(DEFAULT_PER_PAGE).clamp(1, self.limits.per_page);
+        let page = query.page.unwrap_or(1).max(1);
         let mut errors = ValidationErrors::new();
         let mut select = self.base(ctx, query.trashed).filter(self.filter_condition(ctx, query, &mut errors));
         // Without `sort`, the table's default sort applies (when this user may use it),
@@ -1577,17 +1699,15 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if !self.policy.allows(ctx, ability::CREATE, None).await {
             return Err(AppError::Forbidden);
         }
+        // Through a relation, the foreign key is the relation's: never the client's.
+        if let Some((_, field, _)) = &ctx.bound
+            && input.contains_key(field)
+        {
+            return Err(ValidationErrors::field(field.as_str(), "is set by the relation").into());
+        }
         // The request as sent is what a retry must repeat: a receipt is found
         // before validating, which may have changed (field permissions) since.
-        let claim = ctx.idempotency_key.as_deref().map(|key| {
-            crate::idempotency::Claim::new(
-                &ctx.principal,
-                R::SLUG,
-                "create",
-                key,
-                &serde_json::Value::Object(input.clone()),
-            )
-        });
+        let claim = self.create_claim(ctx, &input);
         let (txn, wctx) = self.begin(ctx).await?;
         if let Some(claim) = &claim
             && !crate::idempotency::acquire(txn.as_ref(), claim).await?
@@ -1598,8 +1718,19 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             let key = receipt["key"].as_str().ok_or_else(|| AppError::internal("create receipt without a key"))?;
             return Ok(self.committed_key_envelope(ctx, key.to_owned()).await);
         }
+        let mut input = input;
+        let bound = ctx.bound.as_ref().map(|(_, field, parent)| (field.clone(), self.fk_value(field, parent)));
+        if let Some((field, value)) = &bound {
+            input.insert(field.clone(), value.clone());
+        }
+        // The usual rules apply to the bound key too (writable, typed, required).
         let input = self.accept_input(ctx, Operation::Create, input)?;
         let data = R::mutate_before_create(&wctx, &txn, input).await?;
+        if let Some((field, value)) = &bound
+            && data.get(field) != Some(value)
+        {
+            return Err(AppError::internal(format!("`{}`: a hook changed the relation key `{field}`", R::SLUG)));
+        }
         // What is written, hooks included: references are checked last.
         self.check_written(&wctx, &txn, &data).await?;
 

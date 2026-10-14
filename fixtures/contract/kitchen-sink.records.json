@@ -9,6 +9,7 @@
         "view": true
       },
       "data": {
+        "accent": null,
         "active": true,
         "agreed": false,
         "category_id": 1,

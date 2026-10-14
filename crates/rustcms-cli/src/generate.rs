@@ -1,4 +1,4 @@
-//! `make:model` and `make:migration`.
+//! `make:model`, `make:migration`, `make:test` and `make:widget`.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -14,6 +14,7 @@ const MODEL: &str = include_str!("../templates/stubs/model.rs.tmpl");
 const MIGRATION_CREATE: &str = include_str!("../templates/stubs/migration_create.rs.tmpl");
 const MIGRATION_BLANK: &str = include_str!("../templates/stubs/migration_blank.rs.tmpl");
 const TEST: &str = include_str!("../templates/stubs/test.rs.tmpl");
+const WIDGET: &str = include_str!("../templates/stubs/widget.js.tmpl");
 
 pub fn make_model(project: &Project, name: &str, migration: bool) -> anyhow::Result<ExitCode> {
     validate_model(name)?;
@@ -51,6 +52,35 @@ pub fn make_test(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
     let contents = render(TEST, json!({ "name": module, "crate_name": project.package.replace('-', "_") }))?;
     write_new(&dir.join(format!("{module}.rs")), &contents)?;
     Ok(ExitCode::SUCCESS)
+}
+
+/// Writes `assets/admin/<vendor>/<name>.js` for the widget `vendor/name` and
+/// prints how to register it.
+pub fn make_widget(project: &Project, widget: &str) -> anyhow::Result<ExitCode> {
+    let part = |p: &str| {
+        !p.is_empty() && p.len() <= 32 && p.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    };
+    let Some((vendor, name)) = widget.split_once('/').filter(|(v, n)| part(v) && part(n)) else {
+        bail!("widget names are `vendor/name`, each part 1-32 of a-z, 0-9 and -: {widget}");
+    };
+    let extension = extension_name(widget);
+    let dir = project.root.join("assets/admin").join(vendor);
+    std::fs::create_dir_all(&dir)?;
+    let contents = render(WIDGET, json!({ "widget": widget, "class": format!("{extension}-input") }))?;
+    write_new(&dir.join(format!("{name}.js")), &contents)?;
+    println!(
+        "Register it on the admin provider:\n    .extension_script(\"{extension}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/assets/admin/{vendor}/{name}.js\")))\nand use it on a field:\n    CustomInput::make(\"field\", \"{widget}\")"
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+/// A valid extension name (≤ 64 characters) for `widget`, distinct for every
+/// widget name: `acme/color-picker` and `acme-color/picker` differ by the hash.
+fn extension_name(widget: &str) -> String {
+    use sha2::Digest;
+    let hash: String = sha2::Sha256::digest(widget).iter().take(4).map(|b| format!("{b:02x}")).collect();
+    let readable: String = widget.replace('/', "-").chars().take(55).collect();
+    format!("{readable}-{hash}")
 }
 
 pub(crate) fn write_new(path: &Path, contents: &str) -> anyhow::Result<()> {
@@ -140,6 +170,24 @@ mod tests {
         assert!(test.contains("use my_blog::{app, migrations::Migrator};"));
         assert!(test.contains("db_test!(post_admin_test,"));
         assert!(make_test(&project, "PostAdminTest").is_err(), "never overwrites");
+    }
+
+    #[test]
+    fn widget_stub_registers_the_widget() {
+        let (dir, project) = project();
+        make_widget(&project, "acme/color").unwrap();
+        let script = std::fs::read_to_string(dir.path().join("assets/admin/acme/color.js")).unwrap();
+        assert!(script.contains("window.rustcms.registerWidget(\"acme/color\", {"));
+        assert!(script.contains("apiVersion: 1,"));
+        assert!(make_widget(&project, "acme/color").is_err(), "never overwrites");
+        // The longest names fit; names that only differ by where the `/` is get distinct extensions.
+        make_widget(&project, &format!("{}/{}", "v".repeat(32), "n".repeat(32))).unwrap();
+        assert_eq!(extension_name(&format!("{}/{}", "v".repeat(32), "n".repeat(32))).len(), 64);
+        assert_ne!(extension_name("acme/color-picker"), extension_name("acme-color/picker"));
+        assert!(extension_name("acme/color").starts_with("acme-color-"));
+        for bad in ["color", "Acme/color", "acme/col or", "acme/", "a/b/c", &format!("acme/{}", "x".repeat(33))] {
+            assert!(make_widget(&project, bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

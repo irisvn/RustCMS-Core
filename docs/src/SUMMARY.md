@@ -27,6 +27,8 @@
 - [The panel (SPA)](admin/spa.md)
 - [Users, roles & account](admin/users-roles.md)
 - [Media, uploads & rich text](admin/media.md)
+- [Relationships](admin/relationships.md)
+- [Custom fields](admin/custom-fields.md)
 
 # API
 

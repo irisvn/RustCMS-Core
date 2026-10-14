@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { ApiError } from "@/api/client";
 import { useUncertain } from "@/api/context";
-import { useDeleteRecord, useRecord, useSaveRecord, useSchema } from "@/api/queries";
+import { type Via, useDeleteRecord, useRecord, useSaveRecord, useSchema } from "@/api/queries";
+import { RelationSection, withoutInput } from "./relations";
 import type { Envelope, InputSchema, ResourceSchema } from "@/api/types";
 import { ErrorState, Loading, PausedBanner, VersionBanner, compatibility } from "@/components/states";
 import { Alert } from "@/components/ui/alert";
@@ -33,9 +34,12 @@ function useMounted() {
 const linkClass = buttonVariants({ variant: "outline" });
 
 /** Create (`recordKey` undefined) or edit form. */
-export function FormPage({ slug, recordKey }: { slug: string; recordKey?: string }) {
+export function FormPage({ slug, recordKey, via }: { slug: string; recordKey?: string; via?: Via }) {
   const editing = recordKey !== undefined;
   const schema = useSchema(slug, editing ? "edit" : "create", recordKey);
+  // Through a relation: the parent's view schema says which field the server sets.
+  const parentSchema = useSchema(via?.parent ?? slug, "view", via?.record, { enabled: via !== undefined });
+  const binding = via ? parentSchema.data?.relations?.find((r) => r.name === via.relation && r.resource === slug) : undefined;
   // An editor may update without viewing: then the form starts empty (only changed fields are sent).
   // A blind form, once shown, stays blind (and mounted) if a refetch grants `view`:
   // loading the record would replace the page and lose the draft.
@@ -44,7 +48,10 @@ export function FormPage({ slug, recordKey }: { slug: string; recordKey?: string
   const viewable = !editing || (schema.data?.abilities.view === true && shownBlind.current !== identity);
   const record = useRecord(slug, recordKey ?? "", { enabled: editing && viewable && !!schema.data });
 
-  if (schema.isLoading || (editing && viewable && record.isLoading)) return <Loading />;
+  if (schema.isLoading || (editing && viewable && record.isLoading) || (via && parentSchema.isLoading)) return <Loading />;
+  if (via && (!binding || !binding.create)) {
+    return <ErrorState error={parentSchema.error ?? new ApiError(403, { code: "forbidden", message: "" })} />;
+  }
   // Errors replace the page only when there is nothing to show: a failed background
   // refresh keeps the form (and the user's draft) mounted.
   if (!schema.data) return <ErrorState error={schema.error} />;
@@ -61,6 +68,7 @@ export function FormPage({ slug, recordKey }: { slug: string; recordKey?: string
       key={identity}
       slug={slug}
       recordKey={recordKey}
+      via={via && binding ? { ...via, field: binding.field } : undefined}
       schema={schema.data}
       record={editing && viewable ? record.data : undefined}
     />
@@ -73,19 +81,24 @@ function RecordForm({
   schema,
   record,
   refreshError,
+  via,
 }: {
   slug: string;
   recordKey?: string;
   schema: ResourceSchema;
   record?: Envelope;
   refreshError?: unknown;
+  /** Creating through a relation; its field is set by the server, so not shown. */
+  via?: Via & { field: string };
 }) {
   const navigate = useNavigate();
   // Completion redirects only apply while the page that started the write is shown.
   const mounted = useMounted();
   const editing = recordKey !== undefined;
   // Fixed at mount, like the defaults: JSON values that lost precision on the way here stay read-only.
-  const [components] = useState(() => protectLossyJson(schema.form.components, record?.data));
+  const [components] = useState(() =>
+    protectLossyJson(via ? withoutInput(schema.form.components, via.field) : schema.form.components, record?.data),
+  );
   const inputs = useMemo(() => inputsOf(components), [components]);
   const { readOnly } = compatibility(schema);
   // Blind edit (update without view): defaults are placeholders, so what the user
@@ -113,7 +126,7 @@ function RecordForm({
     byIntent(name) ? touchedOrShown(name) : !editing || form.getFieldState(name).isDirty;
   // This form's identity: a retried create continues here only if it came from here.
   const [origin] = useState(() => crypto.randomUUID());
-  const save = useSaveRecord(slug, recordKey, origin);
+  const save = useSaveRecord(slug, recordKey, origin, via);
   const [formErrors, setFormErrors] = useState<string[]>([]);
   // Inputs with background work (uploads): saving waits for them.
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
@@ -139,6 +152,18 @@ function RecordForm({
       }),
     );
 
+  // After a save (or a retried one that went through).
+  const afterSave = async (saved: Envelope) => {
+    if (via) {
+      // Back to the parent, where the new record is listed.
+      await navigate({ to: "/r/$slug/records/$key", params: { slug: via.parent, key: via.record } });
+    } else if (saved.abilities.view) {
+      await navigate({ to: "/r/$slug/records/$key", params: { slug, key: saved.key } });
+    } else {
+      await navigate({ to: "/r/$slug", params: { slug } });
+    }
+  };
+
   const submit = form.handleSubmit(async (values) => {
     if (busy.size > 0) return;
     setFormErrors([]);
@@ -153,12 +178,7 @@ function RecordForm({
     }
     try {
       const saved = await save.mutateAsync(payload);
-      if (!mounted.current) return;
-      if (saved.abilities.view) {
-        await navigate({ to: "/r/$slug/records/$key", params: { slug, key: saved.key } });
-      } else {
-        await navigate({ to: "/r/$slug", params: { slug } });
-      }
+      if (mounted.current) await afterSave(saved);
     } catch (e) {
       if (e instanceof ApiError && e.status === 422) {
         const known = new Set(inputs.map((i) => i.name));
@@ -180,8 +200,7 @@ function RecordForm({
   const recovered = async (result: unknown, pending: PendingWrite) => {
     const saved = (result as { data?: Envelope } | undefined)?.data;
     if (editing || !saved || pending.origin !== origin || !mounted.current) return false;
-    if (saved.abilities.view) await navigate({ to: "/r/$slug/records/$key", params: { slug, key: saved.key } });
-    else await navigate({ to: "/r/$slug", params: { slug } });
+    await afterSave(saved);
     return true;
   };
 
@@ -290,6 +309,9 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
           <ReadOnlyComponents components={s.form.components} data={record.data.data} slug={slug} record={recordKey} />
         </CardContent>
       </Card>
+      {(s.relations ?? []).map((relation) => (
+        <RelationSection key={relation.name} parent={slug} record={recordKey} relation={relation} />
+      ))}
       <Link to="/r/$slug" params={{ slug }} className={buttonVariants({ variant: "ghost", className: "self-start" })}>
         ← Back to {s.resource.pluralLabel.toLowerCase()}
       </Link>

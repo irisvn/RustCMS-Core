@@ -26,11 +26,17 @@ pub struct AdminProvider {
     brand: String,
     registry: Mutex<Option<Registry>>,
     media: bool,
+    extensions: Vec<crate::spa::Extension>,
 }
 
 impl Default for AdminProvider {
     fn default() -> Self {
-        Self { brand: "rustcms".into(), registry: Mutex::new(Some(Registry::new())), media: false }
+        Self {
+            brand: "rustcms".into(),
+            registry: Mutex::new(Some(Registry::new())),
+            media: false,
+            extensions: Vec::new(),
+        }
     }
 }
 
@@ -45,6 +51,33 @@ impl AdminProvider {
     pub fn media(mut self) -> Self {
         self.media = true;
         self.resource::<crate::media::MediaResource>()
+    }
+
+    /// A script the panel loads (in order) before it renders, e.g. to register
+    /// custom widgets: `extension_script("acme", include_str!("../assets/admin/acme.js"))`.
+    /// Extensions are trusted application code with the panel's full privileges.
+    ///
+    /// # Panics
+    /// On a name other than 1–64 of `a-z`, `0-9`, `-`, or a name used twice.
+    pub fn extension_script(mut self, name: &str, js: &'static str) -> Self {
+        self.add_extension(crate::spa::Extension::new(name, js, false));
+        self
+    }
+
+    /// A stylesheet the panel loads (for extension widgets; inline styles are not allowed).
+    pub fn extension_style(mut self, name: &str, css: &'static str) -> Self {
+        self.add_extension(crate::spa::Extension::new(name, css, true));
+        self
+    }
+
+    fn add_extension(&mut self, extension: crate::spa::Extension) {
+        let stem = |e: &crate::spa::Extension| e.file.split('.').next().unwrap_or_default().to_owned();
+        assert!(
+            !self.extensions.iter().any(|e| stem(e) == stem(&extension) && e.style == extension.style),
+            "extension `{}` added twice",
+            stem(&extension)
+        );
+        self.extensions.push(extension);
     }
 
     /// Name shown in the panel.
@@ -104,8 +137,9 @@ impl ServiceProvider for AdminProvider {
         app.describe_routes("admin", http::routes(&admin_path));
         app.describe_routes("admin", spa::routes(&admin_path));
         app.bind(AdminPanel { brand: self.brand.clone(), registry });
+        let extensions = std::sync::Arc::new(self.extensions.clone());
         app.routes(move |router| {
-            spa::router(system::router(http::router(router, &admin_path), &admin_path), &admin_path)
+            spa::router(system::router(http::router(router, &admin_path), &admin_path), &admin_path, extensions)
         });
         app.command(IdempotencyPrune);
     }

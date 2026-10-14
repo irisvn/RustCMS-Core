@@ -19,6 +19,8 @@ errors included, is `Cache-Control: private, no-store`; unknown paths under
 | GET / PATCH / DELETE | `/resources/{slug}/records/{key}` | `{data: Envelope}` / `{data: Envelope}` / 204 |
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
+| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `{data: [Envelope], meta}` of the target (list query string) |
+| POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key set by the server |
 | POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing}` |
 | POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (media library enabled) |
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
@@ -62,6 +64,13 @@ kinds that are not nullable, `""`) and client `rules` (`required`, `max_length`
 in characters); the server re-validates everything. List pages request
 `operation=view` without a key. Inputs marked `writeOnly` (writable but not readable, e.g. a
 password) carry no current value; omit them from the payload to keep the stored value.
+
+Vocabulary 4 adds `custom` inputs: `widget` (`vendor/name`) and optional
+`props` (JSON), edited by a widget from an extension script (see
+[Custom fields](admin/custom-fields.md)); the value is the field's wire value.
+`ResourceSchema.relations` (view schemas with a key, omitted when empty) lists
+`{name, label, resource, field, create}` for each has-many relation whose
+target the user may list (see [Relationships](admin/relationships.md)).
 
 Vocabulary 3 adds `file_upload` inputs (`media: {multiple, maxItems, accept,
 maxSize?}`; the value is a media id, or a list of ids) and `rich_editor`

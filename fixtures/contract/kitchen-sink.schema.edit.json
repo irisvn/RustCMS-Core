@@ -255,6 +255,28 @@
                 "rules": [],
                 "type": "file_upload",
                 "valueType": "uuid"
+              },
+              {
+                "columnSpan": 1,
+                "disabled": false,
+                "label": "Accent",
+                "name": "accent",
+                "nullable": true,
+                "props": {
+                  "palette": [
+                    "#ff0000",
+                    "#00ff00"
+                  ]
+                },
+                "rules": [
+                  {
+                    "rule": "max_length",
+                    "value": 7
+                  }
+                ],
+                "type": "custom",
+                "valueType": "string",
+                "widget": "acme/color"
               }
             ],
             "id": "specs",
@@ -428,5 +450,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 3
+  "vocabularyVersion": 4
 }

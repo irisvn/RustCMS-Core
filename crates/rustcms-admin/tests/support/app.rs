@@ -21,6 +21,8 @@ pub fn build(config: Config) -> AppBuilder {
     app.provider(
         AdminProvider::new()
             .brand("Test CMS")
+            .extension_script("test-widgets", "window.rustcmsTest = 1;")
+            .extension_style("test-widgets", ".x{color:red}")
             .media()
             .resource::<CategoryResource>()
             .resource::<PostResource>()

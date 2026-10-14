@@ -6,6 +6,24 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.2 — M9)
+- **Has-many relations** (`Resource::relations()`,
+  `Relation::has_many(name, target, field)`): the parent's view page lists the
+  children (the target's list, scope, policy and field rules, plus
+  `fk = parent`) and creates them with the foreign key set by the server.
+  Routes `GET`/`POST {admin}/api/resources/{slug}/records/{key}/relations/{relation}`;
+  `ResourceSchema.relations`. Checked at startup (target, `belongs_to`, key
+  kinds). Idempotency keys are bound to the relation and the parent.
+- **Custom inputs** (`CustomInput::make(field, "vendor/name").props(json)`),
+  drawn by widgets from **extension scripts and styles**
+  (`AdminProvider::extension_script` / `extension_style`), served under
+  content-hashed URLs within the existing CSP. Widget API version 1
+  (`window.rustcms.registerWidget`); missing or failing widgets fall back to
+  read-only and are never submitted. Vocabulary 4.
+- `rustcms make:widget vendor/name` generates a widget script.
+- Demo: categories list and create their posts, and pick a color with a demo
+  widget. ADR 0009; guides "Relationships" and "Custom fields".
+
 ### Added (0.2 — M8)
 - **Storage** (`rustcms::storage`): `Storage` trait, local driver (symlink-safe)
   and S3-compatible driver (feature `s3`), `StorageProvider`, `[storage]`.

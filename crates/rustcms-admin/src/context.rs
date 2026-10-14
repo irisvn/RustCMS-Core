@@ -20,12 +20,21 @@ pub struct Ctx {
     pub txn: Option<Arc<DatabaseTransaction>>,
     /// Client `Idempotency-Key` of this request (creates and actions).
     pub idempotency_key: Option<String>,
+    /// A create through a relation: (relation id, fk field, canonical parent
+    /// key). The create sets that field itself and refuses it from the input.
+    pub bound: Option<(String, String, String)>,
 }
 
 impl Ctx {
     /// Context outside any write.
     pub fn new(db: DatabaseConnection, principal: Principal, registry: Arc<Registry>) -> Self {
-        Self { db, principal, registry, txn: None, idempotency_key: None }
+        Self { db, principal, registry, txn: None, idempotency_key: None, bound: None }
+    }
+
+    /// The same context, creating through a relation (`(relation id, fk field, parent key)`).
+    pub(crate) fn with_bound(mut self, bound: (String, String, String)) -> Self {
+        self.bound = Some(bound);
+        self
     }
 
     /// The same context with an `Idempotency-Key`: a create or action retried

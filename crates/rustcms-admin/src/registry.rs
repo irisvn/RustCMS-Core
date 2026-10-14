@@ -11,7 +11,7 @@ use crate::Data;
 use crate::action::ActionOutcome;
 use crate::adapter::ResourceAdapter;
 use crate::context::Ctx;
-use crate::resource::{Envelope, ListQuery, Page, Resource, ResourceMeta};
+use crate::resource::{Envelope, ListQuery, Page, Relation, Resource, ResourceMeta};
 use crate::schema::{ResourceInfo, ResourceSchema, SchemaOperation};
 use crate::ui::SelectOption;
 
@@ -24,6 +24,26 @@ pub trait DynResource: Send + Sync {
     fn meta(&self) -> &ResourceMeta;
     /// Slugs referenced by `belongs_to` fields.
     fn targets(&self) -> Vec<&'static str>;
+    /// Has-many relations.
+    fn relations(&self) -> &[Relation];
+    /// `belongs_to` slug and wire kind of field `name`, if it is a field.
+    fn field_link(&self, name: &str) -> Option<(Option<&'static str>, &'static str)>;
+    /// Wire kind of the primary key.
+    fn key_kind(&self) -> &'static str;
+    /// `key` in canonical form (`01` → `1`), if it is a valid key.
+    fn canonical_key(&self, key: &str) -> Option<String>;
+    /// Whether field `name` is readable, and writable on create, by the user.
+    fn field_access(&self, ctx: &Ctx, name: &str) -> (bool, bool);
+    /// Name of the primary key column.
+    fn key_name(&self) -> &str;
+    /// [`Policy::admits`](crate::Policy::admits).
+    async fn admits(&self, ctx: &Ctx, ability: &str) -> bool;
+    /// The canonical key of record `key` if the user may view it; 404 otherwise
+    /// (missing, outside scope, denied or trashed alike).
+    async fn visible_key(&self, ctx: &Ctx, key: &str) -> AppResult<String>;
+    /// The committed result of an idempotent create retried with `ctx`'s key
+    /// (see [`Ctx::with_idempotency_key`]), as the user sees it now.
+    async fn replay_create(&self, ctx: &Ctx, input: &Data) -> AppResult<Option<Envelope>>;
     /// Identity and navigation entry.
     fn info(&self) -> ResourceInfo;
     /// Whether the policy allows `ability` without a record (e.g. `view_any`, `create`).
@@ -44,6 +64,10 @@ pub trait DynResource: Send + Sync {
         keys: &[String],
         record: Option<&str>,
     ) -> AppResult<Vec<SelectOption>>;
+    /// The checks of `list` that do not depend on any record (abilities, paging,
+    /// `trashed`, a readable parent field): run before a relation's parent is
+    /// looked up, so its answer never depends on the parent key.
+    async fn admit_list(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<()>;
     /// Lists records in scope.
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<Page>;
     /// Reads one record.
@@ -110,6 +134,35 @@ impl Registry {
         for resource in self.resources.values() {
             for target in resource.targets() {
                 assert!(self.resources.contains_key(target), "unknown belongs_to target `{target}`");
+            }
+            let slug = resource.slug();
+            let mut names = HashSet::new();
+            for relation in resource.relations() {
+                assert!(
+                    !relation.name.is_empty()
+                        && relation.name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+                        && names.insert(relation.name),
+                    "resource `{slug}`: relation `{}` is not a unique snake_case name",
+                    relation.name
+                );
+                let target = self.resources.get(relation.target).unwrap_or_else(|| {
+                    panic!("resource `{slug}`: relation `{}` targets unknown `{}`", relation.name, relation.target)
+                });
+                let link = target.field_link(relation.field);
+                assert!(
+                    matches!(link, Some((Some(parent), _)) if parent == slug),
+                    "resource `{slug}`: relation `{}` needs `{}.{}` to be a field with `belongs_to(\"{slug}\")`",
+                    relation.name,
+                    relation.target,
+                    relation.field
+                );
+                assert!(
+                    link.is_some_and(|(_, kind)| kind == resource.key_kind()) && relation.field != target.key_name(),
+                    "resource `{slug}`: relation `{}`: `{}.{}` must have the type of `{slug}`'s key and not be its key",
+                    relation.name,
+                    relation.target,
+                    relation.field
+                );
             }
         }
         Arc::new(self)

@@ -75,6 +75,12 @@ enum Command {
         /// Test name in PascalCase, e.g. `PostAdminTest`
         name: String,
     },
+    /// Create an admin widget script in `assets/admin`
+    #[command(name = "make:widget")]
+    MakeWidget {
+        /// Widget name, `vendor/name`, e.g. `acme/color`
+        name: String,
+    },
     /// Print the command reference as Markdown
     #[command(name = "docs:cli")]
     DocsCli,
@@ -98,6 +104,7 @@ fn main() -> ExitCode {
         Command::MakePolicy { name } => project::Project::find().and_then(|p| resource::make_policy(&p, &name)),
         Command::MakeTest { name } => project::Project::find().and_then(|p| generate::make_test(&p, &name)),
         Command::MakeMigration { name } => project::Project::find().and_then(|p| generate::make_migration(&p, &name)),
+        Command::MakeWidget { name } => project::Project::find().and_then(|p| generate::make_widget(&p, &name)),
         Command::DocsCli => {
             let auth = clap::Command::new("auth").subcommands(rustcms_auth::commands::definitions());
             print!("{}", docs::markdown(&Cli::command(), &rustcms_core::console::command(), &auth));

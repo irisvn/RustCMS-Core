@@ -201,6 +201,11 @@ pub trait Resource: Send + Sync + 'static {
         Ok(data)
     }
 
+    /// Has-many relations shown on a record's page.
+    fn relations() -> Vec<Relation> {
+        Vec::new()
+    }
+
     /// Runs after insert or update, in the same transaction.
     async fn after_save(
         _ctx: &Ctx,
@@ -250,6 +255,30 @@ pub struct Filter {
     pub value: serde_json::Value,
 }
 
+/// Records of another resource that point to this one (a has-many relation):
+/// listed and created from a record's page.
+#[derive(Debug, Clone)]
+pub struct Relation {
+    pub(crate) name: &'static str,
+    pub(crate) target: &'static str,
+    pub(crate) field: &'static str,
+    pub(crate) label: Option<String>,
+}
+
+impl Relation {
+    /// `name` (URL segment): the records of `target` whose `field` (a
+    /// `belongs_to` this resource) holds the record's key.
+    pub fn has_many(name: &'static str, target: &'static str, field: &'static str) -> Self {
+        Self { name, target, field, label: None }
+    }
+
+    /// Section title (default: the name, humanized).
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+}
+
 /// Records by deletion state, for resources with soft deletes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -281,6 +310,11 @@ pub struct ListQuery {
     /// Which records by deletion state (resources with soft deletes only).
     #[serde(default)]
     pub trashed: Trashed,
+    /// Only the records whose `field` holds this key (relation lists: the
+    /// children of one record). Never read from a request; trusted Rust callers
+    /// may set it.
+    #[serde(skip)]
+    pub parent: Option<(String, String)>,
     /// Filter values came from a URL query string, so they are all strings and
     /// are interpreted by field type (`5`, `true`, comma-separated `in` lists).
     /// JSON clients keep the strict wire format.

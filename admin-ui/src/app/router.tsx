@@ -74,9 +74,19 @@ const list = createRoute({
 const create = createRoute({
   getParentRoute: () => app,
   path: "/r/$slug/create",
+  // Creating through a relation: `?via=<parent>&record=<key>&relation=<name>` (checked against the parent's schema).
+  validateSearch: (search: Record<string, unknown>): { via?: string; record?: string; relation?: string } => {
+    const text = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+    const [via, record, relation] = [text(search.via), text(search.record), text(search.relation)];
+    return via && record && relation ? { via, record, relation } : {};
+  },
   component: function Create() {
     const { slug } = create.useParams();
-    return <FormPage key={slug} slug={slug} />;
+    const search = create.useSearch();
+    const via = search.via && search.record && search.relation
+      ? { parent: search.via, record: search.record, relation: search.relation }
+      : undefined;
+    return <FormPage key={`${slug}:${via ? `${via.parent}:${via.record}:${via.relation}` : ""}`} slug={slug} via={via} />;
   },
 });
 

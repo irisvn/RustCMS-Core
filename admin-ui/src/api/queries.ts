@@ -144,12 +144,13 @@ export function usePanel() {
   return useQuery({ queryKey: keys.panel, queryFn: () => api.get<PanelResponse>("/panel") });
 }
 
-export function useSchema(slug: string, operation: SchemaOperation, key?: string) {
+export function useSchema(slug: string, operation: SchemaOperation, key?: string, opts: { enabled?: boolean } = {}) {
   const api = useApi();
   return useQuery({
     queryKey: keys.schema(slug, operation, key),
     queryFn: () =>
       api.get<ResourceSchema>(`/resources/${enc(slug)}/schema`, { operation, key }),
+    enabled: opts.enabled ?? true,
   });
 }
 
@@ -164,6 +165,25 @@ export function useRecords(slug: string, query: URLSearchParams) {
   });
 }
 
+/** A record's relation: the parent, its key and the relation name. */
+export interface Via {
+  parent: string;
+  record: string;
+  relation: string;
+}
+
+/** Children of one record (a has-many relation), cached with the child resource's records. */
+export function useRelationRecords(target: string, via: Via, query: URLSearchParams) {
+  const api = useApi();
+  const qs = query.toString();
+  return useQuery({
+    queryKey: [...keys.records(target), "relation", via.parent, via.record, via.relation, qs] as const,
+    queryFn: () =>
+      api.get<Page>(`/resources/${enc(via.parent)}/records/${enc(via.record)}/relations/${enc(via.relation)}`, new URLSearchParams(qs)),
+    placeholderData: keepPreviousData,
+  });
+}
+
 export function useRecord(slug: string, key: string, opts: { enabled?: boolean } = {}) {
   const api = useApi();
   return useQuery({
@@ -173,18 +193,25 @@ export function useRecord(slug: string, key: string, opts: { enabled?: boolean }
   });
 }
 
-export function useSaveRecord(slug: string, key?: string, origin?: string) {
+export function useSaveRecord(slug: string, key?: string, origin?: string, via?: Via) {
   const api = useApi();
   const session = useSession();
   const client = useQueryClient();
+  // Creates through a relation go to the parent's relation endpoint (the server sets the key).
+  const createPath = via
+    ? `/resources/${enc(via.parent)}/records/${enc(via.record)}/relations/${enc(via.relation)}`
+    : `/resources/${enc(slug)}/records`;
   return useMutation({
     mutationFn: (data: Data) =>
       (key === undefined
-        ? keyedWrite<DataResponse<Envelope>>(session, slug, "POST", `/resources/${enc(slug)}/records`, data, origin)
+        ? keyedWrite<DataResponse<Envelope>>(session, slug, "POST", createPath, data, origin)
         : guardedWrite(session, slug, () => api.patch<DataResponse<Envelope>>(`/resources/${enc(slug)}/records/${enc(key)}`, data))
       ).then((r) => r.data),
     // Only after a successful save: a rejected one must not refetch under the user's draft.
-    onSuccess: () => invalidateAfterWrite(client, slug),
+    onSuccess: async () => {
+      await invalidateAfterWrite(client, slug);
+      if (via) await client.invalidateQueries({ queryKey: keys.records(via.parent) });
+    },
   });
 }
 

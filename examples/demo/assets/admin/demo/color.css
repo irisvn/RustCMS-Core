@@ -1,0 +1,17 @@
+.demo-color { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.demo-color-swatch {
+  width: 2rem; height: 2rem; border-radius: 9999px; border: 2px solid transparent; cursor: pointer;
+  outline-offset: 2px;
+}
+.demo-color-swatch[aria-pressed="true"] { border-color: currentColor; }
+.demo-color-swatch:disabled, .demo-color-clear:disabled { cursor: not-allowed; opacity: 0.6; }
+.demo-color-swatch[data-color="#dc2626"] { background: #dc2626; }
+.demo-color-swatch[data-color="#16a34a"] { background: #16a34a; }
+.demo-color-swatch[data-color="#2563eb"] { background: #2563eb; }
+.demo-color-swatch[data-color="#9333ea"] { background: #9333ea; }
+.demo-color-clear {
+  height: 2rem; padding: 0 0.75rem; border-radius: 0.375rem; border: 1px solid #d4d4d4; background: transparent;
+  font: inherit; font-size: 0.875rem; cursor: pointer;
+}
+.demo-color-clear[aria-pressed="true"] { border-color: currentColor; }
+.demo-color-invalid .demo-color-clear { border-color: #dc2626; }

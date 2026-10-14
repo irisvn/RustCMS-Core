@@ -2,7 +2,7 @@
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
-export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value" | "file_upload" | "rich_editor";
+export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value" | "file_upload" | "rich_editor" | "custom";
 
 export type LayoutType = "section" | "grid" | "tabs" | "tab";
 
@@ -81,6 +81,28 @@ accept: Array<string>,
  * Largest accepted file, in bytes.
  */
 maxSize?: number, };
+
+export type RelationSchema = { 
+/**
+ * URL segment.
+ */
+name: string, 
+/**
+ * Section title.
+ */
+label: string, 
+/**
+ * Slug of the related resource.
+ */
+resource: string, 
+/**
+ * Field of the related resource holding this record's key (set by the server).
+ */
+field: string, 
+/**
+ * Whether the user may create related records from here.
+ */
+create: boolean, };
 
 export type MediaItem = { 
 /**
@@ -177,6 +199,14 @@ options?: Array<SelectOption>,
  * Related resource for `belongs_to` fields.
  */
 relationship?: Relationship, 
+/**
+ * Widget of a `custom` input (`vendor/name`).
+ */
+widget?: string, 
+/**
+ * Settings of a `custom` input's widget.
+ */
+props?: JsonValue, 
 /**
  * Media references (`file_upload` inputs).
  */
@@ -370,7 +400,11 @@ form: FormSchema,
 /**
  * Table.
  */
-table: TableSchema, };
+table: TableSchema, 
+/**
+ * Has-many relations of the viewed record the user may list.
+ */
+relations?: Array<RelationSchema>, };
 
 export type Envelope = { 
 /**

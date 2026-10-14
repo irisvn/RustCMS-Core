@@ -6,22 +6,32 @@ export interface PanelConfig {
   basePath: string;
   /** URL prefix of the admin API (e.g. `/admin/api`). */
   apiPath: string;
+  /** Extension scripts and styles, relative to `basePath`, in load order. */
+  extensions?: { scripts: string[]; styles: string[] };
 }
 
 export function readConfig(doc: Document = document): PanelConfig {
   const raw = doc.querySelector('meta[name="rustcms-admin"]')?.getAttribute("content");
   let basePath = "/admin";
+  let extensions: PanelConfig["extensions"];
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as Partial<PanelConfig>;
       if (typeof parsed.basePath === "string") basePath = parsed.basePath;
+      const ext = parsed.extensions;
+      // Only extension asset paths of the panel itself.
+      const own = (list: unknown, ext: string) =>
+        Array.isArray(list)
+          ? list.filter((p): p is string => typeof p === "string" && new RegExp(`^assets/ext/[a-z0-9-]+\\.[0-9a-f]{8}\\.${ext}$`).test(p))
+          : [];
+      if (ext) extensions = { scripts: own(ext.scripts, "js"), styles: own(ext.styles, "css") };
     } catch {
       // Keep the default: a broken meta tag must not break the panel.
     }
   }
   basePath = "/" + basePath.replace(/^\/+|\/+$/g, "");
   if (basePath === "/") basePath = "";
-  return { basePath, apiPath: `${basePath}/api` };
+  return { basePath, apiPath: `${basePath}/api`, extensions };
 }
 
 /**

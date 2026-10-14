@@ -8,6 +8,7 @@ resources. It is served by `AdminProvider` under `auth.admin_path` (default
 |---|---|
 | `/admin`, `/admin/…` | the panel shell (`index.html`, `Cache-Control: no-store`) |
 | `/admin/assets/…` | hashed JS/CSS (`immutable`); a missing file is 404 |
+| `/admin/assets/ext/…` | the application's [extension](custom-fields.md) scripts and styles (content-hashed, `immutable`) |
 | `/admin/api/…` | the JSON API ([protocol](../admin-protocol.md)); unknown paths are JSON 404 |
 
 Pages: `/admin/login`, `/admin/r/<slug>` (list), `/admin/r/<slug>/create`,
@@ -25,6 +26,10 @@ Pages: `/admin/login`, `/admin/r/<slug>` (list), `/admin/r/<slug>/create`,
   read-only; write-only inputs (passwords) start empty and are sent only when
   filled in; edits send changed fields only. Validation messages from the
   server appear under each input.
+- **Record pages** show the [relations](relationships.md) of the record, each
+  with its own table and a **New** button that creates a child for it.
+- **Custom inputs** are drawn by widgets of the application's
+  [extension scripts](custom-fields.md), loaded before the panel renders.
 - Someone who may update a record but not view it gets an empty edit form;
   records outside a user's scope show "Not found", forbidden pages "Access denied".
 
@@ -90,6 +95,10 @@ just test-ui         # Vitest
 just e2e             # Playwright against the demo app (npx playwright install chromium once)
 just admin-build     # rebuild crates/rustcms-admin/assets — commit the result
 ```
+
+In development, Vite copies the runtime config (including the application's
+extensions) from the Rust server's `/admin/` page, and proxies `/admin/api` and
+`/admin/assets/ext` to it: start the server first.
 
 For UI-only changes, run frontend lint, type checking, Vitest, then rebuild the
 assets before browser tests:

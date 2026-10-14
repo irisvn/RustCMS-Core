@@ -443,6 +443,75 @@ path = "/admin/api/media/not-a-uuid/file"
 actor = "admin"
 status = 404
 
+# Has-many relations (categories → notes; behaviour in tests/relations.rs).
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/relations/{relation}"
+path = "/admin/api/resources/categories/records/999999/relations/notes"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/relations/{relation}"
+path = "/admin/api/resources/categories/records/999999/relations/notes"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/relations/{relation}"
+path = "/admin/api/resources/categories/records/999999/relations/notes"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/relations/{relation}"
+path = "/admin/api/resources/categories/records/999999/relations/notes"
+actor = "editor"
+status = 404
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/relations/{relation}"
+path = "/admin/api/resources/categories/records/999999/relations/unknown"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/relations/{relation}"
+path = "/admin/api/resources/posts/records/{own}/relations/notes"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}"
+path = "/admin/api/resources/categories/records/999999/relations/notes"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}"
+path = "/admin/api/resources/categories/records/999999/relations/notes"
+actor = "token"
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}"
+path = "/admin/api/resources/categories/records/999999/relations/notes"
+actor = "foreign"
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}"
+path = "/admin/api/resources/categories/records/999999/relations/notes"
+actor = "member"
+status = 403
+body = '{"title": "x"}'
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}"
+path = "/admin/api/resources/categories/records/999999/relations/notes"
+actor = "editor"
+status = 404
+body = '{"title": "x"}'
+
 [[case]]
 route = "GET /admin/api/system/users"
 path = "/admin/api/system/users"

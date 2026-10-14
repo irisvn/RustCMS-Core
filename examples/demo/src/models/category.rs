@@ -9,6 +9,7 @@ pub struct Model {
     pub id: i32,
     pub name: String,
     pub slug: String,
+    pub color: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

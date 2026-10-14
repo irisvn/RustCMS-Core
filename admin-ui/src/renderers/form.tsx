@@ -24,6 +24,7 @@ import {
 import { RelationSelect, RelationValue } from "./relation-select";
 import { FileUploadWidget, MediaThumb } from "./media";
 import { RichEditorWidget, RichTextView } from "./rich-text";
+import { CustomField } from "./custom";
 import { asDocument } from "@/lib/rich-text";
 
 export interface FormContext {
@@ -412,6 +413,8 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
       return <FileUploadWidget id={id} input={input} value={value} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} onBusy={(busy) => ctx.onBusy?.(input.name, busy)} />;
     case "rich_editor":
       return <RichEditorWidget id={id} label={input.label} value={text} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} nullable={input.nullable} onBusy={(busy) => ctx.onBusy?.(input.name, busy)} />;
+    case "custom":
+      return <CustomField id={id} input={input} value={text} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
     case "key_value":
       return <KeyValueEditor id={id} label={input.label} nullable={input.nullable} value={value} onChange={onChange} onBlur={onBlur} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
     default:

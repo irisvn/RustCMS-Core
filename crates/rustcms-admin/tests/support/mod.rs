@@ -135,6 +135,10 @@ impl Resource for CategoryResource {
     type Entity = category::Entity;
     const SLUG: &'static str = "categories";
 
+    fn relations() -> Vec<rustcms_admin::Relation> {
+        vec![rustcms_admin::Relation::has_many("notes", "notes", "category_id").label("Notes")]
+    }
+
     fn meta() -> ResourceMeta {
         ResourceMeta::new("Category").title("name").unique("categories_slug_key", &["slug"], "has already been taken")
     }

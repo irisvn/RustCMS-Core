@@ -3,6 +3,7 @@
 import { z } from "zod";
 import type { ComponentSchema, InputSchema, JsonValue } from "@/api/types";
 import { asDocument } from "@/lib/rich-text";
+import { widget } from "@/lib/widgets";
 import { checkText, fromText, toText, type WireKind } from "@/lib/wire";
 
 // No `new Function` (zod's JIT probes it): the panel's CSP forbids eval.
@@ -61,8 +62,9 @@ export function pairsOf(value: FormValue): [string, string][] {
 
 export const encodePair = (key: string, value: string) => JSON.stringify([key, value]);
 
-/** Input types of vocabulary version 3. */
+/** Input types of vocabulary version 4. */
 export const KNOWN_INPUT_TYPES = new Set<string>([
+  "custom",
   "file_upload",
   "rich_editor",
   "key_value",
@@ -103,6 +105,9 @@ export function toFormValue(input: InputSchema, value: unknown): FormValue {
       return Array.isArray(value) ? value.map(encode) : [];
     case "select":
       return value === null || value === undefined ? "" : encode(value);
+    case "custom":
+      // The wire value as JSON text ("" when not set, "null" for null).
+      return value === undefined ? "" : JSON.stringify(value);
     case "file_upload":
       // One media id ("" when not set), or the ordered list of ids.
       if (input.media?.multiple) return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
@@ -134,6 +139,8 @@ export function fromFormValue(input: InputSchema, value: FormValue): unknown {
       return (value as string[]).map((v) => JSON.parse(v) as JsonValue);
     case "select":
       return value === "" ? null : (JSON.parse(value as string) as JsonValue);
+    case "custom":
+      return JSON.parse(value as string) as JsonValue;
     case "file_upload":
       if (input.media?.multiple) return Array.isArray(value) ? value : [];
       return value === "" ? null : value;
@@ -178,6 +185,8 @@ export function payloadOf(
   for (const input of inputs) {
     // Disabled inputs are not writable; unknown (newer) input types are never submitted.
     if (input.disabled || !KNOWN_INPUT_TYPES.has(input.type)) continue;
+    // A custom input is sent only through its widget, and only when set.
+    if (input.type === "custom" && (!widget(input.widget) || values[input.name] === "")) continue;
     if (dirty && !dirty[input.name]) continue;
     const value = values[input.name];
     if (value === undefined) continue;
@@ -203,6 +212,16 @@ export function zodSchema(inputs: InputSchema[]) {
       case "toggle":
       case "checkbox":
         shape[input.name] = z.boolean();
+        break;
+      case "custom":
+        shape[input.name] = z.string().superRefine((value, ctx) => {
+          if (input.disabled || !required) return;
+          // Unavailable: never sent, whatever value the form holds (on edit, only
+          // changed fields are checked, and this one cannot change).
+          if (!widget(input.widget)) {
+            ctx.addIssue({ code: "custom", message: "cannot be edited here: its widget is not available" });
+          } else if (value === "") ctx.addIssue({ code: "custom", message: "is required" });
+        });
         break;
       case "file_upload": {
         const max = input.media?.maxItems ?? 1;

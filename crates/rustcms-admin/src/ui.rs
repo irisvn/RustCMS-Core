@@ -48,6 +48,8 @@ pub enum InputType {
     FileUpload,
     /// Rich text document editor (vocabulary 3).
     RichEditor,
+    /// A widget from an application extension script (vocabulary 4).
+    Custom,
 }
 
 /// An option of a select, checkbox list or select filter.
@@ -71,6 +73,8 @@ pub struct Input {
     pub(crate) options: Vec<SelectOption>,
     pub(crate) column_span: u8,
     pub(crate) mode: Option<&'static str>,
+    pub(crate) widget: Option<String>,
+    pub(crate) props: Option<serde_json::Value>,
 }
 
 impl Input {
@@ -88,6 +92,8 @@ impl Input {
             options: Vec::new(),
             column_span: 1,
             mode: None,
+            widget: None,
+            props: None,
         }
     }
 
@@ -138,6 +144,36 @@ impl Input {
         self.mode = Some("url");
         self
     }
+}
+
+/// An input rendered by a widget that an application extension registers
+/// (`window.rustcms.registerWidget("acme/color", …)`, see `AdminProvider::extension_script`).
+pub struct CustomInput;
+
+impl CustomInput {
+    /// Field `name` edited by widget `widget` (`vendor/name`, lowercase letters, digits and `-`).
+    #[allow(clippy::new_ret_no_self)]
+    pub fn make(name: impl Into<String>, widget: &str) -> Input {
+        let mut input = Input::new(name, InputType::Custom);
+        input.widget = Some(widget.to_owned());
+        input
+    }
+}
+
+impl Input {
+    /// Settings passed to a custom widget (JSON, at most 4 KiB).
+    pub fn props(mut self, props: serde_json::Value) -> Self {
+        self.props = Some(props);
+        self
+    }
+}
+
+/// Whether `name` is a valid `vendor/name` widget name.
+pub(crate) fn valid_widget(name: &str) -> bool {
+    let part = |p: &str| {
+        (1..=32).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    };
+    matches!(name.split_once('/'), Some((vendor, widget)) if part(vendor) && part(widget))
 }
 
 macro_rules! input_types {

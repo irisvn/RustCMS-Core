@@ -1,0 +1,36 @@
+// Admin widget `{{ widget }}`: an input for a `CustomInput::make(field, "{{ widget }}")`.
+// Loaded by the panel before it renders (see `AdminProvider::extension_script`).
+// The panel owns the value; the widget shows `ctx.value` (the field's wire JSON,
+// `undefined` when not set) and reports changes with `ctx.onChange(value)`.
+// No inline styles or scripts: the panel's CSP forbids them. Put styles in a
+// stylesheet registered with `extension_style`.
+window.rustcms.registerWidget("{{ widget }}", {
+  apiVersion: 1,
+  mount(element, ctx) {
+    const input = document.createElement("input");
+    input.className = "{{ class }}";
+    input.addEventListener("input", () => current.onChange(input.value === "" ? null : input.value));
+    element.append(input);
+    let current = ctx;
+    const render = () => {
+      input.id = current.id;
+      input.value = typeof current.value === "string" ? current.value : "";
+      input.disabled = current.disabled;
+      input.setAttribute("aria-label", current.label);
+      if (current.invalid) input.setAttribute("aria-invalid", "true");
+      else input.removeAttribute("aria-invalid");
+      if (current.describedBy) input.setAttribute("aria-describedby", current.describedBy);
+      else input.removeAttribute("aria-describedby");
+    };
+    render();
+    return {
+      update(next) {
+        current = next;
+        render();
+      },
+      unmount() {
+        input.remove();
+      },
+    };
+  },
+});

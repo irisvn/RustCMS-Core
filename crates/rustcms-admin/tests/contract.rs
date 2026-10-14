@@ -43,6 +43,7 @@ pub mod gadget {
         pub deleted_at: Option<DateTimeUtc>,
         pub specs: Option<Json>,
         pub photo: Option<Uuid>,
+        pub accent: Option<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -84,6 +85,7 @@ impl Resource for GadgetResource {
             Field::column(C::DeletedAt).guarded().readable(|_| true),
             Field::column(C::Specs).max_items(5).max_length(40),
             Field::column(C::Photo).media().accept(&["image/*"]).max_size(1_000_000),
+            Field::column(C::Accent).max_length(7),
         ]
     }
 
@@ -110,7 +112,11 @@ impl Resource for GadgetResource {
                     DateTimePicker::make("local_at"),
                     DateTimePicker::make("happened_at"),
                 ]),
-                Tab::make("Specs").schema(components![KeyValue::make("specs"), FileUpload::make("photo")]),
+                Tab::make("Specs").schema(components![
+                    KeyValue::make("specs"),
+                    FileUpload::make("photo"),
+                    CustomInput::make("accent", "acme/color").props(json!({"palette": ["#ff0000", "#00ff00"]})),
+                ]),
             ]),
             Hidden::make("token"),
             TextInput::make("secret").password(),
@@ -145,6 +151,7 @@ async fn registry(db: &TestDb) -> Arc<Registry> {
         schema.create_table_from_entity(category::Entity),
         schema.create_table_from_entity(gadget::Entity),
         schema.create_table_from_entity(rustcms_admin::media::entity::Entity),
+        schema.create_table_from_entity(support::note::Entity),
     ] {
         db.conn().execute(&statement).await.unwrap();
     }
@@ -152,6 +159,7 @@ async fn registry(db: &TestDb) -> Arc<Registry> {
         .register::<CategoryResource>()
         .register::<GadgetResource>()
         .register::<rustcms_admin::media::MediaResource>()
+        .register::<support::NoteResource>()
         .finish()
 }
 
@@ -227,6 +235,7 @@ db_test!(kitchen_sink_contract, |db: TestDb| async move {
         "hidden",
         "key_value",
         "file_upload",
+        "custom",
         "section",
         "grid",
         "tabs",

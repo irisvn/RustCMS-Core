@@ -61,6 +61,14 @@ Create an integration test in `tests/`
 |---|---|
 | `<name>` | Test name in PascalCase, e.g. `PostAdminTest` |
 
+### `make:widget`
+
+Create an admin widget script in `assets/admin`
+
+| Argument | Description |
+|---|---|
+| `<name>` | Widget name, `vendor/name`, e.g. `acme/color` |
+
 ### `docs:cli`
 
 Print the command reference as Markdown

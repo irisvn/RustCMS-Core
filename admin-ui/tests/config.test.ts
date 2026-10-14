@@ -9,6 +9,15 @@ describe("runtime config", () => {
     document.head.innerHTML = "";
     expect(readConfig().basePath).toBe("/admin");
   });
+
+  it("keeps only the panel's own extension assets", () => {
+    const extensions = {
+      scripts: ["assets/ext/acme.0123abcd.js", "https://evil.example/x.js", "assets/ext/acme.0123abcd.css", "assets/ext/../x.0123abcd.js"],
+      styles: ["assets/ext/acme.0123abcd.css", "assets/ext/acme.0123abcd.js", 42],
+    };
+    document.head.innerHTML = `<meta name="rustcms-admin" content='${JSON.stringify({ basePath: "/admin", extensions })}'>`;
+    expect(readConfig().extensions).toEqual({ scripts: ["assets/ext/acme.0123abcd.js"], styles: ["assets/ext/acme.0123abcd.css"] });
+  });
 });
 
 describe("safeRedirect", () => {

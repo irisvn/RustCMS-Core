@@ -7,6 +7,7 @@ import { SessionContext } from "@/api/context";
 import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
 import { readConfig } from "@/lib/config";
+import { loadExtensions } from "@/lib/widgets";
 import "./index.css";
 
 const config = readConfig();
@@ -27,6 +28,9 @@ const session = createSession(config, queryClient, (redirect) => {
   void router.navigate({ to: "/login", search: redirect ? { redirect } : {}, replace: true });
 });
 const router = createAppRouter({ queryClient, session });
+
+// Extensions register their widgets before the first render.
+await loadExtensions(config.basePath, config.extensions ?? { scripts: [], styles: [] });
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

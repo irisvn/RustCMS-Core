@@ -2,16 +2,32 @@
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { type Plugin, defineConfig } from "vite";
 
 // Production: built into the Rust crate, served under the admin path with a
 // `<base href>` injected by the server, so asset URLs are relative.
 // Development: Vite serves /admin/ and proxies the API to the Rust server.
 const backend = process.env.RUSTCMS_BACKEND ?? "http://127.0.0.1:8000";
 
+// Development: the runtime config (extensions included) comes from the Rust
+// server's shell, as in production.
+const runtimeConfig = (): Plugin => ({
+  name: "rustcms-runtime-config",
+  apply: "serve",
+  async transformIndexHtml(html) {
+    try {
+      const shell = await (await fetch(`${backend}/admin/`)).text();
+      const meta = /<meta name="rustcms-admin"[^>]*>/.exec(shell)?.[0];
+      return meta ? html.replace("<head>", `<head>\n    ${meta}`) : html;
+    } catch {
+      return html;
+    }
+  },
+});
+
 export default defineConfig(({ command }) => ({
   base: command === "build" ? "./" : "/admin/",
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), runtimeConfig()],
   resolve: { alias: { "@": path.resolve(__dirname, "src") } },
   build: {
     outDir: "../crates/rustcms-admin/assets",
@@ -25,7 +41,10 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 5173,
     strictPort: true,
-    proxy: { "/admin/api": { target: backend, changeOrigin: false } },
+    proxy: {
+      "/admin/api": { target: backend, changeOrigin: false },
+      "/admin/assets/ext": { target: backend, changeOrigin: false },
+    },
   },
   test: {
     environment: "jsdom",

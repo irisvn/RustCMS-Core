@@ -11,7 +11,7 @@ use crate::ui::{ColumnType, FilterType, InputType, LayoutType, SelectOption};
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 1;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 3;
+pub const VOCABULARY_VERSION: u32 = 4;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -133,6 +133,14 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship: Option<Relationship>,
+    /// Widget of a `custom` input (`vendor/name`).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub widget: Option<String>,
+    /// Settings of a `custom` input's widget.
+    #[cfg_attr(feature = "ts", ts(optional, type = "JsonValue"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub props: Option<serde_json::Value>,
     /// Media references (`file_upload` inputs).
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -332,4 +340,25 @@ pub struct ResourceSchema {
     pub form: FormSchema,
     /// Table.
     pub table: TableSchema,
+    /// Has-many relations of the viewed record the user may list.
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<RelationSchema>>", optional))]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relations: Vec<RelationSchema>,
+}
+
+/// A has-many relation shown on a record's page.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct RelationSchema {
+    /// URL segment.
+    pub name: &'static str,
+    /// Section title.
+    pub label: String,
+    /// Slug of the related resource.
+    pub resource: &'static str,
+    /// Field of the related resource holding this record's key (set by the server).
+    pub field: &'static str,
+    /// Whether the user may create related records from here.
+    pub create: bool,
 }

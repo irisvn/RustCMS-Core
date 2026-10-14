@@ -11,6 +11,7 @@ import { Components } from "@/renderers/form";
 import { Cell } from "@/renderers/table";
 import { compatibility } from "@/components/states";
 import { type FormValues, defaultValues, inputsOf } from "@/schema/form";
+import { registerWidget, resetWidgets } from "@/lib/widgets";
 import create from "../../fixtures/contract/kitchen-sink.schema.create.json";
 import edit from "../../fixtures/contract/kitchen-sink.schema.edit.json";
 import view from "../../fixtures/contract/kitchen-sink.schema.view.json";
@@ -22,8 +23,21 @@ const server = setupServer(
     HttpResponse.json({ data: [{ value: 1, label: "Tools" }] }),
   ),
 );
-beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
-afterAll(() => server.close());
+beforeAll(() => {
+  server.listen({ onUnhandledRequest: "error" });
+  // The kitchen sink's custom input, as an application extension provides it.
+  registerWidget("acme/color", {
+    apiVersion: 1,
+    mount: (el, ctx) => {
+      el.textContent = ctx.label;
+      return { update: () => {}, unmount: () => {} };
+    },
+  });
+});
+afterAll(() => {
+  server.close();
+  resetWidgets();
+});
 
 function Providers({ children }: { children: React.ReactNode }) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
