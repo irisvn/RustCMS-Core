@@ -6,6 +6,16 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (0.2 — R1)
+- Modules grouped by role, large files split (admin `adapter.rs`, `media.rs`,
+  `system.rs`, `ui.rs`; auth `rbac.rs`; core `db.rs`, `storage.rs`; SPA system
+  pages). No behaviour change; every existing public path is kept (re-exports,
+  checked by `tests/paths.rs`). New grouping modules: `rustcms_admin::{resources,
+  forms, tables, panel, engine, contract, features}`, `rustcms_auth::{guards,
+  console, support}`. Architecture page in the guide.
+- The demo is laid out like a generated app: one resource per file in
+  `src/admin/`, policies in `src/policies/`.
+
 ### Added (0.2 — M10)
 - **MySQL 8.4** as a third database (feature `mysql`, on by default in
   `rustcms`). Connections use UTC and `utf8mb4_0900_bin`; write transactions run

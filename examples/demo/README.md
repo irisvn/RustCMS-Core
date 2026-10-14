@@ -17,5 +17,7 @@ cargo run -- token:create --email admin@example.test --name cli --abilities post
 curl -H "Authorization: Bearer rcms_…" http://localhost:8000/api/v1/posts
 ```
 
-Tests: `cargo test` (SQLite; PostgreSQL with `RUSTCMS_TEST_PG`). Unlike a fresh
-`rustcms new` app, the demo keeps its resources in `src/admin.rs`.
+Tests: `cargo test` (SQLite; PostgreSQL with `RUSTCMS_TEST_PG`, MySQL with
+`RUSTCMS_TEST_MYSQL`). The layout is the one `rustcms new` generates: one resource
+per file in `src/admin/`, policies in `src/policies/`, so `rustcms make:resource`
+and `make:policy` work here too.

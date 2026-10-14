@@ -9,20 +9,21 @@
 //! Register [`AuthProvider`], then use [`Auth`] in handlers.
 #![warn(missing_docs)]
 
-pub mod commands;
 pub mod config;
-pub mod credentials;
+pub mod console;
 pub mod entities;
-pub mod guard;
-pub mod password;
+pub mod guards;
+pub mod http;
 mod provider;
-pub mod rate_limit;
 pub mod rbac;
-pub mod routes;
-pub mod secret;
-pub mod session;
 pub mod state;
-pub mod tokens;
+pub mod support;
+
+// Module paths kept from before the layout by role (R1).
+pub use console::commands;
+pub use guards::{credentials, guard, session, tokens};
+pub use http::routes;
+pub use support::{password, rate_limit, secret};
 
 pub use config::AuthConfig;
 pub use guard::{Auth, Authenticated, CSRF_HEADER, MaybeAuth};

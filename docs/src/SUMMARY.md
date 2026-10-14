@@ -42,4 +42,5 @@
 
 # Architecture
 
+- [How rustcms is organised](architecture.md)
 - [Decision records](adr.md)

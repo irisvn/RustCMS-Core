@@ -2,7 +2,6 @@
 
 use rustcms::prelude::*;
 
-use crate::admin::{CategoryResource, PostResource};
 use crate::seed::Seed;
 
 pub fn build(config: Config) -> AppBuilder {
@@ -20,8 +19,9 @@ pub fn build(config: Config) -> AppBuilder {
         AdminProvider::new()
             .brand("demo")
             .media()
-            .resource::<CategoryResource>()
-            .resource::<PostResource>()
+            .resource::<crate::admin::category::CategoryResource>()
+            .resource::<crate::admin::post::PostResource>()
+            // rustcms:resources
             // The `demo/color` widget of the category form.
             .extension_script("demo-color", include_str!("../assets/admin/demo/color.js"))
             .extension_style("demo-color", include_str!("../assets/admin/demo/color.css")),

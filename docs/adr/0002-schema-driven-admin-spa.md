@@ -19,5 +19,8 @@ need no Node toolchain.
 
 - The server is the only authority for validation and authorization; the schema only
   drives presentation.
-- Custom field types require a rebuilt admin bundle (deferred to 0.2).
+- Custom field types require a rebuilt admin bundle (deferred to 0.2). Since 0.2 (M9) they
+  come from extension scripts instead (ADR 0009).
+- Since R1 the engine is laid out by role (`resources/`, `forms/`, `tables/`, `engine/`,
+  `http/`, `contract/`, `features/`); see the architecture page.
 - The schema contract is tested from both sides with shared fixtures.

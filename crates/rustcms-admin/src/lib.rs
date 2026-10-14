@@ -5,23 +5,24 @@
 //! the object-safe [`DynResource`].
 #![warn(missing_docs)]
 
-pub mod action;
-mod adapter;
-pub mod context;
-pub mod field;
+pub mod contract;
+pub mod engine;
+pub mod features;
+pub mod forms;
 pub mod http;
-pub mod idempotency;
-pub mod media;
-pub mod policy;
-mod provider;
-pub mod registry;
-pub mod resource;
-pub mod rich_text;
-pub mod schema;
-pub mod spa;
-pub mod system;
+pub mod panel;
+pub mod resources;
+pub mod tables;
 pub mod ui;
-pub mod wire;
+
+// Module paths kept from before the layout by role (R1).
+pub use contract as schema;
+pub(crate) use engine::adapter;
+pub use engine::{context, idempotency, registry, wire};
+pub use features::{media, rich_text, system};
+pub(crate) use panel::provider;
+pub use panel::spa;
+pub use resources::{action, field, policy, resource};
 
 pub use action::{Action, ActionOutcome, BoxFuture};
 pub use context::Ctx;
