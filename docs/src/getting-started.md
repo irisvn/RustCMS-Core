@@ -17,6 +17,9 @@ sign-in and every change are only accepted from that origin (opening
 origins in `auth.admin_origins`). No Node is needed: the panel is embedded in the
 binary.
 
+To build the release binary and run it on a server, see
+[Build & chạy binary](deployment.vi.md) (Vietnamese).
+
 ## Try the demo
 
 The repository's `examples/demo` is a small blog (categories, posts, an editor

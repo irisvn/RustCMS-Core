@@ -6,6 +6,7 @@
 
 - [Installation & first app](getting-started.md)
 - [Configuration](configuration.md)
+- [Build & chạy binary (tiếng Việt)](deployment.vi.md)
 
 # The basics
 
