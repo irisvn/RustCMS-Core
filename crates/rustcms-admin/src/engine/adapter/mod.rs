@@ -125,6 +125,11 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         // The audit log names resources and actions as they are declared.
         assert!(slug.len() <= 64, "resource `{slug}`: slugs are at most 64 bytes");
+        // Subjects of the framework's own audit entries.
+        assert!(
+            !["user", "role", "permission", "settings", "session"].contains(&slug),
+            "resource `{slug}`: this slug is reserved"
+        );
         assert!(
             !(meta.audit && fields.iter().any(|f| f.name == pk_name && f.audit_redact)),
             "resource `{slug}`: the primary key identifies records in the audit log and cannot be \

@@ -1,6 +1,7 @@
-//! Built-in features: the media library, rich text documents, settings pages
-//! and the system pages (users and roles).
+//! Built-in features: the audit log viewer, the media library, rich text
+//! documents, settings pages and the system pages (users and roles).
 
+pub mod audit;
 pub mod media;
 pub mod rich_text;
 pub mod settings;

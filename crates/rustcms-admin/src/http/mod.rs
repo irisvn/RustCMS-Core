@@ -85,6 +85,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
     .into_iter()
     .chain(crate::system::routes(admin_path))
     .chain(crate::settings::routes(admin_path))
+    .chain(crate::audit::routes(admin_path))
     .collect()
 }
 

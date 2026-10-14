@@ -1,8 +1,9 @@
 # Audit log
 
 RustCMS records who changed what, and from where, in the `audit_logs` table
-(created by `rustcms migrate`). It needs no setup. The admin panel does not
-show the log yet: query the table directly.
+(created by `rustcms migrate`). It needs no setup. The panel shows it to
+auditors, and each record's history to those who may view the record
+([Viewing the log](#viewing-the-log)).
 
 ## What is recorded
 
@@ -88,8 +89,8 @@ The decision depends on the declaration only, never on who is acting. The
 parent of a record created through a relation (`meta.parent`) is redacted
 when its foreign key field is. A primary key cannot be `.audit_redact()`
 (boot fails): it names the record in every entry; use an opaque key, or
-`.audit(false)`. Keys longer than 255 characters are stored as their start
-and a digest.
+`.audit(false)`. Keys longer than 255 characters (and keys that look like
+such a shortened form) are stored as their start and a digest.
 
 ```rust,ignore
 fn fields() -> Vec<Field> {
@@ -157,6 +158,35 @@ async fn close_course(auth: Auth, request: RequestMeta, State(app): State<AppSta
 (`audit::diff` builds one from two snapshots) and `AuditEntry::meta` any
 serializable struct; both are bounded like the built-in entries. Do not put
 secrets in them.
+
+## Viewing the log
+
+| Permission | Shows |
+|---|---|
+| `audit.view_all` | **System → Audit log**: every entry, newest first, filtered by event, subject, user and time. Meant for auditors: no row is hidden from them. |
+| `audit.view_auth` | with `audit.view_all`: also sign-in, sign-out, token and JWT entries (`auth.*`, `jwt.*`, `token.*`), and the client address and browser of every entry |
+| `audit.view` | **History** on a record's page, for records the user may view (scope and policy, as the page itself) |
+
+A record's history lists what the engine recorded about that record
+(`created`, `updated`, `trashed`, `deleted`, `restored`, `force_deleted`,
+`action:<name>`), with only the fields the user may read now; entries your
+code wrote with `ctx.audit` are not in it (they are in the full log).
+Actors appear by name to users who may list users (`users.view_any`),
+otherwise by id; credentials appear by kind only (`session`, `token`, `jwt`,
+`console`). Every filter runs in the database, so pages are always full and
+nothing reveals entries a user may not see.
+
+The slugs `user`, `role`, `permission`, `settings` and `session` are reserved
+for the framework's own entries: resources cannot use them.
+
+API (admin session):
+
+| Method | Path | Query | Response |
+|---|---|---|---|
+| GET | `/admin/api/audit` | `event`, `subject_type`, `subject_key` (with `subject_type`), `actor` (user id), `from`, `to` (RFC 3339), `per_page` (≤ 100), `cursor` | `{data: [AuditEntryView], meta: {nextCursor?}}` |
+| GET | `/admin/api/resources/{slug}/records/{key}/history` | `per_page`, `cursor` | the same |
+
+Access is checked before the query string is read (403, then 422 for a bad filter).
 
 ## Failed sign-ins
 

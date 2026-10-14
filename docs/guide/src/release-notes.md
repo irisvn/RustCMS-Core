@@ -16,7 +16,8 @@ RustCMS is in pre-release. The current published version is
 - **Audit log**: every admin write, upload, role and user change and API
   token recorded with its actor, credential and request, in the write's
   transaction; sign-ins, sign-outs and JWT events recorded best effort;
-  redacted by declaration; `audit:prune` and hourly retention
+  redacted by declaration; `audit:prune` and hourly retention; shown to
+  auditors in the panel, and as each record's history
   ([Audit log](digging-deeper/audit-log.md)).
 - **Settings**: groups of settings as Rust structs, edited in the panel
   (`settings.<group>.view` / `.update`), read with `rustcms::settings::get`;

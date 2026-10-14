@@ -27,6 +27,10 @@ export function useSaveSettings(group: string) {
   return useMutation({
     mutationFn: (input: { version: string; data: Record<string, unknown> }) =>
       guardedWrite(session, settingsScope(group), () => api.request<SettingsResponse>("PUT", `/settings/${enc(group)}`, input)),
-    onSuccess: () => client.invalidateQueries({ queryKey: ["settings", group] }),
+    onSuccess: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: ["settings", group] }),
+        client.invalidateQueries({ queryKey: ["audit"] }),
+      ]),
   });
 }

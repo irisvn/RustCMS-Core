@@ -52,6 +52,10 @@ fn bindings() -> String {
         rustcms_admin::settings::SecretStatus::decl(&cfg),
         rustcms_admin::settings::SettingsAbilities::decl(&cfg),
         rustcms_admin::settings::SettingsResponse::decl(&cfg),
+        rustcms_admin::audit::AuditActorView::decl(&cfg),
+        rustcms_admin::audit::AuditEntryView::decl(&cfg),
+        rustcms_admin::audit::AuditPageMeta::decl(&cfg),
+        rustcms_admin::audit::AuditPage::decl(&cfg),
         PanelResponse::decl(&cfg),
         DataResponse::<ts_rs::Dummy>::decl(&cfg),
     ];

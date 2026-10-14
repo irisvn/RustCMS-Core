@@ -264,7 +264,9 @@ pub async fn record(txn: &DatabaseTransaction, ctx: &AuditContext, entry: AuditE
 
 /// Records `entries` in the transaction of the change, in batches.
 pub async fn record_all(txn: &DatabaseTransaction, ctx: &AuditContext, entries: Vec<AuditEntry>) -> AppResult<()> {
-    let at = Utc::now();
+    // Microseconds, as every backend stores them: entries compare equal to what is read back.
+    let now = Utc::now();
+    let at = DateTime::from_timestamp_micros(now.timestamp_micros()).unwrap_or(now);
     let mut rows = entries.into_iter().map(|e| e.into_model(ctx, at)).peekable();
     while rows.peek().is_some() {
         let batch: Vec<_> = rows.by_ref().take(50).collect();
@@ -363,13 +365,26 @@ fn size(value: &Value) -> usize {
 
 /// `text` if it has at most `max` characters; otherwise its start and a
 /// digest of the whole, so two long identifiers never record alike.
+///
+/// One-to-one: a text that already looks like a shortened one (ends with `~`
+/// and the digest's hex) is shortened too, so a real key can never equal the
+/// stored form of another.
 fn identifier(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
+    let hex = (max / 2).min(64);
+    let looks_shortened = text.len() > hex
+        && text.is_char_boundary(text.len() - hex - 1)
+        && text[text.len() - hex - 1..].starts_with('~')
+        && text[text.len() - hex..].bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    if text.chars().count() <= max && !looks_shortened {
         return text.to_owned();
     }
     let digest = hex::encode(Sha256::digest(text.as_bytes()));
-    let hex = (max / 2).min(digest.len());
     format!("{}~{}", cut(text, max - hex - 1), &digest[..hex])
+}
+
+/// How a record key is stored in `subject_key` (to look entries up by key).
+pub fn subject_key(key: &str) -> String {
+    identifier(key, 255)
 }
 
 /// A long text as its length and digest.
@@ -453,6 +468,15 @@ mod tests {
         let over = bounded(Value::Object(huge));
         assert_eq!(over["overflow"], json!(true));
         assert_eq!(over["fields"].as_array().unwrap().len(), 90);
+    }
+
+    #[test]
+    fn a_key_never_equals_another_keys_stored_form() {
+        let long = "k".repeat(300);
+        let stored = subject_key(&long);
+        assert_ne!(subject_key(&stored), stored, "a real key shaped like a shortened one is shortened too");
+        assert_eq!(subject_key("plain-key"), "plain-key");
+        assert_eq!(subject_key(&stored).len(), stored.len());
     }
 
     #[test]

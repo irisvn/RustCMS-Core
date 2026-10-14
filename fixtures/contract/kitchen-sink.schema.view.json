@@ -2,6 +2,7 @@
   "abilities": {
     "create": true,
     "forceDelete": true,
+    "history": true,
     "restore": true,
     "viewAny": true
   },

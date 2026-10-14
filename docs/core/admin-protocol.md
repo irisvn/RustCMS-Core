@@ -34,6 +34,8 @@ saves the choice (422 for a language not offered). The shell's
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../guide/src/admin/users-roles.md) |
 | GET / PUT | `/settings/{group}` | `SettingsResponse`; PUT `{version, data}` (see below) |
+| GET | `/audit?…` | `AuditPage` (`audit.view_all`; auth families with `audit.view_auth`) |
+| GET | `/resources/{slug}/records/{key}/history?cursor=&per_page=` | `AuditPage` of the record (`audit.view` + record `view`) |
 
 Options are available to users who may use the field. When a record-level
 policy hides more than 1,000 candidates before 50 visible ones are found, the

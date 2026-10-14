@@ -3,6 +3,7 @@
     "create": true,
     "delete": true,
     "forceDelete": true,
+    "history": true,
     "restore": true,
     "update": true,
     "view": true,

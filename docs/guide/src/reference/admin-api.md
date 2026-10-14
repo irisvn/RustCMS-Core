@@ -30,6 +30,7 @@ values follow the [wire format](wire-format.md).
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../admin/users-roles.md) |
 | GET / PUT | `/settings/{group}` | settings pages, see [Settings](../admin/settings.md#api) |
+| GET | `/audit`, `/resources/{slug}/records/{key}/history` | the audit log and record histories, see [Audit log](../digging-deeper/audit-log.md#viewing-the-log) |
 
 Options are available to users who may use the field. When a record-level
 policy hides more than 1,000 candidates before 50 visible ones are found, the

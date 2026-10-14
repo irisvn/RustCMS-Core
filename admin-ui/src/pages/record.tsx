@@ -6,6 +6,7 @@ import { ApiError } from "@/api/client";
 import { useUncertain } from "@/api/context";
 import { type Via, useDeleteRecord, useRecord, useSaveRecord, useSchema } from "@/api/queries";
 import { RelationSection, withoutInput } from "./relations";
+import { RecordHistory } from "./audit";
 import type { Envelope, InputSchema, ResourceSchema } from "@/api/types";
 import { ErrorState, Loading, PausedBanner, VersionBanner, compatibility } from "@/components/states";
 import { Alert } from "@/components/ui/alert";
@@ -341,6 +342,7 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
       {(s.relations ?? []).map((relation) => (
         <RelationSection key={relation.name} parent={slug} record={recordKey} relation={relation} />
       ))}
+      {s.abilities.history && <RecordHistory slug={slug} recordKey={recordKey} />}
       <Link to="/r/$slug" params={{ slug }} className={buttonVariants({ variant: "ghost", className: "self-start" })}>
         {t("record.back", { resource: s.resource.pluralLabel.toLocaleLowerCase() })}
       </Link>

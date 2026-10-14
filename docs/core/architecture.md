@@ -48,7 +48,7 @@ on the admin engine, so it can change without touching them.
 | `engine/adapter/` | `ResourceAdapter<R>`: `input` (acceptance), `references` (checks after hooks), `read`, `write` (transactions, locks), `schema`, `operations` (the `DynResource` impl), `audit` (snapshots, redaction, entries) |
 | `http/` | routes and handlers: `resources`, `relations`, `actions`, `extract` (`AdminCtx`) |
 | `contract/` | the DTOs the SPA receives (`ResourceSchema`, …); also reachable as `schema` |
-| `features/` | built-in features: `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
+| `features/` | built-in features: `audit` (log viewer, record history), `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
 
 ### rustcms-auth
 

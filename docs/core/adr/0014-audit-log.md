@@ -58,6 +58,20 @@ make a valid write fail.
 - Applications record their own events with `ctx.audit` (hooks, actions) or
   `audit::record` (their routes), in their transaction.
 
+## Viewer (M14b)
+
+- Row-level filtering of the whole log was rejected: skipping rows after a
+  query leaks through empty pages, cursors and timing, and resources' policies
+  cannot be evaluated for deleted records or removed resources. Instead:
+  - the full log is for auditors (`audit.view_all`), filtered only in SQL
+    (`auth.*`, `jwt.*`, `token.*` need `audit.view_auth`, which also shows
+    addresses);
+  - a record's history (`audit.view` + `view` on the record, checked as on
+    its page) lists only engine events, by an SQL allowlist, projected to the
+    fields the viewer may read; meta keeps only an action's result.
+- Credentials are shown by kind; actor names need `users.view_any`.
+  Framework subject names are reserved resource slugs.
+
 ## Consequences
 
 - Every engine write does one more read (the reload) and one insert; an
@@ -67,6 +81,5 @@ make a valid write fail.
 - Auth events can be lost on a crash between the session write and the
   entry; data changes cannot.
 - The log is append-only for the application, not tamper-proof against
-  database writers. A viewer in the panel, and shipping entries elsewhere
-  (outbox), come later.
+  database writers. Shipping entries elsewhere (outbox) comes later.
 - Tests that build tables from entities need `audit_logs` too.

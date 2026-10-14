@@ -510,7 +510,11 @@ createUsers: boolean,
 /**
  * May create roles (`roles.create`).
  */
-createRoles: boolean, };
+createRoles: boolean, 
+/**
+ * The audit log (`audit.view_all`).
+ */
+audit: boolean, };
 
 export type RoleRef = { 
 /**
@@ -674,6 +678,86 @@ version: string,
  * What the user may do.
  */
 abilities: SettingsAbilities, };
+
+export type AuditActorView = { 
+/**
+ * `user`, `system` or `guest`.
+ */
+kind: string, 
+/**
+ * User id (string).
+ */
+id?: string, 
+/**
+ * Name, for viewers who may list users.
+ */
+name?: string, 
+/**
+ * How they were signed in: `session`, `token`, `jwt` or `console`.
+ */
+credential?: string, };
+
+export type AuditEntryView = { 
+/**
+ * Entry id.
+ */
+id: string, 
+/**
+ * When (RFC 3339).
+ */
+at: string, 
+/**
+ * What happened.
+ */
+event: string, 
+/**
+ * What it is about (resource slug, `user`, `role`, `settings`, …).
+ */
+subjectType: string, 
+/**
+ * Which one.
+ */
+subjectKey?: string, 
+/**
+ * Who.
+ */
+actor: AuditActorView, 
+/**
+ * Client address (`audit.view_auth`).
+ */
+ip?: string, 
+/**
+ * Client user agent (`audit.view_auth`).
+ */
+userAgent?: string, 
+/**
+ * Request id.
+ */
+requestId?: string, 
+/**
+ * `{field: [old, new]}`.
+ */
+changes?: Record<string, JsonValue>, 
+/**
+ * Facts of the event.
+ */
+meta?: Record<string, JsonValue>, };
+
+export type AuditPageMeta = { 
+/**
+ * Pass as `cursor` for older entries; absent on the last page.
+ */
+nextCursor?: string, };
+
+export type AuditPage = { 
+/**
+ * Entries.
+ */
+data: Array<AuditEntryView>, 
+/**
+ * Continuation.
+ */
+meta: AuditPageMeta, };
 
 export type PanelResponse = { 
 /**

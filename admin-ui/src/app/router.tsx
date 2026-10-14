@@ -17,6 +17,7 @@ import { FormPage, ViewPage } from "@/pages/record";
 import { Dashboard, Shell } from "@/pages/shell";
 import { AccountPage } from "@/pages/account";
 import { SettingsPage } from "@/pages/settings";
+import { AuditLogPage } from "@/pages/audit";
 import { RoleCreatePage, RolePage, RolesPage, UserCreatePage, UserPage, UsersPage } from "@/pages/system";
 import type { Session } from "./session";
 
@@ -132,6 +133,7 @@ const systemRole = createRoute({
     return <RolePage key={id} id={id} />;
   },
 });
+const systemAudit = createRoute({ getParentRoute: () => app, path: "/system/audit", component: AuditLogPage });
 const settings = createRoute({
   getParentRoute: () => app,
   path: "/settings/$group",
@@ -156,6 +158,7 @@ const routeTree = root.addChildren([
     systemRoles,
     systemRoleCreate,
     systemRole,
+    systemAudit,
     settings,
     account,
   ]),

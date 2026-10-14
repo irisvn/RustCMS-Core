@@ -19,7 +19,7 @@ pub mod ui;
 pub use contract as schema;
 pub(crate) use engine::adapter;
 pub use engine::{context, idempotency, registry, wire};
-pub use features::{media, rich_text, settings, system};
+pub use features::{audit, media, rich_text, settings, system};
 pub(crate) use panel::provider;
 pub use panel::spa;
 pub use resources::{action, field, policy, resource};

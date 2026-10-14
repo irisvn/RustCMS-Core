@@ -1,6 +1,7 @@
 {
   "abilities": {
     "create": true,
+    "history": true,
     "viewAny": true
   },
   "form": {

@@ -513,6 +513,60 @@ status = 404
 body = '{"title": "x"}'
 
 [[case]]
+route = "GET /admin/api/audit"
+path = "/admin/api/audit"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/audit"
+path = "/admin/api/audit?per_page=oops"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/audit"
+path = "/admin/api/audit"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/audit"
+path = "/admin/api/audit"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/audit"
+path = "/admin/api/audit"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/history"
+path = "/admin/api/resources/posts/records/{own}/history"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/history"
+path = "/admin/api/resources/posts/records/{own}/history"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/history"
+path = "/admin/api/resources/posts/records/{own}/history"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/history"
+path = "/admin/api/resources/posts/records/{own}/history"
+actor = "guest"
+status = 401
+
+[[case]]
 route = "GET /admin/api/settings/{group}"
 path = "/admin/api/settings/general"
 actor = "guest"

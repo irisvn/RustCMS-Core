@@ -13,6 +13,18 @@ All notable changes are documented here. The format follows
   (architecture, admin protocol, ADRs, reports, this changelog, review
   checklist, contributor guides). `CHANGELOG.md` moved to `docs/core/`.
 
+### Added (0.3 — M14b)
+- **Audit log viewer**: System → Audit log (`audit.view_all`; sign-in
+  families and addresses with `audit.view_auth`), filters and keyset paging in
+  SQL; **History** on record pages (`audit.view` + record `view`), readable
+  fields only. Routes `GET {admin}/api/audit` and
+  `…/records/{key}/history`; `SystemLinks.audit`; schema ability `history`.
+
+### Changed (0.3 — M14b)
+- Resource slugs `user`, `role`, `permission`, `settings`, `session` are reserved.
+- Audit entries store instants in microseconds; a key that looks like a
+  shortened key is shortened too (stored keys are one to one).
+
 ### Added (0.3 — M14a)
 - **Settings pages** (ADR 0015): groups as Rust structs (`rustcms::settings::
   Settings`, `get`, `load`), edited in the panel (`AdminProvider::settings`,

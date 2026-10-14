@@ -116,12 +116,14 @@ export function retryPending(session: Session, slug: string): Promise<{ result: 
   });
 }
 
-/** After any write: lists, records, schemas (abilities) and relationship options may have changed. */
+/** After any write: lists, records, schemas (abilities), relationship options and the audit log may have changed. */
 function invalidateAfterWrite(client: ReturnType<typeof useQueryClient>, slug: string) {
   return Promise.all([
     client.invalidateQueries({ queryKey: keys.records(slug) }),
     client.invalidateQueries({ queryKey: ["schema", slug] }),
     client.invalidateQueries({ queryKey: ["options"] }),
+    client.invalidateQueries({ queryKey: ["history", slug] }),
+    client.invalidateQueries({ queryKey: ["audit"] }),
   ]);
 }
 
