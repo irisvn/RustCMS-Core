@@ -4,6 +4,8 @@
 
 use sea_orm_migration::prelude::*;
 
+use crate::schema::{add_column, create_index};
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -14,24 +16,26 @@ impl MigrationTrait for Migration {
     }
 
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Sessions::Table)
-                    .add_column(ColumnDef::new(Sessions::Lineage).string_len(64).null())
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .create_index(
-                Index::create().name("sessions_lineage_idx").table(Sessions::Table).col(Sessions::Lineage).to_owned(),
-            )
-            .await
+        add_column(manager, Sessions::Table, ColumnDef::new(Sessions::Lineage).string_len(64).null()).await?;
+        create_index(
+            manager,
+            Sessions::Table,
+            Index::create().name("sessions_lineage_idx").table(Sessions::Table).col(Sessions::Lineage).to_owned(),
+        )
+        .await
     }
 
+    /// Each step is skipped when done (MySQL commits DDL statement by statement).
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager.drop_index(Index::drop().name("sessions_lineage_idx").table(Sessions::Table).to_owned()).await?;
-        manager.alter_table(Table::alter().table(Sessions::Table).drop_column(Sessions::Lineage).to_owned()).await
+        if manager.has_index("sessions", "sessions_lineage_idx").await? {
+            manager.drop_index(Index::drop().name("sessions_lineage_idx").table(Sessions::Table).to_owned()).await?;
+        }
+        if manager.has_column("sessions", "lineage").await? {
+            manager
+                .alter_table(Table::alter().table(Sessions::Table).drop_column(Sessions::Lineage).to_owned())
+                .await?;
+        }
+        Ok(())
     }
 }
 

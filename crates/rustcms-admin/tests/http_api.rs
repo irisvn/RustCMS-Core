@@ -449,7 +449,7 @@ impl rustcms_admin::Policy for LockSessionsPolicy {
             let (locked, ready) = tokio::sync::oneshot::channel();
             let db = ctx.db.clone();
             tokio::spawn(async move {
-                let txn = if db.get_database_backend() == DbBackend::Postgres {
+                let txn = if db.get_database_backend() != DbBackend::Sqlite {
                     let txn = db.begin().await.unwrap();
                     txn.execute_unprepared("SELECT id FROM sessions FOR UPDATE").await.unwrap();
                     txn

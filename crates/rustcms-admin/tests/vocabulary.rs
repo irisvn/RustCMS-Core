@@ -68,9 +68,9 @@ fn data(value: Value) -> Data {
 }
 
 async fn items(db: &TestDb) -> (Ctx, std::sync::Arc<dyn rustcms_admin::DynResource>) {
-    use sea_orm::{ConnectionTrait, Schema};
+    use sea_orm::Schema;
     let backend = db.conn().get_database_backend();
-    db.conn().execute(&Schema::new(backend).create_table_from_entity(item::Entity)).await.unwrap();
+    rustcms_testing::create_table(db.conn(), &Schema::new(backend).create_table_from_entity(item::Entity)).await;
     let registry = Registry::new().register::<Items>().finish();
     let ctx = Ctx::new(db.conn().clone(), admin(), registry.clone());
     (ctx, registry.get("items").unwrap().clone())
@@ -221,9 +221,9 @@ impl Resource for ApiOnlyKeyValue {
 }
 
 db_test!(key_value_bounds_do_not_depend_on_the_form, |db: TestDb| async move {
-    use sea_orm::{ConnectionTrait, Schema};
+    use sea_orm::Schema;
     let backend = db.conn().get_database_backend();
-    db.conn().execute(&Schema::new(backend).create_table_from_entity(item::Entity)).await.unwrap();
+    rustcms_testing::create_table(db.conn(), &Schema::new(backend).create_table_from_entity(item::Entity)).await;
     let registry = Registry::new().register::<ApiOnlyKeyValue>().finish();
     let ctx = Ctx::new(db.conn().clone(), admin(), registry.clone());
     let items = registry.get("api_only").unwrap();
@@ -283,4 +283,44 @@ impl Resource for HeavyProps {
 #[should_panic(expected = "exceed 4 KiB")]
 fn widget_props_are_bounded() {
     let _ = Registry::new().register::<HeavyProps>();
+}
+
+pub mod defaulted {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "defaulted")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i32,
+        /// A JSON default: never shown as a form default, but still stored.
+        #[sea_orm(default_value = "{\"type\":\"doc\",\"content\":[]}")]
+        pub body: Option<Json>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+struct DefaultedRichText;
+
+impl Resource for DefaultedRichText {
+    type Entity = defaulted::Entity;
+    const SLUG: &'static str = "defaulted";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Defaulted")
+    }
+
+    fn fields() -> Vec<Field> {
+        vec![Field::make("body").rich_text()]
+    }
+}
+
+#[test]
+#[should_panic(expected = "may not have a column default")]
+fn rich_text_columns_have_no_default_of_any_kind() {
+    let _ = Registry::new().register::<DefaultedRichText>();
 }

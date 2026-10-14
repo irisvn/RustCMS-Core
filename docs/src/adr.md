@@ -11,3 +11,4 @@ Architecture decisions live in [`docs/adr/`](https://github.com/irisvn/rustcms/t
 - 0007 — Idempotency keys for creates and actions
 - 0008 — Media storage and rich text documents
 - 0009 — Has-many relations and extension widgets
+- 0010 — MySQL as a third database

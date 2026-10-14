@@ -31,6 +31,11 @@ must serve every resource through the same routes without generics in handlers.
 - Action closures need an explicit `Vec<Model>` annotation (HRTB inference); revisit
   in M3 with a typed builder.
 
+## 0.2
+
+MySQL is the third database (ADR 0010); the engine has no MySQL-specific code
+beyond search SQL, point row locks and constraint-name mapping.
+
 ## M0 evidence
 
 `crates/rustcms-admin/tests/engine.rs`: 10 scenarios × {SQLite file, PostgreSQL 17},

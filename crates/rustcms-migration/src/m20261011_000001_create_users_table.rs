@@ -1,5 +1,7 @@
 use sea_orm_migration::prelude::*;
 
+use crate::schema::{ColumnDefExt, create_index, create_table};
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -12,41 +14,32 @@ impl MigrationTrait for Migration {
     }
 
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .create_table(
-                Table::create()
-                    .table(Users::Table)
-                    .col(ColumnDef::new(Users::Id).big_integer().not_null().auto_increment().primary_key())
-                    .col(ColumnDef::new(Users::Name).string_len(255).not_null())
-                    .col(ColumnDef::new(Users::Email).string_len(255).not_null())
-                    .col(ColumnDef::new(Users::Password).string_len(255).not_null())
-                    .col(ColumnDef::new(Users::IsActive).boolean().not_null().default(true))
-                    .col(ColumnDef::new(Users::AuthVersion).big_integer().not_null().default(0))
-                    .col(ColumnDef::new(Users::EmailVerifiedAt).timestamp_with_time_zone().null())
-                    .col(
-                        ColumnDef::new(Users::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .col(
-                        ColumnDef::new(Users::UpdatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .create_index(
-                Index::create().name("users_email_key").table(Users::Table).col(Users::Email).unique().to_owned(),
-            )
-            .await
+        create_table(
+            manager,
+            Table::create()
+                .table(Users::Table)
+                .col(ColumnDef::new(Users::Id).big_integer().not_null().auto_increment().primary_key())
+                .col(ColumnDef::new(Users::Name).string_len(255).not_null())
+                .col(ColumnDef::new(Users::Email).string_len(255).not_null())
+                .col(ColumnDef::new(Users::Password).string_len(255).not_null())
+                .col(ColumnDef::new(Users::IsActive).boolean().not_null().default(true))
+                .col(ColumnDef::new(Users::AuthVersion).big_integer().not_null().default(0))
+                .col(ColumnDef::new(Users::EmailVerifiedAt).instant(manager).null())
+                .col(ColumnDef::new(Users::CreatedAt).instant_now(manager).not_null())
+                .col(ColumnDef::new(Users::UpdatedAt).instant_now(manager).not_null())
+                .to_owned(),
+        )
+        .await?;
+        create_index(
+            manager,
+            Users::Table,
+            Index::create().name("users_email_key").table(Users::Table).col(Users::Email).unique().to_owned(),
+        )
+        .await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager.drop_table(Table::drop().table(Users::Table).to_owned()).await
+        manager.drop_table(Table::drop().table(Users::Table).if_exists().to_owned()).await
     }
 }
 

@@ -11,9 +11,10 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = ["sqlite", "postgres"]
+default = ["sqlite", "postgres", "mysql"]
 sqlite = ["rustcms-core/sqlite", "rustcms-admin/sqlite"]
 postgres = ["rustcms-core/postgres", "rustcms-admin/postgres"]
+mysql = ["rustcms-core/mysql", "rustcms-admin/mysql"]
 # S3-compatible storage for uploads (`storage.disk = "s3"`).
 s3 = ["rustcms-core/s3"]
 

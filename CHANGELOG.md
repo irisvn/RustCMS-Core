@@ -6,6 +6,33 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.2 — M10)
+- **MySQL 8.4** as a third database (feature `mysql`, on by default in
+  `rustcms`). Connections use UTC and `utf8mb4_0900_bin`; write transactions run
+  `READ COMMITTED`. `rustcms_core::db::check` refuses a database, string column
+  or table that is not `utf8mb4_0900_bin` / InnoDB / strict (with the SQL to fix
+  it), when the app builds and before `migrate`. MariaDB is not supported.
+- `rustcms_core::db::xact_lock` / `lock_slot` (named transaction locks: advisory
+  on PostgreSQL, a preseeded `rustcms_locks` row on MySQL) and
+  `set_lock_wait`; framework migration `rustcms_locks`.
+- Migration helpers in `rustcms::migration`: `create_table`, `create_index`,
+  `add_column`, `drop_column`, `drop_table`, `ColumnDefExt::{instant, instant_now,
+  local_date_time}` (instants are `DATETIME(6)` on MySQL). Framework migrations
+  can be re-run after a partial failure.
+- Tests: `db_test!` runs on SQLite, PostgreSQL and MySQL (`RUSTCMS_TEST_MYSQL`);
+  `RUSTCMS_TEST_REQUIRE` fails a skipped server; `rustcms_testing::create_table`.
+  docker compose and CI run MySQL 8.4. ADR 0010.
+
+### Fixed (0.2 — M10)
+- Idempotency claims take the user's lock before reading the receipt: two
+  requests can no longer both replace an expired, unpruned receipt, and a retry
+  racing the request that used the last key of the quota replays instead of
+  getting 429 (all databases).
+- Media and rich text columns are refused with any entity default (JSON and
+  expression defaults were missed).
+- Lock wait timeouts, deadlocks and serialization failures of MySQL (and
+  PostgreSQL 40001) answer 409 `write_conflict`.
+
 ### Added (0.2 — M9)
 - **Has-many relations** (`Resource::relations()`,
   `Relation::has_many(name, target, field)`): the parent's view page lists the

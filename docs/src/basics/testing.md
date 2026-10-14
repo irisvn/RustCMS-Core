@@ -13,7 +13,7 @@ db_test!(lists_posts, migrate = Migrator, |db: TestDb| async move {
 });
 ```
 
-`db_test!` generates two tests, `…::sqlite` and `…::postgres`.
+`db_test!` generates three tests, `…::sqlite`, `…::postgres` and `…::mysql`.
 
 ## Databases
 
@@ -25,8 +25,18 @@ db_test!(lists_posts, migrate = Migrator, |db: TestDb| async move {
   database and cloned per test. After editing an unreleased migration in place,
   drop the templates (`just test-reset-db`).
 
-Without `RUSTCMS_TEST_PG`, the PostgreSQL variants print a skip notice and pass.
-CI always sets it.
+- **MySQL:** set `RUSTCMS_TEST_MYSQL` to an admin URL, e.g.
+  `mysql://root:mysql@localhost:53306/mysql`. Each test gets its own database
+  (`utf8mb4_0900_bin`); with `migrate = M`, a migrated template is built once and
+  its tables (with their foreign keys) and rows are copied per test.
+- Tables built from entities (`Schema::create_table_from_entity`) go through
+  `rustcms_testing::create_table`, which gives MySQL the same instants as
+  migrations (`DATETIME(6)`).
+
+Without `RUSTCMS_TEST_PG` / `RUSTCMS_TEST_MYSQL`, those variants print a skip
+notice and pass, unless `RUSTCMS_TEST_REQUIRE` lists them (`postgres,mysql`):
+then they fail. CI sets all three. `just test-matrix` starts both servers
+(`docker compose`).
 
 ## HTTP helpers
 

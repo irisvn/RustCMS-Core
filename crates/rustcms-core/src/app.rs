@@ -228,6 +228,7 @@ impl AppBuilder {
 
     /// Builds the app on an existing connection (tests, tools).
     pub async fn build_with_db(self, db: DatabaseConnection) -> anyhow::Result<App> {
+        crate::db::check(&db, true).await?;
         let state = AppState(Arc::new(StateInner { config: self.config, db, services: self.services }));
         for provider in &self.providers {
             provider.boot(&state).await?;

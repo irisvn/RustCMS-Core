@@ -429,6 +429,9 @@ pub(crate) async fn upload(
     media.storage.put_file(&storage_key, &staged.path, mime).await?;
 
     let txn = rustcms_core::db::begin_write(&ctx.db).await?;
+    if claim.is_some() {
+        crate::idempotency::bound_claim_wait(&txn).await?;
+    }
     if let Some(claim) = &claim
         && !crate::idempotency::acquire(&txn, claim).await?
     {

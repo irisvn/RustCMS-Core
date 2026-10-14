@@ -10,17 +10,20 @@ impl MigrationTrait for Migration {
     }
 
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .create_table(
-                Table::create()
-                    .table(Categories::Table)
-                    .col(ColumnDef::new(Categories::Id).integer().not_null().auto_increment().primary_key())
-                    .col(ColumnDef::new(Categories::Name).string_len(120).not_null())
-                    .col(ColumnDef::new(Categories::Slug).string_len(120).not_null())
-                    .index(Index::create().name("categories_slug_key").col(Categories::Slug).unique())
-                    .to_owned(),
-            )
-            .await?;
+        create_table(
+            manager,
+            Table::create()
+                .table(Categories::Table)
+                .col(ColumnDef::new(Categories::Id).integer().not_null().auto_increment().primary_key())
+                .col(ColumnDef::new(Categories::Name).string_len(120).not_null())
+                .col(ColumnDef::new(Categories::Slug).string_len(120).not_null())
+                .index(Index::create().name("categories_slug_key").col(Categories::Slug).unique())
+                .to_owned(),
+        )
+        .await?;
+        if manager.get_database_backend() == sea_orm::DbBackend::MySql {
+            return mysql_up(manager).await;
+        }
         // Rebuild `posts` with the new columns and a real foreign key (SQLite cannot
         // add constraints to an existing table): deleting a category clears it on posts.
         // Ids never go backwards: the highest id ever issued carries over.
@@ -36,19 +39,9 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Posts::CategoryId).integer().null())
                     .col(ColumnDef::new(Posts::AuthorId).big_integer().null())
                     .col(ColumnDef::new(Posts::Published).boolean().not_null().default(false))
-                    .col(ColumnDef::new(Posts::PublishedAt).timestamp_with_time_zone().null())
-                    .col(
-                        ColumnDef::new(Posts::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .col(
-                        ColumnDef::new(Posts::UpdatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
+                    .col(ColumnDef::new(Posts::PublishedAt).instant(manager).null())
+                    .col(ColumnDef::new(Posts::CreatedAt).instant_now(manager).not_null())
+                    .col(ColumnDef::new(Posts::UpdatedAt).instant_now(manager).not_null())
                     .foreign_key(
                         ForeignKey::create()
                             .name("posts_category_id_fkey")
@@ -74,6 +67,9 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        if manager.get_database_backend() == sea_orm::DbBackend::MySql {
+            return mysql_down(manager).await;
+        }
         // Posts keep their ids and timestamps; the content columns are dropped.
         lock_posts(manager).await?;
         let high_water = id_high_water(manager).await?;
@@ -82,18 +78,8 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(PostsNew::Table)
                     .col(ColumnDef::new(Posts::Id).big_integer().not_null().auto_increment().primary_key())
-                    .col(
-                        ColumnDef::new(Posts::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .col(
-                        ColumnDef::new(Posts::UpdatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
+                    .col(ColumnDef::new(Posts::CreatedAt).instant_now(manager).not_null())
+                    .col(ColumnDef::new(Posts::UpdatedAt).instant_now(manager).not_null())
                     .to_owned(),
             )
             .await?;
@@ -111,6 +97,62 @@ impl MigrationTrait for Migration {
         restore_id_high_water(manager, high_water).await?;
         manager.drop_table(Table::drop().table(Categories::Table).to_owned()).await
     }
+}
+
+/// MySQL changes `posts` in place (it can add constraints to an existing table):
+/// no copy, so no write can be lost between a copy and a swap, and ids stay as
+/// they are. Each step is skipped when already done (MySQL commits DDL statement
+/// by statement, so a failed run is retried on a partly changed table).
+async fn mysql_up(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    let columns = [
+        ColumnDef::new(Posts::Title).string_len(200).not_null().default("").to_owned(),
+        ColumnDef::new(Posts::Body).text().null().to_owned(),
+        ColumnDef::new(Posts::CategoryId).integer().null().to_owned(),
+        ColumnDef::new(Posts::AuthorId).big_integer().null().to_owned(),
+        ColumnDef::new(Posts::Published).boolean().not_null().default(false).to_owned(),
+        ColumnDef::new(Posts::PublishedAt).instant(manager).null().to_owned(),
+    ];
+    for mut column in columns {
+        add_column(manager, Posts::Table, &mut column).await?;
+    }
+    if !mysql_has_foreign_key(manager).await? {
+        manager
+            .create_foreign_key(
+                ForeignKey::create()
+                    .name("posts_category_id_fkey")
+                    .from(Posts::Table, Posts::CategoryId)
+                    .to(Categories::Table, Categories::Id)
+                    .on_delete(ForeignKeyAction::SetNull)
+                    .to_owned(),
+            )
+            .await?;
+    }
+    Ok(())
+}
+
+async fn mysql_down(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    if mysql_has_foreign_key(manager).await? {
+        manager
+            .drop_foreign_key(ForeignKey::drop().name("posts_category_id_fkey").table(Posts::Table).to_owned())
+            .await?;
+    }
+    for column in [Posts::Title, Posts::Body, Posts::CategoryId, Posts::AuthorId, Posts::Published, Posts::PublishedAt]
+    {
+        drop_column(manager, Posts::Table, column).await?;
+    }
+    drop_table(manager, Categories::Table).await
+}
+
+async fn mysql_has_foreign_key(manager: &SchemaManager<'_>) -> Result<bool, DbErr> {
+    let found = manager
+        .get_connection()
+        .query_one_raw(sea_orm::Statement::from_string(
+            sea_orm::DbBackend::MySql,
+            "SELECT 1 FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() \
+             AND TABLE_NAME = 'posts' AND CONSTRAINT_NAME = 'posts_category_id_fkey'",
+        ))
+        .await?;
+    Ok(found.is_some())
 }
 
 /// Keeps writers out of `posts` until the migration commits, so no write lands

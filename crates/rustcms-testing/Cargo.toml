@@ -11,9 +11,9 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-rustcms-core = { workspace = true, features = ["sqlite", "postgres"] }
+rustcms-core = { workspace = true, features = ["sqlite", "postgres", "mysql"] }
 rustcms-auth.workspace = true
-sea-orm = { workspace = true, features = ["sqlx-sqlite", "sqlx-postgres"] }
+sea-orm = { workspace = true, features = ["sqlx-sqlite", "sqlx-postgres", "sqlx-mysql"] }
 sea-orm-migration.workspace = true
 async-trait.workspace = true
 axum.workspace = true

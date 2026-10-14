@@ -149,12 +149,11 @@ impl From<ValidationErrors> for AppError {
 }
 
 impl From<sea_orm::DbErr> for AppError {
-    /// Lock waits that timed out, a busy SQLite database and deadlocks roll the
-    /// write back: 409 `write_conflict` (nothing applied, retryable). Anything
-    /// else is an internal error.
+    /// Lock waits that timed out, a busy SQLite database, deadlocks and
+    /// serialization failures roll the write back: 409 `write_conflict` (nothing
+    /// applied, retryable). Anything else is an internal error.
     fn from(err: sea_orm::DbErr) -> Self {
-        let text = err.to_string();
-        if text.contains("lock timeout") || text.contains("database is locked") || text.contains("deadlock detected") {
+        if retryable(&err) {
             return Self::Conflict {
                 code: "write_conflict",
                 message: "Another change to the same data is in progress. Nothing was saved; try again.",
@@ -162,6 +161,49 @@ impl From<sea_orm::DbErr> for AppError {
         }
         Self::internal(err)
     }
+}
+
+/// Whether the database rolled the write back because of other writers: lock
+/// wait timeouts, deadlocks, serialization failures, a busy SQLite database.
+/// Decided by SQLSTATE (PostgreSQL) and error number (MySQL) where the driver
+/// gives one, by the message otherwise.
+fn retryable(err: &sea_orm::DbErr) -> bool {
+    #[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
+    if let Some(retryable) = retryable_code(err) {
+        return retryable;
+    }
+    const MESSAGES: [&str; 6] = [
+        "lock timeout",
+        "deadlock detected",
+        "could not serialize access",
+        "database is locked",
+        "Lock wait timeout exceeded",
+        "Deadlock found when trying to get lock",
+    ];
+    let text = err.to_string();
+    MESSAGES.iter().any(|m| text.contains(m))
+}
+
+/// The driver's verdict, when it has one (`None`: decide by the message).
+#[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
+fn retryable_code(err: &sea_orm::DbErr) -> Option<bool> {
+    use sea_orm::{DbErr, RuntimeErr};
+    if let DbErr::Exec(RuntimeErr::SqlxError(e))
+    | DbErr::Query(RuntimeErr::SqlxError(e))
+    | DbErr::Conn(RuntimeErr::SqlxError(e)) = err
+        && let sea_orm::sqlx::Error::Database(db) = e.as_ref()
+    {
+        #[cfg(feature = "mysql")]
+        if let Some(mysql) = db.try_downcast_ref::<sea_orm::sqlx::mysql::MySqlDatabaseError>() {
+            // 1205 lock wait timeout, 1213 deadlock, 3572 NOWAIT.
+            return Some(matches!(mysql.number(), 1205 | 1213 | 3572));
+        }
+        // PostgreSQL: lock timeout, deadlock, serialization failure.
+        if matches!(db.code().as_deref(), Some("55P03" | "40P01" | "40001")) {
+            return Some(true);
+        }
+    }
+    None
 }
 
 #[derive(Serialize)]

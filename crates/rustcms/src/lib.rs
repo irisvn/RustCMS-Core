@@ -23,6 +23,9 @@ pub use async_trait::async_trait;
 /// Migrations: the SeaORM migration prelude plus the framework's own migrations.
 pub mod migration {
     pub use rustcms_migration::migrations as framework;
+    pub use rustcms_migration::schema::{
+        ColumnDefExt, add_column, create_index, create_table, drop_column, drop_table,
+    };
     pub use sea_orm_migration::prelude::*;
 }
 

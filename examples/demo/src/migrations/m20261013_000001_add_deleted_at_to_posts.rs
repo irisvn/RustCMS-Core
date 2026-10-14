@@ -11,18 +11,11 @@ impl MigrationTrait for Migration {
 
     /// Soft deletes for posts: deleting sets `deleted_at` (see `PostResource`).
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Posts::Table)
-                    .add_column(ColumnDef::new(Posts::DeletedAt).timestamp_with_time_zone().null())
-                    .to_owned(),
-            )
-            .await
+        add_column(manager, Posts::Table, ColumnDef::new(Posts::DeletedAt).instant(manager).null()).await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager.alter_table(Table::alter().table(Posts::Table).drop_column(Posts::DeletedAt).to_owned()).await
+        drop_column(manager, Posts::Table, Posts::DeletedAt).await
     }
 }
 

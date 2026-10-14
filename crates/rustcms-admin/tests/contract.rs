@@ -153,6 +153,15 @@ async fn registry(db: &TestDb) -> Arc<Registry> {
         schema.create_table_from_entity(rustcms_admin::media::entity::Entity),
         schema.create_table_from_entity(support::note::Entity),
     ] {
+        if db.backend() == rustcms_testing::Backend::Mysql {
+            // MySQL only takes an expression default on a JSON column.
+            let sql = statement.to_string(sea_orm::sea_query::MysqlQueryBuilder);
+            let sql = sql
+                .replace("DEFAULT '[\\\"red\\\"]'", "DEFAULT ('[\\\"red\\\"]')")
+                .replace(" timestamp", " datetime(6)");
+            db.conn().execute_unprepared(&sql).await.unwrap();
+            continue;
+        }
         db.conn().execute(&statement).await.unwrap();
     }
     Registry::new()

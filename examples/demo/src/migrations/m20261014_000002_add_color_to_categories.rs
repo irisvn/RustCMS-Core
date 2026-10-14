@@ -11,18 +11,11 @@ impl MigrationTrait for Migration {
 
     /// A label color for categories, edited with the demo's custom widget.
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Categories::Table)
-                    .add_column(ColumnDef::new(Categories::Color).string_len(7).null())
-                    .to_owned(),
-            )
-            .await
+        add_column(manager, Categories::Table, ColumnDef::new(Categories::Color).string_len(7).null()).await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager.alter_table(Table::alter().table(Categories::Table).drop_column(Categories::Color).to_owned()).await
+        drop_column(manager, Categories::Table, Categories::Color).await
     }
 }
 

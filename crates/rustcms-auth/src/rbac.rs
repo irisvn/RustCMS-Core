@@ -234,7 +234,8 @@ impl<'a> RbacService<'a> {
     async fn begin(&self, actor: Actor<'_>) -> AppResult<(DatabaseTransaction, Fresh)> {
         let txn = rustcms_core::db::begin_write(self.db).await?;
         if txn.get_database_backend() == DbBackend::Postgres {
-            // A stuck lock holder must not pin every RBAC request (and the pool) forever.
+            // A stuck lock holder must not pin every RBAC request (and the pool) forever
+            // (MySQL: `begin_write` sets the same wait).
             txn.execute_unprepared("SET LOCAL lock_timeout = '10s'").await?;
         }
         lock(&txn).await?;
@@ -245,7 +246,7 @@ impl<'a> RbacService<'a> {
                 // The actor's row is held (shared) until commit, so revoking their
                 // credentials waits for this change, or this change sees it.
                 let mut find = user::Entity::find_by_id(id);
-                if txn.get_database_backend() == DbBackend::Postgres {
+                if txn.get_database_backend() != DbBackend::Sqlite {
                     find = find.lock_shared();
                 }
                 let user = find
@@ -1017,11 +1018,11 @@ async fn find_role<C: ConnectionTrait>(db: &C, actor: Actor<'_>, role_id: i64) -
     find.one(db).await?.ok_or(AppError::NotFound)
 }
 
-/// The user row, locked until commit on PostgreSQL (SQLite writers are already serialized),
+/// The user row, locked until commit (SQLite writers are already serialized),
 /// so checks and writes see the same version even against writers outside RBAC.
 async fn lock_user(txn: &DatabaseTransaction, user_id: i64) -> AppResult<user::Model> {
     let mut find = user::Entity::find_by_id(user_id);
-    if txn.get_database_backend() == DbBackend::Postgres {
+    if txn.get_database_backend() != DbBackend::Sqlite {
         find = find.lock_exclusive();
     }
     find.one(txn).await?.ok_or(AppError::NotFound)
@@ -1183,19 +1184,12 @@ async fn super_admin_guards<C: ConnectionTrait>(db: &C, user_id: i64) -> AppResu
         .collect())
 }
 
-/// Advisory lock id serializing every RBAC change on PostgreSQL.
-const RBAC_LOCK: i64 = 0x7262_6163_5f6c_6f63;
-
-/// Serializes RBAC changes for the rest of the transaction: a transaction-scoped
-/// advisory lock on PostgreSQL; on SQLite the [`rustcms_core::db::begin_write`]
-/// transaction already holds the database write lock. Every [`RbacService`]
-/// change takes it first, so checks and writes of concurrent changes never
-/// interleave (READ COMMITTED reads after the lock see every earlier change).
-pub async fn lock<C: ConnectionTrait>(db: &C) -> AppResult<()> {
-    if db.get_database_backend() == DbBackend::Postgres {
-        db.execute_unprepared(&format!("SELECT pg_advisory_xact_lock({RBAC_LOCK})")).await?;
-    }
-    Ok(())
+/// Serializes RBAC changes for the rest of the transaction
+/// ([`rustcms_core::db::xact_lock`] on `rbac`). Every [`RbacService`] change
+/// takes it first, so checks and writes of concurrent changes never interleave
+/// (READ COMMITTED reads after the lock see every earlier change).
+pub async fn lock(txn: &DatabaseTransaction) -> AppResult<()> {
+    Ok(rustcms_core::db::xact_lock(txn, "rbac").await?)
 }
 
 /// The actor as of now, read under the RBAC lock.

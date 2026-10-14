@@ -48,6 +48,9 @@ struct ColumnInfo<C> {
     nullable: bool,
     /// Literal default declared on the entity (`default_value`), in wire format.
     default: Option<serde_json::Value>,
+    /// Whether the entity declares any default (also ones not shown, like JSON
+    /// or expression defaults).
+    has_default: bool,
 }
 
 /// Generic implementation of [`DynResource`] for a [`Resource`].
@@ -85,7 +88,9 @@ impl<R: Resource> ResourceAdapter<R> {
                     }
                     _ => None,
                 };
-                Some((column.as_str().to_owned(), ColumnInfo { column, kind, nullable: def.is_null(), default }))
+                let has_default = def.get_column_default().is_some();
+                let info = ColumnInfo { column, kind, nullable: def.is_null(), default, has_default };
+                Some((column.as_str().to_owned(), info))
             })
             .collect();
 
@@ -157,7 +162,7 @@ impl<R: Resource> ResourceAdapter<R> {
             );
             // A default would be stored without passing the reference checks.
             assert!(
-                !(field.rich_text || field.media.is_some()) || columns[&field.name].default.is_none(),
+                !(field.rich_text || field.media.is_some()) || !columns[&field.name].has_default,
                 "resource `{slug}`: media and rich text field `{}` may not have a column default",
                 field.name
             );
@@ -526,13 +531,29 @@ impl<R: Resource> ResourceAdapter<R> {
         let keys: Vec<String> = all.iter().map(uuid::Uuid::to_string).collect();
         let visible = library.keys_in_scope(ctx, txn, &keys).await?;
         let lockable: Vec<uuid::Uuid> = all.iter().copied().filter(|id| visible.contains(&id.to_string())).collect();
-        let mut select =
-            media::Entity::find().filter(media::Column::Id.is_in(lockable)).order_by(media::Column::Id, Order::Asc);
-        if txn.get_database_backend() == DbBackend::Postgres {
-            select = select.lock_shared();
-        }
         // Re-read under the lock: trashed meanwhile means unavailable.
-        let rows: HashMap<uuid::Uuid, media::Model> = select.all(txn).await?.into_iter().map(|m| (m.id, m)).collect();
+        let rows: HashMap<uuid::Uuid, media::Model> = match txn.get_database_backend() {
+            // InnoDB locks while scanning: one point lock per id, in id order (the
+            // byte order of `binary(16)` and of `Uuid`).
+            DbBackend::MySql => {
+                let mut rows = HashMap::new();
+                for id in lockable {
+                    if let Some(m) = media::Entity::find_by_id(id).lock_shared().one(txn).await? {
+                        rows.insert(m.id, m);
+                    }
+                }
+                rows
+            }
+            backend => {
+                let mut select = media::Entity::find()
+                    .filter(media::Column::Id.is_in(lockable))
+                    .order_by(media::Column::Id, Order::Asc);
+                if backend == DbBackend::Postgres {
+                    select = select.lock_shared();
+                }
+                select.all(txn).await?.into_iter().map(|m| (m.id, m)).collect()
+            }
+        };
         let mut errors = ValidationErrors::new();
         for (field, rule, ids) in wanted {
             for id in ids {
@@ -632,7 +653,14 @@ impl<R: Resource> ResourceAdapter<R> {
                 let constraint = self.meta.constraints.iter().find(|c| {
                     let sqlite =
                         c.columns.iter().map(|col| format!("{}.{col}", self.table)).collect::<Vec<_>>().join(", ");
-                    message.contains(&format!("\"{}\"", c.name)) || message.ends_with(&sqlite)
+                    // PostgreSQL quotes the constraint; SQLite lists the columns; MySQL ends
+                    // with `for key 'table.index'`, where a column's own `UNIQUE` index is
+                    // named after the column.
+                    let mysql = |index: &str| message.ends_with(&format!(" for key '{}.{index}'", self.table));
+                    message.contains(&format!("\"{}\"", c.name))
+                        || message.ends_with(&sqlite)
+                        || mysql(&c.name)
+                        || matches!(c.columns.as_slice(), [column] if mysql(column))
                 });
                 let mut errors = ValidationErrors::new();
                 match constraint {
@@ -842,6 +870,15 @@ pub(crate) fn search_match(backend: DbBackend, column: impl ColumnTrait, kind: F
         (DbBackend::Postgres, _) => {
             Expr::cust_with_exprs("LOWER(CAST($1 AS TEXT)) LIKE LOWER($2) ESCAPE '\\'", [column, pattern])
         }
+        // MySQL: `CHAR`, not `TEXT`; a backslash inside a string literal is itself escaped;
+        // UUIDs are `binary(16)`.
+        (DbBackend::MySql, FieldKind::Uuid) => Expr::cust_with_exprs(
+            "LOWER(CONCAT(SUBSTR(HEX(?),1,8),'-',SUBSTR(HEX(?),9,4),'-',SUBSTR(HEX(?),13,4),'-',SUBSTR(HEX(?),17,4),'-',SUBSTR(HEX(?),21))) LIKE LOWER(?) ESCAPE '\\\\'",
+            [column.clone(), column.clone(), column.clone(), column.clone(), column, pattern],
+        ),
+        (DbBackend::MySql, _) => {
+            Expr::cust_with_exprs("LOWER(CAST(? AS CHAR)) LIKE LOWER(?) ESCAPE '\\\\'", [column, pattern])
+        }
         // SQLite stores UUIDs as 16-byte blobs: rebuild the canonical text form
         // the wire format shows (`xxxxxxxx-xxxx-…`), so displayed values match.
         (_, FieldKind::Uuid) => Expr::cust_with_exprs(
@@ -949,8 +986,6 @@ const RESPONSE_MARGIN: std::time::Duration = std::time::Duration::from_millis(25
 /// Longest wait for a written record's envelope before answering with its key
 /// alone (also bounded by the request deadline).
 const POST_COMMIT_HYDRATION: std::time::Duration = std::time::Duration::from_secs(2);
-/// Longest wait for a concurrent request holding the same idempotency key.
-const CLAIM_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Records loaded at a time while checking candidates (bounds memory by row size).
 const LOAD_CHUNK: usize = 100;
 /// Rows read per batch when a list checks records individually.
@@ -1095,14 +1130,8 @@ impl<R: Resource> ResourceAdapter<R> {
     async fn begin(&self, ctx: &Ctx) -> AppResult<(Arc<sea_orm::DatabaseTransaction>, Ctx)> {
         // A busy database (SQLite) or a lock wait timing out: nothing written.
         let txn = rustcms_core::db::begin_write(&ctx.db).await.map_err(crate::idempotency::conflict)?;
-        if ctx.idempotency_key.is_some() && txn.get_database_backend() == DbBackend::Postgres {
-            // A concurrent claim of the same key is waited for, within the request.
-            let wait = rustcms_core::http::request_deadline()
-                .map_or(CLAIM_WAIT, |deadline| {
-                    deadline.saturating_duration_since(tokio::time::Instant::now()).saturating_sub(RESPONSE_MARGIN * 4)
-                })
-                .clamp(std::time::Duration::from_millis(100), CLAIM_WAIT);
-            txn.execute_unprepared(&format!("SET LOCAL lock_timeout = '{}ms'", wait.as_millis())).await?;
+        if ctx.idempotency_key.is_some() {
+            crate::idempotency::bound_claim_wait(&txn).await?;
         }
         let txn = Arc::new(txn);
         let wctx = ctx.within(txn.clone());
@@ -1167,7 +1196,8 @@ impl<R: Resource> ResourceAdapter<R> {
         keys: &[String],
         trashed: Trashed,
     ) -> AppResult<HashSet<String>> {
-        if txn.get_database_backend() != DbBackend::Postgres {
+        let backend = txn.get_database_backend();
+        if backend == DbBackend::Sqlite {
             return Ok(keys.iter().cloned().collect());
         }
         let values = self.decode_keys(keys)?;
@@ -1176,14 +1206,26 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         // Key order: concurrent writes to overlapping records lock them in the
         // same order. A row trashed (or restored) meanwhile is not locked.
-        let mut select = Entity::<R>::find().filter(self.pk.is_in(values)).order_by(self.pk, Order::Asc);
-        match (&self.soft, trashed) {
-            (Some((column, _, _)), Trashed::Without) => select = select.filter(column.is_null()),
-            (Some((column, _, _)), Trashed::Only) => select = select.filter(column.is_not_null()),
-            _ => {}
+        let rows = |select: sea_orm::Select<Entity<R>>| match (&self.soft, trashed) {
+            (Some((column, _, _)), Trashed::Without) => select.filter(column.is_null()),
+            (Some((column, _, _)), Trashed::Only) => select.filter(column.is_not_null()),
+            _ => select,
+        };
+        let ordered = Entity::<R>::find().filter(self.pk.is_in(values)).order_by(self.pk, Order::Asc);
+        if backend != DbBackend::MySql {
+            let locked = rows(ordered).lock_exclusive().all(txn).await?;
+            return Ok(locked.iter().map(|m| self.key_of(m)).collect());
         }
-        let locked = select.lock_exclusive().all(txn).await?;
-        Ok(locked.iter().map(|m| self.key_of(m)).collect())
+        // InnoDB locks rows as it scans, not in the sorted order: one point lock
+        // per key, in the order a plain read returns them.
+        let mut locked = HashSet::new();
+        for model in rows(ordered).all(txn).await? {
+            let key = model.get(self.pk);
+            if let Some(model) = rows(Entity::<R>::find().filter(self.pk.eq(key))).lock_exclusive().one(txn).await? {
+                locked.insert(self.key_of(&model));
+            }
+        }
+        Ok(locked)
     }
 
     /// Sets the soft delete marker to now, or clears it.

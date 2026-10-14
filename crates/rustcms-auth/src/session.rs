@@ -16,8 +16,8 @@ use chrono::{DateTime, Duration, Utc};
 use rustcms_core::AppResult;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, QueryFilter,
-    Set,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
+    QueryFilter, Set,
 };
 use serde::{Deserialize, Serialize};
 
@@ -32,8 +32,6 @@ const TOUCH_EVERY_SECS: i64 = 60;
 const RENEWAL_BUDGET: std::time::Duration = std::time::Duration::from_secs(2);
 /// Time kept before the request deadline to send the response.
 const RENEWAL_MARGIN: std::time::Duration = std::time::Duration::from_millis(250);
-/// Namespace of the per-lineage PostgreSQL advisory locks.
-const LINEAGE_LOCK_SPACE: i32 = 0x7365_7373;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Data {
@@ -284,15 +282,10 @@ fn state_lineage(session: &Session, lineage: String) {
     session.state().lineage = Some(lineage);
 }
 
-/// Serializes sign-out and re-issue of one lineage until the transaction ends:
-/// a transaction-scoped advisory lock on PostgreSQL; on SQLite the
-/// [`rustcms_core::db::begin_write`] transaction already holds the write lock.
-pub async fn lock_lineage<C: ConnectionTrait>(db: &C, lineage: &str) -> AppResult<()> {
-    if db.get_database_backend() == DbBackend::Postgres {
-        let key = i32::from_str_radix(&lineage[..7.min(lineage.len())], 16).unwrap_or_default();
-        db.execute_unprepared(&format!("SELECT pg_advisory_xact_lock({LINEAGE_LOCK_SPACE}, {key})")).await?;
-    }
-    Ok(())
+/// Serializes sign-out and re-issue of one lineage until the transaction ends
+/// ([`rustcms_core::db::xact_lock`], on one of a bounded set of slots).
+pub async fn lock_lineage(txn: &DatabaseTransaction, lineage: &str) -> AppResult<()> {
+    Ok(rustcms_core::db::xact_lock(txn, &rustcms_core::db::lock_slot("lineage", lineage)).await?)
 }
 
 /// Ends session `id` and every session of its `lineage`, under the lineage

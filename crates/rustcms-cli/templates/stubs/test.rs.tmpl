@@ -3,7 +3,7 @@ use rustcms_testing::{Factory, TestApp, TestDb, UserFactory, db_test};
 use serde_json::json;
 use {{ crate_name }}::{app, migrations::Migrator};
 
-// Runs on SQLite, and on PostgreSQL when RUSTCMS_TEST_PG is set.
+// Runs on SQLite, on PostgreSQL when RUSTCMS_TEST_PG is set and on MySQL when RUSTCMS_TEST_MYSQL is.
 db_test!({{ name }}, migrate = Migrator, |db: TestDb| async move {
     let app = TestApp::new(app::build, db).await;
     let user = UserFactory::new().password("secret password").create(app.state().db()).await;

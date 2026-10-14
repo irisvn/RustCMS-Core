@@ -66,6 +66,10 @@ must exist, not be trashed, be visible to the user (`media.view` and scope), and
 match `accept` / `max_size`; the rows are locked (shared) meanwhile. Media
 trashed later shows as unavailable in records that reference it.
 
+Media and rich text columns may not declare a default on the entity (any
+`default_value`, checked when the panel starts). A default written in a
+migration is stored without these checks: do not give these columns one.
+
 ## Rich text
 
 ```rust,ignore

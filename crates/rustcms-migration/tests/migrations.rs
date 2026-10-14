@@ -90,15 +90,51 @@ db_test!(email_is_unique, migrate = Migrator, |db: TestDb| async move {
     assert!(duplicate.is_err());
 });
 
-db_test!(sqlite_enforces_foreign_keys, |db: TestDb| async move {
+db_test!(foreign_keys_are_enforced, |db: TestDb| async move {
     let conn = db.conn();
     conn.execute_unprepared("CREATE TABLE parent (id INTEGER PRIMARY KEY)").await.unwrap();
+    // A table constraint: MySQL ignores `REFERENCES` written on the column.
     conn.execute_unprepared(
-        "CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES parent(id))",
+        "CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL, \
+         FOREIGN KEY (parent_id) REFERENCES parent(id))",
     )
     .await
     .unwrap();
     assert!(conn.execute_unprepared("INSERT INTO child (id, parent_id) VALUES (1, 42)").await.is_err());
+});
+
+// MySQL commits DDL statement by statement: a migration that failed half-way is
+// run again on a partly changed schema. Every framework migration copes, here
+// in the worst case (everything done, nothing recorded).
+db_test!(framework_migrations_run_again_after_a_partial_failure, migrate = Migrator, |db: TestDb| async move {
+    let manager = SchemaManager::new(db.conn());
+    for migration in rustcms_migration::migrations() {
+        migration.up(&manager).await.unwrap_or_else(|e| panic!("{} cannot run again: {e}", migration.name()));
+    }
+    // The seeds were not duplicated.
+    let roles = db
+        .conn()
+        .query_one_raw(sea_orm::Statement::from_string(
+            db.conn().get_database_backend(),
+            "SELECT COUNT(*) AS n FROM roles WHERE name = 'super_admin'",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<i64>("", "n")
+        .unwrap();
+    assert_eq!(roles, 2, "one super_admin per guard");
+});
+
+// The same for rollbacks: a `down` interrupted half-way runs again.
+db_test!(framework_rollbacks_run_again_after_a_partial_failure, migrate = Migrator, |db: TestDb| async move {
+    let manager = SchemaManager::new(db.conn());
+    for migration in rustcms_migration::migrations().into_iter().rev() {
+        for attempt in 1..=2 {
+            migration.down(&manager).await.unwrap_or_else(|e| panic!("{} down #{attempt}: {e}", migration.name()));
+        }
+    }
+    assert!(!has_table(&db, "users").await);
 });
 
 #[test]
@@ -128,11 +164,12 @@ mod failing {
         }
 
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-            manager
-                .create_table(
-                    Table::create().table("half_done").col(ColumnDef::new("id").integer().primary_key()).to_owned(),
-                )
-                .await?;
+            // Re-runnable: MySQL keeps the table of a failed run (DDL commits).
+            rustcms_migration::schema::create_table(
+                manager,
+                Table::create().table("half_done").col(ColumnDef::new("id").integer().primary_key()).to_owned(),
+            )
+            .await?;
             if FAIL.get() {
                 return Err(DbErr::Migration("injected failure after CREATE TABLE".into()));
             }
@@ -158,7 +195,9 @@ mod failing {
 db_test!(failed_migration_rolls_back_and_can_be_retried, |db: TestDb| async move {
     failing::FAIL.set(true);
     assert!(failing::Migrator::up(db.conn(), None).await.is_err());
-    assert!(!has_table(&db, "half_done").await, "partial schema change rolled back");
+    // MySQL commits each DDL statement: the table stays, and the retry must cope.
+    let mysql = db.backend() == rustcms_testing::Backend::Mysql;
+    assert_eq!(has_table(&db, "half_done").await, mysql, "partial schema change rolled back (except on MySQL)");
     let applied = failing::Migrator::get_applied_migrations(db.conn()).await.unwrap();
     assert_eq!(
         applied.len(),

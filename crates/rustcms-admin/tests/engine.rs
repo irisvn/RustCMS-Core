@@ -236,8 +236,8 @@ db_test!(search_matches_non_ascii_and_survives_joined_scopes, |db: TestDb| async
     );
     assert_eq!(
         categories.list(&ctx, &search("đức anh")).await.unwrap().meta.total,
-        u64::from(fx.db.backend() == rustcms_testing::Backend::Postgres),
-        "lower-case non-ASCII matches on PostgreSQL (Unicode folding); SQLite folds ASCII only"
+        u64::from(fx.db.backend() != rustcms_testing::Backend::Sqlite),
+        "lower-case non-ASCII matches on PostgreSQL and MySQL (Unicode folding); SQLite folds ASCII only"
     );
     assert_eq!(
         categories.list(&ctx, &search("OTHER")).await.unwrap().meta.total,
@@ -507,7 +507,7 @@ db_test!(record_checked_lists_hold_only_keys_and_a_chunk, |db: TestDb| async mov
     use sea_orm::EntityTrait;
     let fx = Fixture::new(db).await;
     // 300 large rows; the list keeps keys for all of them but loads 100 rows at a time.
-    let big = "x".repeat(64 * 1024);
+    let big = "x".repeat(60 * 1024);
     let rows: Vec<_> = (0..300)
         .map(|i| support::tag::ActiveModel {
             slug: sea_orm::Set(format!("t{i:03}")),
@@ -975,7 +975,8 @@ db_test!(ownership_changed_concurrently_is_seen_by_writes, |db: TestDb| async mo
 });
 
 /// Starts a write transaction running `pg`/`sqlite` SQL against the post `key`
-/// (left uncommitted, so writes to that row wait for it).
+/// (left uncommitted, so writes to that row wait for it). MySQL runs the SQLite
+/// form (`X'…'` literals for `binary(16)` keys).
 async fn blocking_write(fx: &Fixture, key: &str, pg: &str, sqlite: &str) -> sea_orm::DatabaseTransaction {
     use sea_orm::ConnectionTrait;
     let txn = rustcms_core::db::begin_write(fx.db.conn()).await.unwrap();
@@ -987,11 +988,39 @@ async fn blocking_write(fx: &Fixture, key: &str, pg: &str, sqlite: &str) -> sea_
     txn
 }
 
-/// Waits until another session is blocked by `blocker` (PostgreSQL), so the
-/// race is exercised deterministically. SQLite writers serialize on the
+/// Waits until another session is blocked by `blocker` (PostgreSQL, MySQL), so
+/// the race is exercised deterministically. SQLite writers serialize on the
 /// database lock and reach the same outcome whatever the timing.
 async fn wait_until_blocked(fx: &Fixture, blocker: &sea_orm::DatabaseTransaction) {
     use sea_orm::{ConnectionTrait, Statement};
+    if blocker.get_database_backend() == sea_orm::DbBackend::MySql {
+        let id: u64 = blocker
+            .query_one_raw(Statement::from_string(sea_orm::DbBackend::MySql, "SELECT CONNECTION_ID() AS id"))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get("", "id")
+            .unwrap();
+        let probe = format!(
+            "SELECT COUNT(*) AS n FROM performance_schema.data_lock_waits w \
+             JOIN performance_schema.threads t ON t.THREAD_ID = w.BLOCKING_THREAD_ID WHERE t.PROCESSLIST_ID = {id}"
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let row = fx
+                .db
+                .conn()
+                .query_one_raw(Statement::from_string(sea_orm::DbBackend::MySql, probe.clone()))
+                .await
+                .unwrap()
+                .unwrap();
+            if row.try_get::<i64>("", "n").unwrap() > 0 {
+                return;
+            }
+            assert!(std::time::Instant::now() < deadline, "writer never blocked on the lock");
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
     if blocker.get_database_backend() != sea_orm::DbBackend::Postgres {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         return;
@@ -1049,7 +1078,10 @@ db_test!(records_deleted_while_writes_wait_are_missing, |db: TestDb| async move 
 db_test!(replacement_rows_inserted_while_writes_wait_are_not_written, |db: TestDb| async move {
     let fx = Fixture::new(db).await;
     if fx.db.conn().get_database_backend() != sea_orm::DbBackend::Postgres {
-        return; // SQLite writers hold the database lock: no row can be replaced meanwhile.
+        // SQLite writers hold the database lock: no row can be replaced meanwhile.
+        // MySQL point-locks the row now under the key, and that row is the one
+        // re-checked and written (no stale-row case to guard).
+        return;
     }
     let posts = fx.resource("posts");
     let owner = fx.ctx(editor("7"));
@@ -1173,9 +1205,9 @@ impl rustcms_admin::Resource for Gauges {
 }
 
 db_test!(floats_out_of_f32_range_are_rejected, |db: TestDb| async move {
-    use sea_orm::{ConnectionTrait, Schema};
+    use sea_orm::Schema;
     let backend = db.conn().get_database_backend();
-    db.conn().execute(&Schema::new(backend).create_table_from_entity(gauge::Entity)).await.unwrap();
+    rustcms_testing::create_table(db.conn(), &Schema::new(backend).create_table_from_entity(gauge::Entity)).await;
     let registry = rustcms_admin::Registry::new().register::<Gauges>().finish();
     let ctx = rustcms_admin::Ctx::new(db.conn().clone(), admin(), registry.clone());
     let gauges = registry.get("gauges").unwrap();

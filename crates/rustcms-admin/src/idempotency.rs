@@ -8,7 +8,10 @@
 use chrono::{Duration, Utc};
 use rustcms_core::{AppError, AppResult, Principal, ValidationErrors};
 use sea_orm::sea_query::{Expr, OnConflict};
-use sea_orm::{ActiveValue::Set, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter};
+use sea_orm::{
+    ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr, EntityTrait, PaginatorTrait,
+    QueryFilter,
+};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -105,23 +108,59 @@ pub(crate) fn conflict(err: DbErr) -> AppError {
     err.into()
 }
 
+/// Longest wait for a concurrent claim of the same owner.
+const CLAIM_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Time kept before the request deadline to answer.
+const CLAIM_MARGIN: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Bounds how long the claim in `txn` waits for a concurrent claimer, within
+/// the request's deadline (then 409 `write_conflict`). Called before
+/// [`acquire`], which restores the default wait on MySQL.
+pub(crate) async fn bound_claim_wait(txn: &DatabaseTransaction) -> AppResult<()> {
+    let wait = rustcms_core::http::request_deadline()
+        .map_or(CLAIM_WAIT, |deadline| {
+            deadline.saturating_duration_since(tokio::time::Instant::now()).saturating_sub(CLAIM_MARGIN)
+        })
+        .clamp(std::time::Duration::from_millis(100), CLAIM_WAIT);
+    match txn.get_database_backend() {
+        DbBackend::Postgres => {
+            txn.execute_unprepared(&format!("SET LOCAL lock_timeout = '{}ms'", wait.as_millis())).await?;
+        }
+        // Whole seconds only: rounded down, at least one.
+        DbBackend::MySql => rustcms_core::db::set_lock_wait(txn, wait.as_secs()).await?,
+        _ => {}
+    }
+    Ok(())
+}
+
 /// Claims `claim` in the write transaction `txn`. `true`: acquired (run the
-/// write, then [`complete`]). `false`: a committed receipt exists (PostgreSQL
-/// waits for a concurrent claimer to commit or roll back first).
-pub(crate) async fn acquire<C: ConnectionTrait>(txn: &C, claim: &Claim) -> AppResult<bool> {
+/// write, then [`complete`]). `false`: a committed receipt exists (a
+/// concurrent claimer of the same owner is waited for first).
+///
+/// The owner's lock is the transaction's first lock: the receipt is read,
+/// an expired one replaced and the quota counted with no other claim of the
+/// owner in between (so a racing retry replays instead of hitting the quota,
+/// and two requests never both replace an expired receipt).
+pub(crate) async fn acquire(txn: &DatabaseTransaction, claim: &Claim) -> AppResult<bool> {
+    let acquired = claim_in(txn, claim).await;
+    // The claim wait (see `bound_claim_wait`) ends here on MySQL, whatever happened.
+    rustcms_core::db::set_lock_wait(txn, rustcms_core::db::MYSQL_LOCK_WAIT_SECONDS).await.map_err(conflict)?;
+    acquired
+}
+
+async fn claim_in(txn: &DatabaseTransaction, claim: &Claim) -> AppResult<bool> {
+    rustcms_core::db::xact_lock(txn, &rustcms_core::db::lock_slot("idem", &claim.owner)).await.map_err(conflict)?;
     // An existing claim is resolved first (a retry is never refused by the
     // quota); an expired one is replaced as if it never existed.
     if let Some(existing) = entity::Entity::find_by_id(claim.id.clone()).one(txn).await? {
         if existing.expires_at > Utc::now() {
             return Ok(false);
         }
-        entity::Entity::delete_by_id(claim.id.clone()).exec(txn).await?;
-    }
-    // Quota checks of one user run one at a time (SQLite: the write lock).
-    if txn.get_database_backend() == sea_orm::DbBackend::Postgres {
-        // A number derived from the user (no input reaches the SQL text).
-        let slot = i64::from_str_radix(&digest(&["idempotency-quota", &claim.owner])[..15], 16).unwrap_or_default();
-        txn.execute_unprepared(&format!("SELECT pg_advisory_xact_lock({slot})")).await?;
+        entity::Entity::delete_many()
+            .filter(entity::Column::Id.eq(&claim.id))
+            .filter(entity::Column::ExpiresAt.lte(Utc::now()))
+            .exec(txn)
+            .await?;
     }
     let live = entity::Entity::find()
         .filter(entity::Column::Owner.eq(&claim.owner))
@@ -141,6 +180,16 @@ pub(crate) async fn acquire<C: ConnectionTrait>(txn: &C, claim: &Claim) -> AppRe
         created_at: Set(now),
         expires_at: Set(now + Duration::hours(TTL_HOURS)),
     };
+    if txn.get_database_backend() == sea_orm::DbBackend::MySql {
+        // No `ON CONFLICT DO NOTHING` on MySQL, and its upsert reports a row either
+        // way. A duplicate key waits for a concurrent claimer like the upsert does,
+        // and does not abort the transaction.
+        return match entity::Entity::insert(row).exec_without_returning(txn).await {
+            Ok(_) => Ok(true),
+            Err(err) if matches!(err.sql_err(), Some(sea_orm::SqlErr::UniqueConstraintViolation(_))) => Ok(false),
+            Err(err) => Err(conflict(err)),
+        };
+    }
     let inserted = entity::Entity::insert(row)
         .on_conflict(OnConflict::column(entity::Column::Id).do_nothing().to_owned())
         .exec_without_returning(txn)
@@ -193,6 +242,21 @@ pub async fn prune<C: ConnectionTrait>(db: &C) -> AppResult<u64> {
     use sea_orm::sea_query::Query;
     let mut total = 0;
     loop {
+        if db.get_database_backend() == sea_orm::DbBackend::MySql {
+            // MySQL refuses `LIMIT` in an `IN` subquery on the deleted table.
+            let statement = Query::delete()
+                .from_table(entity::Entity)
+                .and_where(entity::Column::ExpiresAt.lte(Utc::now()))
+                .order_by(entity::Column::ExpiresAt, sea_orm::sea_query::Order::Asc)
+                .limit(PRUNE_BATCH)
+                .to_owned();
+            let deleted = db.execute(&statement).await?.rows_affected();
+            total += deleted;
+            if deleted < PRUNE_BATCH {
+                return Ok(total);
+            }
+            continue;
+        }
         let expired = Query::select()
             .column(entity::Column::Id)
             .from(entity::Entity)

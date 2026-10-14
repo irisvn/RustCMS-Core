@@ -31,10 +31,11 @@ create could duplicate it. 0.2 lets clients retry safely.
 - Action outcomes (first response and replay) list processed and denied keys
   only for records the user may view now; hidden keys are left out, never moved
   to `missing`.
-- An existing claim is resolved before the per-user quota applies (a retry is
-  never refused by it); quota checks of one user are serialized (PostgreSQL:
-  an advisory lock). An expired, unpruned claim is replaced. Pruning deletes in
-  batches.
+- A claim first takes the user's named lock (ADR 0010; the transaction's first
+  lock), then resolves an existing receipt, then applies the per-user quota: a
+  retry is never refused by it, even racing the request that took the last key,
+  and an expired, unpruned receipt is replaced once (deleted only while still
+  expired). Pruning deletes in batches.
 - Keys are scoped to (guard, user, resource, operation); per-user cap of 1,000
   live keys; 24-hour lifetime, pruned hourly.
 - The SPA keeps the pending request (method, path, exact body, key, user, the

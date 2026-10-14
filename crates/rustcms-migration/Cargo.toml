@@ -15,11 +15,11 @@ categories.workspace = true
 sea-orm-migration.workspace = true
 
 [dev-dependencies]
-rustcms-core = { workspace = true, features = ["sqlite", "postgres"] }
+rustcms-core = { workspace = true, features = ["sqlite", "postgres", "mysql"] }
 # Path only (no version): not published, so the published crate does not depend on
 # rustcms-testing (which depends on rustcms-auth). Tests are excluded from the package.
 rustcms-testing = { path = "../rustcms-testing" }
-sea-orm = { workspace = true, features = ["sqlx-sqlite", "sqlx-postgres"] }
+sea-orm = { workspace = true, features = ["sqlx-sqlite", "sqlx-postgres", "sqlx-mysql"] }
 chrono.workspace = true
 tokio.workspace = true
 

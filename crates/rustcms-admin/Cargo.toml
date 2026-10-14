@@ -15,6 +15,7 @@ categories.workspace = true
 default = ["sqlite"]
 sqlite = ["rustcms-core/sqlite"]
 postgres = ["rustcms-core/postgres"]
+mysql = ["rustcms-core/mysql"]
 # TypeScript bindings of the schema DTOs for the admin SPA (`just generated`).
 ts = ["dep:ts-rs"]
 

@@ -125,15 +125,26 @@ impl<M: MigratorTrait> Console<M> {
                 let app = (self.build)(config).build().await?;
                 app.serve(listen).await
             }
-            Command::Migrate => Ok(M::up(&connect(&config).await?, None).await?),
-            Command::MigrateRollback { step } => Ok(M::down(&connect(&config).await?, Some(step)).await?),
+            Command::Migrate => {
+                let db = connect(&config).await?;
+                crate::db::check(&db, true).await?;
+                Ok(M::up(&db, None).await?)
+            }
+            Command::MigrateRollback { step } => {
+                let db = connect(&config).await?;
+                crate::db::check(&db, true).await?;
+                Ok(M::down(&db, Some(step)).await?)
+            }
             Command::MigrateFresh { force } => {
                 guard_production(production, force)?;
                 crate::db::migrate_fresh::<M>(&config.database).await.context("migrate:fresh failed")
             }
             Command::MigrateRefresh { force } => {
                 guard_production(production, force)?;
-                Ok(M::refresh(&connect(&config).await?).await?)
+                let db = connect(&config).await?;
+                // Every table is recreated: the database itself must be right.
+                crate::db::check(&db, false).await?;
+                Ok(M::refresh(&db).await?)
             }
             Command::RouteList => {
                 let routes = (self.build)(config).described_routes();

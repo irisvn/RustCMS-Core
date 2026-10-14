@@ -12,21 +12,24 @@ impl MigrationTrait for Migration {
         Some(true)
     }
 
+    /// `create_table` and the column helpers (`instant`, `instant_now`) give the
+    /// same table on SQLite, PostgreSQL and MySQL, and skip what already exists
+    /// (MySQL commits DDL statement by statement, so a failed run is retried).
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .create_table(
-                Table::create()
-                    .table({{ iden }}::Table)
-                    .col(ColumnDef::new({{ iden }}::Id).big_integer().not_null().auto_increment().primary_key())
-                    .col(ColumnDef::new({{ iden }}::CreatedAt).timestamp_with_time_zone().not_null().default(Expr::current_timestamp()))
-                    .col(ColumnDef::new({{ iden }}::UpdatedAt).timestamp_with_time_zone().not_null().default(Expr::current_timestamp()))
-                    .to_owned(),
-            )
-            .await
+        create_table(
+            manager,
+            Table::create()
+                .table({{ iden }}::Table)
+                .col(ColumnDef::new({{ iden }}::Id).big_integer().not_null().auto_increment().primary_key())
+                .col(ColumnDef::new({{ iden }}::CreatedAt).instant_now(manager).not_null())
+                .col(ColumnDef::new({{ iden }}::UpdatedAt).instant_now(manager).not_null())
+                .to_owned(),
+        )
+        .await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager.drop_table(Table::drop().table({{ iden }}::Table).to_owned()).await
+        drop_table(manager, {{ iden }}::Table).await
     }
 }
 

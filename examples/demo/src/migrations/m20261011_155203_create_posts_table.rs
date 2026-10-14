@@ -12,26 +12,16 @@ impl MigrationTrait for Migration {
     }
 
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .create_table(
-                Table::create()
-                    .table(Posts::Table)
-                    .col(ColumnDef::new(Posts::Id).big_integer().not_null().auto_increment().primary_key())
-                    .col(
-                        ColumnDef::new(Posts::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .col(
-                        ColumnDef::new(Posts::UpdatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .to_owned(),
-            )
-            .await
+        create_table(
+            manager,
+            Table::create()
+                .table(Posts::Table)
+                .col(ColumnDef::new(Posts::Id).big_integer().not_null().auto_increment().primary_key())
+                .col(ColumnDef::new(Posts::CreatedAt).instant_now(manager).not_null())
+                .col(ColumnDef::new(Posts::UpdatedAt).instant_now(manager).not_null())
+                .to_owned(),
+        )
+        .await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {

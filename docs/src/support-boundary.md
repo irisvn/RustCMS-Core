@@ -13,11 +13,12 @@ limits and the permission cache are in memory).
 Since 0.2: soft deletes, idempotency keys for creates and actions, tabs and
 key/value inputs (M7); media library on local or S3-compatible storage, file
 uploads and rich text documents (M8); has-many relation managers and custom
-field widgets from extension scripts (M9).
+field widgets from extension scripts (M9); MySQL 8.4 as a third database (M10;
+MariaDB is not supported).
 
 **Not supported yet:** idempotency keys outside resource creates and actions
 (system creates are protected by unique email/name; token issuance and password
-changes are not keyed), MySQL, JWT, email verification,
+changes are not keyed), MariaDB, JWT, email verification,
 managing api-guard roles from an admin session (use `rustcms role:assign`), many-to-many
 relationship editing in the panel (attach/detach through a pivot; deferred after 0.2), modal-form actions, composite primary keys, sorting by
 related columns, image resizing/thumbnails, range requests and public media
@@ -41,7 +42,7 @@ is about 23 MB, 18 MB stripped, on macOS arm64 with Rust 1.99
 
 ## Roadmap
 
-0.2: JWT guard with rotating refresh tokens, MySQL, rich text and uploads,
+0.2: JWT guard with rotating refresh tokens, MySQL (done), rich text and uploads,
 tabs and key-value inputs, custom field bundles, soft deletes, relationship
 managers, Redis for cache and rate limits, idempotency keys.
 Later: events, settings, queues, mail, password reset and email verification,

@@ -1,5 +1,6 @@
 # Developer commands. Install: `brew install just` (or `cargo install just`).
 pg_url := env_var_or_default("RUSTCMS_TEST_PG", "postgres://postgres:postgres@localhost:55439/postgres")
+mysql_url := env_var_or_default("RUSTCMS_TEST_MYSQL", "mysql://root:mysql@localhost:53306/mysql")
 
 default:
     @just --list
@@ -22,18 +23,21 @@ features:
     cargo check -p rustcms-core --no-default-features
     cargo check -p rustcms-core --no-default-features --features sqlite
     cargo check -p rustcms-core --no-default-features --features postgres
+    cargo check -p rustcms-core --no-default-features --features mysql
     cargo check -p rustcms-admin --no-default-features
     cargo check -p rustcms-admin --no-default-features --features sqlite
     cargo check -p rustcms-admin --no-default-features --features postgres
+    cargo check -p rustcms-admin --no-default-features --features mysql
     cargo check -p rustcms-auth
     cargo check -p rustcms --no-default-features --features sqlite
     cargo check -p rustcms --no-default-features --features postgres
+    cargo check -p rustcms --no-default-features --features mysql
     cargo check -p rustcms --features s3
 
-# Tests on SQLite (temp files) and PostgreSQL (docker compose).
+# Tests on SQLite (temp files), PostgreSQL and MySQL (docker compose).
 test-matrix:
-    docker compose up -d --wait postgres
-    RUSTCMS_TEST_PG={{pg_url}} cargo nextest run --workspace
+    docker compose up -d --wait postgres mysql
+    RUSTCMS_TEST_PG={{pg_url}} RUSTCMS_TEST_MYSQL={{mysql_url}} RUSTCMS_TEST_REQUIRE=postgres,mysql cargo nextest run --workspace
 
 test:
     cargo nextest run --workspace
@@ -42,9 +46,10 @@ test:
 test-cli:
     cargo test -p rustcms-cli --test scaffold -- --include-ignored
 
-# Drop PostgreSQL template databases (after editing an unreleased migration in place).
+# Drop PostgreSQL and MySQL template databases (after editing an unreleased migration in place).
 test-reset-db:
     docker compose exec -T postgres psql -U postgres -tAc "select 'drop database ' || datname || ';' from pg_database where datname like 'rustcms_t%'" | docker compose exec -T postgres psql -U postgres
+    docker compose exec -T mysql mysql -uroot -pmysql -N -e "select concat('drop database ', schema_name, ';') from information_schema.schemata where schema_name like 'rustcms\_t%'" | docker compose exec -T mysql mysql -uroot -pmysql
 
 doc:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps

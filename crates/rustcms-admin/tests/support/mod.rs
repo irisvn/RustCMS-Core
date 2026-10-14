@@ -70,6 +70,8 @@ pub mod tag {
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub slug: String,
+        // `Text`: the tests store 60 KiB labels (MySQL makes a bare `String` `varchar(255)`).
+        #[sea_orm(column_type = "Text")]
         pub label: String,
     }
 
@@ -402,7 +404,7 @@ pub async fn create_tables(conn: &sea_orm::DatabaseConnection) {
         // Also created by the framework migrations some tests run first.
         schema.create_table_from_entity(rustcms_admin::media::entity::Entity).if_not_exists().to_owned(),
     ] {
-        conn.execute(&statement).await.expect("create table");
+        rustcms_testing::create_table(conn, &statement).await;
     }
 }
 

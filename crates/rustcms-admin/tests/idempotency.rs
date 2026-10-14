@@ -325,3 +325,65 @@ db_test!(a_waiter_takes_over_when_the_first_claim_rolls_back, |db: TestDb| async
     second.expect("the waiter acquires the released claim and writes");
     assert_eq!(note::Entity::find().count(fx.db.conn()).await.unwrap(), 1);
 });
+
+/// Runs `n` identical keyed creates at once; the keys of those that succeeded.
+async fn race(notes: &Arc<dyn DynResource>, ctx: &Ctx, title: &str, n: usize) -> Vec<String> {
+    let tasks: Vec<_> = (0..n)
+        .map(|_| {
+            let (notes, ctx, title) = (notes.clone(), ctx.clone(), title.to_owned());
+            tokio::spawn(async move { notes.create(&ctx, data(json!({"title": title}))).await })
+        })
+        .collect();
+    let mut keys = Vec::new();
+    for task in tasks {
+        match task.await.unwrap() {
+            Ok(envelope) => keys.push(envelope.key),
+            // SQLite may report a busy database to a waiter: retryable, nothing written.
+            Err(AppError::Conflict { .. }) => {}
+            Err(other) => panic!("{other:?}"),
+        }
+    }
+    keys.sort();
+    keys.dedup();
+    keys
+}
+
+db_test!(an_expired_unpruned_key_is_replaced_once, |db: TestDb| async move {
+    use sea_orm::{ConnectionTrait, sea_query::Expr};
+    let fx = fixture(db).await;
+    let notes = fx.resource("notes");
+    for round in 0..5 {
+        let ctx = keyed(fx.ctx(admin()), &format!("old-{round}"));
+        notes.create(&ctx, data(json!({"title": format!("First {round}")}))).await.unwrap();
+        let past = chrono::Utc::now() - chrono::Duration::hours(1);
+        let update = sea_orm::sea_query::Query::update()
+            .table(sea_orm::sea_query::Alias::new("idempotency_keys"))
+            .value(sea_orm::sea_query::Alias::new("expires_at"), Expr::value(past))
+            .to_owned();
+        fx.db.conn().execute(&update).await.unwrap();
+        // Not pruned: concurrent requests find the expired receipt and replace it, once.
+        let keys = race(&notes, &ctx, &format!("Second {round}"), 4).await;
+        assert_eq!(keys.len(), 1, "every success names the same record");
+        assert_eq!(note::Entity::find().count(fx.db.conn()).await.unwrap(), 2 * (round + 1));
+    }
+});
+
+db_test!(a_racing_retry_at_the_quota_replays, |db: TestDb| async move {
+    use sea_orm::{ConnectionTrait, Statement};
+    let fx = fixture(db).await;
+    let notes = fx.resource("notes");
+    let backend = fx.db.conn().get_database_backend();
+    let expires = (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339();
+    // One key left before the quota.
+    for i in 0..rustcms_admin::idempotency::MAX_LIVE_KEYS - 1 {
+        let sql = format!(
+            "INSERT INTO idempotency_keys (id, owner, request_hash, result, created_at, expires_at) \
+             VALUES ('filler-{i}', 'admin:1', 'x', '{{}}', '{expires}', '{expires}')"
+        );
+        fx.db.conn().execute_raw(Statement::from_string(backend, sql)).await.unwrap();
+    }
+    // The first takes the last key; the others are retries of it and replay (no 429).
+    let keys = race(&notes, &keyed(fx.ctx(admin()), "edge"), "Edge", 4).await;
+    assert_eq!(keys.len(), 1);
+    assert_eq!(note::Entity::find().count(fx.db.conn()).await.unwrap(), 1);
+});

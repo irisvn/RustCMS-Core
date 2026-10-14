@@ -11,21 +11,13 @@ impl MigrationTrait for Migration {
 
     /// A cover image (media id) and rich text content (a JSON document) for posts.
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .alter_table(
-                Table::alter().table(Posts::Table).add_column(ColumnDef::new(Posts::Cover).uuid().null()).to_owned(),
-            )
-            .await?;
-        manager
-            .alter_table(
-                Table::alter().table(Posts::Table).add_column(ColumnDef::new(Posts::Content).json().null()).to_owned(),
-            )
-            .await
+        add_column(manager, Posts::Table, ColumnDef::new(Posts::Cover).uuid().null()).await?;
+        add_column(manager, Posts::Table, ColumnDef::new(Posts::Content).json().null()).await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager.alter_table(Table::alter().table(Posts::Table).drop_column(Posts::Content).to_owned()).await?;
-        manager.alter_table(Table::alter().table(Posts::Table).drop_column(Posts::Cover).to_owned()).await
+        drop_column(manager, Posts::Table, Posts::Content).await?;
+        drop_column(manager, Posts::Table, Posts::Cover).await
     }
 }
 

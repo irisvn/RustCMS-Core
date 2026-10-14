@@ -47,7 +47,10 @@ db_test!(migrations_roll_back_and_forward_keeping_ids, migrate = Migrator, |db: 
     db.conn().execute_unprepared(insert).await.unwrap();
     db.conn().execute_unprepared(insert).await.unwrap();
     db.conn().execute_unprepared("DELETE FROM posts WHERE id = 2").await.unwrap();
-    Migrator::down(db.conn(), Some(1)).await.unwrap();
+    // Back to before the categories migration (categories, deleted_at, media, color):
+    // its rebuild (SQLite, PostgreSQL) or in-place change (MySQL) is undone.
+    Migrator::down(db.conn(), Some(4)).await.unwrap();
+    assert!(!sea_orm_migration::SchemaManager::new(db.conn()).has_table("categories").await.unwrap());
     db.conn().execute_unprepared(insert).await.unwrap();
     assert_eq!(max_id().await, Some(3), "rollback keeps the id high-water mark");
     db.conn().execute_unprepared("DELETE FROM posts WHERE id = 3").await.unwrap();

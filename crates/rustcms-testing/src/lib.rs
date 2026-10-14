@@ -14,13 +14,31 @@ mod factory;
 
 pub use app::{TestApp, TestResponse, test_config};
 pub use client::TestClient;
-pub use db::{Backend, TestDb};
+pub use db::{Backend, TestDb, create_table};
+
+/// Reports a backend whose server variable is not set: a notice, or a failure
+/// when `RUSTCMS_TEST_REQUIRE` lists it (`postgres,mysql` in CI), so a broken
+/// setup never passes as skipped.
+#[doc(hidden)]
+pub fn skip(backend: Backend) {
+    let (name, variable) = match backend {
+        Backend::Postgres => ("postgres", "RUSTCMS_TEST_PG"),
+        Backend::Mysql => ("mysql", "RUSTCMS_TEST_MYSQL"),
+        Backend::Sqlite => ("sqlite", ""),
+    };
+    let required = std::env::var("RUSTCMS_TEST_REQUIRE").unwrap_or_default();
+    assert!(
+        !required.split(',').any(|b| b.trim() == name),
+        "{variable} is required (RUSTCMS_TEST_REQUIRE) but not set"
+    );
+    eprintln!("skipped: {variable} is not set");
+}
 pub use factory::{Factory, UserFactory};
 
-/// Declares a database test that runs on SQLite and on PostgreSQL.
+/// Declares a database test that runs on SQLite, PostgreSQL and MySQL.
 ///
-/// PostgreSQL runs when `RUSTCMS_TEST_PG` holds an admin connection URL;
-/// otherwise that variant prints a skip notice. With `migrate = M`, the database
+/// PostgreSQL runs when `RUSTCMS_TEST_PG` holds an admin connection URL, MySQL
+/// when `RUSTCMS_TEST_MYSQL` does; otherwise that variant prints a skip notice. With `migrate = M`, the database
 /// is migrated with migrator `M` first.
 ///
 /// ```rust,ignore
@@ -52,7 +70,18 @@ macro_rules! db_test {
             #[tokio::test]
             async fn postgres() {
                 let Some(db) = ($open)($crate::Backend::Postgres).await else {
-                    eprintln!("skipped: RUSTCMS_TEST_PG is not set");
+                    $crate::skip($crate::Backend::Postgres);
+                    return;
+                };
+                let cleanup = db.clone();
+                ($body)(db).await;
+                cleanup.cleanup().await;
+            }
+
+            #[tokio::test]
+            async fn mysql() {
+                let Some(db) = ($open)($crate::Backend::Mysql).await else {
+                    $crate::skip($crate::Backend::Mysql);
                     return;
                 };
                 let cleanup = db.clone();
