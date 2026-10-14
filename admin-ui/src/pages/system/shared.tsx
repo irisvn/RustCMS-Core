@@ -3,19 +3,39 @@ import { useEffect, useRef } from "react";
 import { ApiError } from "@/api/client";
 import { buttonVariants } from "@/components/ui/button";
 import { Label } from "@/components/ui/input";
+import { t } from "@/i18n";
 
 export type Errors = Record<string, string[]>;
 
-/** Field errors of a 422, otherwise one form-level message. */
-export function failure(e: unknown): { fields: Errors; form: string | null; stale: boolean } {
+export interface Failure {
+  /** Field messages (read in the current language). */
+  readonly fields: Errors;
+  /** A form-level message, if any (read in the current language). */
+  readonly form: string | null;
+  /** Someone else changed the data meanwhile (by its code, whatever the language). */
+  readonly stale: boolean;
+}
+
+/** Field errors of a 422, otherwise one form-level message; texts are read when shown. */
+export function failure(e: unknown): Failure {
   if (e instanceof ApiError && e.status === 422) {
-    const form = e.formErrors.join(" ");
-    return { fields: e.fieldErrors, form: form || null, stale: form.includes("changed by someone else") };
+    return {
+      get fields() {
+        return e.fieldErrors;
+      },
+      get form() {
+        return e.formErrors.join(" ") || null;
+      },
+      stale: e.hasIssue("stale"),
+    };
   }
-  if (e instanceof ApiError && e.status === 403) {
-    return { fields: {}, form: "You are not allowed to do this.", stale: false };
-  }
-  return { fields: {}, form: e instanceof Error ? e.message : "Something went wrong.", stale: false };
+  return {
+    fields: {},
+    get form() {
+      return e instanceof ApiError && e.status === 403 ? t("error.forbidden") : e instanceof Error ? e.message : t("state.errorText");
+    },
+    stale: false,
+  };
 }
 
 /** Whether the component is still mounted (completion handlers check it). */

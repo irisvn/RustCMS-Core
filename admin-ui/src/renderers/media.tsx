@@ -7,6 +7,7 @@ import { usePanelConfig, useSession } from "@/api/context";
 import type { DataResponse, InputSchema, MediaItem } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { mediaUrl } from "@/lib/rich-text";
+import { later, show, type Text, useT } from "@/i18n";
 
 /**
  * Uploads `file` with the idempotency `key` (the same key on a retry: the
@@ -24,6 +25,7 @@ const accepts = (accept: string[], mime: string) =>
 
 /** A stored media item: an image preview, or a file link. */
 export function MediaThumb({ id, item }: { id: string; item?: MediaItem }) {
+  const t = useT();
   const { apiPath } = usePanelConfig();
   const [broken, setBroken] = useState(false);
   const url = mediaUrl(apiPath, id);
@@ -31,7 +33,7 @@ export function MediaThumb({ id, item }: { id: string; item?: MediaItem }) {
     return (
       <a href={url} className="inline-flex items-center gap-2 rounded-md border border-border px-2 py-1 text-sm hover:bg-muted">
         <FileText className="size-4" aria-hidden="true" />
-        {item?.name ?? "File"}
+        {item?.name ?? t("media.file")}
       </a>
     );
   }
@@ -48,13 +50,14 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
   describedBy?: string;
   onBusy?: (busy: boolean) => void;
 }) {
+  const t = useT();
   const session = useSession();
   const picker = useRef<HTMLInputElement>(null);
   const rules = input.media ?? { multiple: false, maxItems: 1, accept: [] };
   const ids = Array.isArray(value) ? value : typeof value === "string" && value ? [value] : [];
   const [items, setItems] = useState<Record<string, MediaItem>>({});
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Text | null>(null);
   // An upload whose outcome is unknown: retried with the same file and key.
   const [retry, setRetry] = useState<{ file: File; key: string } | null>(null);
   const set = (next: string[]) => onChange(rules.multiple ? next : (next[0] ?? ""));
@@ -85,7 +88,7 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
     } catch (e) {
       if (!mounted.current) return;
       if (e instanceof ApiError && e.maybeApplied) setRetry({ file, key });
-      setError(e instanceof ApiError && e.status === 422 ? Object.values(e.fieldErrors).flat().join(" ") || e.message : e instanceof Error ? e.message : "The upload failed.");
+      setError(() => () => (e instanceof ApiError && e.status === 422 ? Object.values(e.fieldErrors).flat().join(" ") || e.message : e instanceof Error ? e.message : t("media.uploadFailed")));
     } finally {
       if (mounted.current) setBusy(false);
     }
@@ -98,8 +101,8 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
   };
   const pick = (file: File | undefined) => {
     if (!file) return;
-    if (!accepts(rules.accept, file.type)) return setError(`${file.name}: this kind of file is not accepted.`);
-    if (rules.maxSize && file.size > rules.maxSize) return setError(`${file.name} is too large.`);
+    if (!accepts(rules.accept, file.type)) return setError(() => later("media.notAccepted", { file: file.name }));
+    if (rules.maxSize && file.size > rules.maxSize) return setError(() => later("media.tooLarge", { file: file.name }));
     void send(file, crypto.randomUUID());
   };
   const full = ids.length >= rules.maxItems;
@@ -112,16 +115,16 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
               <MediaThumb id={mediaId} item={items[mediaId]} />
               {!disabled && !busy && (
                 <div className="flex flex-col">
-                  <Button size="icon" variant="ghost" aria-label={`Remove file ${index + 1}`} onClick={() => set(ids.filter((i) => i !== mediaId))}>
+                  <Button size="icon" variant="ghost" aria-label={t("media.remove", { n: index + 1 })} onClick={() => set(ids.filter((i) => i !== mediaId))}>
                     <X />
                   </Button>
                   {rules.multiple && index > 0 && (
-                    <Button size="icon" variant="ghost" aria-label={`Move file ${index + 1} earlier`} onClick={() => move(index, index - 1)}>
+                    <Button size="icon" variant="ghost" aria-label={t("media.earlier", { n: index + 1 })} onClick={() => move(index, index - 1)}>
                       <ArrowLeft />
                     </Button>
                   )}
                   {rules.multiple && index < ids.length - 1 && (
-                    <Button size="icon" variant="ghost" aria-label={`Move file ${index + 1} later`} onClick={() => move(index, index + 1)}>
+                    <Button size="icon" variant="ghost" aria-label={t("media.later", { n: index + 1 })} onClick={() => move(index, index + 1)}>
                       <ArrowRight />
                     </Button>
                   )}
@@ -131,22 +134,22 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
           ))}
         </ul>
       )}
-      {ids.length === 0 && <p className="text-sm text-muted-foreground">No file.</p>}
+      {ids.length === 0 && <p className="text-sm text-muted-foreground">{t("media.none")}</p>}
       <input ref={picker} type="file" hidden accept={rules.accept.join(",") || undefined} onChange={(e) => {
         pick(e.target.files?.[0]);
         e.target.value = "";
       }} />
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" disabled={disabled || busy || (full && rules.multiple)} onClick={() => picker.current?.click()}>
-          <Upload /> {busy ? "Uploading…" : ids.length && !rules.multiple ? "Replace file" : "Upload file"}
+          <Upload /> {busy ? t("media.uploading") : ids.length && !rules.multiple ? t("media.replace") : t("media.upload")}
         </Button>
         {retry && (
           <Button size="sm" disabled={disabled || busy} onClick={() => void send(retry.file, retry.key)}>
-            Retry upload
+            {t("media.retry")}
           </Button>
         )}
       </div>
-      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-xs text-destructive">{show(error)}</p>}
     </div>
   );
 }

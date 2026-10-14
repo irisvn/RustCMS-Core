@@ -1,0 +1,42 @@
+# Vietnamese labels the server sends for the framework's own resources and
+# common field names. The panel's interface itself is translated in admin-ui.
+# Applications override any of these in their own catalog.
+
+"Content" = "Nội dung"
+"System" = "Hệ thống"
+
+# Common fields (labels formed from column names).
+"Name" = "Tên"
+"Title" = "Tiêu đề"
+"Slug" = "Slug"
+"Email" = "Email"
+"Password" = "Mật khẩu"
+"Body" = "Nội dung"
+"Description" = "Mô tả"
+"Status" = "Trạng thái"
+"Published" = "Đã xuất bản"
+"Published at" = "Ngày xuất bản"
+"Created at" = "Ngày tạo"
+"Updated at" = "Ngày cập nhật"
+"Deleted at" = "Ngày xoá"
+"Category" = "Danh mục"
+"Author" = "Tác giả"
+"Owner" = "Người sở hữu"
+"Color" = "Màu"
+"Cover" = "Ảnh bìa"
+"Image" = "Ảnh"
+"Position" = "Thứ tự"
+"Active" = "Đang hoạt động"
+
+# Permission groups of the system pages (shown in words: `users` → "Users").
+"Users" = "Người dùng"
+"Roles" = "Vai trò"
+"Permissions" = "Quyền"
+
+[media]
+"Media" = "Thư viện media"
+"Mime" = "Loại tệp"
+"Size" = "Dung lượng"
+"Width" = "Chiều rộng"
+"Height" = "Chiều cao"
+"Owner" = "Người tải lên"

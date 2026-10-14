@@ -79,6 +79,18 @@ body = '{"password": "wrong"}'
 status = 422
 
 [[case]]
+route = "POST /admin/api/auth/locale"
+actor = "guest"
+body = '{"locale": "vi"}'
+status = 401
+
+[[case]]
+route = "POST /admin/api/auth/locale"
+actor = "member"
+body = '{"locale": "vi"}'
+status = 200
+
+[[case]]
 route = "POST /api/v1/auth/token"
 actor = "guest"
 body = '{"email": "member@example.test", "password": "wrong", "token_name": "x"}'

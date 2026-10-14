@@ -2,7 +2,8 @@ import { act, render, screen } from "@testing-library/react";
 import { StrictMode } from "react";
 import { useForm } from "react-hook-form";
 import type { InputSchema } from "@/api/types";
-import { type WidgetContext, loadExtensions, registerWidget, resetWidgets, widget } from "@/lib/widgets";
+import { type WidgetContext, loadExtensions, registerTranslations, registerWidget, resetWidgets, widget } from "@/lib/widgets";
+import { setLocale } from "@/i18n";
 import { Components } from "@/renderers/form";
 import { type FormValues, defaultValues, payloadOf, zodSchema } from "@/schema/form";
 
@@ -84,6 +85,24 @@ describe("widget registry", () => {
     await loadExtensions("/admin", { scripts: [], styles: [] });
     expect((window as unknown as { rustcms: { apiVersion: number } }).rustcms.apiVersion).toBe(1);
     expect(() => registerWidget("acme/other", ok)).toThrow(/while extensions load/);
+  });
+});
+
+describe("widget languages", () => {
+  it("gives widgets the language and their own catalog, and updates them when it changes", () => {
+    registerTranslations("vi", { None: "Không màu" });
+    const { log, ctx } = recorder();
+    render(<Harness input={color()} />);
+    expect([ctx().locale, ctx().t("None"), ctx().t("Other")]).toEqual(["en", "None", "Other"]);
+    act(() => setLocale("vi"));
+    expect(log.at(-1)).toMatch(/^update/);
+    expect([ctx().locale, ctx().t("None")]).toEqual(["vi", "Không màu"]);
+    act(() => setLocale("en"));
+  });
+
+  it("only takes translations while extensions load", async () => {
+    await loadExtensions("/admin", { scripts: [], styles: [] });
+    expect(() => registerTranslations("vi", { a: "b" })).toThrow(/while extensions load/);
   });
 });
 

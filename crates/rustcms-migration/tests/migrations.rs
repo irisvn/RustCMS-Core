@@ -10,36 +10,57 @@ async fn has_table(db: &TestDb, table: &str) -> bool {
     SchemaManager::new(db.conn()).has_table(table).await.unwrap()
 }
 
+/// A user row written with the columns every schema version has (the entity
+/// describes the latest schema only).
+async fn insert_user(db: &TestDb, email: &str) {
+    let sql = format!("INSERT INTO users (name, email, password) VALUES ('Ada', '{email}', 'hash')");
+    db.conn().execute_unprepared(&sql).await.unwrap();
+}
+
+async fn find_user(db: &TestDb, email: &str) -> user::Model {
+    use sea_orm::{ColumnTrait, QueryFilter};
+    user::Entity::find().filter(user::Column::Email.eq(email)).one(db.conn()).await.unwrap().unwrap()
+}
+
 db_test!(upgrade_keeps_existing_users, |db: TestDb| async move {
     // Version N: only the users table.
     Migrator::up(db.conn(), Some(1)).await.unwrap();
     assert!(has_table(&db, "users").await);
     assert!(!has_table(&db, "sessions").await);
 
-    // Seed with only the required columns: defaults must fill the rest.
-    let seeded = user::ActiveModel {
-        name: Set("Ada".into()),
-        email: Set("ada@example.test".into()),
-        password: Set("hash".into()),
-        ..Default::default()
-    }
-    .insert(db.conn())
-    .await
-    .unwrap();
-    assert!(seeded.is_active);
-    assert_eq!(seeded.auth_version, 0);
+    // Seeded with only the required columns: defaults must fill the rest.
+    insert_user(&db, "ada@example.test").await;
 
-    // Upgrade to N+1.
+    // Upgrade to the latest version.
     Migrator::up(db.conn(), None).await.unwrap();
     assert!(has_table(&db, "sessions").await);
-    let found = user::Entity::find_by_id(seeded.id).one(db.conn()).await.unwrap().unwrap();
-    assert_eq!(found, seeded, "upgrade preserves rows");
+    let found = find_user(&db, "ada@example.test").await;
+    assert_eq!((found.name.as_str(), found.password.as_str()), ("Ada", "hash"), "upgrade preserves rows");
+    assert!(found.is_active);
+    assert_eq!((found.auth_version, found.locale), (0, None));
+});
+
+// 0.2 → 0.3: users keep working and follow the browser's language until they choose.
+db_test!(upgrade_from_0_2_adds_user_locale, |db: TestDb| async move {
+    let all = Migrator::migrations().len() as u32;
+    Migrator::up(db.conn(), Some(all - 1)).await.unwrap();
+    insert_user(&db, "ada@example.test").await;
+    Migrator::up(db.conn(), None).await.unwrap();
+    assert_eq!(find_user(&db, "ada@example.test").await.locale, None);
+    // Re-runnable and reversible.
+    Migrator::down(db.conn(), Some(1)).await.unwrap();
+    assert!(!SchemaManager::new(db.conn()).has_column("users", "locale").await.unwrap());
+    Migrator::up(db.conn(), None).await.unwrap();
+    let mut user: user::ActiveModel = find_user(&db, "ada@example.test").await.into();
+    user.locale = Set(Some("vi".into()));
+    user.update(db.conn()).await.unwrap();
+    assert_eq!(find_user(&db, "ada@example.test").await.locale.as_deref(), Some("vi"));
 });
 
 // M1 → M2: users created before the auth tables keep working; system roles are seeded.
 db_test!(upgrade_from_m1_adds_auth_tables, |db: TestDb| async move {
     Migrator::up(db.conn(), Some(2)).await.unwrap();
-    let user = UserFactory::new().create(db.conn()).await;
+    insert_user(&db, "m1@example.test").await;
     Migrator::up(db.conn(), None).await.unwrap();
 
     for table in [
@@ -52,7 +73,7 @@ db_test!(upgrade_from_m1_adds_auth_tables, |db: TestDb| async move {
     ] {
         assert!(has_table(&db, table).await, "{table}");
     }
-    assert_eq!(user::Entity::find_by_id(user.id).one(db.conn()).await.unwrap().unwrap(), user);
+    assert!(find_user(&db, "m1@example.test").await.is_active);
     let roles = db
         .conn()
         .query_all_raw(sea_orm::Statement::from_string(

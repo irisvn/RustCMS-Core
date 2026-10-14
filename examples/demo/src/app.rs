@@ -24,7 +24,9 @@ pub fn build(config: Config) -> AppBuilder {
             // rustcms:resources
             // The `demo/color` widget of the category form.
             .extension_script("demo-color", include_str!("../assets/admin/demo/color.js"))
-            .extension_style("demo-color", include_str!("../assets/admin/demo/color.css")),
+            .extension_style("demo-color", include_str!("../assets/admin/demo/color.css"))
+            // Vietnamese labels (`cargo run -- lang:missing vi` lists what is missing).
+            .translations("vi", include_str!("../lang/vi.toml")),
     );
     app.command(Seed);
     api.register(&mut app);

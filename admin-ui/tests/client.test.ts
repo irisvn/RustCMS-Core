@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { ApiClient, ApiError } from "@/api/client";
+import { setLocale } from "@/i18n";
 
 const calls: { method: string; path: string; csrf: string | null }[] = [];
 let csrfToken = "t1";
@@ -24,6 +25,17 @@ const server = setupServer(
     if (url.pathname.endsWith("/busy")) {
       return HttpResponse.json({ message: "x", code: "too_many_requests" }, { status: 429, headers: { "Retry-After": "30" } });
     }
+    if (url.pathname.endsWith("/coded")) {
+      return HttpResponse.json({
+        message: "The given data was invalid.", code: "validation_failed",
+        errors: { title: ["may not be longer than 5 characters", "Mine"] }, formErrors: ["conflicts with existing data"],
+        issues: { title: [{ code: "max_length", params: { max: "5" } }, { code: "custom", params: { message: "Mine" } }] },
+        formIssues: [{ code: "conflicts", params: {} }],
+      }, { status: 422 });
+    }
+    if (url.pathname.endsWith("/conflict")) {
+      return HttpResponse.json({ message: "The upload took too long; send it again.", code: "write_conflict", reason: "upload_expired" }, { status: 409 });
+    }
     if (url.pathname.endsWith("/invalid")) {
       return HttpResponse.json({ message: "The given data was invalid.", code: "validation_failed", errors: { title: ["is required"] }, formErrors: ["conflict"] }, { status: 422 });
     }
@@ -43,6 +55,13 @@ beforeEach(() => {
   csrfToken = "t1";
   meStatus = 200;
 });
+
+/** The error a request fails with. */
+const refused = (request: Promise<unknown>) =>
+  request.then(
+    () => { throw new Error("expected a failure"); },
+    (e: unknown) => e as ApiError,
+  );
 
 const client = (onUnauthenticated = vi.fn()) => new ApiClient({ apiPath: "http://localhost/admin/api", onUnauthenticated });
 
@@ -205,4 +224,34 @@ describe("ApiClient", () => {
   it("returns undefined for 204", async () => {
     await expect(client().delete("/x")).resolves.toBeUndefined();
   });
+
+  it("shows server messages in the panel's language, by code", async () => {
+    setLocale("vi");
+    try {
+      const api = client();
+      const invalid = await refused(api.post("/coded", {}));
+      expect(invalid.fieldErrors.title).toEqual(["không được dài quá 5 ký tự", "Mine"]);
+      expect(invalid.formErrors).toEqual(["xung đột với dữ liệu hiện có"]);
+      expect(invalid.message).toBe("Dữ liệu không hợp lệ.");
+      const conflict = await refused(api.post("/conflict", {}));
+      expect(conflict.message).toBe("Tải lên mất quá nhiều thời gian; hãy gửi lại.");
+      const busy = await refused(api.get("/busy"));
+      expect(busy.message).toBe("Thử quá nhiều lần. Hãy thử lại sau 30 giây.");
+      expect(busy.code).toBe("too_many_requests");
+    } finally {
+      setLocale("en");
+    }
+  });
+
+  it("knows a failed write may have been applied in every language", async () => {
+    for (const locale of ["en", "vi"] as const) {
+      setLocale(locale);
+      const api = client();
+      const write = await refused(api.post("/down", {}));
+      const read = await refused(api.get("/down"));
+      expect([write.maybeApplied, read.maybeApplied], locale).toEqual([true, false]);
+    }
+    setLocale("en");
+  });
 });
+

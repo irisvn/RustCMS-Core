@@ -12,6 +12,7 @@ import { usePanelConfig, useSession } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { type DocNode, type RichDocument, asDocument, isEmptyDocument, mediaUrl, safeHref, toDocument, toEditor } from "@/lib/rich-text";
 import { uploadMedia } from "./media";
+import { errorText, later, show, type Text, useT } from "@/i18n";
 
 export function RichEditorWidget({ id, label, value, onChange, disabled, invalid, describedBy, nullable, onBusy }: {
   id: string;
@@ -24,10 +25,11 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   nullable: boolean;
   onBusy?: (busy: boolean) => void;
 }) {
+  const t = useT();
   const { apiPath } = usePanelConfig();
   const session = useSession();
   const picker = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Text | null>(null);
   const [uploading, setUploading] = useState(false);
   // An image upload with an unknown outcome: retried with the same file and key.
   const [retry, setRetry] = useState<{ file: File; key: string } | null>(null);
@@ -79,16 +81,16 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   );
   const chain = () => editor!.chain().focus();
   const link = () => {
-    const href = window.prompt("Link address (https://…)", editor?.getAttributes("link").href ?? "");
+    const href = window.prompt(t("rich.linkPrompt"), editor?.getAttributes("link").href ?? "");
     if (href === null) return;
     if (href === "") return void chain().unsetLink().run();
-    if (!safeHref(href)) return setError("Links must start with https://, http:// or mailto:.");
+    if (!safeHref(href)) return setError(() => later("rich.linkInvalid"));
     setError(null);
     chain().setLink({ href }).run();
   };
   const image = async (file: File | undefined, key: string = crypto.randomUUID()) => {
     if (!file || !editor) return;
-    if (!file.type.startsWith("image/")) return setError("Only images can be inserted.");
+    if (!file.type.startsWith("image/")) return setError(() => later("rich.imagesOnly"));
     setError(null);
     setUploading(true);
     try {
@@ -97,7 +99,7 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
       if (!editor.isDestroyed) chain().setImage({ src: mediaUrl(apiPath, item.id), alt: item.name }).run();
     } catch (e) {
       if (e instanceof ApiError && e.maybeApplied) setRetry({ file, key });
-      setError(e instanceof Error ? e.message : "The upload failed.");
+      setError(() => errorText(e, "media.uploadFailed"));
     } finally {
       setUploading(false);
     }
@@ -105,18 +107,18 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   const on = (name: string, attrs?: Record<string, unknown>) => editor?.isActive(name, attrs) ?? false;
   return (
     <div className="min-w-0">
-      <div role="toolbar" aria-label={`${label} formatting`} className="flex flex-wrap gap-1 rounded-t-md border border-border bg-muted/40 p-1">
-        {tool("Bold", <Bold />, on("bold"), () => chain().toggleBold().run())}
-        {tool("Italic", <Italic />, on("italic"), () => chain().toggleItalic().run())}
-        {tool("Strikethrough", <Strikethrough />, on("strike"), () => chain().toggleStrike().run())}
-        {tool("Heading 2", <Heading2 />, on("heading", { level: 2 }), () => chain().toggleHeading({ level: 2 }).run())}
-        {tool("Heading 3", <Heading3 />, on("heading", { level: 3 }), () => chain().toggleHeading({ level: 3 }).run())}
-        {tool("Bulleted list", <List />, on("bulletList"), () => chain().toggleBulletList().run())}
-        {tool("Numbered list", <ListOrdered />, on("orderedList"), () => chain().toggleOrderedList().run())}
-        {tool("Quote", <Quote />, on("blockquote"), () => chain().toggleBlockquote().run())}
-        {tool("Code block", <Code />, on("codeBlock"), () => chain().toggleCodeBlock().run())}
-        {tool("Link", <Link />, on("link"), link)}
-        {tool("Insert image", <ImagePlus />, false, () => picker.current?.click())}
+      <div role="toolbar" aria-label={t("rich.toolbar", { field: label })} className="flex flex-wrap gap-1 rounded-t-md border border-border bg-muted/40 p-1">
+        {tool(t("rich.bold"), <Bold />, on("bold"), () => chain().toggleBold().run())}
+        {tool(t("rich.italic"), <Italic />, on("italic"), () => chain().toggleItalic().run())}
+        {tool(t("rich.strike"), <Strikethrough />, on("strike"), () => chain().toggleStrike().run())}
+        {tool(t("rich.h2"), <Heading2 />, on("heading", { level: 2 }), () => chain().toggleHeading({ level: 2 }).run())}
+        {tool(t("rich.h3"), <Heading3 />, on("heading", { level: 3 }), () => chain().toggleHeading({ level: 3 }).run())}
+        {tool(t("rich.bullets"), <List />, on("bulletList"), () => chain().toggleBulletList().run())}
+        {tool(t("rich.numbers"), <ListOrdered />, on("orderedList"), () => chain().toggleOrderedList().run())}
+        {tool(t("rich.quote"), <Quote />, on("blockquote"), () => chain().toggleBlockquote().run())}
+        {tool(t("rich.code"), <Code />, on("codeBlock"), () => chain().toggleCodeBlock().run())}
+        {tool(t("rich.link"), <Link />, on("link"), link)}
+        {tool(t("rich.image"), <ImagePlus />, false, () => picker.current?.click())}
         <input ref={picker} type="file" hidden accept="image/png,image/jpeg,image/gif,image/webp" onChange={(e) => {
           void image(e.target.files?.[0]);
           e.target.value = "";
@@ -125,10 +127,10 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
       <EditorContent editor={editor} />
       {retry && (
         <Button size="sm" className="mt-2" disabled={disabled || uploading} onClick={() => void image(retry.file, retry.key)}>
-          Retry image upload
+          {t("rich.retryImage")}
         </Button>
       )}
-      {error && <p role="alert" className="mt-1 text-xs text-destructive">{error}</p>}
+      {error && <p role="alert" className="mt-1 text-xs text-destructive">{show(error)}</p>}
     </div>
   );
 }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::State;
-use axum::http::{Method, StatusCode};
+use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::routing::{any, delete, get, post};
 use rustcms_core::models::user;
 use rustcms_core::{AppError, AppResult, AppState, ClientIp, Json, Principal, ValidationErrors};
@@ -40,6 +40,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::GET, format!("{admin}/me")),
         (Method::POST, format!("{admin}/password")),
         (Method::POST, format!("{admin}/logout-others")),
+        (Method::POST, format!("{admin}/locale")),
         (Method::POST, "/api/v1/auth/token".into()),
         (Method::DELETE, "/api/v1/auth/token".into()),
         (Method::GET, "/api/v1/auth/me".into()),
@@ -59,6 +60,7 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route(&format!("{admin}/me"), get(me))
         .route(&format!("{admin}/password"), post(change_password))
         .route(&format!("{admin}/logout-others"), post(logout_others))
+        .route(&format!("{admin}/locale"), post(set_locale))
         .route("/api/v1/auth/token", post(issue_token))
         .route("/api/v1/auth/token", delete(revoke_token))
         .route("/api/v1/auth/me", get(me))
@@ -89,9 +91,15 @@ pub struct Me {
     super_admin: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     abilities: Option<Vec<String>>,
+    /// Language of the admin interface for this user and browser.
+    locale: String,
+    /// The user's saved choice (`null`: follow the browser).
+    preferred_locale: Option<String>,
+    /// Languages the user may choose.
+    locales: Vec<String>,
 }
 
-fn me_of(user: &user::Model, principal: &Principal) -> Me {
+fn me_of(app: &AppState, headers: &HeaderMap, user: &user::Model, principal: &Principal) -> Me {
     let mut permissions: Vec<String> = principal.permissions.iter().cloned().collect();
     permissions.sort();
     let abilities = principal.token_abilities.as_ref().map(|a| {
@@ -105,7 +113,59 @@ fn me_of(user: &user::Model, principal: &Principal) -> Me {
         permissions,
         super_admin: principal.super_admin,
         abilities,
+        locale: request_locale(app, headers, user.locale.as_deref()).to_owned(),
+        preferred_locale: user.locale.clone(),
+        locales: app.config().app.locales.clone(),
     }
+}
+
+/// Header the admin panel sends with the language it shows: labels in a
+/// response then always match the language the panel cached them under.
+pub const LOCALE_HEADER: &str = "x-rustcms-locale";
+
+/// The language of the labels in an admin response: the one the panel shows
+/// (`X-Rustcms-Locale`) when offered, else [`request_locale`].
+pub fn display_locale<'a>(app: &'a AppState, headers: &HeaderMap, preferred: Option<&str>) -> &'a str {
+    let shown = headers.get(LOCALE_HEADER).and_then(|v| v.to_str().ok());
+    match shown.and_then(|l| app.config().app.locales.iter().find(|offered| offered.as_str() == l)) {
+        Some(offered) => offered,
+        None => request_locale(app, headers, preferred),
+    }
+}
+
+/// The interface language a user should see: their choice when still
+/// offered, else the browser's, else `app.locale`.
+pub fn request_locale<'a>(app: &'a AppState, headers: &HeaderMap, preferred: Option<&str>) -> &'a str {
+    let config = &app.config().app;
+    let accept = headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok());
+    rustcms_core::i18n::negotiate(preferred, accept, &config.locales, &config.locale)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LocaleChoice {
+    locale: Option<String>,
+}
+
+/// `POST {admin}/api/auth/locale`: saves the interface language of the
+/// signed-in user (`null`: follow the browser). Not a credential change.
+async fn set_locale(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Auth(current): Auth,
+    Json(input): Json<LocaleChoice>,
+) -> AppResult<Json<Value>> {
+    if let Some(locale) = &input.locale
+        && !app.config().app.locales.contains(locale)
+    {
+        return Err(ValidationErrors::field("locale", "is invalid").into());
+    }
+    user::Entity::update_many()
+        .col_expr(user::Column::Locale, sea_orm::sea_query::Expr::value(input.locale.clone()))
+        .filter(user::Column::Id.eq(current.user.id))
+        .exec(app.db())
+        .await?;
+    Ok(Json(json!({ "locale": request_locale(&app, &headers, input.locale.as_deref()) })))
 }
 
 #[derive(Deserialize)]
@@ -171,6 +231,7 @@ async fn csrf(State(app): State<AppState>, ClientIp(ip): ClientIp, session: Sess
 async fn login(
     State(app): State<AppState>,
     ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     session: Session,
     Json(input): Json<Credentials>,
 ) -> AppResult<Json<Me>> {
@@ -178,7 +239,7 @@ async fn login(
     let user = attempt(&app, &auth, ip, &input.email, input.password).await?;
     session.login(user.id, user.auth_version);
     let principal = auth.resolver.principal(app.db(), ADMIN_GUARD, &user, None).await?;
-    Ok(Json(me_of(&user, &principal)))
+    Ok(Json(me_of(&app, &headers, &user, &principal)))
 }
 
 async fn logout(session: Session) -> StatusCode {
@@ -186,8 +247,8 @@ async fn logout(session: Session) -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
-async fn me(Auth(auth): Auth) -> Json<Me> {
-    Json(me_of(&auth.user, &auth.principal))
+async fn me(State(app): State<AppState>, headers: HeaderMap, Auth(auth): Auth) -> Json<Me> {
+    Json(me_of(&app, &headers, &auth.user, &auth.principal))
 }
 
 #[derive(Deserialize)]

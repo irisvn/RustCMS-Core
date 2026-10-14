@@ -221,6 +221,7 @@ pub(crate) async fn existing<C: ConnectionTrait>(db: &C, claim: &Claim) -> AppRe
 pub(crate) async fn receipt<C: ConnectionTrait>(db: &C, claim: &Claim) -> AppResult<Value> {
     let row = entity::Entity::find_by_id(claim.id.clone()).one(db).await?.ok_or(AppError::Conflict {
         code: "write_conflict",
+        reason: "receipt_expired",
         message: "The earlier request with this key is no longer known. Reload and check before trying again.",
     })?;
     if row.request_hash != claim.request_hash {

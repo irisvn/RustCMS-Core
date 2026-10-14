@@ -18,6 +18,8 @@ pub struct AdminPanel {
     pub brand: String,
     /// Registered resources.
     pub registry: Arc<Registry>,
+    /// Translations of labels (framework and application catalogs).
+    pub translator: Arc<rustcms_core::i18n::Translator>,
 }
 
 /// `GET panel`.

@@ -95,6 +95,7 @@ pub struct SystemRole {
 /// A declared admin permission.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct PermissionInfo {
     /// Name (`posts.update`).
     pub name: String,
@@ -102,6 +103,11 @@ pub struct PermissionInfo {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    /// The group as shown: a resource's plural label, else the group, in the
+    /// request's language. The group itself stays the identifier.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_label: Option<String>,
     /// The current user holds it, so may grant or remove it.
     pub grantable: bool,
 }

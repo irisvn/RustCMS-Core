@@ -16,29 +16,31 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 import { Field, type Errors, failure, linkButton, useMounted } from "./shared";
+import { later, show, type Text, useT } from "@/i18n";
 
 export function RolesPage() {
+  const t = useT();
   const panel = usePanel();
   const roles = useRoles();
   if (roles.isLoading) return <Loading />;
   if (!roles.data) return <ErrorState error={roles.error} />;
   return (
     <Page>
-      <PageHeader title="Roles" description="Organize access with roles and explicit permissions."
-        eyebrow="System" actions={panel.data?.system?.createRoles && (
+      <PageHeader title={t("nav.roles")} description={t("roles.description")}
+        eyebrow={t("nav.system")} actions={panel.data?.system?.createRoles && (
           <Link to="/system/roles/create" className={linkButton}>
-            New role
+            {t("roles.new")}
           </Link>
         )} />
       <PausedBanner scope={ROLES} />
       <Card className="min-w-0 overflow-hidden">
         <div className="overflow-x-auto">
-          <table aria-label="Roles" className="w-full min-w-[480px] text-sm">
+          <table aria-label={t("nav.roles")} className="w-full min-w-[480px] text-sm">
             <thead className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
               <tr>
-                <th scope="col" className="px-5 py-3 font-medium">Name</th>
-                <th scope="col" className="px-5 py-3 font-medium">Permissions</th>
-                <th scope="col" className="px-5 py-3 font-medium">Users</th>
+                <th scope="col" className="px-5 py-3 font-medium">{t("field.name")}</th>
+                <th scope="col" className="px-5 py-3 font-medium">{t("roles.permissions")}</th>
+                <th scope="col" className="px-5 py-3 font-medium">{t("nav.users")}</th>
               </tr>
             </thead>
             <tbody>
@@ -50,11 +52,11 @@ export function RolesPage() {
                         className="font-medium text-primary hover:underline">
                         {r.name}
                       </Link>
-                      {r.isSystem && <Badge>system</Badge>} {r.isPrivileged &&
-                        <Badge className="border border-border bg-background">privileged</Badge>}
+                      {r.isSystem && <Badge>{t("roles.system")}</Badge>} {r.isPrivileged &&
+                        <Badge className="border border-border bg-background">{t("roles.privileged")}</Badge>}
                     </div>
                   </td>
-                  <td className="px-5 py-4 tabular-nums">{r.isSystem && r.name === "super_admin" ? "all" : r.permissions.length}</td>
+                  <td className="px-5 py-4 tabular-nums">{r.isSystem && r.name === "super_admin" ? t("roles.all") : r.permissions.length}</td>
                   <td className="px-5 py-4 tabular-nums">{r.users}</td>
                 </tr>
               ))}
@@ -79,17 +81,18 @@ function PermissionMatrix({
   disabled?: boolean;
   describedBy?: string;
 }) {
+  const t = useT();
   const groups = useMemo(() => groupPermissions(permissions), [permissions]);
   return (
     <div className="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
       {groups.map(([group, list]) => (
         <fieldset key={group} className="min-w-0 rounded-lg border border-border bg-background p-3"
           aria-describedby={describedBy}>
-          <legend className="max-w-full break-all px-2 text-sm font-semibold">{group}</legend>
+          <legend className="max-w-full break-all px-2 text-sm font-semibold">{list[0]?.groupLabel ?? group}</legend>
           {list.map((p) => (
             <label key={p.name}
               className="flex min-w-0 items-start gap-3 rounded-md px-2 py-2.5 text-sm transition-colors hover:bg-muted/40 has-disabled:cursor-not-allowed has-disabled:opacity-60"
-              title={p.grantable ? undefined : "You do not hold this permission"}>
+              title={p.grantable ? undefined : t("roles.notHeld")}>
               <Checkbox
                 className="mt-0.5 shrink-0"
                 aria-describedby={describedBy}
@@ -113,6 +116,7 @@ function PermissionMatrix({
 }
 
 export function RoleCreatePage() {
+  const t = useT();
   const navigate = useNavigate();
   const mounted = useMounted();
   const permissions = usePermissions();
@@ -137,18 +141,18 @@ export function RoleCreatePage() {
   };
   return (
     <Page>
-      <PageHeader title="New role" description="Name this role and choose the permissions it grants."
-        eyebrow="System" />
+      <PageHeader title={t("roles.new")} description={t("roles.newDescription")}
+        eyebrow={t("nav.system")} />
       <PausedBanner scope={ROLES} />
       <form className="flex min-w-0 flex-col gap-6" onSubmit={(e) => void submit(e)} noValidate>
         {errors.form && <Alert variant="destructive">{errors.form}</Alert>}
         <Card>
           <CardHeader>
-            <CardTitle>Role details</CardTitle>
-            <p className="text-sm text-muted-foreground">Use a clear name to identify this access level.</p>
+            <CardTitle>{t("roles.details")}</CardTitle>
+            <p className="text-sm text-muted-foreground">{t("roles.detailsText")}</p>
           </CardHeader>
           <CardContent className="max-w-lg">
-            <Field id="role-name" label="Name" errors={errors.fields.name}>
+            <Field id="role-name" label={t("field.name")} errors={errors.fields.name}>
               <Input id="role-name" value={name} onChange={(e) => setName(e.target.value)}
                 disabled={create.isPending} aria-invalid={!!errors.fields.name}
                 aria-describedby={errors.fields.name ? "role-name-error" : undefined} />
@@ -157,9 +161,8 @@ export function RoleCreatePage() {
         </Card>
         <Card className="min-w-0">
           <CardHeader>
-            <CardTitle>Permissions</CardTitle>
-            <p id="permissions-help" className="text-sm text-muted-foreground">Permissions are grouped by
-              resource. You can only change permissions you hold.</p>
+            <CardTitle>{t("roles.permissions")}</CardTitle>
+            <p id="permissions-help" className="text-sm text-muted-foreground">{t("roles.permissionsHelp")}</p>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             {errors.fields.permissions && <Alert id="permissions-error"
@@ -171,7 +174,7 @@ export function RoleCreatePage() {
         </Card>
         <div>
           <Button type="submit" disabled={create.isPending}>
-            Create role
+            {t("roles.create")}
           </Button>
         </div>
       </form>
@@ -180,6 +183,7 @@ export function RoleCreatePage() {
 }
 
 export function RolePage({ id }: { id: string }) {
+  const t = useT();
   const navigate = useNavigate();
   const client = useQueryClient();
   const mounted = useMounted();
@@ -190,7 +194,7 @@ export function RolePage({ id }: { id: string }) {
   const [draft, setDraft] = useState<Set<string> | null>(null);
   const [base, setBase] = useState<string[]>([]);
   const [stale, setStale] = useState(false);
-  const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: Text } | null>(null);
   const [confirm, setConfirm] = useState(false);
   if (role.isLoading || permissions.isLoading) return <Loading />;
   if (!role.data) return <ErrorState error={role.error} />;
@@ -200,7 +204,7 @@ export function RolePage({ id }: { id: string }) {
   const r = role.data;
   const selected = draft ?? new Set(r.permissions);
   const superAdmin = r.isSystem && r.name === "super_admin";
-  const act = async (action: () => Promise<unknown>, done: string) => {
+  const act = async (action: () => Promise<unknown>, done: Text) => {
     setNotice(null);
     try {
       await action();
@@ -211,7 +215,7 @@ export function RolePage({ id }: { id: string }) {
       const f = failure(e);
       setNotice({
         variant: "destructive",
-        text: f.form ?? (Object.values(f.fields).flat().join(" ") || "Not saved.")
+        text: () => f.form ?? (Object.values(f.fields).flat().join(" ") || t("system.notSaved")),
       });
       if (f.stale) {
         setStale(true);
@@ -222,18 +226,18 @@ export function RolePage({ id }: { id: string }) {
   };
   return (
     <Page>
-      <PageHeader title={r.name} description="Review and manage the permissions assigned to this role."
-        eyebrow="System / Roles" actions={r.abilities.delete && (
+      <PageHeader title={r.name} description={t("roles.roleDescription")}
+        eyebrow={t("roles.eyebrow")} actions={r.abilities.delete && (
           <Button variant="destructive" onClick={() => setConfirm(true)} disabled={remove.isPending}>
-            Delete role
+            {t("roles.delete")}
           </Button>
         )} />
       <PausedBanner scope={ROLES} />
-      {r.isSystem && <div><Badge>system</Badge></div>}
-      {notice && <Alert variant={notice.variant}>{notice.text}</Alert>}
+      {r.isSystem && <div><Badge>{t("roles.system")}</Badge></div>}
+      {notice && <Alert variant={notice.variant}>{show(notice.text)}</Alert>}
       {stale && (
         <Alert variant="warning">
-          Someone changed this role meanwhile; your unsaved changes are kept.{" "}
+          {t("roles.stale")}{" "}
           <button
             type="button"
             className="underline"
@@ -243,19 +247,17 @@ export function RolePage({ id }: { id: string }) {
               setNotice(null);
             }}
           >
-            Discard my changes
+            {t("system.discard")}
           </button>
         </Alert>
       )}
       {superAdmin ? (
-        <Alert>The super admin role bypasses permission checks in the admin panel; it has no permission
-          list.</Alert>
+        <Alert>{t("roles.superAdmin")}</Alert>
       ) : (
         <Card className="min-w-0">
           <CardHeader>
-            <CardTitle>Permissions</CardTitle>
-            <p id="permissions-help" className="text-sm text-muted-foreground">Permissions are grouped by
-              resource. You can only change permissions you hold.</p>
+            <CardTitle>{t("roles.permissions")}</CardTitle>
+            <p id="permissions-help" className="text-sm text-muted-foreground">{t("roles.permissionsHelp")}</p>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             <PermissionMatrix
@@ -275,9 +277,9 @@ export function RolePage({ id }: { id: string }) {
                   onClick={() => void act(() => save.mutateAsync({
                     permissions: [...selected].sort(),
                     expected: base
-                  }), "Permissions saved.").then((ok) => ok && setDraft(null))}
+                  }), later("roles.saved")).then((ok) => ok && setDraft(null))}
                 >
-                  Save permissions
+                  {t("roles.save")}
                 </Button>
               </div>
             )}
@@ -286,24 +288,24 @@ export function RolePage({ id }: { id: string }) {
       )}
       <Link to="/system/roles"
         className="w-fit text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        ← All roles
+        {t("roles.back")}
       </Link>
-      <Dialog open={confirm} onClose={() => setConfirm(false)} title="Delete role?">
-        <p className="text-sm text-muted-foreground">{r.users} users lose this role.</p>
+      <Dialog open={confirm} onClose={() => setConfirm(false)} title={t("roles.confirmDelete")}>
+        <p className="text-sm text-muted-foreground">{t("roles.usersLose", { count: r.users })}</p>
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={() => setConfirm(false)}>
-            Cancel
+            {t("action.cancel")}
           </Button>
           <Button
             variant="destructive"
             onClick={() => {
               setConfirm(false);
-              void act(() => remove.mutateAsync(id), "Deleted.").then((ok) => {
+              void act(() => remove.mutateAsync(id), later("list.deleted")).then((ok) => {
                 if (ok && mounted.current) void navigate({ to: "/system/roles" });
               });
             }}
           >
-            Delete
+            {t("action.delete")}
           </Button>
         </div>
       </Dialog>

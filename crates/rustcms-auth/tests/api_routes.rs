@@ -126,7 +126,8 @@ db_test!(validated_bodies_are_throttled_parsed_then_checked, migrate = Migrator,
     assert_eq!(
         invalid.json(),
         json!({"message": "The given data was invalid.", "code": "validation_failed",
-               "errors": {"title": ["is required"]}, "formErrors": []})
+               "errors": {"title": ["is required"]}, "formErrors": [],
+               "issues": {"title": [{"code": "required", "params": {}}]}, "formIssues": []})
     );
     // Not `T`: 422 with one form error and no field errors.
     let shape = admin.post_json("/api/v1/notes", &json!({"title": "x", "extra": 1})).await;

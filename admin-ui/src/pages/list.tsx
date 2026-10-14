@@ -14,6 +14,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Cell, FilterControl, KNOWN_FILTERS, type FilterParams } from "@/renderers/table";
+import { errorText, formatCount, later, show, t as translate, type Text, useT } from "@/i18n";
 
 export type ListSearch = Record<string, string>;
 
@@ -39,16 +40,17 @@ function useDebounced(value: string, ms: number) {
   return debounced;
 }
 
-const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const recordCount = (n: number) => translate("list.records", { count: n, n: formatCount(n) });
 
 export function outcomeMessage(label: string, outcome: ActionOutcome): string {
-  const parts = [`${label}: ${count(outcome.processed.length, "record")} done`];
-  if (outcome.denied.length) parts.push(`${count(outcome.denied.length, "record")} not allowed`);
-  if (outcome.missing.length) parts.push(`${count(outcome.missing.length, "record")} no longer available`);
-  return parts.join(", ") + ".";
+  const parts = [translate("action.outcomeDone", { action: label, records: recordCount(outcome.processed.length) })];
+  if (outcome.denied.length) parts.push(translate("action.outcomeDenied", { records: recordCount(outcome.denied.length) }));
+  if (outcome.missing.length) parts.push(translate("action.outcomeMissing", { records: recordCount(outcome.missing.length) }));
+  return translate("action.outcome", { parts: parts.join(translate("list.separator")) });
 }
 
 export function ListPage({ slug, search }: { slug: string; search: ListSearch }) {
+  const t = useT();
   const navigate = useNavigate();
   const schema = useSchema(slug, "view");
   const query = useMemo(() => listQuery(search), [search]);
@@ -64,7 +66,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     | { kind: "action"; action: ActionSchema; keys: string[] }
     | null
   >(null);
-  const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: Text } | null>(null);
   // A write with an unknown outcome (timeout, cut connection) must not be repeated blindly.
   const uncertain = useUncertain(slug);
   const [filtersOpen, setFiltersOpen] = useState(true);
@@ -137,10 +139,10 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     if (stale || keys.length === 0) return;
     try {
       const outcome = await run.mutateAsync({ action: action.name, keys });
-      setNotice({ variant: outcome.processed.length ? "default" : "destructive", text: outcomeMessage(action.label, outcome) });
+      setNotice({ variant: outcome.processed.length ? "default" : "destructive", text: () => outcomeMessage(action.label, outcome) });
       setSelected(new Set());
     } catch (e) {
-      setNotice({ variant: "destructive", text: e instanceof Error ? e.message : "The action failed." });
+      setNotice({ variant: "destructive", text: errorText(e, "action.failed") });
     }
   };
   const confirmed = async () => {
@@ -152,23 +154,23 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
       const row = rows.find((r) => r.key === current.record.key);
       const ability = current.kind === "delete" ? "delete" : "force_delete";
       if (stale || locked || !row || !row.abilities[ability]) {
-        setNotice({ variant: "destructive", text: "This record changed meanwhile; nothing was done." });
+        setNotice({ variant: "destructive", text: later("list.changedMeanwhile") });
         return;
       }
     }
     if (current.kind === "delete") {
       try {
         await del.mutateAsync(current.record.key);
-        setNotice({ variant: "default", text: table.softDeletes ? "Moved to the trash." : "Deleted." });
+        setNotice({ variant: "default", text: later(table.softDeletes ? "list.trashed" : "list.deleted") });
       } catch (e) {
-          setNotice({ variant: "destructive", text: e instanceof Error ? e.message : "Could not delete." });
+          setNotice({ variant: "destructive", text: errorText(e, "list.deleteFailed") });
       }
     } else if (current.kind === "force") {
       try {
         await forceDelete.mutateAsync(current.record.key);
-        setNotice({ variant: "default", text: "Deleted permanently." });
+        setNotice({ variant: "default", text: later("list.deletedForGood") });
       } catch (e) {
-        setNotice({ variant: "destructive", text: e instanceof Error ? e.message : "Could not delete." });
+        setNotice({ variant: "destructive", text: errorText(e, "list.deleteFailed") });
       }
     } else {
       await runAction(current.action, current.keys);
@@ -178,9 +180,9 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     setNotice(null);
     try {
       await restore.mutateAsync(record.key);
-      setNotice({ variant: "default", text: "Restored." });
+      setNotice({ variant: "default", text: later("list.restored") });
     } catch (e) {
-      setNotice({ variant: "destructive", text: e instanceof Error ? e.message : "Could not restore." });
+      setNotice({ variant: "destructive", text: errorText(e, "list.restoreFailed") });
     }
   };
   const startAction = (action: ActionSchema, keys: string[]) =>
@@ -188,13 +190,13 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
 
   return (
     <Page>
-      <PageHeader title={s.resource.pluralLabel} description={`Browse and manage your ${s.resource.pluralLabel.toLowerCase()}.`} actions={s.abilities.create && !readOnly && !uncertain && (
+      <PageHeader title={s.resource.pluralLabel} description={t("list.description", { resource: s.resource.pluralLabel.toLocaleLowerCase() })} actions={s.abilities.create && !readOnly && !uncertain && (
         <Button onClick={() => navigate({ to: "/r/$slug/create", params: { slug } })}>
-          <Plus /> New {s.resource.label.toLowerCase()}
+          <Plus /> {t("list.new", { resource: s.resource.label.toLocaleLowerCase() })}
         </Button>
       )} />
       <VersionBanner schema={s} />
-      {notice && <Alert variant={notice.variant}>{notice.text}</Alert>}
+      {notice && <Alert variant={notice.variant}>{show(notice.text)}</Alert>}
       <PausedBanner scope={slug} />
 
       <Card>
@@ -203,19 +205,19 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
             {table.searchable && (
               <div className="relative w-full sm:max-w-xs">
                 <Search className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" aria-hidden="true" />
-                <Input aria-label="Search" placeholder={`Search ${s.resource.pluralLabel.toLowerCase()}…`} className="pl-9" value={searchText} onChange={(e) => setSearchText(e.target.value)} />
+                <Input aria-label={t("list.search")} placeholder={t("list.searchPlaceholder", { resource: s.resource.pluralLabel.toLocaleLowerCase() })} className="pl-9" value={searchText} onChange={(e) => setSearchText(e.target.value)} />
               </div>
             )}
-            {filters.length > 0 && <Button variant="outline" aria-expanded={filtersOpen} aria-controls={filtersId} onClick={() => setFiltersOpen((value) => !value)}><ListFilter />Filters{activeFilters.length > 0 && <span className="rounded bg-muted px-1.5 text-xs">{activeFilters.length}</span>}</Button>}
-            {activeFilters.length > 0 && <Button variant="ghost" size="sm" onClick={clearFilters}><X />Clear filters</Button>}
+            {filters.length > 0 && <Button variant="outline" aria-expanded={filtersOpen} aria-controls={filtersId} onClick={() => setFiltersOpen((value) => !value)}><ListFilter />{t("list.filters")}{activeFilters.length > 0 && <span className="rounded bg-muted px-1.5 text-xs">{activeFilters.length}</span>}</Button>}
+            {activeFilters.length > 0 && <Button variant="ghost" size="sm" onClick={clearFilters}><X />{t("list.clearFilters")}</Button>}
             {trash && (
-              <NativeSelect aria-label="Trashed records" className="w-44" value={trashMode} onChange={(e) => setSearch({ trashed: e.target.value || undefined })}>
-                <option value="">Without trashed</option>
-                <option value="with">With trashed</option>
-                <option value="only">Only trashed</option>
+              <NativeSelect aria-label={t("list.trashedRecords")} className="w-44" value={trashMode} onChange={(e) => setSearch({ trashed: e.target.value || undefined })}>
+                <option value="">{t("list.withoutTrashed")}</option>
+                <option value="with">{t("list.withTrashed")}</option>
+                <option value="only">{t("list.onlyTrashed")}</option>
               </NativeSelect>
             )}
-            {meta && <span className="ml-auto text-xs text-muted-foreground">{count(meta.total, "record")}</span>}
+            {meta && <span className="ml-auto text-xs text-muted-foreground">{recordCount(meta.total)}</span>}
           </div>
           {filters.length > 0 && (
             <div id={filtersId} hidden={!filtersOpen}>
@@ -224,11 +226,11 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
               </div>
             </div>
           )}
-          {!filtersOpen && activeFilters.length > 0 && <p className="text-xs text-muted-foreground">Filtering by {activeFilters.map((f) => f.label).join(", ")}</p>}
+          {!filtersOpen && activeFilters.length > 0 && <p className="text-xs text-muted-foreground">{t("list.filteringBy", { filters: activeFilters.map((f) => f.label).join(t("list.separator")) })}</p>}
         </div>
         {bulkActions.length > 0 && selected.size > 0 && !stale && (
           <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/50 px-4 py-3 text-sm sm:px-5">
-            <span className="mr-2 font-medium">{count(selected.size, "selected record")}</span>
+            <span className="mr-2 font-medium">{t("list.selected", { count: selected.size, n: formatCount(selected.size) })}</span>
             {bulkActions.map((a) => <Button key={a.name} size="sm" variant={a.color === "danger" ? "destructive" : "outline"} disabled={run.isPending} onClick={() => startAction(a, [...selected])}>{a.label}</Button>)}
           </div>
         )}
@@ -243,7 +245,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                   {bulkActions.length > 0 && (
                     <th className="w-8 p-3">
                       <Checkbox
-                        aria-label="Select all"
+                        aria-label={t("list.selectAll")}
                         disabled={stale}
                         checked={rows.length > 0 && rows.every((r) => selected.has(r.key))}
                         indeterminate={rows.some((r) => selected.has(r.key)) && !rows.every((r) => selected.has(r.key))}
@@ -256,8 +258,8 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                       {c.sortable ? (
                         <button type="button" className="inline-flex min-h-8 items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => toggleSort(c.name)}>
                           {c.label}
-                          {sort === c.name && <ArrowUp className="size-3" aria-label="ascending" />}
-                          {sort === `-${c.name}` && <ArrowDown className="size-3" aria-label="descending" />}
+                          {sort === c.name && <ArrowUp className="size-3" aria-label={t("list.ascending")} />}
+                          {sort === `-${c.name}` && <ArrowDown className="size-3" aria-label={t("list.descending")} />}
                         </button>
                       ) : (
                         c.label
@@ -265,7 +267,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                     </th>
                   ))}
                   <th className="p-3 text-right">
-                    <span className="sr-only">Actions</span>
+                    <span className="sr-only">{t("list.actions")}</span>
                   </th>
                 </tr>
               </thead>
@@ -280,7 +282,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                 {!records.isLoading && rows.length === 0 && (
                   <tr>
                     <td colSpan={table.columns.length + 2} className="p-8 text-center text-muted-foreground">
-                      No records found.
+                      {t("list.empty")}
                     </td>
                   </tr>
                 )}
@@ -289,7 +291,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                     {bulkActions.length > 0 && (
                       <td className="p-3">
                         <Checkbox
-                          aria-label={`Select ${record.title ?? record.key}`}
+                          aria-label={t("list.select", { record: record.title ?? record.key })}
                           disabled={stale}
                           checked={selected.has(record.key)}
                           onChange={(e) => {
@@ -304,7 +306,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                     {table.columns.map((c, i) => (
                       <td key={c.name} className="p-3">
                         <Cell column={c} record={record} />
-                        {i === 0 && record.trashed && <Badge className="ml-2">Trashed</Badge>}
+                        {i === 0 && record.trashed && <Badge className="ml-2">{t("list.trashedBadge")}</Badge>}
                       </td>
                     ))}
                     <td className="p-3">
@@ -320,7 +322,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                           <Link
                             to="/r/$slug/records/$key"
                             params={{ slug, key: record.key }}
-                            aria-label="View"
+                            aria-label={t("action.view")}
                             className="inline-flex size-9 items-center justify-center rounded-md hover:bg-muted [&_svg]:size-4"
                           >
                             <Eye />
@@ -330,25 +332,25 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                           <Link
                             to="/r/$slug/records/$key/edit"
                             params={{ slug, key: record.key }}
-                            aria-label="Edit"
+                            aria-label={t("action.edit")}
                             className="inline-flex size-9 items-center justify-center rounded-md hover:bg-muted [&_svg]:size-4"
                           >
                             <Pencil />
                           </Link>
                         )}
                         {record.abilities.delete && !locked && (
-                          <Button size="icon" variant="ghost" aria-label="Delete" disabled={del.isPending || stale} onClick={() => setConfirm({ kind: "delete", record })}>
+                          <Button size="icon" variant="ghost" aria-label={t("action.delete")} disabled={del.isPending || stale} onClick={() => setConfirm({ kind: "delete", record })}>
                             <Trash2 />
                           </Button>
                         )}
                         {record.trashed && record.abilities.restore && !locked && (
                           <Button size="sm" variant="ghost" disabled={restore.isPending || stale} onClick={() => void restoreRecord(record)}>
-                            <RotateCcw /> Restore
+                            <RotateCcw /> {t("action.restore")}
                           </Button>
                         )}
                         {record.trashed && record.abilities.force_delete && !locked && (
                           <Button size="sm" variant="ghost" className="text-destructive" disabled={forceDelete.isPending || stale} onClick={() => setConfirm({ kind: "force", record })}>
-                            Delete permanently
+                            {t("action.forceDelete")}
                           </Button>
                         )}
                       </div>
@@ -363,11 +365,11 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
         {meta && (
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border p-3 text-sm">
             <span className="text-muted-foreground">
-              {meta.total === 0 ? "No results" : `Page ${meta.page} of ${meta.lastPage} · ${count(meta.total, "record")}`}
+              {meta.total === 0 ? t("list.noResults") : t("list.page", { page: formatCount(meta.page), last: formatCount(meta.lastPage), records: recordCount(meta.total) })}
             </span>
             <div className="flex items-center gap-2">
               <NativeSelect
-                aria-label="Per page"
+                aria-label={t("list.perPage")}
                 className="w-20"
                 value={String(meta.perPage)}
                 onChange={(e) => setSearch({ per_page: e.target.value })}
@@ -379,34 +381,34 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                 ))}
               </NativeSelect>
               <Button size="sm" variant="outline" disabled={meta.page <= 1} onClick={() => setSearch({ page: String(meta.page - 1) }, false)}>
-                Previous
+                {t("list.previous")}
               </Button>
               <Button size="sm" variant="outline" disabled={meta.page >= meta.lastPage} onClick={() => setSearch({ page: String(meta.page + 1) }, false)}>
-                Next
+                {t("list.next")}
               </Button>
             </div>
           </div>
         )}
       </Card>
 
-      <Dialog open={confirm !== null} onClose={() => setConfirm(null)} title={confirm?.kind === "action" ? confirm.action.label : "Delete record?"}>
+      <Dialog open={confirm !== null} onClose={() => setConfirm(null)} title={confirm?.kind === "action" ? confirm.action.label : t("list.confirmDelete")}>
         <p className="text-sm text-muted-foreground">
           {confirm?.kind === "delete"
             ? table.softDeletes
-              ? `"${confirm.record.title ?? confirm.record.key}" will be moved to the trash.`
-              : `"${confirm.record.title ?? confirm.record.key}" will be deleted. This cannot be undone.`
+              ? t("list.confirmTrash", { record: confirm.record.title ?? confirm.record.key })
+              : t("list.confirmDeleteText", { record: confirm.record.title ?? confirm.record.key })
             : confirm?.kind === "force"
-              ? `"${confirm.record.title ?? confirm.record.key}" will be deleted permanently. This cannot be undone.`
+              ? t("list.confirmForce", { record: confirm.record.title ?? confirm.record.key })
             : confirm?.kind === "action"
               ? confirm.action.confirm
               : ""}
         </p>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => setConfirm(null)}>
-            Cancel
+            {t("action.cancel")}
           </Button>
           <Button variant={confirm?.kind === "delete" || confirm?.kind === "force" ? "destructive" : "default"} onClick={() => void confirmed()}>
-            Confirm
+            {t("action.confirm")}
           </Button>
         </div>
       </Dialog>

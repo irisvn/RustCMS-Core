@@ -26,6 +26,7 @@ import { FileUploadWidget, MediaThumb } from "./media";
 import { RichEditorWidget, RichTextView } from "./rich-text";
 import { CustomField } from "./custom";
 import { asDocument } from "@/lib/rich-text";
+import { useT } from "@/i18n";
 
 export interface FormContext {
   slug: string;
@@ -103,6 +104,7 @@ function TabsLayout({ layout, errors, attempt, render }: {
   attempt?: number;
   render: (tab: LayoutSchema) => React.ReactNode;
 }) {
+  const t = useT();
   const base = useId();
   const tabs = layout.components.filter((c): c is LayoutSchema => !isInput(c));
   const [active, setActive] = useState(0);
@@ -130,7 +132,7 @@ function TabsLayout({ layout, errors, attempt, render }: {
   if (tabs.length === 0) return null;
   return (
     <div className="col-span-full min-w-0">
-      <div role="tablist" aria-label={layout.label ?? "Sections"} className="flex flex-wrap gap-1 border-b border-border" onKeyDown={onKey}>
+      <div role="tablist" aria-label={layout.label ?? t("form.sections")} className="flex flex-wrap gap-1 border-b border-border" onKeyDown={onKey}>
         {tabs.map((tab, i) => {
           const id = tab.id ?? String(i);
           const count = failing[i]?.length ?? 0;
@@ -156,7 +158,7 @@ function TabsLayout({ layout, errors, attempt, render }: {
               {count > 0 && (
                 <span className="rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">
                   {count}
-                  <span className="sr-only"> {count === 1 ? "error" : "errors"}</span>
+                  <span className="sr-only"> {t("form.errors", { count })}</span>
                 </span>
               )}
             </button>
@@ -182,6 +184,7 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
   slug: string;
   record: string;
 }) {
+  const t = useT();
   return <>{components.map((component, index) => {
     if (!isInput(component) && component.type === "tabs") {
       return <TabsLayout key={`layout-${index}`} layout={component} render={(tab) =>
@@ -197,16 +200,16 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
     const value = supplied ? data[component.name] : undefined;
     const unknown = !KNOWN_INPUTS.has(component.type);
     let content: React.ReactNode;
-    if (!supplied || value === undefined) content = <span className="text-muted-foreground">Not provided</span>;
-    else if (value === null) content = <span className="text-muted-foreground">Not set (null)</span>;
-    else if (value === "") content = <span className="text-muted-foreground">Empty string</span>;
+    if (!supplied || value === undefined) content = <span className="text-muted-foreground">{t("value.notProvided")}</span>;
+    else if (value === null) content = <span className="text-muted-foreground">{t("value.null")}</span>;
+    else if (value === "") content = <span className="text-muted-foreground">{t("value.emptyString")}</span>;
     else if (component.type === "select" && component.relationship &&
       (typeof value === "string" || (typeof value === "number" && Number.isSafeInteger(value)))) {
       content = <RelationValue slug={slug} field={component.name} record={record} value={JSON.stringify(value)} />;
     } else if (component.type === "select") {
       // Option labels first: a select may offer booleans with their own labels.
       const option = component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(value));
-      content = option?.label ?? (typeof value === "boolean" ? (value ? "Yes" : "No") : readOnlyText(value));
+      content = option?.label ?? (typeof value === "boolean" ? (value ? t("value.yes") : t("value.no")) : readOnlyText(value));
     } else if (component.type === "file_upload" && (typeof value === "string" || Array.isArray(value))) {
       const ids = (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === "string");
       content = <div className="flex flex-wrap gap-3">{ids.map((id) => <MediaThumb key={id} id={id} />)}</div>;
@@ -214,7 +217,7 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
       content = <RichTextView doc={asDocument(value)!} />;
     } else if (component.type === "key_value" && isTextObject(value)) {
       const entries = Object.entries(value);
-      content = entries.length === 0 ? <span className="text-muted-foreground">No entries</span> : (
+      content = entries.length === 0 ? <span className="text-muted-foreground">{t("value.noEntries")}</span> : (
         <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-1">
           {entries.map(([k, v]) => [
             <dt key={`k-${k}`} className="font-medium">{k}</dt>,
@@ -222,12 +225,12 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
           ])}
         </dl>
       );
-    } else if (typeof value === "boolean") content = value ? "Yes" : "No";
+    } else if (typeof value === "boolean") content = value ? t("value.yes") : t("value.no");
     else if (component.type === "text_input" && component.mode === "password") {
       // A readable password-mode field is still not shown in clear.
-      content = <span aria-label="Hidden value">••••••••</span>;
+      content = <span aria-label={t("value.hidden")}>••••••••</span>;
     } else if (component.type === "checkbox_list" && Array.isArray(value)) {
-      content = value.length === 0 ? "Empty list" : <ul className="space-y-1">{value.map((item, i) =>
+      content = value.length === 0 ? t("value.emptyList") : <ul className="space-y-1">{value.map((item, i) =>
         <li key={i}>{component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(item))?.label ?? readOnlyText(item)}</li>,
       )}</ul>;
     } else content = readOnlyText(value);
@@ -302,13 +305,14 @@ interface WidgetProps {
 const encodeOption = (o: SelectOption) => JSON.stringify(o.value);
 
 function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, describedBy }: WidgetProps) {
+  const t = useT();
   if (isTriState(input)) {
     // Nullable boolean: "not set" is a value of its own, and can be restored.
     return (
       <NativeSelect id={id} disabled={disabled} onBlur={onBlur} aria-invalid={invalid || undefined} aria-describedby={describedBy} value={typeof value === "string" ? value : ""} onChange={(e) => onChange(e.target.value)}>
-        <option value="">Not set</option>
-        <option value="true">Yes</option>
-        <option value="false">No</option>
+        <option value="">{t("value.notSet")}</option>
+        <option value="true">{t("value.yes")}</option>
+        <option value="false">{t("value.no")}</option>
       </NativeSelect>
     );
   }
@@ -326,7 +330,7 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
           value={text}
           onChange={onText}
           autoComplete={input.mode === "password" ? "new-password" : undefined}
-          placeholder={input.writeOnly ? "Leave empty to keep the current value" : input.placeholder}
+          placeholder={input.writeOnly ? t("form.keepValue") : input.placeholder}
         />
       );
     }
@@ -342,7 +346,7 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
         return (
           <div className="flex items-center gap-2">
             <Input {...common} type="datetime-local" step={1} value={text} onChange={onText} />
-            <span className="text-xs text-muted-foreground">UTC</span>
+            <span className="text-xs text-muted-foreground">{t("form.utc")}</span>
           </div>
         );
       }
@@ -435,6 +439,7 @@ function KeyValueEditor({ id, label, nullable, value, onChange, onBlur, disabled
   invalid: boolean;
   describedBy?: string;
 }) {
+  const t = useT();
   // A stored value that is not text pairs: shown as is (the input is disabled).
   if (typeof value === "string" && value !== "") {
     return <pre id={id} tabIndex={-1} className="overflow-x-auto rounded-md bg-muted p-3 text-xs" data-fallback="true">{value}</pre>;
@@ -445,23 +450,23 @@ function KeyValueEditor({ id, label, nullable, value, onChange, onBlur, disabled
     set(pairs.map((pair, i) => (i === index ? (part === 0 ? [text, pair[1]] : [pair[0], text]) : pair)));
   return (
     <div id={id} tabIndex={-1} role="group" aria-label={label} aria-invalid={invalid || undefined} aria-describedby={describedBy} className="flex flex-col gap-2 focus-visible:outline-none">
-      {pairs.length === 0 && <p className="text-sm text-muted-foreground">{Array.isArray(value) ? "No entries." : "Not set."}</p>}
+      {pairs.length === 0 && <p className="text-sm text-muted-foreground">{Array.isArray(value) ? t("form.noEntries") : t("form.notSet")}</p>}
       {pairs.map(([k, v], i) => (
         <div key={i} className="flex min-w-0 items-center gap-2">
-          <Input aria-label={`Key ${i + 1}`} value={k} disabled={disabled} onBlur={onBlur} onChange={(e) => edit(i, 0, e.target.value)} className="min-w-0 flex-1" />
-          <Input aria-label={`Value ${i + 1}`} value={v} disabled={disabled} onBlur={onBlur} onChange={(e) => edit(i, 1, e.target.value)} className="min-w-0 flex-[2]" />
-          <Button size="icon" variant="ghost" aria-label={`Remove entry ${i + 1}`} disabled={disabled} onClick={() => set(pairs.filter((_, j) => j !== i))}>
+          <Input aria-label={t("form.key", { n: i + 1 })} value={k} disabled={disabled} onBlur={onBlur} onChange={(e) => edit(i, 0, e.target.value)} className="min-w-0 flex-1" />
+          <Input aria-label={t("form.value", { n: i + 1 })} value={v} disabled={disabled} onBlur={onBlur} onChange={(e) => edit(i, 1, e.target.value)} className="min-w-0 flex-[2]" />
+          <Button size="icon" variant="ghost" aria-label={t("form.removeEntry", { n: i + 1 })} disabled={disabled} onClick={() => set(pairs.filter((_, j) => j !== i))}>
             <X />
           </Button>
         </div>
       ))}
       <div>
         <Button size="sm" variant="outline" disabled={disabled} onClick={() => set([...pairs, ["", ""]])}>
-          <Plus /> Add entry
+          <Plus /> {t("form.addEntry")}
         </Button>
         {nullable && Array.isArray(value) && (
           <Button size="sm" variant="ghost" className="ml-2" disabled={disabled} onClick={() => onChange("")}>
-            Clear (not set)
+            {t("form.clear")}
           </Button>
         )}
       </div>

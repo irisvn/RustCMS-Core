@@ -6,6 +6,26 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.3 — M12)
+- **Admin interface in English and Vietnamese.** Users choose on their account
+  page (saved in `users.locale`, new migration; `POST {admin}/api/auth/locale`);
+  otherwise the browser's language, else `app.locale` (`app.locales` lists the
+  choices). Before sign-in the login page offers the choice.
+- Application labels translated from TOML catalogs keyed by the English source
+  (`AdminProvider::translations("vi", include_str!("../lang/vi.toml"))`, per
+  resource with `[slug]` tables); `rustcms lang:missing <locale>`; `ctx.t` for
+  hook messages; translated permission group labels (`groupLabel`).
+- Validation errors carry `issues` / `formIssues` (stable code and parameters
+  per message; messages unchanged) and conflicts a `reason`; the panel
+  translates by code. Extension widgets get `ctx.locale`, `ctx.t` and
+  `registerTranslations`.
+- New apps get `lang/vi.toml`; the demo is translated (ADR 0013).
+
+### Changed (0.3 — M12)
+- `Principal` and `user::Model` have a `locale` field; `AppError::Conflict` has
+  a `reason`. Struct literals of these types need the new field.
+- The panel no longer infers an uncertain write from the text of an error.
+
 ### Added (0.2 — M11)
 - **JWT sign-ins** on the API guard: `POST /api/v1/auth/jwt` (access + refresh
   token), `POST /api/v1/auth/refresh` (rotating, single-use refresh tokens; a

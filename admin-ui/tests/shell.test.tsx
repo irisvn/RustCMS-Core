@@ -75,3 +75,23 @@ it("shows a helpful empty state without inventing resources", async () => {
   expect(await screen.findByText(/There is nothing you can manage yet/)).toBeInTheDocument();
   expect(within(screen.getByRole("main")).queryByRole("link", { name: /Posts/ })).toBeNull();
 });
+
+it("follows the language: labels, an error already shown, and the document title", async () => {
+  const { setLocale } = await import("@/i18n");
+  mount();
+  await screen.findByRole("heading", { name: "Welcome, Admin" });
+  expect(document.title).toBe("Workspace · Admin panel");
+  // A failed sign-out shows an error; it follows the language like the rest.
+  server.use(http.post("*/api/auth/logout", () => HttpResponse.json({ message: "Server error.", code: "internal_error" }, { status: 400 })));
+  server.use(http.get("*/api/auth/csrf", () => HttpResponse.json({ csrfToken: "t", userId: "1" })));
+  await userEvent.click(screen.getAllByRole("button", { name: "Sign out" })[0]!);
+  expect(await screen.findByText("Server error.")).toBeInTheDocument();
+  try {
+    act(() => setLocale("vi"));
+    expect(await screen.findByRole("heading", { name: "Xin chào, Admin" })).toBeInTheDocument();
+    expect(screen.getByText("Lỗi server.")).toBeInTheDocument();
+    expect(document.title).toBe("Workspace · Trang quản trị");
+  } finally {
+    act(() => setLocale("en"));
+  }
+});

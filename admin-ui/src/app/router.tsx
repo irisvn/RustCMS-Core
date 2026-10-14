@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { ApiError } from "@/api/client";
 import { meQuery } from "@/api/queries";
+import { serverLocale } from "@/i18n/preference";
 import { NotFoundPage } from "@/components/states";
 import { ListPage, type ListSearch } from "@/pages/list";
 import { LoginPage } from "@/pages/login";
@@ -47,6 +48,8 @@ const app = createRoute({
     try {
       const me = await context.queryClient.ensureQueryData(meQuery(context.session.api));
       if (typeof me.user?.id === "string") context.session.identify(me.user.id);
+      // The user's language before anything is fetched in another one.
+      serverLocale(me.locale, context.queryClient.getQueryState(meQuery(context.session.api).queryKey)?.dataUpdatedAt ?? 0);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         throw redirect({ to: "/login", search: { redirect: context.session.config.basePath + location.href }, replace: true });

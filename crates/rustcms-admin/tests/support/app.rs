@@ -8,6 +8,19 @@ use rustcms_testing::{Factory, TestApp, TestDb, UserFactory};
 
 use super::{CategoryResource, NoteResource, PostResource, TagResource};
 
+/// Vietnamese labels of the test resources (`[posts]` overrides for that resource).
+pub const VI: &str = r#"
+"Post" = "Bài viết"
+"Posts" = "Bài viết"
+"Title" = "Tiêu đề"
+"Category" = "Danh mục"
+"Categories" = "Danh mục"
+
+[posts]
+"Content" = "Nội dung bài"
+"Publish" = "Xuất bản"
+"#;
+
 pub fn build(config: Config) -> AppBuilder {
     // Each app stores its uploads in its own temporary directory, with small limits.
     let root = std::env::temp_dir().join(format!("rustcms-media-{}", uuid::Uuid::now_v7()));
@@ -27,7 +40,8 @@ pub fn build(config: Config) -> AppBuilder {
             .resource::<CategoryResource>()
             .resource::<PostResource>()
             .resource::<TagResource>()
-            .resource::<NoteResource>(),
+            .resource::<NoteResource>()
+            .translations("vi", VI),
     );
     app
 }

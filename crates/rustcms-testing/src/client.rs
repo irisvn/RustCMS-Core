@@ -19,6 +19,7 @@ pub struct TestClient<'a> {
     bearer: Option<String>,
     origin: Option<String>,
     peer: SocketAddr,
+    languages: Option<String>,
 }
 
 impl TestApp {
@@ -33,6 +34,7 @@ impl TestApp {
             bearer: None,
             origin: Some(origin),
             peer: SocketAddr::from(([127, 0, 0, 1], 40000)),
+            languages: None,
         }
     }
 
@@ -111,6 +113,12 @@ impl TestClient<'_> {
         self
     }
 
+    /// Sends `Accept-Language` (the browser's languages).
+    pub fn languages(mut self, accept_language: &str) -> Self {
+        self.languages = Some(accept_language.to_owned());
+        self
+    }
+
     /// Simulates the TCP peer.
     pub fn from(mut self, peer: SocketAddr) -> Self {
         self.peer = peer;
@@ -168,6 +176,9 @@ impl TestClient<'_> {
         }
         if let Some(csrf) = self.csrf.lock().unwrap().as_deref() {
             headers.insert(HeaderName::from_static(CSRF_HEADER), HeaderValue::from_str(csrf).expect("csrf"));
+        }
+        if let Some(languages) = &self.languages {
+            headers.insert(header::ACCEPT_LANGUAGE, HeaderValue::from_str(languages).expect("accept-language"));
         }
         if let Some(token) = &self.bearer {
             headers.insert(header::AUTHORIZATION, HeaderValue::from_str(&format!("Bearer {token}")).expect("bearer"));

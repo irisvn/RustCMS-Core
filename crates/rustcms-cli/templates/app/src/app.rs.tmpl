@@ -12,6 +12,8 @@ pub fn build(config: Config) -> AppBuilder {
     app.provider(
         AdminProvider::new()
             .brand("{{ name }}")
+            // Labels in Vietnamese (`rustcms lang:missing vi` lists what is missing).
+            .translations("vi", include_str!("../lang/vi.toml"))
             // rustcms:resources
     );
     // Mounted and listed by `rustcms route:list` from the same declarations.

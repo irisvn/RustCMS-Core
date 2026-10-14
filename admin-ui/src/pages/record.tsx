@@ -15,7 +15,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { Components, ReadOnlyComponents, gridCols } from "@/renderers/form";
-import { type FormValues, defaultValues, inputsOf, payloadOf, protectLossyJson } from "@/schema/form";
+import { type FormValues, defaultValues, inputsOf, payloadOf, protectLossyJson, relabel } from "@/schema/form";
+import { errorText, show, type Text, useLocale, useT } from "@/i18n";
 import { editResolver } from "@/schema/resolver";
 import type { PendingWrite } from "@/app/session";
 
@@ -91,6 +92,7 @@ function RecordForm({
   /** Creating through a relation; its field is set by the server, so not shown. */
   via?: Via & { field: string };
 }) {
+  const t = useT();
   const navigate = useNavigate();
   // Completion redirects only apply while the page that started the write is shown.
   const mounted = useMounted();
@@ -127,7 +129,23 @@ function RecordForm({
   // This form's identity: a retried create continues here only if it came from here.
   const [origin] = useState(() => crypto.randomUUID());
   const save = useSaveRecord(slug, recordKey, origin, via);
-  const [formErrors, setFormErrors] = useState<string[]>([]);
+  // Read when shown: messages follow a change of language.
+  const [formErrors, setFormErrors] = useState<() => string[]>(() => () => []);
+  // The last refused save: its field messages are set again in a new language.
+  const refused = useRef<ApiError | null>(null);
+  const locale = useLocale();
+  useEffect(() => {
+    const known = new Set(inputsOf(components).map((i) => i.name));
+    for (const [field, messages] of Object.entries(refused.current?.fieldErrors ?? {})) {
+      if (known.has(field) && form.getFieldState(field).error?.type === "server") {
+        form.setError(field, { type: "server", message: messages.join(" ") });
+      }
+    }
+    // The panel's own checks run again, in the new language.
+    const shown = Object.keys(form.formState.errors).filter((f) => form.getFieldState(f).error?.type !== "server");
+    if (shown.length) void form.trigger(shown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale]);
   // Inputs with background work (uploads): saving waits for them.
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const onBusy = useCallback((name: string, working: boolean) => {
@@ -166,7 +184,8 @@ function RecordForm({
 
   const submit = form.handleSubmit(async (values) => {
     if (busy.size > 0) return;
-    setFormErrors([]);
+    setFormErrors(() => () => []);
+    refused.current = null;
     const changed = Object.fromEntries(inputs.map((i) => [i.name, dirty.current(i.name)]));
     const payload = payloadOf(inputs, values, changed);
     // An untouched declared default goes out exactly as the server stated it
@@ -182,15 +201,20 @@ function RecordForm({
     } catch (e) {
       if (e instanceof ApiError && e.status === 422) {
         const known = new Set(inputs.map((i) => i.name));
-        const other: string[] = [...e.formErrors];
+        refused.current = e;
         for (const [field, messages] of Object.entries(e.fieldErrors)) {
-          if (known.has(field)) form.setError(field, { message: messages.join(" ") });
-          else other.push(`${field}: ${messages.join(" ")}`);
+          if (known.has(field)) form.setError(field, { type: "server", message: messages.join(" ") });
         }
-        setFormErrors(other.length || Object.keys(e.fieldErrors).length ? other : [e.message]);
+        setFormErrors(() => () => {
+          const other: string[] = [...e.formErrors];
+          for (const [field, messages] of Object.entries(e.fieldErrors)) {
+            if (!known.has(field)) other.push(`${field}: ${messages.join(" ")}`);
+          }
+          return other.length || Object.keys(e.fieldErrors).length ? other : [e.message];
+        });
         focusFirstError();
       } else {
-          setFormErrors([e instanceof Error ? e.message : "Could not save."]);
+          setFormErrors(() => () => [e instanceof Error ? e.message : t("record.saveFailed")]);
       }
     }
   }, focusFirstError);
@@ -204,22 +228,26 @@ function RecordForm({
     return true;
   };
 
-  const title = editing ? `Edit ${record?.title ?? schema.resource.label.toLowerCase()}` : `New ${schema.resource.label.toLowerCase()}`;
+  const title = editing
+    ? t("record.editTitle", { record: record?.title ?? schema.resource.label.toLocaleLowerCase() })
+    : t("list.new", { resource: schema.resource.label.toLocaleLowerCase() });
+  // The language changed: same form and values, labels of the latest schema.
+  const shown = relabel(components, schema.form.components);
   return (
     <Page className="max-w-4xl">
     <form className="flex min-w-0 flex-col gap-6" onSubmit={(e) => void submit(e)} noValidate>
-      <PageHeader title={title} eyebrow={schema.resource.pluralLabel} description={editing ? "Update the record details below." : "Fill in the details to create a record."} />
+      <PageHeader title={title} eyebrow={schema.resource.pluralLabel} description={editing ? t("record.editDescription") : t("record.createDescription")} />
       <VersionBanner schema={schema} />
       <PausedBanner scope={slug} onRecovered={recovered} />
       {refreshError instanceof Error && (
-        <Alert variant="warning">Could not refresh this page ({refreshError.message}). Your changes are kept.</Alert>
+        <Alert variant="warning">{t("record.refreshFailed", { error: refreshError.message })}</Alert>
       )}
       {editing && !record && (
-        <Alert>You may update this record but not view it: only the fields you fill in are changed.</Alert>
+        <Alert>{t("record.blind")}</Alert>
       )}
-      {formErrors.length > 0 && (
+      {formErrors().length > 0 && (
         <Alert variant="destructive">
-          {formErrors.map((m) => (
+          {formErrors().map((m) => (
             <p key={m}>{m}</p>
           ))}
         </Alert>
@@ -227,7 +255,7 @@ function RecordForm({
       <Card>
         <CardContent className={cn("grid grid-cols-1 gap-x-6 gap-y-6 p-5 sm:p-6", gridCols(schema.form.columns))}>
           <Components
-            components={components}
+            components={shown}
             ctx={{
               slug,
               record: recordKey,
@@ -245,10 +273,10 @@ function RecordForm({
       </Card>
       <div className="flex flex-wrap items-center gap-3 border-t border-border pt-5">
         <Button type="submit" disabled={readOnly || uncertain || busy.size > 0 || save.isPending || form.formState.isSubmitting}>
-          {save.isPending ? "Saving…" : editing ? "Save changes" : "Create"}
+          {save.isPending ? t("record.saving") : editing ? t("record.saveChanges") : t("record.create")}
         </Button>
         <Link to="/r/$slug" params={{ slug }} className={linkClass}>
-          Cancel
+          {t("action.cancel")}
         </Link>
       </div>
     </form>
@@ -257,6 +285,7 @@ function RecordForm({
 }
 
 export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string }) {
+  const t = useT();
   const navigate = useNavigate();
   // Completion redirects only apply while the page that started the write is shown.
   const mounted = useMounted();
@@ -264,7 +293,7 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
   const record = useRecord(slug, recordKey);
   const del = useDeleteRecord(slug);
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Text | null>(null);
   const uncertain = useUncertain(slug);
 
   if (schema.isLoading || record.isLoading) return <Loading />;
@@ -278,7 +307,7 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
       await del.mutateAsync(recordKey);
       if (mounted.current) await navigate({ to: "/r/$slug", params: { slug } });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not delete.");
+      setError(() => errorText(e, "list.deleteFailed"));
     }
   };
 
@@ -287,23 +316,23 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
       <PageHeader
         title={record.data.title ?? `${s.resource.label} ${recordKey}`}
         eyebrow={s.resource.pluralLabel}
-        description="Record details"
+        description={t("record.details")}
         actions={<>
           {record.data.abilities.update && !readOnly && (
             <Link to="/r/$slug/records/$key/edit" params={{ slug, key: recordKey }} className={linkClass}>
-              <Pencil /> Edit
+              <Pencil /> {t("action.edit")}
             </Link>
           )}
           {record.data.abilities.delete && !readOnly && (
             <Button variant="destructive" onClick={() => setConfirming(true)} disabled={del.isPending}>
-              <Trash2 /> Delete
+              <Trash2 /> {t("action.delete")}
             </Button>
           )}
         </>}
       />
       <PausedBanner scope={slug} />
       <VersionBanner schema={s} />
-      {error && <Alert variant="destructive">{error}</Alert>}
+      {error && <Alert variant="destructive">{show(error)}</Alert>}
       <Card>
         <CardContent className={cn("grid grid-cols-1 gap-x-6 gap-y-6 p-5 sm:p-6", gridCols(s.form.columns))}>
           <ReadOnlyComponents components={s.form.components} data={record.data.data} slug={slug} record={recordKey} />
@@ -313,16 +342,16 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
         <RelationSection key={relation.name} parent={slug} record={recordKey} relation={relation} />
       ))}
       <Link to="/r/$slug" params={{ slug }} className={buttonVariants({ variant: "ghost", className: "self-start" })}>
-        ← Back to {s.resource.pluralLabel.toLowerCase()}
+        {t("record.back", { resource: s.resource.pluralLabel.toLocaleLowerCase() })}
       </Link>
-      <Dialog open={confirming} onClose={() => setConfirming(false)} title="Delete record?">
-        <p className="text-sm text-muted-foreground">This cannot be undone.</p>
+      <Dialog open={confirming} onClose={() => setConfirming(false)} title={t("list.confirmDelete")}>
+        <p className="text-sm text-muted-foreground">{t("record.cannotUndo")}</p>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => setConfirming(false)}>
-            Cancel
+            {t("action.cancel")}
           </Button>
           <Button variant="destructive" onClick={() => void remove()}>
-            Delete
+            {t("action.delete")}
           </Button>
         </div>
       </Dialog>

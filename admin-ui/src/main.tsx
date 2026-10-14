@@ -6,11 +6,15 @@ import { ApiError } from "@/api/client";
 import { SessionContext } from "@/api/context";
 import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
+import { setLocale } from "@/i18n";
+import { initialLocale, onOtherTabChoice } from "@/i18n/preference";
+import { keys } from "@/api/queries";
 import { readConfig } from "@/lib/config";
 import { loadExtensions } from "@/lib/widgets";
 import "./index.css";
 
 const config = readConfig();
+setLocale(initialLocale(config.locales, config.locale));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -28,6 +32,8 @@ const session = createSession(config, queryClient, (redirect) => {
   void router.navigate({ to: "/login", search: redirect ? { redirect } : {}, replace: true });
 });
 const router = createAppRouter({ queryClient, session });
+// Another tab chose a language: this tab's `/me` is out of date.
+onOtherTabChoice(() => void queryClient.invalidateQueries({ queryKey: keys.me }));
 
 // Extensions register their widgets before the first render.
 await loadExtensions(config.basePath, config.extensions ?? { scripts: [], styles: [] });

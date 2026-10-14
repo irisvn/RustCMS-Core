@@ -28,7 +28,7 @@ pub(super) async fn panel(
     let mut navigation = Vec::new();
     for resource in ctx.registry.all() {
         if resource.allows(&ctx, ability::VIEW_ANY).await {
-            navigation.push(resource.info());
+            navigation.push(resource.info().translated(&ctx));
         }
     }
     Ok(Json(PanelResponse {

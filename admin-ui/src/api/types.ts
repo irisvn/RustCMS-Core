@@ -11,6 +11,11 @@ export interface Me {
   guard: string;
   permissions: string[];
   superAdmin: boolean;
+  /** Interface language for this user and browser. */
+  locale?: string;
+  /** The user's saved choice (`null`: follow the browser). */
+  preferredLocale?: string | null;
+  locales?: string[];
 }
 
 export type Data = Record<string, unknown>;

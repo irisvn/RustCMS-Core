@@ -6,6 +6,8 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 
+use crate::i18n::Issue;
+
 /// Result alias used across rustcms.
 pub type AppResult<T> = Result<T, AppError>;
 
@@ -47,6 +49,19 @@ impl ValidationErrors {
         bag
     }
 
+    /// The issue (stable code and parameters) of every field message, in order.
+    pub fn issues(&self) -> BTreeMap<String, Vec<Issue>> {
+        self.errors
+            .iter()
+            .map(|(field, messages)| (field.clone(), messages.iter().map(|m| Issue::of(m)).collect()))
+            .collect()
+    }
+
+    /// The issue of every form-level message, in order.
+    pub fn form_issues(&self) -> Vec<Issue> {
+        self.form_errors.iter().map(|m| Issue::of(m)).collect()
+    }
+
     /// Converts into `Err(AppError::Validation)` when not empty.
     pub fn into_result(self) -> AppResult<()> {
         if self.is_empty() { Ok(()) } else { Err(AppError::Validation(self)) }
@@ -82,6 +97,8 @@ pub enum AppError {
     Conflict {
         /// Stable machine-readable code (`write_conflict`, …).
         code: &'static str,
+        /// Which conflict, for clients that explain it (`busy`, `upload_expired`, …).
+        reason: &'static str,
         /// Human message.
         message: &'static str,
     },
@@ -156,6 +173,7 @@ impl From<sea_orm::DbErr> for AppError {
         if retryable(&err) {
             return Self::Conflict {
                 code: "write_conflict",
+                reason: "busy",
                 message: "Another change to the same data is in progress. Nothing was saved; try again.",
             };
         }
@@ -212,9 +230,16 @@ struct ErrorBody<'a> {
     message: &'a str,
     code: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     errors: Option<&'a BTreeMap<String, Vec<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     form_errors: Option<&'a Vec<String>>,
+    /// The stable code and parameters of each message in `errors` (same order).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    issues: Option<BTreeMap<String, Vec<Issue>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    form_issues: Option<Vec<Issue>>,
 }
 
 impl IntoResponse for AppError {
@@ -239,7 +264,16 @@ impl IntoResponse for AppError {
             Self::Validation(v) => (Some(&v.errors), Some(&v.form_errors)),
             _ => (None, None),
         };
-        let body = ErrorBody { message, code: self.code(), errors, form_errors };
+        let reason = match &self {
+            Self::Conflict { reason, .. } => Some(*reason),
+            _ => None,
+        };
+        let issues = match &self {
+            Self::Validation(v) => Some((v.issues(), v.form_issues())),
+            _ => None,
+        };
+        let (issues, form_issues) = issues.map_or((None, None), |(i, f)| (Some(i), Some(f)));
+        let body = ErrorBody { message, code: self.code(), reason, errors, form_errors, issues, form_issues };
         let mut response = (self.status(), axum::Json(body)).into_response();
         if let Self::TooManyRequests { retry_after } = self {
             response.headers_mut().insert(axum::http::header::RETRY_AFTER, retry_after.into());

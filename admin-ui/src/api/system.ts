@@ -1,5 +1,6 @@
 // System pages: users, roles and permissions (`/api/system/…`) and the account page.
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocale } from "@/i18n";
 import { useApi, useSession } from "./context";
 import { guardedWrite } from "./queries";
 import type { PermissionInfo, SystemRole, SystemUser, UserPage } from "./types";
@@ -36,7 +37,13 @@ export function useRole(id: string) {
 
 export function usePermissions() {
   const api = useApi();
-  return useQuery({ queryKey: ["system", "permissions"], queryFn: () => api.get<PermissionInfo[]>("/system/permissions") });
+  // Group labels come translated.
+  const locale = useLocale();
+  return useQuery({
+    queryKey: ["system", "permissions", locale],
+    queryFn: () => api.get<PermissionInfo[]>("/system/permissions"),
+    placeholderData: keepPreviousData,
+  });
 }
 
 /** A system write: serialized and paused like resource writes; refreshes system data and the panel. */

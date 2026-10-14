@@ -606,6 +606,11 @@ name: string,
  */
 group?: string, 
 /**
+ * The group as shown: a resource's plural label, else the group, in the
+ * request's language. The group itself stays the identifier.
+ */
+groupLabel?: string, 
+/**
  * The current user holds it, so may grant or remove it.
  */
 grantable: boolean, };

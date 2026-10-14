@@ -8,12 +8,17 @@ export interface PanelConfig {
   apiPath: string;
   /** Extension scripts and styles, relative to `basePath`, in load order. */
   extensions?: { scripts: string[]; styles: string[] };
+  /** Default interface language and the languages users may choose. */
+  locale?: string;
+  locales?: string[];
 }
 
 export function readConfig(doc: Document = document): PanelConfig {
   const raw = doc.querySelector('meta[name="rustcms-admin"]')?.getAttribute("content");
   let basePath = "/admin";
   let extensions: PanelConfig["extensions"];
+  let locale: string | undefined;
+  let locales: string[] | undefined;
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as Partial<PanelConfig>;
@@ -25,13 +30,15 @@ export function readConfig(doc: Document = document): PanelConfig {
           ? list.filter((p): p is string => typeof p === "string" && new RegExp(`^assets/ext/[a-z0-9-]+\\.[0-9a-f]{8}\\.${ext}$`).test(p))
           : [];
       if (ext) extensions = { scripts: own(ext.scripts, "js"), styles: own(ext.styles, "css") };
+      if (typeof parsed.locale === "string") locale = parsed.locale;
+      if (Array.isArray(parsed.locales)) locales = parsed.locales.filter((l): l is string => typeof l === "string");
     } catch {
       // Keep the default: a broken meta tag must not break the panel.
     }
   }
   basePath = "/" + basePath.replace(/^\/+|\/+$/g, "");
   if (basePath === "/") basePath = "";
-  return { basePath, apiPath: `${basePath}/api`, extensions };
+  return { basePath, apiPath: `${basePath}/api`, extensions, locale, locales };
 }
 
 /**

@@ -9,11 +9,13 @@ import type { PendingWrite } from "@/app/session";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { SCHEMA_VERSION, VOCABULARY_VERSION, type ResourceSchema } from "@/api/types";
+import { errorText, show, type Text, useT } from "@/i18n";
 
-export function Loading({ label = "Loading…" }: { label?: string }) {
+export function Loading({ label }: { label?: string }) {
+  const t = useT();
   return (
     <div className="flex items-center gap-2 p-8 text-sm text-muted-foreground" role="status">
-      <Loader2 className="size-4 animate-spin" /> {label}
+      <Loader2 className="size-4 animate-spin" /> {label ?? t("state.loading")}
     </div>
   );
 }
@@ -30,18 +32,20 @@ function Centered({ icon, title, children }: { icon: React.ReactNode; title: str
 
 /** 403 and 404 are told apart: records outside the user's scope are 404 by design. */
 export function ErrorState({ error }: { error: unknown }) {
+  const t = useT();
   if (error instanceof ApiError && error.status === 403) {
-    return <Centered icon={<Ban className="size-8 text-destructive" />} title="Access denied">You are not allowed to see this.</Centered>;
+    return <Centered icon={<Ban className="size-8 text-destructive" />} title={t("state.forbidden")}>{t("state.forbiddenText")}</Centered>;
   }
   if (error instanceof ApiError && error.status === 404) {
-    return <Centered icon={<FileQuestion className="size-8 text-muted-foreground" />} title="Not found">It does not exist or is not available to you.</Centered>;
+    return <Centered icon={<FileQuestion className="size-8 text-muted-foreground" />} title={t("state.notFound")}>{t("state.notFoundText")}</Centered>;
   }
-  const message = error instanceof Error ? error.message : "Something went wrong.";
-  return <Centered icon={<TriangleAlert className="size-8 text-warning" />} title="Something went wrong">{message}</Centered>;
+  const message = error instanceof Error ? error.message : t("state.errorText");
+  return <Centered icon={<TriangleAlert className="size-8 text-warning" />} title={t("state.error")}>{message}</Centered>;
 }
 
 export function NotFoundPage() {
-  return <Centered icon={<FileQuestion className="size-8 text-muted-foreground" />} title="Page not found" />;
+  const t = useT();
+  return <Centered icon={<FileQuestion className="size-8 text-muted-foreground" />} title={t("state.pageNotFound")} />;
 }
 
 /**
@@ -56,12 +60,13 @@ export function compatibility(schema: ResourceSchema) {
 }
 
 export function VersionBanner({ schema }: { schema: ResourceSchema }) {
+  const t = useT();
   const { readOnly, outdated } = compatibility(schema);
   if (!outdated) return null;
   return (
     <Alert variant="warning">
-      The admin bundle is older than the server; update it to use every feature.
-      {readOnly && " Editing is disabled until then."}
+      {t("state.outdated")}
+      {readOnly && ` ${t("state.outdatedReadOnly")}`}
     </Alert>
   );
 }
@@ -76,15 +81,16 @@ export function PausedBanner({ scope, onRecovered }: {
   /** Called with the answer and the write; returns whether it was handled (e.g. navigated). */
   onRecovered?: (result: unknown, pending: PendingWrite) => Promise<boolean> | boolean;
 }) {
+  const t = useT();
   const session = useSession();
   const client = useQueryClient();
   const uncertain = useUncertain(scope);
   const retryable = useRetryable(scope);
   const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<Text | null>(null);
   const [done, setDone] = useState(false);
   if (!uncertain) {
-    return done ? <Alert>The change was applied. The page shows the current data.</Alert> : null;
+    return done ? <Alert>{t("paused.applied")}</Alert> : null;
   }
   const retry = async () => {
     setBusy(true);
@@ -100,7 +106,7 @@ export function PausedBanner({ scope, onRecovered }: {
         session.resolved(scope, pending.id);
       }
     } catch (e) {
-      setFailure(e instanceof Error ? e.message : "The retry failed.");
+      setFailure(() => errorText(e, "paused.retryFailed"));
     } finally {
       setBusy(false);
     }
@@ -108,19 +114,17 @@ export function PausedBanner({ scope, onRecovered }: {
   return (
     <Alert variant="warning">
       <p>
-        {retryable
-          ? "The last change may not have been saved. Retrying is safe: it is applied at most once."
-          : "Actions are paused until you reload the page and check the result."}
+        {retryable ? t("paused.retryable") : t("paused.reload")}
       </p>
-      {failure && <p className="mt-1">{failure}</p>}
+      {failure && <p className="mt-1">{show(failure)}</p>}
       <div className="mt-2 flex flex-wrap gap-2">
         {retryable && (
           <Button size="sm" disabled={busy} onClick={() => void retry()}>
-            {busy ? "Retrying…" : "Retry safely"}
+            {busy ? t("paused.retrying") : t("paused.retry")}
           </Button>
         )}
         <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
-          Reload
+          {t("action.reload")}
         </Button>
       </div>
     </Alert>

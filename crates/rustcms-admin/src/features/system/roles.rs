@@ -204,7 +204,26 @@ pub(super) async fn list_permissions(
     Ok(Json(
         permissions
             .into_iter()
-            .map(|p| PermissionInfo { grantable: ctx.principal.can(&p.name), name: p.name, group: p.group })
+            .map(|p| PermissionInfo {
+                grantable: ctx.principal.can(&p.name),
+                group_label: p.group.as_deref().map(|g| group_label(&ctx, g)),
+                name: p.name,
+                group: p.group,
+            })
             .collect(),
     ))
+}
+
+/// A permission group as shown: the plural label of the resource it names,
+/// else the group in words (`users` → "Users"), translated.
+pub(crate) fn group_label(ctx: &crate::Ctx, group: &str) -> String {
+    match ctx.registry.get(group) {
+        Some(resource) => resource.info().translated(ctx).plural_label,
+        None => ctx.t(&group_source(group)),
+    }
+}
+
+/// The English source of a group that is not a resource.
+pub(crate) fn group_source(group: &str) -> String {
+    crate::ui::humanize(group)
 }

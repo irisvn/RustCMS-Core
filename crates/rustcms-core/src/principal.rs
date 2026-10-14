@@ -23,6 +23,8 @@ pub struct Principal {
     /// Changes made on their behalf are refused once it moved on (signed out
     /// everywhere, password changed), even mid-request.
     pub auth_version: Option<i64>,
+    /// The admin interface language the user chose (`users.locale`), if any.
+    pub locale: Option<String>,
 }
 
 impl Principal {
@@ -49,6 +51,7 @@ mod tests {
             super_admin,
             token_abilities: token.map(|t| t.iter().map(|a| a.to_string()).collect()),
             auth_version: None,
+            locale: None,
         }
     }
 

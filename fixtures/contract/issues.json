@@ -1,0 +1,277 @@
+{
+  "abilities": [
+    "must be at most {max} non-empty names"
+  ],
+  "bad_credentials": [
+    "These credentials do not match our records."
+  ],
+  "between": [
+    "must be between 1 and {max}"
+  ],
+  "boolean": [
+    "must be true or false"
+  ],
+  "cannot_filter": [
+    "cannot be filtered"
+  ],
+  "cannot_sort": [
+    "cannot sort by `{name}`"
+  ],
+  "confirmation": [
+    "does not match"
+  ],
+  "conflicts": [
+    "conflicts with existing data"
+  ],
+  "control_characters": [
+    "may not contain control characters"
+  ],
+  "date": [
+    "must be a date (YYYY-MM-DD)"
+  ],
+  "decimal_string": [
+    "must be a decimal string"
+  ],
+  "document": [
+    "is not a document"
+  ],
+  "document_alt": [
+    "has an image description longer than {max} characters"
+  ],
+  "document_depth": [
+    "is nested too deeply"
+  ],
+  "document_image": [
+    "has an image that is not a media item",
+    "has an image with unexpected attributes"
+  ],
+  "document_invalid": [
+    "is not a valid document"
+  ],
+  "document_link": [
+    "has a link that is not http, https or mailto",
+    "has a link with unexpected attributes"
+  ],
+  "document_structure": [
+    "has a list item outside a list",
+    "has a list holding something else than list items",
+    "has a code block holding something else than plain text",
+    "has a heading without a level from 2 to 4",
+    "has unexpected properties on `{node}`",
+    "has an unknown block `{node}`",
+    "has an unknown inline `{node}`",
+    "has an unknown mark `{node}`",
+    "has a mark with attributes",
+    "has a text with the same mark twice",
+    "has a text with too many marks",
+    "has a text without text",
+    "has an empty text"
+  ],
+  "document_version": [
+    "is not a valid document (version 1)"
+  ],
+  "duplicate_file": [
+    "may not list the same file twice"
+  ],
+  "email": [
+    "must be a valid email address"
+  ],
+  "empty": [
+    "is empty"
+  ],
+  "empty_key": [
+    "may not have an empty key"
+  ],
+  "file_name_length": [
+    "has a name longer than 255 characters"
+  ],
+  "file_part": [
+    "must be the only part, named `file`"
+  ],
+  "file_type": [
+    "is not an accepted file type"
+  ],
+  "file_types": [
+    "does not accept {types} files"
+  ],
+  "given_twice": [
+    "may only be given once"
+  ],
+  "idempotency_key": [
+    "must be 1 to 128 letters, digits, `_` or `-`"
+  ],
+  "idempotency_reused": [
+    "was already used for a different request; send a new key for a new change"
+  ],
+  "image": [
+    "is not a valid image"
+  ],
+  "incomplete_file": [
+    "is not a complete file of its type"
+  ],
+  "integer": [
+    "must be an integer"
+  ],
+  "integer_string": [
+    "must be an integer string"
+  ],
+  "invalid": [
+    "is invalid"
+  ],
+  "invalid_body": [
+    "Failed to deserialize the JSON body into the target type: {detail}"
+  ],
+  "invalid_key": [
+    "invalid key"
+  ],
+  "invalid_parent": [
+    "invalid parent key"
+  ],
+  "jwt_abilities": [
+    "must be 1 to {max} non-empty names, {bytes} bytes in all"
+  ],
+  "jwt_too_long": [
+    "too long for an access token"
+  ],
+  "key_length": [
+    "may not have keys longer than {max} characters"
+  ],
+  "last_super_admin": [
+    "At least one active super admin is required for the `{guard}` guard."
+  ],
+  "list_size": [
+    "must be a list of 1 to {max} items"
+  ],
+  "local_datetime": [
+    "must be a local date-time (YYYY-MM-DDTHH:MM:SS)"
+  ],
+  "malformed_filter": [
+    "malformed `{key}`"
+  ],
+  "max_bytes": [
+    "may not be longer than {max} bytes"
+  ],
+  "max_elements": [
+    "may not have more than {max} elements"
+  ],
+  "max_images": [
+    "may not have more than {max} images"
+  ],
+  "max_items": [
+    "may not have more than {max} items"
+  ],
+  "max_kib": [
+    "may not be larger than {max} KiB"
+  ],
+  "max_length": [
+    "may not be longer than {max} characters"
+  ],
+  "min_length": [
+    "must be at least {min} characters"
+  ],
+  "missing_reference": [
+    "references a missing or protected record"
+  ],
+  "multipart": [
+    "must be sent as multipart/form-data"
+  ],
+  "name_format": [
+    "must be at most {max} characters, without control characters"
+  ],
+  "no_super_admin_role": [
+    "no super_admin role for guard `{guard}`"
+  ],
+  "not_allowed": [
+    "is not allowed"
+  ],
+  "number": [
+    "must be a number"
+  ],
+  "number_range": [
+    "must be a number from 1 to {max}"
+  ],
+  "out_of_range": [
+    "is out of range"
+  ],
+  "password_for_email": [
+    "is required to change your email"
+  ],
+  "positive_integer": [
+    "must be a positive integer"
+  ],
+  "required": [
+    "is required"
+  ],
+  "search_too_broad": [
+    "matches too many records to check; refine the search"
+  ],
+  "set_by_relation": [
+    "is set by the relation"
+  ],
+  "stale": [
+    "This was changed by someone else meanwhile. Reload and try again."
+  ],
+  "string": [
+    "must be a string"
+  ],
+  "taken": [
+    "has already been taken"
+  ],
+  "text_object": [
+    "must be an object of text values"
+  ],
+  "timestamp": [
+    "must be an RFC 3339 timestamp"
+  ],
+  "token_name": [
+    "must be 1 to 255 characters"
+  ],
+  "too_large": [
+    "is too large"
+  ],
+  "too_long": [
+    "is too long"
+  ],
+  "too_many_matches": [
+    "Too many matching records to check individually; narrow the search or filters."
+  ],
+  "too_many_permissions": [
+    "has too many permissions"
+  ],
+  "too_many_pixels": [
+    "has too many pixels"
+  ],
+  "too_many_roles": [
+    "has too many roles"
+  ],
+  "trashed_unsupported": [
+    "is not supported by this resource"
+  ],
+  "trashed_value": [
+    "must be `with` or `only`"
+  ],
+  "unknown_operator": [
+    "unknown operator `{op}`"
+  ],
+  "unknown_permissions": [
+    "unknown permissions: {list}"
+  ],
+  "unknown_roles": [
+    "has unknown roles"
+  ],
+  "unreadable": [
+    "could not be read"
+  ],
+  "unsupported_key": [
+    "unsupported key type"
+  ],
+  "uuid": [
+    "must be a UUID"
+  ],
+  "value_length": [
+    "may not have values longer than {max} characters"
+  ],
+  "wrong_password": [
+    "The password is incorrect."
+  ]
+}

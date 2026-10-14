@@ -1,6 +1,8 @@
 // Wire format (docs/src/admin-protocol.md, ADR 0003). Values stay in wire form
 // inside forms: i64 and decimal are strings and never pass through `Number`.
 
+import { formatDateTime, t } from "@/i18n";
+
 export type WireKind =
   | "string"
   | "i32"
@@ -25,17 +27,17 @@ export const isNumericString = (kind: WireKind) => kind === "i64" || kind === "d
 export function checkText(kind: WireKind, text: string): string | null {
   switch (kind) {
     case "i32":
-      return /^-?\d+$/.test(text) && Number(text) >= -(2 ** 31) && Number(text) <= 2 ** 31 - 1 ? null : "must be an integer";
+      return /^-?\d+$/.test(text) && Number(text) >= -(2 ** 31) && Number(text) <= 2 ** 31 - 1 ? null : t("issue.integer");
     case "i64":
-      return I64.test(text) ? null : "must be an integer";
+      return I64.test(text) ? null : t("issue.integer");
     case "f64":
-      return text.trim() !== "" && Number.isFinite(Number(text)) ? null : "must be a number";
+      return text.trim() !== "" && Number.isFinite(Number(text)) ? null : t("issue.number");
     case "decimal":
-      return DECIMAL.test(text) ? null : "must be a decimal number";
+      return DECIMAL.test(text) ? null : t("wire.decimal");
     case "date":
-      return DATE.test(text) ? null : "must be a date (YYYY-MM-DD)";
+      return DATE.test(text) ? null : t("issue.date");
     case "local_datetime":
-      return LOCAL_DATETIME.test(text) ? null : "must be a date and time";
+      return LOCAL_DATETIME.test(text) ? null : t("wire.datetime");
     default:
       return null;
   }
@@ -96,9 +98,9 @@ export function display(kind: string, value: unknown): string {
   if (value === null || value === undefined) return "";
   if (kind === "instant" && typeof value === "string") {
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+    return Number.isNaN(d.getTime()) ? value : formatDateTime(d);
   }
-  if (kind === "bool") return value ? "Yes" : "No";
+  if (kind === "bool") return value ? t("value.yes") : t("value.no");
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }

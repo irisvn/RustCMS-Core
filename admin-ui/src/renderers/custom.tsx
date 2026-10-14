@@ -6,6 +6,8 @@ import type { InputSchema } from "@/api/types";
 import { Input } from "@/components/ui/input";
 import { type WidgetContext, type WidgetInstance, markFailed, subscribeWidgets, widget } from "@/lib/widgets";
 import { hasUnsafeInteger } from "@/schema/form";
+import { useLocale } from "@/i18n";
+import { translateExtension } from "@/lib/widgets";
 
 const parse = (text: string): unknown => (text === "" ? undefined : JSON.parse(text));
 
@@ -23,7 +25,9 @@ export function CustomField({ id, input, value, onChange, disabled, invalid, des
   const live = useRef<{ instance: WidgetInstance } | null>(null);
   // What the widget was last told: it is only updated on a change.
   const told = useRef("");
-  const state = JSON.stringify([value, !!disabled, invalid, describedBy ?? null]);
+  const locale = useLocale();
+  // Everything the widget shows: a new label or language is an update too.
+  const state = JSON.stringify([value, !!disabled, invalid, describedBy ?? null, input.label, locale]);
   // Re-rendered when any widget fails, here or in another field.
   const impl = useSyncExternalStore(subscribeWidgets, () => widget(input.widget));
   // The latest props for callbacks fired later by the widget.
@@ -40,6 +44,8 @@ export function CustomField({ id, input, value, onChange, disabled, invalid, des
     invalid,
     describedBy,
     props: input.props === undefined ? undefined : structuredClone(input.props),
+    locale,
+    t: translateExtension,
     onChange: (next) => {
       if (live.current !== mount || !mount || latest.current.disabled) return;
       // Values the wire cannot carry exactly (NaN, Infinity, unsafe integers) are a widget bug.

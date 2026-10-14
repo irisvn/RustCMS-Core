@@ -30,6 +30,7 @@
 - [Media, uploads & rich text](admin/media.md)
 - [Relationships](admin/relationships.md)
 - [Custom fields](admin/custom-fields.md)
+- [Languages (i18n)](admin/i18n.md)
 
 # API
 

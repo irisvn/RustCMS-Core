@@ -25,6 +25,7 @@ mod m20261014_000007_create_media_tables;
 mod m20261015_000008_create_locks_table;
 mod m20261015_000009_create_auth_generations_table;
 mod m20261015_000010_create_jwt_tables;
+mod m20261016_000011_add_locale_to_users;
 pub mod schema;
 
 /// Framework migrations, in order.
@@ -40,6 +41,7 @@ pub fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         Box::new(m20261015_000008_create_locks_table::Migration),
         Box::new(m20261015_000009_create_auth_generations_table::Migration),
         Box::new(m20261015_000010_create_jwt_tables::Migration),
+        Box::new(m20261016_000011_add_locale_to_users::Migration),
     ]
 }
 

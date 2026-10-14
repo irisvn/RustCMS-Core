@@ -4,7 +4,7 @@
 //! or the credential helpers; nothing here writes RBAC tables directly.
 
 mod dto;
-mod roles;
+pub(crate) mod roles;
 mod users;
 
 pub use dto::*;

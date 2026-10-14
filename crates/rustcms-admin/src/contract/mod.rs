@@ -38,6 +38,16 @@ pub struct ResourceInfo {
     pub title_field: Option<String>,
 }
 
+impl ResourceInfo {
+    /// The labels in the request's language (the English plural is formed first).
+    pub fn translated(mut self, ctx: &crate::Ctx) -> Self {
+        self.label = ctx.t_in(self.slug, &self.label);
+        self.plural_label = ctx.t_in(self.slug, &self.plural_label);
+        self.group = self.group.map(|g| ctx.t(&g));
+        self
+    }
+}
+
 /// Which form a schema describes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]

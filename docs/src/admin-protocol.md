@@ -10,6 +10,13 @@ guard (CSRF and `Origin` checks on writes, see Security). Every response,
 errors included, is `Cache-Control: private, no-store`; unknown paths under
 `/api` are JSON 404.
 
+Labels (resources, fields, options, tabs, actions, permission groups) come in
+the language the panel shows (`X-Rustcms-Locale`), else the user's saved
+choice, else `Accept-Language`, else `app.locale` ([Languages](admin/i18n.md)). `GET /auth/me` returns `locale`,
+`preferredLocale` and `locales`; `POST /auth/locale {"locale": "vi" | null}`
+saves the choice (422 for a language not offered). The shell's
+`<meta name="rustcms-admin">` lists `locale` and `locales` for the sign-in page.
+
 | Method | Path | Response |
 |---|---|---|
 | GET | `/panel` | `PanelResponse` `{brand, user, navigation: [ResourceInfo]}` (resources with `view_any`) |
@@ -128,8 +135,15 @@ Record keys are strings in URLs and envelopes (`"42"`, a UUID, or a natural key)
 
 ```json
 { "message": "The given data was invalid.", "code": "validation_failed",
-  "errors": { "slug": ["has already been taken"] }, "formErrors": [] }
+  "errors": { "slug": ["has already been taken"] }, "formErrors": [],
+  "issues": { "slug": [{ "code": "taken", "params": {} }] }, "formIssues": [] }
 ```
+
+`issues` and `formIssues` give the stable code and parameters (text) of each
+message, in the same order, for clients that translate them (codes:
+[Languages](admin/i18n.md#validation-messages)); messages stay English. A 409
+`write_conflict` carries a `reason` (`busy`, `upload_expired`,
+`receipt_expired`).
 
 | Status | `code`              |
 |--------|---------------------|

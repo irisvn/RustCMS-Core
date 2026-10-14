@@ -21,6 +21,9 @@ impl FromRequestParts<AppState> for AdminCtx {
             return Err(AppError::Unauthenticated);
         }
         let panel = state.service::<AdminPanel>().ok_or_else(|| AppError::internal("AdminProvider not registered"))?;
-        Ok(Self(Ctx::new(state.db().clone(), auth.principal, panel.registry.clone())))
+        let locale =
+            rustcms_auth::routes::display_locale(state, &parts.headers, auth.principal.locale.as_deref()).to_owned();
+        let ctx = Ctx::new(state.db().clone(), auth.principal, panel.registry.clone());
+        Ok(Self(ctx.with_locale(locale, panel.translator.clone())))
     }
 }

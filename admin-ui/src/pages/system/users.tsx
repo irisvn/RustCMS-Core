@@ -17,20 +17,22 @@ import { Checkbox, Switch } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
 
-import { Field, type Errors, failure, linkButton, useMounted } from "./shared";
+import { Field, type Errors, type Failure, failure, linkButton, useMounted } from "./shared";
+import { formatCount, later, show, type Text, useT } from "@/i18n";
 
 export function UsersPage() {
+  const t = useT();
   const panel = usePanel();
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState(1);
   useEffect(() => {
     if (search === debounced) return;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       setDebounced(search);
       setPage(1);
     }, 300);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [search, debounced]);
   const users = useUsers(debounced, page);
   const lastPage = users.data?.meta.lastPage;
@@ -46,17 +48,17 @@ export function UsersPage() {
   const meta = users.data?.meta ?? { page: 1, perPage: 25, total: 0, lastPage: 1 };
   return (
     <Page>
-      <PageHeader title="Users" description="Manage people, roles, and access to your admin panel."
-        eyebrow="System" actions={panel.data?.system?.createUsers && (
+      <PageHeader title={t("nav.users")} description={t("users.description")}
+        eyebrow={t("nav.system")} actions={panel.data?.system?.createUsers && (
           <Link to="/system/users/create" className={linkButton}>
-            New user
+            {t("users.new")}
           </Link>
         )} />
       <PausedBanner scope={USERS} />
       <Card className="min-w-0 overflow-hidden">
         <div className="flex flex-col gap-2 border-b border-border p-4 sm:p-5">
-          <Label htmlFor="search-users">Search users</Label>
-          <Input id="search-users" aria-label="Search users" placeholder="Search name or email…"
+          <Label htmlFor="search-users">{t("users.search")}</Label>
+          <Input id="search-users" aria-label={t("users.search")} placeholder={t("users.searchPlaceholder")}
             className="max-w-sm" maxLength={100} value={search}
             onChange={(e) => setSearch(e.target.value)}
             aria-invalid={users.error instanceof ApiError && users.error.status === 422}
@@ -65,18 +67,18 @@ export function UsersPage() {
             <p id="search-users-error" role="alert" className="text-xs text-destructive">
               {users.error instanceof ApiError && users.error.status === 422
                 ? (Object.values(users.error.fieldErrors)[0]?.[0] ?? users.error.message)
-                : "Could not refresh the list."}
+                : t("users.refreshFailed")}
             </p>
           )}
         </div>
         <div className="overflow-x-auto">
-          <table aria-label="Users" className="w-full min-w-[640px] text-sm">
+          <table aria-label={t("nav.users")} className="w-full min-w-[640px] text-sm">
             <thead className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
               <tr>
-                <th scope="col" className="px-5 py-3 font-medium">Name</th>
-                <th scope="col" className="px-5 py-3 font-medium">Email</th>
-                <th scope="col" className="px-5 py-3 font-medium">Roles</th>
-                <th scope="col" className="px-5 py-3 font-medium">Status</th>
+                <th scope="col" className="px-5 py-3 font-medium">{t("field.name")}</th>
+                <th scope="col" className="px-5 py-3 font-medium">{t("field.email")}</th>
+                <th scope="col" className="px-5 py-3 font-medium">{t("nav.roles")}</th>
+                <th scope="col" className="px-5 py-3 font-medium">{t("users.status")}</th>
               </tr>
             </thead>
             <tbody>
@@ -87,7 +89,7 @@ export function UsersPage() {
                       className="font-medium text-primary hover:underline">
                       {u.name}
                     </Link>
-                    {u.isSelf && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
+                    {u.isSelf && <span className="ml-2 text-xs text-muted-foreground">{t("users.you")}</span>}
                   </td>
                   <td className="px-5 py-4 text-muted-foreground">{u.email}</td>
                   <td className="px-5 py-4">
@@ -100,14 +102,14 @@ export function UsersPage() {
                     </div>
                   </td>
                   <td className="px-5 py-4">{u.isActive ?
-                    <Badge className="border border-border bg-background">active</Badge> :
-                    <Badge>disabled</Badge>}</td>
+                    <Badge className="border border-border bg-background">{t("users.active")}</Badge> :
+                    <Badge>{t("users.disabled")}</Badge>}</td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={4} className="p-8 text-center text-muted-foreground">
-                    No users found.
+                    {t("users.empty")}
                   </td>
                 </tr>
               )}
@@ -117,15 +119,15 @@ export function UsersPage() {
         <div
           className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4 text-sm">
           <span className="text-muted-foreground">
-            Page {meta.page} of {meta.lastPage} · {meta.total} users
+            {t("users.page", { page: formatCount(meta.page), last: formatCount(meta.lastPage), users: t("users.count", { count: meta.total, n: formatCount(meta.total) }) })}
           </span>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-              Previous
+              {t("list.previous")}
             </Button>
             <Button size="sm" variant="outline" disabled={page >= meta.lastPage}
               onClick={() => setPage(page + 1)}>
-              Next
+              {t("list.next")}
             </Button>
           </div>
         </div>
@@ -147,9 +149,10 @@ function RolePicker({
   disabled?: boolean;
   describedBy?: string;
 }) {
+  const t = useT();
   return (
     <fieldset className="flex min-w-0 flex-col gap-2" aria-describedby={describedBy}>
-      <legend className="mb-3 text-sm font-medium">Roles</legend>
+      <legend className="mb-3 text-sm font-medium">{t("nav.roles")}</legend>
       {roles.map((r) => (
         <label key={r.id}
           className="flex min-w-0 items-center gap-3 rounded-md border border-border px-3 py-3 text-sm transition-colors hover:bg-muted/40 has-disabled:cursor-not-allowed has-disabled:opacity-60">
@@ -162,7 +165,7 @@ function RolePicker({
           />
           <span className="min-w-0 break-all font-medium">{r.name}</span>
           {r.isSystem && <ShieldCheck className="ml-auto size-4 shrink-0 text-muted-foreground" role="img"
-            aria-label="system role" />}
+            aria-label={t("users.systemRole")} />}
         </label>
       ))}
     </fieldset>
@@ -170,6 +173,7 @@ function RolePicker({
 }
 
 export function UserCreatePage() {
+  const t = useT();
   const navigate = useNavigate();
   const mounted = useMounted();
   const create = useCreateUser();
@@ -203,31 +207,30 @@ export function UserCreatePage() {
   };
   return (
     <Page>
-      <PageHeader title="New user" description="Create a user and choose their initial access." eyebrow="System" />
+      <PageHeader title={t("users.new")} description={t("users.newDescription")} eyebrow={t("nav.system")} />
       <PausedBanner scope={USERS} />
       <form className="flex w-full max-w-2xl flex-col gap-6" onSubmit={(e) => void submit(e)} noValidate>
-        {created && <Alert>{created} was created.</Alert>}
+        {created && <Alert>{t("users.created", { email: created })}</Alert>}
         {errors.form && <Alert variant="destructive">{errors.form}</Alert>}
         <Card>
           <CardHeader>
-            <CardTitle>User details</CardTitle>
-            <p className="text-sm text-muted-foreground">Set the profile and sign-in credentials for this
-              user.</p>
+            <CardTitle>{t("users.details")}</CardTitle>
+            <p className="text-sm text-muted-foreground">{t("users.detailsText")}</p>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
-            <Field id="name" label="Name" errors={errors.fields.name}>
+            <Field id="name" label={t("field.name")} errors={errors.fields.name}>
               <Input id="name" value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 disabled={create.isPending} aria-invalid={!!errors.fields.name}
                 aria-describedby={errors.fields.name ? "name-error" : undefined} />
             </Field>
-            <Field id="email" label="Email" errors={errors.fields.email}>
+            <Field id="email" label={t("field.email")} errors={errors.fields.email}>
               <Input id="email" type="email" value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 disabled={create.isPending} aria-invalid={!!errors.fields.email}
                 aria-describedby={errors.fields.email ? "email-error" : undefined} />
             </Field>
-            <Field id="password" label="Password" errors={errors.fields.password}>
+            <Field id="password" label={t("field.password")} errors={errors.fields.password}>
               <Input id="password" type="password" autoComplete="new-password" value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 disabled={create.isPending} aria-invalid={!!errors.fields.password}
@@ -246,11 +249,11 @@ export function UserCreatePage() {
         </Card>
         <div className="flex flex-wrap gap-3">
           <Button type="submit" disabled={create.isPending}>
-            {create.isPending ? "Creating…" : "Create user"}
+            {create.isPending ? t("users.creating") : t("users.create")}
           </Button>
           <Link to="/system/users"
             className="inline-flex h-10 items-center justify-center rounded-md border border-border px-4 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            Cancel
+            {t("action.cancel")}
           </Link>
         </div>
       </form>
@@ -259,6 +262,7 @@ export function UserCreatePage() {
 }
 
 export function UserPage({ id }: { id: string }) {
+  const t = useT();
   const navigate = useNavigate();
   const client = useQueryClient();
   const mounted = useMounted();
@@ -278,8 +282,10 @@ export function UserPage({ id }: { id: string }) {
   // What the draft started from, fixed when editing begins (a refetch must not move it).
   const [roleBase, setRoleBase] = useState<string[]>([]);
   const [password, setPassword] = useState("");
-  const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: string } | null>(null);
-  const [errors, setErrors] = useState<Errors>({});
+  const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: Text } | null>(null);
+  // The last failure: its field messages are read in the current language.
+  const [failed, setFailed] = useState<Failure | null>(null);
+  const errors: Errors = failed?.fields ?? {};
   const [confirm, setConfirm] = useState(false);
 
   if (user.isLoading) return <Loading />;
@@ -295,9 +301,9 @@ export function UserPage({ id }: { id: string }) {
     setStale(false);
     setNotice(null);
   };
-  const run = async (action: () => Promise<unknown>, done: string) => {
+  const run = async (action: () => Promise<unknown>, done: Text) => {
     setNotice(null);
-    setErrors({});
+    setFailed(null);
     try {
       await action();
       if (mounted.current) setNotice({ variant: "default", text: done });
@@ -305,11 +311,13 @@ export function UserPage({ id }: { id: string }) {
     } catch (e) {
       if (!mounted.current) return false;
       const f = failure(e);
-      setErrors(f.fields);
+      setFailed(f);
       // Errors without an input of their own still reach the user.
-      const other = Object.entries(f.fields).filter(([k]) => !shownFields.includes(k)).flatMap(([, m]) => m);
-      const text = [f.form, ...other].filter(Boolean).join(" ") || (Object.keys(f.fields).length ? null : "Not saved.");
-      if (text) setNotice({ variant: "destructive", text });
+      const text = () => {
+        const other = Object.entries(f.fields).filter(([k]) => !shownFields.includes(k)).flatMap(([, m]) => m);
+        return [f.form, ...other].filter(Boolean).join(" ") || (Object.keys(f.fields).length ? "" : t("system.notSaved"));
+      };
+      if (text()) setNotice({ variant: "destructive", text });
       if (f.stale) {
         // Someone changed it meanwhile: keep the draft (and what it started from),
         // refresh the current values, and let the user discard explicitly.
@@ -322,29 +330,29 @@ export function UserPage({ id }: { id: string }) {
 
   return (
     <Page>
-      <PageHeader title={u.name} description="Manage this user's profile and sign-in access."
-        eyebrow="System / Users" actions={u.abilities.delete && (
+      <PageHeader title={u.name} description={t("users.userDescription")}
+        eyebrow={t("users.eyebrow")} actions={u.abilities.delete && (
           <Button variant="destructive" onClick={() => setConfirm(true)} disabled={remove.isPending}>
-            Delete user
+            {t("users.delete")}
           </Button>
         )} />
       <PausedBanner scope={USERS} />
-      {u.superAdmin && <div><Badge>super admin</Badge></div>}
+      {u.superAdmin && <div><Badge>{t("users.superAdmin")}</Badge></div>}
       {u.isSelf && (
         <Alert>
-          This is your account: change your password or sign out other sessions on{" "}
+          {t("users.selfBefore")}{" "}
           <Link to="/account" className="underline">
-            your account page
+            {t("users.selfLink")}
           </Link>
-          .
+          {t("users.selfAfter")}
         </Alert>
       )}
-      {notice && <Alert variant={notice.variant}>{notice.text}</Alert>}
+      {notice && <Alert variant={notice.variant}>{show(notice.text)}</Alert>}
       {stale && (
         <Alert variant="warning">
-          Someone changed this user meanwhile; your unsaved changes are kept.{" "}
+          {t("users.stale")}{" "}
           <button type="button" className="underline" onClick={discard}>
-            Discard my changes
+            {t("system.discard")}
           </button>
         </Alert>
       )}
@@ -352,8 +360,8 @@ export function UserPage({ id }: { id: string }) {
       <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
         <Card className="min-w-0">
           <CardHeader>
-            <CardTitle>Profile</CardTitle>
-            <p className="text-sm text-muted-foreground">Personal details and sign-in email.</p>
+            <CardTitle>{t("account.profile")}</CardTitle>
+            <p className="text-sm text-muted-foreground">{t("users.profileText")}</p>
           </CardHeader>
           <CardContent>
             <form
@@ -368,7 +376,7 @@ export function UserPage({ id }: { id: string }) {
                       expected: profileBase,
                       currentPassword: ownEmailChange ? currentPassword : undefined,
                     }),
-                  "Profile saved.",
+                  later("users.profileSaved"),
                 ).then((ok) => {
                   if (ok) {
                     setDraft(null);
@@ -377,7 +385,7 @@ export function UserPage({ id }: { id: string }) {
                 });
               }}
             >
-              <Field id="name" label="Name" errors={errors.name}>
+              <Field id="name" label={t("field.name")} errors={errors.name}>
                 <Input id="name" value={values.name} disabled={!u.abilities.update || profile.isPending}
                   aria-invalid={!!errors.name}
                   aria-describedby={errors.name ? "name-error" : undefined} onChange={(e) => {
@@ -385,7 +393,7 @@ export function UserPage({ id }: { id: string }) {
                     setDraft({ ...values, name: e.target.value });
                   }} />
               </Field>
-              <Field id="email" label="Email" errors={errors.email}>
+              <Field id="email" label={t("field.email")} errors={errors.email}>
                 <Input id="email" type="email" value={values.email}
                   disabled={!u.abilities.changeEmail || profile.isPending}
                   aria-invalid={!!errors.email}
@@ -395,7 +403,7 @@ export function UserPage({ id }: { id: string }) {
                   }} />
               </Field>
               {ownEmailChange && (
-                <Field id="current-password" label="Current password (to change your email)"
+                <Field id="current-password" label={t("users.currentPasswordForEmail")}
                   errors={errors.current_password}>
                   <Input id="current-password" type="password" autoComplete="current-password"
                     value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)}
@@ -406,7 +414,7 @@ export function UserPage({ id }: { id: string }) {
               {u.abilities.update && (
                 <div className="border-t border-border pt-5">
                   <Button type="submit" disabled={!draft || profile.isPending}>
-                    Save profile
+                    {t("users.saveProfile")}
                   </Button>
                 </div>
               )}
@@ -418,8 +426,8 @@ export function UserPage({ id }: { id: string }) {
           {u.abilities.assignRoles && roles.data && (
             <Card>
               <CardHeader>
-                <CardTitle>Roles</CardTitle>
-                <p className="text-sm text-muted-foreground">Choose which roles this user holds.</p>
+                <CardTitle>{t("nav.roles")}</CardTitle>
+                <p className="text-sm text-muted-foreground">{t("users.rolesText")}</p>
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
                 <RolePicker
@@ -440,9 +448,9 @@ export function UserPage({ id }: { id: string }) {
                     onClick={() => void run(() => setRoles.mutateAsync({
                       roleIds: selectedRoles,
                       expected: roleBase
-                    }), "Roles saved.").then((ok) => ok && setRoleDraft(null))}
+                    }), later("users.rolesSaved")).then((ok) => ok && setRoleDraft(null))}
                   >
-                    Save roles
+                    {t("users.saveRoles")}
                   </Button>
                 </div>
               </CardContent>
@@ -452,25 +460,25 @@ export function UserPage({ id }: { id: string }) {
           {(u.abilities.activate || u.abilities.resetPassword) && (
             <Card>
               <CardHeader>
-                <CardTitle>Access</CardTitle>
-                <p className="text-sm text-muted-foreground">Control sign-in and reset credentials.</p>
+                <CardTitle>{t("users.access")}</CardTitle>
+                <p className="text-sm text-muted-foreground">{t("users.accessText")}</p>
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
                 {u.abilities.activate && (
                   <label
                     className="flex flex-wrap items-center gap-3 rounded-md border border-border p-3 text-sm">
                     <Switch
-                      aria-label="May sign in"
+                      aria-label={t("users.maySignIn")}
                       checked={u.isActive}
                       disabled={setActive.isPending}
                       onCheckedChange={(active) =>
                         void run(
                           () => setActive.mutateAsync({ active, expected: u.isActive }),
-                          active ? "User enabled." : "User disabled and signed out everywhere.",
+                          later(active ? "users.enabled" : "users.disabledAll"),
                         )
                       }
                     />
-                    May sign in
+                    {t("users.maySignIn")}
                   </label>
                 )}
                 {u.abilities.resetPassword && (
@@ -479,24 +487,23 @@ export function UserPage({ id }: { id: string }) {
                     noValidate
                     onSubmit={(e) => {
                       e.preventDefault();
-                      void run(() => reset.mutateAsync(password), "Password set; the user was signed out everywhere.").then(
+                      void run(() => reset.mutateAsync(password), later("users.passwordSet")).then(
                         (ok) => ok && setPassword(""),
                       );
                     }}
                   >
                     <div className="w-full">
-                      <Field id="new-password" label="New password" errors={errors.password}>
+                      <Field id="new-password" label={t("account.newPassword")} errors={errors.password}>
                         <Input id="new-password" type="password" autoComplete="new-password"
                           value={password} onChange={(e) => setPassword(e.target.value)}
                           disabled={reset.isPending} aria-invalid={!!errors.password}
                           aria-describedby={errors.password ? "reset-password-help new-password-error" : "reset-password-help"} />
                       </Field>
                       <p id="reset-password-help"
-                        className="mt-2 text-xs leading-5 text-muted-foreground">Setting a
-                        password signs this user out everywhere.</p>
+                        className="mt-2 text-xs leading-5 text-muted-foreground">{t("users.resetHelp")}</p>
                     </div>
                     <Button type="submit" variant="outline" disabled={!password || reset.isPending}>
-                      Set password
+                      {t("users.setPassword")}
                     </Button>
                   </form>
                 )}
@@ -508,25 +515,24 @@ export function UserPage({ id }: { id: string }) {
 
       <Link to="/system/users"
         className="w-fit text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        ← All users
+        {t("users.back")}
       </Link>
-      <Dialog open={confirm} onClose={() => setConfirm(false)} title="Delete user?">
-        <p className="break-words text-sm text-muted-foreground">{u.email} will be deleted with their sessions
-          and tokens.</p>
+      <Dialog open={confirm} onClose={() => setConfirm(false)} title={t("users.confirmDelete")}>
+        <p className="break-words text-sm text-muted-foreground">{t("users.confirmDeleteText", { email: u.email })}</p>
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={() => setConfirm(false)}>
-            Cancel
+            {t("action.cancel")}
           </Button>
           <Button
             variant="destructive"
             onClick={() => {
               setConfirm(false);
-              void run(() => remove.mutateAsync(id), "Deleted.").then((ok) => {
+              void run(() => remove.mutateAsync(id), later("list.deleted")).then((ok) => {
                 if (ok && mounted.current) void navigate({ to: "/system/users" });
               });
             }}
           >
-            Delete
+            {t("action.delete")}
           </Button>
         </div>
       </Dialog>

@@ -7,6 +7,7 @@ import { fetchOptions } from "@/api/queries";
 import type { SelectOption } from "@/api/types";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n";
 
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -41,11 +42,12 @@ function selectedLabel(options: SelectOption[] | undefined, value: string) {
 export function RelationValue({ slug, field, record, value }: {
   slug: string; field: string; record: string; value: string;
 }) {
+  const t = useT();
   const selected = useSelectedOption(slug, field, record, value);
   return <span>
     {selectedLabel(selected.data, value)}
-    {selected.isLoading && <span className="ml-2 text-xs text-muted-foreground" role="status">Loading label…</span>}
-    {selected.error && <span className="ml-2 text-xs text-muted-foreground">Label unavailable</span>}
+    {selected.isLoading && <span className="ml-2 text-xs text-muted-foreground" role="status">{t("relation.loadingLabel")}</span>}
+    {selected.error && <span className="ml-2 text-xs text-muted-foreground">{t("relation.labelUnavailable")}</span>}
   </span>;
 }
 
@@ -69,6 +71,7 @@ export function RelationSelect({
   describedBy?: string;
   onBlur?: () => void;
 }) {
+  const t = useT();
   const api = useApi();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -164,19 +167,19 @@ export function RelationSelect({
           invalid && "border-destructive",
         )}
       >
-        <span className={cn("truncate", !value && "text-muted-foreground")}>{selectedLabel(selected.data, value) || placeholder || "Select…"}</span>
+        <span className={cn("truncate", !value && "text-muted-foreground")}>{selectedLabel(selected.data, value) || placeholder || t("relation.select")}</span>
         <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       </button>
       {expanded && (
         <div className="absolute z-20 mt-2 w-full rounded-lg border border-border bg-card p-1.5 shadow-lg">
           <Input
-            autoFocus role="combobox" aria-label="Search options" aria-expanded="true"
+            autoFocus role="combobox" aria-label={t("relation.searchOptions")} aria-expanded="true"
             aria-controls={listId} aria-autocomplete="list" aria-activedescendant={activeId}
             aria-invalid={invalid || undefined} aria-describedby={describedBy}
-            placeholder="Search…" value={search} onKeyDown={keyDown}
+            placeholder={t("relation.searchPlaceholder")} value={search} onKeyDown={keyDown}
             onChange={(e) => { setSearch(e.target.value); setActive(0); }} className="mb-1.5"
           />
-          <ul id={listId} role="listbox" aria-label="Options" className="max-h-60 overflow-auto">
+          <ul id={listId} role="listbox" aria-label={t("relation.options")} className="max-h-60 overflow-auto">
             {options.map((option, index) => {
               const encoded = option ? JSON.stringify(option.value) : "";
               return (
@@ -188,21 +191,21 @@ export function RelationSelect({
                     onMouseEnter={() => setActive(index)}
                     onClick={() => choose(option)}
                   >
-                    {option ? option.label : <><X className="size-3" aria-hidden="true" /> Clear</>}
+                    {option ? option.label : <><X className="size-3" aria-hidden="true" /> {t("relation.clear")}</>}
                   </button>
                 </li>
               );
             })}
           </ul>
-          {(results.isLoading || search !== debounced) && <p role="status" className="px-2.5 py-2 text-sm text-muted-foreground">Loading…</p>}
+          {(results.isLoading || search !== debounced) && <p role="status" className="px-2.5 py-2 text-sm text-muted-foreground">{t("state.loading")}</p>}
           {results.error && (
             <p role="alert" className="px-2.5 py-2 text-sm text-destructive">
               {results.error instanceof ApiError && results.error.status === 422
-                ? (Object.values(results.error.fieldErrors)[0]?.[0] ?? "Refine the search.")
-                : "Could not load options."}
+                ? (Object.values(results.error.fieldErrors)[0]?.[0] ?? t("relation.refine"))
+                : t("relation.loadFailed")}
             </p>
           )}
-          {results.data?.length === 0 && search === debounced && <p role="status" className="px-2.5 py-2 text-sm text-muted-foreground">No results</p>}
+          {results.data?.length === 0 && search === debounced && <p role="status" className="px-2.5 py-2 text-sm text-muted-foreground">{t("list.noResults")}</p>}
         </div>
       )}
     </div>

@@ -1,4 +1,5 @@
 import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { t, useLocale } from "@/i18n";
 import type { ApiClient } from "./client";
 import type {
   ActionOutcome,
@@ -12,7 +13,7 @@ import type {
   SchemaOperation,
   SelectOption,
 } from "./types";
-import { ApiError, sessionReset } from "./client";
+import { ApiError, clientError, sessionReset } from "./client";
 import type { PendingWrite, Session } from "@/app/session";
 import { useApi, useSession } from "./context";
 
@@ -61,10 +62,7 @@ async function checkedWrite<T>(
   pending?: PendingWrite,
 ): Promise<T> {
   if (session.isUncertain(slug)) {
-    throw new ApiError(409, {
-      code: "writes_paused",
-      message: "An earlier change here may or may not have been applied. Reload the page and check before trying again.",
-    });
+    throw clientError(409, "writes_paused", "error.pausedWrite");
   }
   try {
     return await write();
@@ -102,11 +100,11 @@ export function keyedWrite<T>(
  */
 export function retryPending(session: Session, slug: string): Promise<{ result: unknown; pending: PendingWrite }> {
   const pending = session.pendingWrite(slug);
-  if (!pending) return Promise.reject(new Error("Nothing to retry: reload the page to check."));
+  if (!pending) return Promise.reject(new Error(t("paused.nothing")));
   const send = () =>
     session.api.request<unknown>(pending.method, pending.path, JSON.parse(pending.body), { "Idempotency-Key": pending.key });
   return enqueue(session, slug, async () => {
-    if (session.pendingWrite(slug)?.id !== pending.id) throw new Error("This change was already handled.");
+    if (session.pendingWrite(slug)?.id !== pending.id) throw new Error(t("paused.handled"));
     try {
       return { result: await send(), pending };
     } catch (e) {
@@ -129,6 +127,8 @@ function invalidateAfterWrite(client: ReturnType<typeof useQueryClient>, slug: s
 
 export const keys = {
   me: ["me"] as const,
+  // Labels come translated: the language is part of the key, and the previous
+  // answer stays on screen while the new one loads (forms keep their drafts).
   panel: ["panel"] as const,
   schema: (slug: string, operation: SchemaOperation, key?: string) => ["schema", slug, operation, key ?? null] as const,
   list: (slug: string, query: string) => ["records", slug, "list", query] as const,
@@ -141,16 +141,24 @@ export const meQuery = (api: ApiClient) =>
 
 export function usePanel() {
   const api = useApi();
-  return useQuery({ queryKey: keys.panel, queryFn: () => api.get<PanelResponse>("/panel") });
+  const locale = useLocale();
+  return useQuery({
+    queryKey: [...keys.panel, locale],
+    queryFn: () => api.get<PanelResponse>("/panel"),
+    placeholderData: keepPreviousData,
+  });
 }
 
 export function useSchema(slug: string, operation: SchemaOperation, key?: string, opts: { enabled?: boolean } = {}) {
   const api = useApi();
+  const locale = useLocale();
   return useQuery({
-    queryKey: keys.schema(slug, operation, key),
+    queryKey: [...keys.schema(slug, operation, key), locale],
     queryFn: () =>
       api.get<ResourceSchema>(`/resources/${enc(slug)}/schema`, { operation, key }),
     enabled: opts.enabled ?? true,
+    // Only the language changed: keep showing the same form meanwhile.
+    placeholderData: (previous, query) => (query?.queryKey.slice(0, 4).join() === keys.schema(slug, operation, key).join() ? previous : undefined),
   });
 }
 

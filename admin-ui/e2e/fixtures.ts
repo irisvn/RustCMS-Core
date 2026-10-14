@@ -29,12 +29,12 @@ export const test = base.extend<{ watch: { violations: string[]; errors: string[
   },
 });
 
-export async function signIn(page: Page, email: string) {
+export async function signIn(page: Page, email: string, welcome: RegExp = /^Welcome/) {
   await page.goto("/admin/login");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  // In whichever language this device chose before.
+  await page.getByLabel(/^(Email)$/).fill(email);
+  await page.getByLabel(/^(Password|Mật khẩu)$/).fill(PASSWORD);
+  await page.getByRole("button", { name: /^(Sign in|Đăng nhập)$/ }).click();
   // Mobile navigation is intentionally closed after signing in.
-  await expect(page.getByRole("main").getByRole("heading", { name: /^Welcome/ })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("heading", { name: welcome })).toBeVisible();
 }
-

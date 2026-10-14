@@ -46,6 +46,11 @@ pub trait DynResource: Send + Sync {
     async fn replay_create(&self, ctx: &Ctx, input: &Data) -> AppResult<Option<Envelope>>;
     /// Identity and navigation entry.
     fn info(&self) -> ResourceInfo;
+    /// Every label, help text, placeholder, option and confirmation this
+    /// resource can show, whoever looks (for `lang:missing`), with whether it
+    /// is looked up in the resource's table first (`true`) or only globally
+    /// (`false`, the navigation group).
+    fn display_strings(&self) -> Vec<(bool, String)>;
     /// Whether the policy allows `ability` without a record (e.g. `view_any`, `create`).
     async fn allows(&self, ctx: &Ctx, ability: &str) -> bool;
     /// Permissions checked by the default policy (`{slug}.{ability}`), for `permission:sync`.

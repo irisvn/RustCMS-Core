@@ -17,6 +17,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         ResourceInfo::clone(&ResourceAdapter::info(self))
     }
 
+    fn display_strings(&self) -> Vec<(bool, String)> {
+        ResourceAdapter::display_strings(self)
+    }
+
     async fn allows(&self, ctx: &Ctx, ability: &str) -> bool {
         self.policy.allows(ctx, ability, None).await
     }
@@ -111,7 +115,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         Ok(ResourceSchema {
             schema_version: SCHEMA_VERSION,
             vocabulary_version: VOCABULARY_VERSION,
-            resource: ResourceAdapter::info(self),
+            resource: ResourceAdapter::info(self).translated(ctx),
             operation: op,
             abilities,
             form: FormSchema {

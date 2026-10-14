@@ -4,6 +4,7 @@ import type { ColumnSchema, Envelope, FilterSchema, JsonValue } from "@/api/type
 import { Badge } from "@/components/ui/badge";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { display } from "@/lib/wire";
+import { t, useT } from "@/i18n";
 import { RelationSelect } from "./relation-select";
 
 export const KNOWN_COLUMNS = new Set(["text", "badge", "boolean", "date"]);
@@ -12,6 +13,7 @@ export const KNOWN_FILTERS = new Set(["select", "ternary", "date_range"]);
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 export function Cell({ column, record }: { column: ColumnSchema; record: Envelope }) {
+  useT();
   const value = record.data[column.name] as JsonValue | undefined;
   if (column.relationship) {
     const label = record.labels?.[column.name];
@@ -26,9 +28,9 @@ export function Cell({ column, record }: { column: ColumnSchema; record: Envelop
     case "boolean":
       if (value === null || value === undefined) return null;
       return value ? (
-        <Check className="size-4 text-foreground" aria-label="Yes" />
+        <Check className="size-4 text-foreground" aria-label={t("value.yes")} />
       ) : (
-        <X className="size-4 text-muted-foreground" aria-label="No" />
+        <X className="size-4 text-muted-foreground" aria-label={t("value.no")} />
       );
     case "date":
       return <span className="whitespace-nowrap">{formatDate(column.valueType, value)}</span>;
@@ -100,6 +102,7 @@ export function FilterControl({
   params: FilterParams;
   onChange: (changes: FilterParams) => void;
 }) {
+  const t = useT();
   const id = `filter-${filter.name}`;
   switch (filter.type) {
     case "ternary": {
@@ -108,9 +111,9 @@ export function FilterControl({
         <label className="flex flex-col gap-1 text-xs font-medium">
           {filter.label}
           <NativeSelect id={id} value={params[key] ?? ""} onChange={(e) => onChange({ [key]: e.target.value })}>
-            <option value="">Any</option>
-            <option value="true">Yes</option>
-            <option value="false">No</option>
+            <option value="">{t("filter.any")}</option>
+            <option value="true">{t("value.yes")}</option>
+            <option value="false">{t("value.no")}</option>
           </NativeSelect>
         </label>
       );
@@ -138,7 +141,7 @@ export function FilterControl({
         <label className="flex flex-col gap-1 text-xs font-medium">
           {filter.label}
           <NativeSelect id={id} value={current} onChange={(e) => onChange({ [key]: e.target.value })}>
-            <option value="">Any</option>
+            <option value="">{t("filter.any")}</option>
             {(filter.options ?? []).map((o) => (
               <option key={optionParam(o.value)} value={optionParam(o.value)}>
                 {o.label}
@@ -159,13 +162,13 @@ export function FilterControl({
           <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             <Input
               type="date"
-              aria-label={`${filter.label} from`}
+              aria-label={t("filter.from", { filter: filter.label })}
               value={dateOf(filter.valueType, params[from])}
               onChange={(e) => onChange({ [from]: e.target.value ? dayStart(filter.valueType, e.target.value) : "" })}
             />
             <Input
               type="date"
-              aria-label={`${filter.label} until`}
+              aria-label={t("filter.until", { filter: filter.label })}
               value={dateOf(filter.valueType, params[until], exclusive)}
               onChange={(e) => {
                 const date = e.target.value;

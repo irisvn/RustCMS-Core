@@ -64,7 +64,7 @@ on the admin engine, so it can change without touching them.
 ### rustcms-core
 
 Small modules stay at the top (`app`, `config`, `console`, `error`, `http`,
-`key`, `principal`, `telemetry`, `models`, `jobs` (periodic jobs run by one
+`key`, `principal`, `telemetry`, `models`, `i18n` (locale, catalogs, issue codes), `jobs` (periodic jobs run by one
 instance), `redis` with feature `redis`). Two are directories:
 
 - `db/`: `connect`, `check` (MySQL setup), `transactions`, `locks` (named locks).

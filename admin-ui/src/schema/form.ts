@@ -1,6 +1,7 @@
 // Form state ↔ wire values, and client-side rules (zod). The server re-validates
 // everything; these rules only give earlier feedback.
 import { z } from "zod";
+import { t } from "@/i18n";
 import type { ComponentSchema, InputSchema, JsonValue } from "@/api/types";
 import { asDocument } from "@/lib/rich-text";
 import { widget } from "@/lib/widgets";
@@ -47,12 +48,19 @@ export function protectLossyJson(components: ComponentSchema[], data?: Record<st
   return components.map((c) =>
     isInput(c)
       ? lossyJson(c, data[c.name])
-        ? { ...c, disabled: true, help: "Holds numbers too large to edit here without changing them." }
+        ? protect(c, "form.lossyJson")
         : foreignKeyValue(c, data[c.name])
-          ? { ...c, disabled: true, help: "Holds values that are not text pairs: it cannot be edited here." }
+          ? protect(c, "form.notTextPairs")
           : c
       : { ...c, components: protectLossyJson(c.components, data) },
   );
+}
+
+/** An input made read-only; its help says why (kept as a key: it follows the language). */
+type Protected = InputSchema & { protection?: "form.lossyJson" | "form.notTextPairs" };
+
+function protect(input: InputSchema, why: NonNullable<Protected["protection"]>): Protected {
+  return { ...input, disabled: true, help: t(why), protection: why };
 }
 
 /** Key/value pairs of a form value (each held as the JSON of `[key, value]`). */
@@ -205,7 +213,9 @@ export function zodSchema(inputs: InputSchema[]) {
     const required = input.rules.some((r) => r.rule === "required") && !input.writeOnly;
     const max = input.rules.find((r) => r.rule === "max_length");
     if (isTriState(input)) {
-      shape[input.name] = z.string().refine((v) => !(required && v === "" && !input.disabled), "is required");
+      shape[input.name] = z.string().superRefine((v, ctx) => {
+        if (required && v === "" && !input.disabled) ctx.addIssue({ code: "custom", message: t("issue.required") });
+      });
       continue;
     }
     switch (input.type) {
@@ -219,8 +229,8 @@ export function zodSchema(inputs: InputSchema[]) {
           // Unavailable: never sent, whatever value the form holds (on edit, only
           // changed fields are checked, and this one cannot change).
           if (!widget(input.widget)) {
-            ctx.addIssue({ code: "custom", message: "cannot be edited here: its widget is not available" });
-          } else if (value === "") ctx.addIssue({ code: "custom", message: "is required" });
+            ctx.addIssue({ code: "custom", message: t("form.widgetMissing") });
+          } else if (value === "") ctx.addIssue({ code: "custom", message: t("issue.required") });
         });
         break;
       case "file_upload": {
@@ -228,14 +238,14 @@ export function zodSchema(inputs: InputSchema[]) {
         shape[input.name] = z.union([z.string(), z.array(z.string())]).superRefine((value, ctx) => {
           if (input.disabled) return;
           const count = Array.isArray(value) ? value.length : value === "" ? 0 : 1;
-          if (required && count === 0) ctx.addIssue({ code: "custom", message: "is required" });
-          if (count > max) ctx.addIssue({ code: "custom", message: `may not have more than ${max} items` });
+          if (required && count === 0) ctx.addIssue({ code: "custom", message: t("issue.required") });
+          if (count > max) ctx.addIssue({ code: "custom", message: t("issue.max_items", { max }) });
         });
         break;
       }
       case "rich_editor":
         shape[input.name] = z.string().superRefine((value, ctx) => {
-          if (!input.disabled && required && value === "") ctx.addIssue({ code: "custom", message: "is required" });
+          if (!input.disabled && required && value === "") ctx.addIssue({ code: "custom", message: t("issue.required") });
         });
         break;
       case "key_value": {
@@ -244,52 +254,52 @@ export function zodSchema(inputs: InputSchema[]) {
         shape[input.name] = z.union([z.string(), z.array(z.string())]).superRefine((value, ctx) => {
           if (input.disabled) return;
           if (!Array.isArray(value)) {
-            if (required) ctx.addIssue({ code: "custom", message: "is required" });
+            if (required) ctx.addIssue({ code: "custom", message: t("issue.required") });
             return;
           }
           const pairs = pairsOf(value);
           const keys = pairs.map(([k]) => k);
           const chars = (text: string) => [...text].length;
           const issue = (message: string) => ctx.addIssue({ code: "custom", message });
-          if (items && items.rule === "max_items" && pairs.length > items.value) issue(`may not have more than ${items.value} items`);
-          else if (keys.some((k) => k.trim() === "")) issue("may not have an empty key");
-          else if (new Set(keys).size !== keys.length) issue(`has the key "${keys.find((k, i) => keys.indexOf(k) !== i)}" twice`);
-          else if (keys.some((k) => chars(k) > 255)) issue("may not have keys longer than 255 characters");
+          if (items && items.rule === "max_items" && pairs.length > items.value) issue(t("issue.max_items", { max: items.value }));
+          else if (keys.some((k) => k.trim() === "")) issue(t("issue.empty_key"));
+          else if (new Set(keys).size !== keys.length) issue(t("form.duplicateKey", { key: keys.find((k, i) => keys.indexOf(k) !== i) ?? "" }));
+          else if (keys.some((k) => chars(k) > 255)) issue(t("issue.key_length", { max: 255 }));
           else if (length && length.rule === "max_length" && pairs.some(([, v]) => chars(v) > length.value)) {
-            issue(`may not have values longer than ${length.value} characters`);
+            issue(t("issue.value_length", { max: length.value }));
           }
         });
         break;
       }
       case "checkbox_list":
-        shape[input.name] = z
-          .array(z.string())
-          .refine((values) => !values.some((v) => hasUnsafeInteger(JSON.parse(v))), "has a value that cannot be kept exactly");
+        shape[input.name] = z.array(z.string()).superRefine((values, ctx) => {
+          if (values.some((v) => hasUnsafeInteger(JSON.parse(v)))) ctx.addIssue({ code: "custom", message: t("form.unsafeValue") });
+        });
         break;
       default:
         shape[input.name] = z.string().superRefine((text, ctx) => {
           // Hidden inputs cannot be corrected by the user (nor show an error): the server decides.
           if (input.disabled || input.type === "hidden") return;
           if (text === "") {
-            if (required) ctx.addIssue({ code: "custom", message: "is required" });
+            if (required) ctx.addIssue({ code: "custom", message: t("issue.required") });
             return;
           }
           // Selects hold JSON-encoded values: measure the value itself.
           const decoded = input.type === "select" ? (JSON.parse(text) as unknown) : text;
           if (max && max.rule === "max_length" && typeof decoded === "string" && [...decoded].length > max.value) {
-            ctx.addIssue({ code: "custom", message: `may not be longer than ${max.value} characters` });
+            ctx.addIssue({ code: "custom", message: t("issue.max_length", { max: max.value }) });
           }
           if (input.type === "select") {
-            if (hasUnsafeInteger(decoded)) ctx.addIssue({ code: "custom", message: "has a value that cannot be kept exactly" });
+            if (hasUnsafeInteger(decoded)) ctx.addIssue({ code: "custom", message: t("form.unsafeValue") });
             return;
           }
           if (kindOf(input) === "json") {
             try {
               if (hasUnsafeInteger(JSON.parse(text))) {
-                ctx.addIssue({ code: "custom", message: "has numbers that cannot be kept exactly; store them as strings" });
+                ctx.addIssue({ code: "custom", message: t("form.unsafeJson") });
               }
             } catch {
-              ctx.addIssue({ code: "custom", message: "must be valid JSON" });
+              ctx.addIssue({ code: "custom", message: t("form.json") });
             }
             return;
           }
@@ -299,4 +309,43 @@ export function zodSchema(inputs: InputSchema[]) {
     }
   }
   return z.object(shape);
+}
+
+/**
+ * `shown` (a form's components, fixed at mount) with the labels, help,
+ * placeholders and option labels of `latest` (the same form, refetched in
+ * another language). Structure and values stay those of `shown`.
+ */
+export function relabel(shown: ComponentSchema[], latest: ComponentSchema[]): ComponentSchema[] {
+  return shown.map((component, i) => {
+    const fresh = isInput(component)
+      ? findInput(latest, component.name)
+      : latest.find((c, j) => !isInput(c) && c.type === component.type && (c.id ? c.id === component.id : j === i));
+    if (!fresh) return component;
+    if (isInput(component) && isInput(fresh)) {
+      const options = component.options?.map((o) => ({
+        ...o,
+        label: fresh.options?.find((f) => JSON.stringify(f.value) === JSON.stringify(o.value))?.label ?? o.label,
+      }));
+      // A protected input keeps its reason (in the new language), not the schema's help.
+      const why = (component as Protected).protection;
+      return { ...component, label: fresh.label, help: why ? t(why) : fresh.help, placeholder: fresh.placeholder, options };
+    }
+    if (!isInput(component) && !isInput(fresh)) {
+      return { ...component, label: fresh.label, components: relabel(component.components, fresh.components) };
+    }
+    return component;
+  });
+}
+
+function findInput(components: ComponentSchema[], name: string): InputSchema | undefined {
+  for (const c of components) {
+    if (isInput(c)) {
+      if (c.name === name) return c;
+    } else {
+      const found = findInput(c.components, name);
+      if (found) return found;
+    }
+  }
+  return undefined;
 }

@@ -61,10 +61,22 @@ impl Extension {
     }
 }
 
-pub(crate) fn router(router: Router<AppState>, admin_path: &str, extensions: Arc<Vec<Extension>>) -> Router<AppState> {
+/// Languages of the interface: the default and those users may choose.
+#[derive(Debug, Clone)]
+pub(crate) struct Locales {
+    pub(crate) default: String,
+    pub(crate) all: Vec<String>,
+}
+
+pub(crate) fn router(
+    router: Router<AppState>,
+    admin_path: &str,
+    extensions: Arc<Vec<Extension>>,
+    locales: &Locales,
+) -> Router<AppState> {
     // `admin_path` is normalized by the auth config (`/admin`, never `/`).
     let base = admin_path.trim_end_matches('/').to_owned();
-    let index: Arc<str> = render_index(Assets::get("index.html").map(|f| f.data), &base, &extensions).into();
+    let index: Arc<str> = render_index(Assets::get("index.html").map(|f| f.data), &base, &extensions, locales).into();
     let (root, slash) = (index.clone(), index.clone());
     router
         .route(
@@ -140,7 +152,12 @@ fn security_headers() -> HeaderMap {
 
 /// `index.html` with the runtime configuration (before any relative asset
 /// reference), or a placeholder when the SPA is not built.
-fn render_index(template: Option<std::borrow::Cow<'static, [u8]>>, base: &str, extensions: &[Extension]) -> String {
+fn render_index(
+    template: Option<std::borrow::Cow<'static, [u8]>>,
+    base: &str,
+    extensions: &[Extension],
+    locales: &Locales,
+) -> String {
     let Some(template) = template else {
         return PLACEHOLDER.to_owned();
     };
@@ -148,7 +165,8 @@ fn render_index(template: Option<std::borrow::Cow<'static, [u8]>>, base: &str, e
     let scripts: Vec<String> =
         extensions.iter().filter(|e| !e.style).map(|e| format!("assets/ext/{}", e.file)).collect();
     let styles: Vec<String> = extensions.iter().filter(|e| e.style).map(|e| format!("assets/ext/{}", e.file)).collect();
-    let mut config = serde_json::json!({ "basePath": base });
+    // Before sign-in the panel picks among these from the browser's languages.
+    let mut config = serde_json::json!({ "basePath": base, "locale": locales.default, "locales": locales.all });
     if !extensions.is_empty() {
         config["extensions"] = serde_json::json!({ "scripts": scripts, "styles": styles });
     }
@@ -169,18 +187,22 @@ fn escape_attr(value: &str) -> String {
 mod tests {
     use super::*;
 
+    fn en() -> Locales {
+        Locales { default: "en".into(), all: vec!["en".into(), "vi".into()] }
+    }
+
     #[test]
     fn index_gets_base_and_escaped_config() {
         let template = b"<head><!-- rustcms:config --><script src=\"./assets/a.js\"></script></head>";
-        let html = render_index(Some(template.as_slice().into()), "/back-office", &[]);
+        let html = render_index(Some(template.as_slice().into()), "/back-office", &[], &en());
         assert_eq!(
             html,
             "<head><base href=\"/back-office/\"><meta name=\"rustcms-admin\" \
-             content=\"{&quot;basePath&quot;:&quot;/back-office&quot;}\"><script src=\"./assets/a.js\"></script></head>"
+             content=\"{&quot;basePath&quot;:&quot;/back-office&quot;,&quot;locale&quot;:&quot;en&quot;,&quot;locales&quot;:[&quot;en&quot;,&quot;vi&quot;]}\"><script src=\"./assets/a.js\"></script></head>"
         );
-        assert!(render_index(None, "/admin", &[]).contains("not built"));
+        assert!(render_index(None, "/admin", &[], &en()).contains("not built"));
         let ext = [Extension::new("acme", "x", false), Extension::new("acme", "y", true)];
-        let html = render_index(Some(template.as_slice().into()), "/admin", &ext);
+        let html = render_index(Some(template.as_slice().into()), "/admin", &ext, &en());
         assert!(html.contains("&quot;scripts&quot;:[&quot;assets/ext/acme.2d711642.js&quot;]"), "{html}");
         assert_eq!(escape_attr("\"'<&>"), "&quot;&#39;&lt;&amp;&gt;");
     }

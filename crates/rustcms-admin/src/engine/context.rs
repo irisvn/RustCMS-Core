@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use rustcms_core::Principal;
+use rustcms_core::i18n::Translator;
 use sea_orm::{DatabaseConnection, DatabaseExecutor, DatabaseTransaction};
 
 use crate::registry::Registry;
@@ -23,12 +24,42 @@ pub struct Ctx {
     /// A create through a relation: (relation id, fk field, canonical parent
     /// key). The create sets that field itself and refuses it from the input.
     pub bound: Option<(String, String, String)>,
+    /// Interface language of the request (`app.locales`).
+    pub locale: String,
+    /// The application's catalogs (see [`Ctx::t`]).
+    pub translator: Arc<Translator>,
 }
 
 impl Ctx {
     /// Context outside any write.
     pub fn new(db: DatabaseConnection, principal: Principal, registry: Arc<Registry>) -> Self {
-        Self { db, principal, registry, txn: None, idempotency_key: None, bound: None }
+        Self {
+            db,
+            principal,
+            registry,
+            txn: None,
+            idempotency_key: None,
+            bound: None,
+            locale: "en".into(),
+            translator: Arc::default(),
+        }
+    }
+
+    /// The same context in `locale`, translated with `translator`.
+    pub fn with_locale(mut self, locale: impl Into<String>, translator: Arc<Translator>) -> Self {
+        self.locale = locale.into();
+        self.translator = translator;
+        self
+    }
+
+    /// `source` in the request's language (e.g. a message of a hook), or as written.
+    pub fn t(&self, source: &str) -> String {
+        self.translator.get(&self.locale, None, source).to_owned()
+    }
+
+    /// Like [`Ctx::t`], looking in the table of resource `scope` first.
+    pub fn t_in(&self, scope: &str, source: &str) -> String {
+        self.translator.get(&self.locale, Some(scope), source).to_owned()
     }
 
     /// The same context, creating through a relation (`(relation id, fk field, parent key)`).

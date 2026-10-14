@@ -4,7 +4,8 @@ Một ứng dụng rustcms (tạo bằng `rustcms new`, hoặc `examples/demo`) 
 thành **một file binary duy nhất**. Binary này chứa:
 - server HTTP;
 - toàn bộ lệnh console (`migrate`, `make:user`, …);
-- admin panel (SPA đã nhúng sẵn).
+- admin panel (SPA đã nhúng sẵn);
+- bản dịch giao diện (`lang/*.toml` được nhúng lúc build, không cần copy).
 
 Vì vậy máy chạy **không cần Rust, Node hay mã nguồn**.
 

@@ -1,6 +1,13 @@
 // Demo widget `demo/color`: picks a category color from the palette in
 // `props.palette` ([{ value, label }]). Styles live in color.css: the panel's
-// CSP forbids inline styles.
+// CSP forbids inline styles. Its text is translated with `ctx.t`.
+window.rustcms.registerTranslations("vi", {
+  None: "Không màu",
+  Red: "Đỏ",
+  Green: "Xanh lá",
+  Blue: "Xanh dương",
+  Purple: "Tím",
+});
 window.rustcms.registerWidget("demo/color", {
   apiVersion: 1,
   mount(element, ctx) {
@@ -13,21 +20,26 @@ window.rustcms.registerWidget("demo/color", {
       button.type = "button";
       button.className = "demo-color-swatch";
       button.dataset.color = value;
-      button.setAttribute("aria-label", label);
-      button.title = label;
+      button.dataset.label = label;
       button.addEventListener("click", () => current.onChange(value));
       return button;
     });
     const clear = document.createElement("button");
     clear.type = "button";
     clear.className = "demo-color-clear";
-    clear.textContent = "None";
     clear.addEventListener("click", () => current.onChange(null));
     group.append(...buttons, clear);
     element.append(group);
     const render = () => {
       group.id = current.id;
       group.setAttribute("aria-label", current.label);
+      // Labels in the panel's language (`update` is called when it changes).
+      for (const button of buttons) {
+        const label = current.t(button.dataset.label);
+        button.setAttribute("aria-label", label);
+        button.title = label;
+      }
+      clear.textContent = current.t("None");
       if (current.describedBy) group.setAttribute("aria-describedby", current.describedBy);
       else group.removeAttribute("aria-describedby");
       for (const button of [...buttons, clear]) button.disabled = current.disabled;

@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Cell } from "@/renderers/table";
 import { isInput } from "@/schema/form";
+import { useT } from "@/i18n";
 
 /** The components without the input of `name` (set by the server through a relation). */
 export function withoutInput(components: ComponentSchema[], name: string): ComponentSchema[] {
@@ -20,6 +21,7 @@ export function withoutInput(components: ComponentSchema[], name: string): Compo
 }
 
 export function RelationSection({ parent, record, relation }: { parent: string; record: string; relation: RelationSchema }) {
+  const t = useT();
   const schema = useSchema(relation.resource, "view");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -40,7 +42,7 @@ export function RelationSection({ parent, record, relation }: { parent: string; 
         <CardTitle id={titleId}>{relation.label}</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           {schema.data?.table.searchable && (
-            <Input aria-label={`Search ${relation.label}`} className="w-48" value={search} onChange={(e) => {
+            <Input aria-label={t("relation.search", { relation: relation.label })} className="w-48" value={search} onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
             }} />
@@ -52,7 +54,7 @@ export function RelationSection({ parent, record, relation }: { parent: string; 
               search={{ via: parent, record, relation: relation.name }}
               className={buttonVariants({ size: "sm" })}
             >
-              <Plus /> New
+              <Plus /> {t("relation.new")}
             </Link>
           )}
         </div>
@@ -68,12 +70,12 @@ export function RelationSection({ parent, record, relation }: { parent: string; 
               <thead className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
                 <tr>
                   {columns.map((c) => <th key={c.name} scope="col" className="p-3 font-medium">{c.label}</th>)}
-                  <th className="p-3"><span className="sr-only">Open</span></th>
+                  <th className="p-3"><span className="sr-only">{t("relation.open")}</span></th>
                 </tr>
               </thead>
               <tbody>
                 {(records.data?.data ?? []).length === 0 && (
-                  <tr><td colSpan={columns.length + 1} className="p-6 text-center text-muted-foreground">No records.</td></tr>
+                  <tr><td colSpan={columns.length + 1} className="p-6 text-center text-muted-foreground">{t("relation.empty")}</td></tr>
                 )}
                 {(records.data?.data ?? []).map((row) => (
                   <tr key={row.key} className="border-b border-border last:border-0">
@@ -81,7 +83,7 @@ export function RelationSection({ parent, record, relation }: { parent: string; 
                     <td className="p-3 text-right">
                       {row.abilities.view && (
                         <Link to="/r/$slug/records/$key" params={{ slug: relation.resource, key: row.key }} className="underline">
-                          View
+                          {t("action.view")}
                         </Link>
                       )}
                     </td>
@@ -93,10 +95,10 @@ export function RelationSection({ parent, record, relation }: { parent: string; 
         )}
         {meta && meta.lastPage > 1 && (
           <div className="flex items-center justify-between border-t border-border p-3 text-sm">
-            <span className="text-muted-foreground">Page {meta.page} of {meta.lastPage}</span>
+            <span className="text-muted-foreground">{t("relation.page", { page: meta.page, last: meta.lastPage })}</span>
             <div className="flex gap-2">
-              <button type="button" className={buttonVariants({ size: "sm", variant: "outline" })} disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
-              <button type="button" className={buttonVariants({ size: "sm", variant: "outline" })} disabled={page >= meta.lastPage} onClick={() => setPage(page + 1)}>Next</button>
+              <button type="button" className={buttonVariants({ size: "sm", variant: "outline" })} disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("list.previous")}</button>
+              <button type="button" className={buttonVariants({ size: "sm", variant: "outline" })} disabled={page >= meta.lastPage} onClick={() => setPage(page + 1)}>{t("list.next")}</button>
             </div>
           </div>
         )}

@@ -87,6 +87,7 @@ impl PermissionResolver {
             super_admin: grants.super_admin,
             token_abilities,
             auth_version: Some(user.auth_version),
+            locale: user.locale.clone(),
         })
     }
 

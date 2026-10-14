@@ -19,6 +19,8 @@ Sources, last one wins:
 | `app.url`                   | `http://localhost:8000`|                                              |
 | `app.key`                   | — (**required**)       | `base64:` + 32 bytes; `rustcms key:generate` |
 | `app.listen`                | `127.0.0.1:8000`       |                                              |
+| `app.locale`                | `en`                   | admin interface language by default ([Languages](admin/i18n.md)) |
+| `app.locales`               | `["en", "vi"]`         | languages users may choose (the panel ships `en`, `vi`) |
 | `database.url`              | — (**required**)       | `sqlite://…`, `postgres://…` or `mysql://…` ([MySQL setup](basics/database.md#mysql)) |
 | `database.max_connections`  | `10`                   |                                              |
 | `database.log_statements`   | `false`                |                                              |

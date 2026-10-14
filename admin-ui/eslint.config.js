@@ -2,6 +2,7 @@ import js from "@eslint/js";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
+import i18n from "./eslint/no-literal-text.js";
 
 export default tseslint.config(
   { ignores: ["dist", "node_modules", "playwright-report", "test-results"] },
@@ -19,6 +20,13 @@ export default tseslint.config(
       ],
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },
+  },
+  // Text shown to users comes from the catalogs (ADR 0013).
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/i18n/**"],
+    plugins: { i18n },
+    rules: { "i18n/no-literal-text": "error" },
   },
   // Playwright fixtures call `use()`, which is not a React hook.
   { files: ["e2e/**/*.ts"], rules: { "react-hooks/rules-of-hooks": "off" } },

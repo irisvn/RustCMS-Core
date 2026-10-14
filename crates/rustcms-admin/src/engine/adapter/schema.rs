@@ -15,12 +15,57 @@ impl<R: Resource> ResourceAdapter<R> {
             }
             out.push(crate::schema::RelationSchema {
                 name: relation.name,
-                label: relation.label.clone().unwrap_or_else(|| humanize(relation.name)),
+                label: ctx.t_in(R::SLUG, &relation.label.clone().unwrap_or_else(|| humanize(relation.name))),
                 resource: relation.target,
                 field: relation.field,
                 create: creatable && target.allows(ctx, ability::CREATE).await,
             });
         }
+        out
+    }
+
+    /// The source strings [`ResourceAdapter::schema`] and the panel translate,
+    /// read from the definitions (no policy, no hook, no record).
+    pub(super) fn display_strings(&self) -> Vec<(bool, String)> {
+        fn walk(components: &[Component], out: &mut Vec<String>, field_label: &dyn Fn(&str) -> Option<String>) {
+            for component in components {
+                match component {
+                    Component::Input(input) => {
+                        out.extend(input.label.clone().or_else(|| field_label(&input.name)));
+                        out.extend(input.placeholder.clone());
+                        out.extend(input.help.clone());
+                        out.extend(input.options.iter().map(|o| o.label.clone()));
+                    }
+                    Component::Layout(layout) => {
+                        out.extend(layout.label.clone());
+                        walk(&layout.children, out, field_label);
+                    }
+                }
+            }
+        }
+        let info = self.info();
+        let mut out = vec![info.label, info.plural_label];
+        let field_label = |name: &str| self.field(name).map(|f| f.display_label());
+        walk(&self.form.components, &mut out, &field_label);
+        for column in &self.table_ui.columns {
+            out.extend(column.label.clone().or_else(|| field_label(&column.name)));
+        }
+        for filter in &self.table_ui.filters {
+            out.extend(filter.label.clone().or_else(|| field_label(&filter.name)));
+            out.extend(filter.options.iter().map(|o| o.label.clone()));
+        }
+        for action in &self.actions {
+            out.push(action.label.clone().unwrap_or_else(|| humanize(action.name)));
+            out.extend(action.confirm.clone());
+        }
+        for relation in &self.relations {
+            out.push(relation.label.clone().unwrap_or_else(|| humanize(relation.name)));
+        }
+        // Navigation groups are translated globally (they are shared by resources).
+        let mut out: Vec<(bool, String)> = out.into_iter().map(|s| (true, s)).collect();
+        out.extend(info.group.map(|g| (false, g)));
+        out.sort();
+        out.dedup();
         out
     }
 
@@ -68,7 +113,7 @@ impl<R: Resource> ResourceAdapter<R> {
         Some(InputSchema {
             kind: input.kind,
             name: input.name.clone(),
-            label: input.label.clone().unwrap_or_else(|| field.display_label()),
+            label: ctx.t_in(R::SLUG, &input.label.clone().unwrap_or_else(|| field.display_label())),
             value_type: self.column(&input.name).kind.name(),
             nullable: self.column(&input.name).nullable,
             // A default is data: only for fields the user may read.
@@ -79,10 +124,10 @@ impl<R: Resource> ResourceAdapter<R> {
             write_only,
             rules,
             column_span: input.column_span,
-            placeholder: input.placeholder.clone(),
-            help: input.help.clone(),
+            placeholder: input.placeholder.as_deref().map(|p| ctx.t_in(R::SLUG, p)),
+            help: input.help.as_deref().map(|h| ctx.t_in(R::SLUG, h)),
             mode: input.mode,
-            options: input.options.clone(),
+            options: translated_options(ctx, R::SLUG, &input.options),
             relationship: field.belongs_to.map(|resource| Relationship { resource }),
             widget: input.widget.clone(),
             props: input.props.clone(),
@@ -106,7 +151,7 @@ impl<R: Resource> ResourceAdapter<R> {
                         ComponentSchema::Layout(LayoutSchema {
                             kind: layout.kind,
                             id: layout.id.clone(),
-                            label: layout.label.clone(),
+                            label: layout.label.as_deref().map(|l| ctx.t_in(R::SLUG, l)),
                             columns: layout.columns,
                             components: children,
                         })
@@ -128,7 +173,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 ColumnSchema {
                     kind: c.kind,
                     name: c.name.clone(),
-                    label: c.label.clone().unwrap_or_else(|| field.display_label()),
+                    label: ctx.t_in(R::SLUG, &c.label.clone().unwrap_or_else(|| field.display_label())),
                     value_type: self.column(&c.name).kind.name(),
                     sortable: field.sortable,
                     searchable: field.searchable,
@@ -151,9 +196,9 @@ impl<R: Resource> ResourceAdapter<R> {
                 FilterSchema {
                     kind: f.kind,
                     name: f.name.clone(),
-                    label: f.label.clone().unwrap_or_else(|| field.display_label()),
+                    label: ctx.t_in(R::SLUG, &f.label.clone().unwrap_or_else(|| field.display_label())),
                     value_type: self.column(&f.name).kind.name(),
-                    options: f.options.clone(),
+                    options: translated_options(ctx, R::SLUG, &f.options),
                     relationship: field.belongs_to.map(|resource| Relationship { resource }),
                 }
             })
@@ -165,9 +210,9 @@ impl<R: Resource> ResourceAdapter<R> {
             if action.required_permission.is_none_or(|p| ctx.can(p)) {
                 actions.push(ActionSchema {
                     name: action.name,
-                    label: action.label.clone().unwrap_or_else(|| humanize(action.name)),
+                    label: ctx.t_in(R::SLUG, &action.label.clone().unwrap_or_else(|| humanize(action.name))),
                     bulk: action.bulk,
-                    confirm: action.confirm.clone(),
+                    confirm: action.confirm.as_deref().map(|c| ctx.t_in(R::SLUG, c)),
                     color: action.color.clone(),
                     icon: action.icon.clone(),
                 });
@@ -183,4 +228,16 @@ impl<R: Resource> ResourceAdapter<R> {
             soft_deletes: self.soft.is_some(),
         }
     }
+}
+
+/// Option labels in the request's language (values unchanged).
+fn translated_options(
+    ctx: &Ctx,
+    scope: &str,
+    options: &[crate::forms::SelectOption],
+) -> Vec<crate::forms::SelectOption> {
+    options
+        .iter()
+        .map(|o| crate::forms::SelectOption { value: o.value.clone(), label: ctx.t_in(scope, &o.label) })
+        .collect()
 }

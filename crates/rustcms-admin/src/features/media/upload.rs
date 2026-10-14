@@ -116,7 +116,11 @@ pub(crate) async fn upload(
     // the file of an upload that took too long.
     if uploads::Entity::delete_by_id(intent).exec(&txn).await?.rows_affected != 1 {
         txn.rollback().await?;
-        return Err(AppError::Conflict { code: "write_conflict", message: "The upload took too long; send it again." });
+        return Err(AppError::Conflict {
+            code: "write_conflict",
+            reason: "upload_expired",
+            message: "The upload took too long; send it again.",
+        });
     }
     if let Some(claim) = &claim {
         crate::idempotency::complete(&txn, claim, &serde_json::json!({ "key": row.id.to_string() })).await?;

@@ -20,6 +20,8 @@ pub struct Model {
     pub is_active: bool,
     /// Bumped to revoke every session and token of the user.
     pub auth_version: i64,
+    /// Admin interface language the user chose; `None` follows the browser.
+    pub locale: Option<String>,
     /// When the email was verified.
     pub email_verified_at: Option<DateTimeUtc>,
     /// Creation time.

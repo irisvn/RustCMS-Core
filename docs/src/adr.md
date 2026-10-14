@@ -14,3 +14,4 @@ Architecture decisions live in [`docs/adr/`](https://github.com/irisvn/rustcms/t
 - 0010 — MySQL as a third database
 - 0011 — JWT access tokens with rotating refresh tokens
 - 0012 — Several instances (Redis)
+- 0013 — Translations of the admin interface

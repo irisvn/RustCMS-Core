@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use rustcms_auth::{ADMIN_GUARD, AuthState};
+use rustcms_core::i18n::Translator;
 use rustcms_core::{AppBuilder, AppCommand, AppState, ServiceProvider};
 
 use crate::http::{self, AdminPanel};
@@ -27,15 +28,24 @@ pub struct AdminProvider {
     registry: Mutex<Option<Registry>>,
     media: bool,
     extensions: Vec<crate::spa::Extension>,
+    translator: Translator,
 }
+
+/// Locales the panel's interface is written in (`admin-ui/src/i18n`).
+pub const PANEL_LOCALES: &[&str] = &["en", "vi"];
 
 impl Default for AdminProvider {
     fn default() -> Self {
+        let mut translator = Translator::default();
+        translator
+            .add_framework("rustcms-admin", "vi", include_str!("../../lang/vi.toml"))
+            .expect("the framework's catalog is valid");
         Self {
             brand: "rustcms".into(),
             registry: Mutex::new(Some(Registry::new())),
             media: false,
             extensions: Vec::new(),
+            translator,
         }
     }
 }
@@ -78,6 +88,24 @@ impl AdminProvider {
             stem(&extension)
         );
         self.extensions.push(extension);
+    }
+
+    /// Translations of the application's labels (resources, fields, actions,
+    /// options, tabs…) for `locale`: TOML mapping English source strings to
+    /// translations, optionally per resource (`[posts] "Title" = "…"`).
+    ///
+    /// ```rust,ignore
+    /// AdminProvider::new().translations("vi", include_str!("../lang/vi.toml"))
+    /// ```
+    ///
+    /// # Panics
+    /// On malformed TOML, a translation whose `{placeholders}` differ from its
+    /// source, or a locale registered twice.
+    pub fn translations(mut self, locale: &str, toml: &str) -> Self {
+        if let Err(err) = self.translator.add(locale, toml) {
+            panic!("{err:#}");
+        }
+        self
     }
 
     /// Name shown in the panel.
@@ -136,12 +164,24 @@ impl ServiceProvider for AdminProvider {
         }
         app.describe_routes("admin", http::routes(&admin_path));
         app.describe_routes("admin", spa::routes(&admin_path));
-        app.bind(AdminPanel { brand: self.brand.clone(), registry });
+        let locales = &app.config().app.locales;
+        if let Some(other) = locales.iter().find(|l| !PANEL_LOCALES.contains(&l.as_str())) {
+            panic!("app.locales lists {other:?}, but the admin panel is only written in {PANEL_LOCALES:?}");
+        }
+        let translator = std::sync::Arc::new(self.translator.clone());
+        app.bind(AdminPanel { brand: self.brand.clone(), registry, translator });
         let extensions = std::sync::Arc::new(self.extensions.clone());
+        let locales = spa::Locales { default: app.config().app.locale.clone(), all: app.config().app.locales.clone() };
         app.routes(move |router| {
-            spa::router(system::router(http::router(router, &admin_path), &admin_path), &admin_path, extensions)
+            spa::router(
+                system::router(http::router(router, &admin_path), &admin_path),
+                &admin_path,
+                extensions,
+                &locales,
+            )
         });
         app.command(IdempotencyPrune);
+        app.command(LangMissing);
     }
 
     async fn boot(&self, state: &AppState) -> anyhow::Result<()> {
@@ -219,4 +259,83 @@ impl AppCommand for IdempotencyPrune {
         println!("{pruned} expired idempotency keys deleted");
         Ok(())
     }
+}
+
+/// `lang:missing <locale>`: the labels of the registered resources that no
+/// catalog translates, as TOML to fill in (exit code 1 when any is missing).
+struct LangMissing;
+
+#[async_trait]
+impl AppCommand for LangMissing {
+    fn definition(&self) -> Command {
+        Command::new("lang:missing")
+            .about("List the admin labels without a translation, as TOML to add to lang/<locale>.toml")
+            .arg(clap::Arg::new("locale").required(true).help("Language, e.g. `vi`"))
+    }
+
+    async fn run(&self, state: &AppState, args: &ArgMatches) -> anyhow::Result<()> {
+        let locale = args.get_one::<String>("locale").expect("required");
+        anyhow::ensure!(
+            state.config().app.locales.contains(locale),
+            "{locale:?} is not in app.locales {:?}",
+            state.config().app.locales
+        );
+        let panel = state.service::<AdminPanel>().ok_or_else(|| anyhow::anyhow!("AdminProvider not registered"))?;
+        let groups: Vec<String> = state
+            .service::<AuthState>()
+            .map(|auth| auth.permissions.all().into_values().flatten().collect())
+            .unwrap_or_default();
+        let missing = panel.missing_translations(locale, &groups);
+        if missing.is_empty() {
+            println!("# every admin label has a {locale} translation");
+            return Ok(());
+        }
+        // Messages written by hooks (`ctx.t`) are not listed: they only exist when the hook runs.
+        println!("# {} admin labels without a {locale} translation (lang/{locale}.toml)", missing.len());
+        for source in &missing {
+            // A JSON string is a valid TOML basic string.
+            println!("{} = \"\"", serde_json::Value::String(source.clone()));
+        }
+        anyhow::bail!("{} labels are not translated", missing.len())
+    }
+}
+
+impl AdminPanel {
+    /// Labels that no catalog translates in `locale` (English is the source),
+    /// looked up as they are when shown: resources' labels in their table
+    /// first, navigation and permission groups globally (`lang:missing`).
+    pub fn missing_translations(&self, locale: &str, permission_groups: &[String]) -> Vec<String> {
+        missing_translations(self, locale, permission_groups)
+    }
+}
+
+fn missing_translations(panel: &AdminPanel, locale: &str, permission_groups: &[String]) -> Vec<String> {
+    if locale == "en" {
+        return Vec::new();
+    }
+    let translated =
+        |scope: Option<&str>, s: &str| s.trim().is_empty() || panel.translator.find(locale, scope, s).is_some();
+    let mut missing: Vec<String> = panel
+        .registry
+        .all()
+        .into_iter()
+        .flat_map(|resource| {
+            let slug = resource.slug();
+            resource
+                .display_strings()
+                .into_iter()
+                .filter(move |(scoped, s)| !translated(scoped.then_some(slug), s))
+                .map(|(_, s)| s)
+        })
+        .collect();
+    // Permission groups that are not resources are shown in words (`users` → "Users").
+    for group in permission_groups {
+        let source = crate::system::roles::group_source(group);
+        if panel.registry.get(group).is_none() && !translated(None, &source) {
+            missing.push(source);
+        }
+    }
+    missing.sort();
+    missing.dedup();
+    missing
 }

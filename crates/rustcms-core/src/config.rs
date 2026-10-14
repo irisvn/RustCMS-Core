@@ -46,6 +46,11 @@ pub struct AppConfig {
     pub key: AppKey,
     /// Address `serve` listens on.
     pub listen: SocketAddr,
+    /// Locale of the admin interface when neither the user nor the browser
+    /// names a supported one.
+    pub locale: String,
+    /// Locales users may choose (the admin panel ships `en` and `vi`).
+    pub locales: Vec<String>,
 }
 
 /// `[database]` section.
@@ -101,7 +106,7 @@ pub struct ConfigError(#[from] Box<figment::Error>);
 fn defaults() -> serde_json::Value {
     serde_json::json!({
         "app": { "name": "rustcms", "env": "production", "debug": false, "url": "http://localhost:8000",
-                 "listen": "127.0.0.1:8000" },
+                 "listen": "127.0.0.1:8000", "locale": "en", "locales": ["en", "vi"] },
         "database": { "max_connections": 10, "log_statements": false },
         "http": { "body_limit": 1_048_576, "timeout_secs": 30, "trusted_proxies": [] },
         "log": { "filter": "info", "json": false },
@@ -149,8 +154,19 @@ impl Config {
     /// Extracts the framework sections from `figment`.
     pub fn from_figment(figment: Figment) -> Result<Self, ConfigError> {
         let get = |section: &str| figment.focus(section);
+        let app: AppConfig = get("app").extract().map_err(Box::new)?;
+        let locales_ok = !app.locales.is_empty()
+            && app.locales.iter().all(|l| crate::i18n::is_locale_tag(l))
+            && app.locales.contains(&app.locale);
+        if !locales_ok {
+            let message = format!(
+                "app.locale {:?} must be one of app.locales {:?} (tags such as `en`, `vi`)",
+                app.locale, app.locales
+            );
+            return Err(ConfigError(Box::new(figment::Error::from(message))));
+        }
         Ok(Self {
-            app: get("app").extract().map_err(Box::new)?,
+            app,
             database: get("database").extract().map_err(Box::new)?,
             http: get("http").extract().map_err(Box::new)?,
             log: get("log").extract().map_err(Box::new)?,

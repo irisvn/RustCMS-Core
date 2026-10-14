@@ -1,0 +1,17 @@
+# Vietnamese labels of the demo's admin panel (English source = translation).
+# `cargo run -- lang:missing vi` lists what is still missing.
+# Labels of the framework's own resources and common fields come with rustcms.
+
+"Post" = "Bài viết"
+"Posts" = "Bài viết"
+"Categories" = "Danh mục"
+"Attributes" = "Thuộc tính"
+"Publishing" = "Xuất bản"
+"Publish" = "Xuất bản"
+"Publish the selected posts?" = "Xuất bản các bài viết đã chọn?"
+"A catchy title" = "Một tiêu đề hấp dẫn"
+"Extra details shown with the post, e.g. reading_time = 5 min" = "Thông tin thêm hiển thị cùng bài viết, ví dụ reading_time = 5 phút"
+
+[posts]
+# "Content" is also a navigation group; on the post form it is the first tab.
+"Content" = "Nội dung"

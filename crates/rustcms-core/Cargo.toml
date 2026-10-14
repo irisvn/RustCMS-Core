@@ -37,6 +37,7 @@ sea-orm-migration.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+toml.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 cap-std.workspace = true
