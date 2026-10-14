@@ -54,8 +54,8 @@ on the admin engine, so it can change without touching them.
 
 | Module | Role |
 |---|---|
-| `guards/` | `guard` (`Auth`, `MaybeAuth`), `session`, `tokens`, `credentials` (revocation) |
-| `rbac/` | `service` (`RbacService`, every change), `rules` (no escalation), `resolver` (grants cache), `queries` |
+| `guards/` | `guard` (`Auth`, `MaybeAuth`), `session`, `tokens`, `jwt` (access tokens), `jwt_session` (refresh families), `credentials` (revocation) |
+| `rbac/` | `service` (`RbacService`, every change), `rules` (no escalation), `resolver` (grants cache keyed by the database generation), `queries` |
 | `http/` | the auth routes |
 | `console/` | `user:create`, `role:assign`, … |
 | `support/` | password hashing, secret comparison, rate limits |
@@ -64,7 +64,8 @@ on the admin engine, so it can change without touching them.
 ### rustcms-core
 
 Small modules stay at the top (`app`, `config`, `console`, `error`, `http`,
-`key`, `principal`, `telemetry`, `models`). Two are directories:
+`key`, `principal`, `telemetry`, `models`, `jobs` (periodic jobs run by one
+instance), `redis` with feature `redis`). Two are directories:
 
 - `db/`: `connect`, `check` (MySQL setup), `transactions`, `locks` (named locks).
 - `storage/`: the `Storage` trait, `local`, `s3`.

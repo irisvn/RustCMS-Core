@@ -1,6 +1,8 @@
 //! Grants of a user per guard, loaded from the database and cached per
 //! generation (evicted on every RBAC change).
 
+use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query};
+
 use super::*;
 
 /// What a user may do within one guard.
@@ -14,12 +16,15 @@ pub struct Grants {
 
 /// Loads [`Grants`] with a short-lived cache, evicted on every RBAC change.
 ///
-/// Entries are keyed by a generation that every change advances. A load that
-/// started before a change can only populate the previous generation, which no
-/// later request reads, so eviction cannot be undone by an in-flight load.
+/// Entries are keyed by two generations that every change advances: the
+/// database's (`auth_generations.rbac`, advanced inside each RBAC transaction,
+/// read on every request, so every instance sees a committed change on its next
+/// request) and this process's (advanced after commit). A load that started
+/// before a change can only populate a previous generation, which no later
+/// request reads, so eviction cannot be undone by an in-flight load.
 #[derive(Clone)]
 pub struct PermissionResolver {
-    cache: Cache<(String, i64, u64), Arc<Grants>>,
+    cache: Cache<(String, i64, i64, u64), Arc<Grants>>,
     generation: Arc<AtomicU64>,
 }
 
@@ -34,22 +39,31 @@ impl PermissionResolver {
 
     /// Grants of `user_id` in `guard`.
     pub async fn grants(&self, db: &DatabaseConnection, guard: &str, user_id: i64) -> AppResult<Arc<Grants>> {
-        self.get_or_load(guard, user_id, || load_grants(db, guard, user_id)).await
+        self.get_or_load(guard, user_id, || shared_generation(db), || load_grants(db, guard, user_id)).await
     }
 
-    async fn get_or_load<F, Fut>(&self, guard: &str, user_id: i64, load: F) -> AppResult<Arc<Grants>>
+    async fn get_or_load<G, GFut, F, Fut>(
+        &self,
+        guard: &str,
+        user_id: i64,
+        shared: G,
+        load: F,
+    ) -> AppResult<Arc<Grants>>
     where
+        G: Fn() -> GFut,
+        GFut: Future<Output = AppResult<i64>>,
         F: Fn() -> Fut,
         Fut: Future<Output = AppResult<Grants>>,
     {
         for _ in 0..LOAD_ATTEMPTS {
-            let generation = self.generation.load(Ordering::SeqCst);
-            let key = (guard.to_owned(), user_id, generation);
+            let shared_now = shared().await?;
+            let local = self.generation.load(Ordering::SeqCst);
+            let key = (guard.to_owned(), user_id, shared_now, local);
             if let Some(grants) = self.cache.get(&key).await {
                 return Ok(grants);
             }
             let grants = Arc::new(load().await?);
-            if self.generation.load(Ordering::SeqCst) == generation {
+            if self.generation.load(Ordering::SeqCst) == local && shared().await? == shared_now {
                 self.cache.insert(key, grants.clone()).await;
                 return Ok(grants);
             }
@@ -81,6 +95,30 @@ impl PermissionResolver {
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.cache.invalidate_all();
     }
+}
+
+/// The database's RBAC generation (see [`PermissionResolver`]).
+pub async fn shared_generation<C: ConnectionTrait>(db: &C) -> AppResult<i64> {
+    let query = Query::select()
+        .column(Alias::new("value"))
+        .from(Alias::new("auth_generations"))
+        .and_where(Expr::col(Alias::new("name")).eq("rbac"))
+        .to_owned();
+    let row = db.query_one(&query).await?.ok_or_else(|| AppError::internal("auth_generations has no `rbac` row"))?;
+    Ok(row.try_get::<i64>("", "value")?)
+}
+
+/// Advances the database's RBAC generation, inside the transaction of a change.
+pub(crate) async fn advance_shared_generation<C: ConnectionTrait>(db: &C) -> AppResult<()> {
+    let update = Query::update()
+        .table(Alias::new("auth_generations"))
+        .value(Alias::new("value"), Expr::col(Alias::new("value")).add(1))
+        .and_where(Expr::col(Alias::new("name")).eq("rbac"))
+        .to_owned();
+    if db.execute(&update).await?.rows_affected() != 1 {
+        return Err(AppError::internal("auth_generations has no `rbac` row"));
+    }
+    Ok(())
 }
 
 /// Loads retried before giving up on caching under constant churn.
@@ -152,18 +190,23 @@ mod tests {
 
         // The first load reads the old grants, then stalls before caching them;
         // any later load sees the committed change.
-        let stale = resolver.get_or_load("admin", 1, || {
-            let wait = released.lock().unwrap().take();
-            async move {
-                match wait {
-                    Some(wait) => {
-                        wait.await.ok();
-                        Ok(grants("old"))
+        let stale = resolver.get_or_load(
+            "admin",
+            1,
+            || async { Ok(0) },
+            || {
+                let wait = released.lock().unwrap().take();
+                async move {
+                    match wait {
+                        Some(wait) => {
+                            wait.await.ok();
+                            Ok(grants("old"))
+                        }
+                        None => Ok(grants("new")),
                     }
-                    None => Ok(grants("new")),
                 }
-            }
-        });
+            },
+        );
         // …while an RBAC change commits and evicts.
         let change = async {
             tokio::task::yield_now().await;
@@ -173,18 +216,20 @@ mod tests {
         let (stale, ()) = tokio::join!(stale, change);
         stale.unwrap();
 
-        let fresh = resolver.get_or_load("admin", 1, || async { Ok(grants("newest")) }).await.unwrap();
+        let fresh =
+            resolver.get_or_load("admin", 1, || async { Ok(0) }, || async { Ok(grants("newest")) }).await.unwrap();
         assert!(!fresh.permissions.contains("old"), "a stale in-flight load must not survive eviction");
     }
 
     #[tokio::test]
     async fn caches_within_a_generation() {
         let resolver = PermissionResolver::new(Duration::from_secs(600));
-        resolver.get_or_load("admin", 1, || async { Ok(grants("a")) }).await.unwrap();
-        let cached = resolver.get_or_load("admin", 1, || async { Ok(grants("b")) }).await.unwrap();
+        resolver.get_or_load("admin", 1, || async { Ok(0) }, || async { Ok(grants("a")) }).await.unwrap();
+        let cached = resolver.get_or_load("admin", 1, || async { Ok(0) }, || async { Ok(grants("b")) }).await.unwrap();
         assert!(cached.permissions.contains("a"));
         resolver.evict_all();
-        let reloaded = resolver.get_or_load("admin", 1, || async { Ok(grants("b")) }).await.unwrap();
+        let reloaded =
+            resolver.get_or_load("admin", 1, || async { Ok(0) }, || async { Ok(grants("b")) }).await.unwrap();
         assert!(reloaded.permissions.contains("b"));
     }
 }

@@ -1,10 +1,11 @@
 # rustcms — notes for AI agents
 
 - Plan and milestones: see `docs/adr/` and the approved plan (M0–M6 for 0.1).
-- Commands: `just ci`, `just test-matrix` (starts PostgreSQL and MySQL with docker compose), `just test-cli` (slow scaffold test).
+- Commands: `just ci`, `just test-matrix` (starts PostgreSQL, MySQL and Redis with docker compose), `just test-cli` (slow scaffold test).
 - Rust toolchain via Homebrew rustup: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
 - Postgres for tests runs on port 55439 (55432 belongs to another project); MySQL 8.4 on 53306
-  (`RUSTCMS_TEST_MYSQL=mysql://root:mysql@localhost:53306/mysql`).
+  (`RUSTCMS_TEST_MYSQL=mysql://root:mysql@localhost:53306/mysql`); Redis on 56379
+  (`RUSTCMS_TEST_REDIS=redis://localhost:56379`, tests need `--features rustcms/redis`, as `just test-matrix` does).
 - Database tests must use `rustcms_testing::db_test!` so they run on SQLite, PostgreSQL and MySQL;
   tables built from entities go through `rustcms_testing::create_table`.
 - Serializing transactions: `rustcms_core::db::xact_lock` (first lock of the transaction), never

@@ -16,6 +16,31 @@ Or over HTTP: `POST /api/v1/auth/token` with `{email, password, token_name,
 abilities, expires_in_days}` (rate limited like sign-in); `DELETE
 /api/v1/auth/token` revokes the token used; `GET /api/v1/auth/me`.
 
+## JWT sign-ins
+
+Apps that sign users in (mobile, browser) use short access tokens instead
+(`auth.jwt.enabled`, on by default):
+
+```text
+POST /api/v1/auth/jwt          {email, password, abilities?}   → 201
+POST /api/v1/auth/refresh      {refreshToken}                   → 200
+POST /api/v1/auth/jwt/logout   {refreshToken}                   → 204
+```
+
+Both sign-in and refresh answer `{accessToken, tokenType: "Bearer", expiresIn,
+refreshToken, refreshExpiresAt, abilities}`. Send `Authorization: Bearer
+<accessToken>` like an API token; abilities (omitted = `*`) are fixed for the
+sign-in and narrow the user's API permissions.
+
+- Refresh before `expiresIn` runs out, with the **latest** refresh token. Each
+  refresh token works once: a second use ends the sign-in (both tokens stop
+  working). Refresh one request at a time (share one in-flight refresh across
+  tabs); if a refresh response is lost, sign in again.
+- A refresh token lasts `refresh_ttl_days` (14) without use; a sign-in lasts at
+  most `refresh_family_days` (30).
+- Password change, sign-out everywhere and disabling the user end every sign-in
+  from the next request (see [revocation](security/revocation.md)).
+
 ## Writing endpoints
 
 An application's API lives in `src/http/api/`, one module per model (Laravel

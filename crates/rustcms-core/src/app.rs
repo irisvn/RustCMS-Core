@@ -227,8 +227,25 @@ impl AppBuilder {
     }
 
     /// Builds the app on an existing connection (tests, tools).
-    pub async fn build_with_db(self, db: DatabaseConnection) -> anyhow::Result<App> {
+    pub async fn build_with_db(
+        #[cfg_attr(not(feature = "redis"), allow(unused_mut))] mut self,
+        db: DatabaseConnection,
+    ) -> anyhow::Result<App> {
         crate::db::check(&db, true).await?;
+        #[cfg(feature = "redis")]
+        if let Some(redis) = crate::redis::from_config(&self.config).await? {
+            self.bind(redis);
+        }
+        #[cfg(not(feature = "redis"))]
+        if self
+            .config
+            .section::<serde_json::Value>("redis")
+            .ok()
+            .and_then(|r| r.get("url").cloned())
+            .is_some_and(|u| u.as_str().is_some_and(|u| !u.trim().is_empty()))
+        {
+            anyhow::bail!("[redis] url is set, but rustcms was built without its `redis` feature");
+        }
         let state = AppState(Arc::new(StateInner { config: self.config, db, services: self.services }));
         for provider in &self.providers {
             provider.boot(&state).await?;

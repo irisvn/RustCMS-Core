@@ -145,28 +145,39 @@ impl ServiceProvider for AdminProvider {
     }
 
     async fn boot(&self, state: &AppState) -> anyhow::Result<()> {
+        // With Redis, one instance at a time does each job (a lease per job and,
+        // for media, per storage disk); the jobs are correct either way.
         if let Some(media) = state.service::<crate::media::MediaState>() {
-            let db = state.db().clone();
+            let app = state.clone();
             tokio::spawn(async move {
+                let lease = format!("media-prune:{}", media.storage.disk());
                 let mut every = tokio::time::interval(MEDIA_PRUNE_EVERY);
                 loop {
                     every.tick().await;
-                    if let Err(err) = crate::media::prune(&db, media.storage.as_ref()).await {
-                        tracing::warn!(%err, "media pruning failed");
-                    }
+                    let (db, media) = (app.db().clone(), media.clone());
+                    rustcms_core::jobs::exclusive(&app, &lease, MEDIA_PRUNE_EVERY, || async move {
+                        if let Err(err) = crate::media::prune(&db, media.storage.as_ref()).await {
+                            tracing::warn!(%err, "media pruning failed");
+                        }
+                    })
+                    .await;
                 }
             });
         }
-        let db = state.db().clone();
+        let app = state.clone();
         tokio::spawn(async move {
             let mut every = tokio::time::interval_at(tokio::time::Instant::now() + PRUNE_EVERY, PRUNE_EVERY);
             loop {
                 every.tick().await;
-                match crate::idempotency::prune(&db).await {
-                    Ok(n) if n > 0 => tracing::info!(pruned = n, "expired idempotency keys deleted"),
-                    Ok(_) => {}
-                    Err(err) => tracing::warn!(%err, "idempotency key pruning failed"),
-                }
+                let db = app.db().clone();
+                rustcms_core::jobs::exclusive(&app, "idempotency-prune", PRUNE_EVERY / 2, || async move {
+                    match crate::idempotency::prune(&db).await {
+                        Ok(n) if n > 0 => tracing::info!(pruned = n, "expired idempotency keys deleted"),
+                        Ok(_) => {}
+                        Err(err) => tracing::warn!(%err, "idempotency key pruning failed"),
+                    }
+                })
+                .await;
             }
         });
         Ok(())

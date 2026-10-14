@@ -85,6 +85,7 @@ impl ServiceProvider for AuthProvider {
         let mut config: AuthConfig =
             app.config().section("auth").unwrap_or_else(|e| panic!("invalid [auth] configuration: {e}"));
         config.admin_path = normalize_admin_path(&config.admin_path).unwrap_or_else(|e| panic!("{e}"));
+        config.jwt.validate().unwrap_or_else(|e| panic!("{e}"));
         let gate = self.gate.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take().unwrap_or_default();
         let state = AuthState::new(config.clone(), &app.config().app.url, &app.config().app.key, gate);
         for (group, name) in BUILT_IN_PERMISSIONS {
@@ -106,17 +107,33 @@ impl ServiceProvider for AuthProvider {
     }
 
     async fn boot(&self, state: &AppState) -> anyhow::Result<()> {
+        #[cfg(feature = "redis")]
+        if let (Some(auth), Some(redis)) = (state.service::<AuthState>(), state.service::<rustcms_core::redis::Redis>())
+        {
+            // Every instance counts in the same place.
+            auth.limiter.use_redis((*redis).clone());
+        }
         let db = state.db().clone();
+        let app = state.clone();
         tokio::spawn(async move {
             // First run after one period: never competes with startup work.
             let mut every = tokio::time::interval_at(tokio::time::Instant::now() + PRUNE_EVERY, PRUNE_EVERY);
             loop {
                 every.tick().await;
-                match crate::session::prune_expired(&db).await {
-                    Ok(n) if n > 0 => tracing::info!(pruned = n, "expired sessions deleted"),
-                    Ok(_) => {}
-                    Err(err) => tracing::warn!(%err, "session pruning failed"),
-                }
+                let db = db.clone();
+                rustcms_core::jobs::exclusive(&app, "auth-prune", PRUNE_EVERY / 2, || async move {
+                    match crate::session::prune_expired(&db).await {
+                        Ok(n) if n > 0 => tracing::info!(pruned = n, "expired sessions deleted"),
+                        Ok(_) => {}
+                        Err(err) => tracing::warn!(%err, "session pruning failed"),
+                    }
+                    match crate::guards::jwt_session::prune(&db).await {
+                        Ok(n) if n > 0 => tracing::info!(pruned = n, "ended JWT sign-ins deleted"),
+                        Ok(_) => {}
+                        Err(err) => tracing::warn!(%err, "JWT pruning failed"),
+                    }
+                })
+                .await;
             }
         });
         Ok(())

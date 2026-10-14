@@ -28,7 +28,7 @@ disabling) and sessions must survive a leaked database dump.
 ## Consequences
 
 - One user lookup per authenticated request; permissions are cached (≤ 30 s,
-  evicted on change).
-- Rate limits and the permission cache are per process: 0.1 supports a single
-  instance; a shared store comes with Redis support.
-- JWT (0.2) plugs in as another bearer driver selected by token shape.
+  keyed by a database counter every RBAC change advances, so every instance
+  sees a change on its next request — since 0.2).
+- Rate limits are per process, or shared through Redis (0.2, ADR 0012).
+- JWT (0.2, ADR 0011) is another bearer driver selected by token shape.

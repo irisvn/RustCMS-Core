@@ -1,5 +1,7 @@
 //! Tables owned by the auth layer (created by `rustcms-migration`).
 
+pub mod jwt_family;
+pub mod jwt_refresh_token;
 pub mod model_has_permissions;
 pub mod model_has_roles;
 pub mod permission;

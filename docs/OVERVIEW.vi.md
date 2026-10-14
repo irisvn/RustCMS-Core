@@ -191,11 +191,13 @@ cảm (password, token…) và kiểu chưa hỗ trợ bị bỏ qua kèm cảnh
 
 ## 7. Lộ trình
 
-- **0.2:**
-  - JWT guard kèm refresh token xoay vòng, MySQL.
-  - RichEditor, Upload/Media, Tabs/KeyValue, field tuỳ biến.
-  - Soft delete, relationship manager.
-  - Redis cho cache và rate limit (chạy nhiều instance), idempotency key.
+- **0.2 (đã xong, M7–M11 + R1/R2):**
+  - JWT guard kèm refresh token xoay vòng (M11), MySQL 8.4 (M10).
+  - RichEditor, Upload/Media, Tabs/KeyValue, field tuỳ biến (M7–M9).
+  - Soft delete, relationship manager (M7, M9).
+  - Chạy nhiều instance với Redis (rate limit, job định kỳ); quyền đồng bộ qua
+    database (M11); idempotency key (M7).
+  - Tầng API cho ứng dụng (`ApiRoutes`, `make:api`, R2); cấu trúc thư mục theo vai trò (R1).
 - **Sau 0.2:** Events, Settings, Queue/Jobs, Mail, quên mật khẩu và xác minh email,
   Audit log, Pages/Menus kèm headless API, i18n, Dashboard widgets, Plugins.
 

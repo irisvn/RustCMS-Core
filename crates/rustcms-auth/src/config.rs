@@ -33,6 +33,45 @@ pub struct AuthConfig {
     pub attempts_per_ip: u32,
     /// Seconds a user's resolved permissions are cached (changes also evict immediately).
     pub permission_cache_ttl_secs: u64,
+    /// JWT access and refresh tokens of the API guard (`[auth.jwt]`).
+    pub jwt: JwtConfig,
+}
+
+/// `[auth.jwt]`: JWT access tokens with rotating refresh tokens.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct JwtConfig {
+    /// Whether the JWT endpoints and bearer JWTs are accepted.
+    pub enabled: bool,
+    /// Access token lifetime in seconds (60 to 3,600).
+    pub access_ttl_secs: u64,
+    /// A refresh token not used for this many days stops working (1 to 90).
+    pub refresh_ttl_days: u64,
+    /// A sign-in (refresh family) ends after this many days, however often it is
+    /// refreshed (at least `refresh_ttl_days`, at most 365).
+    pub refresh_family_days: u64,
+}
+
+impl Default for JwtConfig {
+    fn default() -> Self {
+        Self { enabled: true, access_ttl_secs: 900, refresh_ttl_days: 14, refresh_family_days: 30 }
+    }
+}
+
+impl JwtConfig {
+    /// The bounds above, or what is wrong.
+    pub fn validate(&self) -> Result<(), String> {
+        if !(60..=3_600).contains(&self.access_ttl_secs) {
+            return Err("auth.jwt.access_ttl_secs must be between 60 and 3600".into());
+        }
+        if !(1..=90).contains(&self.refresh_ttl_days) {
+            return Err("auth.jwt.refresh_ttl_days must be between 1 and 90".into());
+        }
+        if !(self.refresh_ttl_days..=365).contains(&self.refresh_family_days) {
+            return Err("auth.jwt.refresh_family_days must be between refresh_ttl_days and 365".into());
+        }
+        Ok(())
+    }
 }
 
 impl Default for AuthConfig {
@@ -51,6 +90,7 @@ impl Default for AuthConfig {
             attempts_per_identifier: 5,
             attempts_per_ip: 30,
             permission_cache_ttl_secs: 30,
+            jwt: JwtConfig::default(),
         }
     }
 }

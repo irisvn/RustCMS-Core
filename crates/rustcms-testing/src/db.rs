@@ -28,6 +28,8 @@ pub struct TestDb {
     backend: Backend,
     admin_url: Option<String>,
     name: String,
+    /// Whether [`Self::cleanup`] deletes the database (not for [`Self::reopen`]ed handles).
+    owner: bool,
 }
 
 const ENV: &str = "RUSTCMS_TEST_PG";
@@ -45,7 +47,7 @@ impl TestDb {
         let path = std::env::temp_dir().join(format!("rustcms-test-{}.db", Uuid::new_v4()));
         let url = format!("sqlite://{}?mode=rwc", path.display());
         let conn = connect(&url).await;
-        Self { conn, url, backend: Backend::Sqlite, admin_url: None, name: path.display().to_string() }
+        Self { conn, url, backend: Backend::Sqlite, admin_url: None, name: path.display().to_string(), owner: true }
     }
 
     /// A fresh empty database, or `None` when the server's variable
@@ -70,7 +72,7 @@ impl TestDb {
         admin.close().await.ok();
         let url = replace_database(&admin_url, &name);
         let conn = connect(&url).await;
-        Some(Self { conn, url, backend: Backend::Mysql, admin_url: Some(admin_url), name })
+        Some(Self { conn, url, backend: Backend::Mysql, admin_url: Some(admin_url), name, owner: true })
     }
 
     /// A fresh PostgreSQL database, or `None` when `RUSTCMS_TEST_PG` is not set.
@@ -82,7 +84,7 @@ impl TestDb {
         admin.close().await.ok();
         let url = replace_database(&admin_url, &name);
         let conn = connect(&url).await;
-        Some(Self { conn, url, backend: Backend::Postgres, admin_url: Some(admin_url), name })
+        Some(Self { conn, url, backend: Backend::Postgres, admin_url: Some(admin_url), name, owner: true })
     }
 
     /// A fresh database with every migration of `M` applied.
@@ -135,7 +137,7 @@ impl TestDb {
                 admin.close().await.ok();
                 let url = replace_database(&admin_url, &name);
                 let conn = connect(&url).await;
-                Some(Self { conn, url, backend, admin_url: Some(admin_url), name })
+                Some(Self { conn, url, backend, admin_url: Some(admin_url), name, owner: true })
             }
             Backend::Mysql => Self::mysql_migrated::<M>().await,
         }
@@ -245,12 +247,18 @@ impl TestDb {
         admin.close().await.ok();
         let url = replace_database(&admin_url, &name);
         let conn = connect(&url).await;
-        Some(Self { conn, url, backend: Backend::Mysql, admin_url: Some(admin_url), name })
+        Some(Self { conn, url, backend: Backend::Mysql, admin_url: Some(admin_url), name, owner: true })
     }
 
     /// Runs every migration of `M` on this database.
     pub async fn migrate<M: MigratorTrait>(&self) {
         M::up(&self.conn, None).await.expect("migrate test database");
+    }
+
+    /// The same database through a pool of its own, as a second application
+    /// instance would open it. Its `cleanup` only closes that pool.
+    pub async fn reopen(&self) -> Self {
+        Self { conn: connect(&self.url).await, owner: false, ..self.clone() }
     }
 
     /// Connection pool.
@@ -271,6 +279,9 @@ impl TestDb {
     /// Closes the pool and deletes the database.
     pub async fn cleanup(self) {
         self.conn.close().await.ok();
+        if !self.owner {
+            return;
+        }
         match (self.backend, self.admin_url) {
             (Backend::Postgres, Some(admin_url)) => {
                 if let Ok(admin) = Database::connect(&admin_url).await {

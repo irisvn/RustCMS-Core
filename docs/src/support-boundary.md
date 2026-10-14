@@ -7,23 +7,27 @@ checkbox list, date, date-time, hidden; section and grid; text, badge, boolean
 and date columns; select, ternary and date-range filters); users, roles and
 account pages; admin session and API tokens; roles and permissions per guard;
 generators (`make:model`, `make:migration`, `make:resource --generate`,
-`make:policy`, `make:test`) and `route:list`; single-instance deployments (rate
-limits and the permission cache are in memory).
+`make:policy`, `make:test`) and `route:list`.
 
 Since 0.2: soft deletes, idempotency keys for creates and actions, tabs and
 key/value inputs (M7); media library on local or S3-compatible storage, file
 uploads and rich text documents (M8); has-many relation managers and custom
 field widgets from extension scripts (M9); MySQL 8.4 as a third database (M10;
-MariaDB is not supported).
+MariaDB is not supported); an application API layer (`ApiRoutes`, `make:api`, R2);
+JWT access tokens with rotating refresh tokens, and several instances with
+Redis (M11).
+
+**Deployments:** one instance, or several sharing one standalone Redis (rate
+limits, periodic jobs) and shared media storage; Redis Cluster is not
+supported. Password-hashing and upload concurrency limits are per instance.
 
 **Not supported yet:** idempotency keys outside resource creates and actions
 (system creates are protected by unique email/name; token issuance and password
-changes are not keyed), MariaDB, JWT, email verification,
+changes are not keyed), MariaDB, email verification,
 managing api-guard roles from an admin session (use `rustcms role:assign`), many-to-many
 relationship editing in the panel (attach/detach through a pivot; deferred after 0.2), modal-form actions, composite primary keys, sorting by
 related columns, image resizing/thumbnails, range requests and public media
-URLs (apps add their own route), password reset, multiple
-instances sharing caches.
+URLs (apps add their own route), password reset, Redis Cluster.
 
 ## Database notes
 
@@ -42,9 +46,9 @@ is about 23 MB, 18 MB stripped, on macOS arm64 with Rust 1.99
 
 ## Roadmap
 
-0.2: JWT guard with rotating refresh tokens, MySQL (done), rich text and uploads,
-tabs and key-value inputs, custom field bundles, soft deletes, relationship
-managers, Redis for cache and rate limits, idempotency keys.
+0.2 (done): JWT guard with rotating refresh tokens, MySQL, rich text and
+uploads, tabs and key-value inputs, custom fields, soft deletes, relationship
+managers, Redis for several instances, idempotency keys.
 Later: events, settings, queues, mail, password reset and email verification,
 audit log, content (pages, menus) with a headless API, i18n, dashboard widgets,
 plugins.

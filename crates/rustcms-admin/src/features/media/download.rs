@@ -11,7 +11,7 @@ pub(crate) async fn file(
 ) -> AppResult<Response> {
     let media = state_of(&app)?;
     let auth = app.service::<rustcms_auth::AuthState>().ok_or_else(|| AppError::internal("auth not registered"))?;
-    auth.limiter.reserve(&[(&format!("media-download:{}", ctx.principal.id), 600)])?;
+    auth.limiter.reserve(&[(&format!("media-download:{}", ctx.principal.id), 600)]).await?;
     let resource = ctx.registry.get(SLUG).ok_or(AppError::NotFound)?;
     resource.find(&ctx, &id).await?;
     let id = Uuid::parse_str(&id).map_err(|_| AppError::NotFound)?;

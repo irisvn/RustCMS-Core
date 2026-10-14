@@ -62,18 +62,24 @@ jobs:
         options: >-
           --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pmysql --silent"
           --health-interval 2s --health-timeout 3s --health-retries 60
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
     env:
       RUSTCMS_TEST_PG: postgres://postgres:postgres@localhost:5432/postgres
       RUSTCMS_TEST_MYSQL: mysql://root:mysql@localhost:3306/mysql
-      # A database that is not reachable fails the run instead of being skipped.
-      RUSTCMS_TEST_REQUIRE: postgres,mysql
+      RUSTCMS_TEST_REDIS: redis://localhost:6379
+      # A server that is not reachable fails the run instead of being skipped.
+      RUSTCMS_TEST_REQUIRE: postgres,mysql,redis
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-nextest }
-      - run: cargo nextest run --workspace
+      - run: cargo nextest run --workspace --features rustcms/redis
 
   doc:
     runs-on: ubuntu-latest

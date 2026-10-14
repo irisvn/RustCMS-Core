@@ -6,6 +6,26 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.2 — M11)
+- **JWT sign-ins** on the API guard: `POST /api/v1/auth/jwt` (access + refresh
+  token), `POST /api/v1/auth/refresh` (rotating, single-use refresh tokens; a
+  reused one ends the sign-in), `POST /api/v1/auth/jwt/logout`. HS256 with a key
+  derived from `APP_KEY`, a fixed header, checked against the user and the
+  sign-in on every request (revocation from the next request). `[auth.jwt]`
+  settings. Tables `jwt_families`, `jwt_refresh_tokens` (ADR 0011).
+- **Several instances:** permissions cached per instance but keyed by a
+  database counter (`auth_generations`) every RBAC change advances, so a change
+  applies everywhere from the next request. Feature `redis` with `[redis] url`
+  (`REDIS_URL`) and `prefix`: shared rate limits (all-or-nothing Lua, fail
+  closed) and leases so periodic jobs run on one instance
+  (`rustcms_core::jobs::exclusive`). Media deletions are claimed with
+  `FOR UPDATE SKIP LOCKED` (ADR 0012).
+- `TestDb::reopen()` for tests with two instances on one database.
+
+### Changed (0.2 — M11)
+- `RateLimiter::reserve`, `release` and `clear` are async; `session:prune` also
+  removes ended JWT sign-ins.
+
 ### Added (0.2 — R2)
 - **Application API layer:** `ApiRoutes` and `Access` (`public`, `authenticated`,
   `can`): every API route states its access, checked before the handler's

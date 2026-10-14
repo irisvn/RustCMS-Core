@@ -8,9 +8,12 @@ pub mod console;
 pub mod db;
 pub mod error;
 pub mod http;
+pub mod jobs;
 pub mod key;
 pub mod models;
 pub mod principal;
+#[cfg(feature = "redis")]
+pub mod redis;
 pub mod storage;
 pub mod telemetry;
 

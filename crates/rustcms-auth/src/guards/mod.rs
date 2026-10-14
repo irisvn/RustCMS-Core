@@ -3,5 +3,7 @@
 
 pub mod credentials;
 pub mod guard;
+pub mod jwt;
+pub mod jwt_session;
 pub mod session;
 pub mod tokens;

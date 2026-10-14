@@ -49,6 +49,9 @@ impl<'a> RbacService<'a> {
     /// Commits and always evicts cached grants: if COMMIT reached the server but
     /// its answer was lost, the change may be applied, so the cache must not outlive it.
     async fn commit(&self, txn: DatabaseTransaction) -> AppResult<()> {
+        // Every instance keys its cache by this counter: the change and its new
+        // generation commit together.
+        super::resolver::advance_shared_generation(&txn).await?;
         // COMMIT and the eviction after it run to completion even if the request is
         // cancelled meanwhile: evicting before the commit is visible would let a
         // concurrent load cache the old grants again.

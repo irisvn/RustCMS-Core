@@ -20,6 +20,7 @@ use rustcms_core::{AppError, AppResult, AppState, Principal};
 use sea_orm::EntityTrait;
 
 use crate::config::origin_of;
+use crate::guards::{jwt, jwt_session};
 use crate::session::{self, Session};
 use crate::state::{ADMIN_GUARD, API_GUARD, AuthState};
 use crate::tokens;
@@ -36,6 +37,8 @@ pub struct Authenticated {
     pub user: user::Model,
     /// API token used, if any.
     pub token_id: Option<i64>,
+    /// JWT refresh family of the access token used, if any.
+    pub jwt_family: Option<String>,
 }
 
 /// Requires an authenticated user (401 otherwise).
@@ -134,7 +137,7 @@ async fn admin(app: &AppState, auth: &Arc<AuthState>, mut req: Request, next: Ne
             Some(user) if user.auth_version == session.auth_version() => {
                 signed_in = Some(user.id);
                 let principal = auth.resolver.principal(app.db(), ADMIN_GUARD, &user, None).await?;
-                req.extensions_mut().insert(Authenticated { principal, user, token_id: None });
+                req.extensions_mut().insert(Authenticated { principal, user, token_id: None, jwt_family: None });
             }
             // Credentials moved on: this request is anonymous. The session is not
             // ended here, because a concurrent request of the same browser may be
@@ -161,13 +164,22 @@ async fn api(app: &AppState, mut req: Request, next: Next) -> AppResult<Response
     if let Some(value) = req.headers().get(header::AUTHORIZATION) {
         let value = value.to_str().map_err(|_| AppError::Unauthenticated)?;
         let bearer = value.strip_prefix("Bearer ").ok_or(AppError::Unauthenticated)?.trim();
-        if !bearer.starts_with(tokens::PREFIX) {
-            return Err(AppError::Unauthenticated);
-        }
-        let (token, user) = tokens::authenticate(app.db(), bearer).await?;
         let auth = app.service::<AuthState>().ok_or_else(|| AppError::internal("AuthProvider not registered"))?;
-        let principal = auth.resolver.principal(app.db(), API_GUARD, &user, Some(tokens::abilities(&token))).await?;
-        req.extensions_mut().insert(Authenticated { principal, user, token_id: Some(token.id) });
+        let authenticated = if bearer.starts_with(tokens::PREFIX) {
+            let (token, user) = tokens::authenticate(app.db(), bearer).await?;
+            let principal =
+                auth.resolver.principal(app.db(), API_GUARD, &user, Some(tokens::abilities(&token))).await?;
+            Authenticated { principal, user, token_id: Some(token.id), jwt_family: None }
+        } else if auth.config.jwt.enabled && jwt::looks_like_jwt(bearer) {
+            let verified = jwt_session::verify_access(&auth, app.db(), bearer).await?;
+            // Always `Some`: a JWT never carries more than its family's abilities.
+            let principal =
+                auth.resolver.principal(app.db(), API_GUARD, &verified.user, Some(verified.abilities)).await?;
+            Authenticated { principal, user: verified.user, token_id: None, jwt_family: Some(verified.family) }
+        } else {
+            return Err(AppError::Unauthenticated);
+        };
+        req.extensions_mut().insert(authenticated);
     }
     Ok(next.run(req).await)
 }

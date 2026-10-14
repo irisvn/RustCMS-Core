@@ -16,6 +16,7 @@ default = ["sqlite"]
 sqlite = ["rustcms-core/sqlite"]
 postgres = ["rustcms-core/postgres"]
 mysql = ["rustcms-core/mysql"]
+redis = ["rustcms-core/redis", "rustcms-auth/redis"]
 # TypeScript bindings of the schema DTOs for the admin SPA (`just generated`).
 ts = ["dep:ts-rs"]
 

@@ -50,7 +50,22 @@ Uploads (media library): see [Media, uploads & rich text](admin/media.md).
 | `auth.revoke_tokens_on_password_change` | `true`          |                                         |
 | `auth.attempts_per_identifier`       | `5`                | failed sign-ins per account+IP per minute |
 | `auth.attempts_per_ip`               | `30`               | failed sign-ins per IP per minute       |
-| `auth.permission_cache_ttl_secs`     | `30`               | upper bound; changes evict at once      |
+| `auth.permission_cache_ttl_secs`     | `30`               | upper bound; changes apply on the next request |
+| `auth.jwt.enabled`                   | `true`             | JWT sign-in endpoints and bearer JWTs   |
+| `auth.jwt.access_ttl_secs`           | `900`              | access token lifetime (60–3600)         |
+| `auth.jwt.refresh_ttl_days`          | `14`               | an unused refresh token expires (1–90)  |
+| `auth.jwt.refresh_family_days`       | `30`               | a sign-in ends, however often refreshed (≥ refresh_ttl_days, ≤ 365) |
+
+### `[redis]` (`config/redis.toml`, feature `redis`)
+
+| Key            | Default               |                                                  |
+|----------------|-----------------------|--------------------------------------------------|
+| `redis.url`    | — (`REDIS_URL`)        | standalone Redis; unset: one instance            |
+| `redis.prefix` | `rustcms:<app.name>`  | shared by one deployment's instances, distinct between deployments |
+
+With a URL set, boot fails if Redis does not answer, or if rustcms was built
+without the `redis` feature. Commands time out after 1 s; rate limits then
+fail closed (500).
 
 ## Your own sections
 

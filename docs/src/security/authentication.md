@@ -5,7 +5,7 @@
 | Guard   | Paths                       | Credential                                   |
 |---------|-----------------------------|----------------------------------------------|
 | `admin` | under `auth.admin_path`     | server-side session cookie                   |
-| `api`   | everything else             | `Authorization: Bearer rcms_<id>_<secret>`   |
+| `api`   | everything else             | `Authorization: Bearer rcms_<id>_<secret>` (API token) or `Bearer <JWT>` (access token) |
 
 A credential that is present but invalid is a 401: there is no fallback to
 another driver. An admin cookie never authenticates API routes, and a bearer
@@ -88,6 +88,24 @@ A token acts with the **intersection** of its abilities and the user's
 permissions in the `api` guard. `["*"]` means all of the user's permissions.
 Even a super admin's token is limited to its abilities.
 
+## JWT sign-ins
+
+`POST /api/v1/auth/jwt` with `{email, password, abilities?}` (same limits as
+sign-in, plus 20 sign-ins per user per minute) returns an access token (a JWT,
+`auth.jwt.access_ttl_secs`, default 15 minutes) and a refresh token.
+`POST /api/v1/auth/refresh {refreshToken}` returns the next pair; each refresh
+token works **once**: using a spent one again (a replay, two tabs racing, or a
+retry after a lost response) ends the whole sign-in, so clients must refresh
+one at a time and keep the newest token. `POST /api/v1/auth/jwt/logout
+{refreshToken}` ends the sign-in (also after the access token expired).
+Refresh and logout are limited per IP (60/min) and per sign-in (30/min).
+
+Access tokens are HS256 with a key derived from `APP_KEY` (rotating it ends
+every sign-in); only that exact header is accepted. Each request still checks
+the user (active, same `auth_version`) and the sign-in (not ended), so
+revocation applies from the next request, as for sessions. Abilities are fixed
+per sign-in and narrow the user's API permissions like a token's.
+
 ## Throttling
 
 Sign-in attempts (admin login and token issuance) are limited per account+IP
@@ -105,4 +123,6 @@ fixed-size hashes; expired windows are reclaimed and the table is capped
 (100,000 keys, oldest dropped first), so unauthenticated traffic cannot grow
 memory without bound.
 
-Limits are kept in memory: one application instance (see the support boundary).
+Limits are kept in memory, per instance; with Redis (`[redis] url`, feature
+`redis`) every instance counts in Redis, atomically across all the keys of one
+check. If Redis does not answer, checks fail closed (500).

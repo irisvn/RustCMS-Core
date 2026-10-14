@@ -145,8 +145,8 @@ pub(super) struct NewUserInput {
 /// counted per actor (`attempts_per_identifier` a minute) before any work.
 /// Every hash counts, successful or not (it is the CPU shared with sign-in that is bounded);
 /// creations have a larger budget than password resets.
-pub(super) fn reserve_hashing(auth: &AuthState, actor: &Principal, kind: &str, per_minute: u32) -> AppResult<()> {
-    auth.limiter.reserve(&[(&format!("admin-hash:{kind}:{}", actor.id), per_minute)])
+pub(super) async fn reserve_hashing(auth: &AuthState, actor: &Principal, kind: &str, per_minute: u32) -> AppResult<()> {
+    auth.limiter.reserve(&[(&format!("admin-hash:{kind}:{}", actor.id), per_minute)]).await
 }
 
 pub(super) fn check_password(auth: &AuthState, field: &str, password: &str) -> AppResult<()> {
@@ -172,7 +172,7 @@ pub(super) async fn create_user(
     check_password(&auth, "password", &input.password)?;
     let rbac = RbacService::new(app.db(), &auth.resolver);
     rbac.check_new_user(Actor::User(&ctx.principal), &input.name, &input.email, ADMIN_GUARD, &role_ids).await?;
-    reserve_hashing(&auth, &ctx.principal, "create", auth.config.attempts_per_ip)?;
+    reserve_hashing(&auth, &ctx.principal, "create", auth.config.attempts_per_ip).await?;
     let new = NewUser {
         name: &input.name,
         email: &input.email,
@@ -320,7 +320,7 @@ pub(super) async fn reset_password(
     // Refused before any hashing unless the change could succeed (all re-checked in it).
     RbacService::new(app.db(), &auth.resolver).check_reset_password(Actor::User(&ctx.principal), id).await?;
     check_password(&auth, "password", &input.password)?;
-    reserve_hashing(&auth, &ctx.principal, "reset", auth.config.attempts_per_identifier)?;
+    reserve_hashing(&auth, &ctx.principal, "reset", auth.config.attempts_per_identifier).await?;
     let hash = auth.passwords.hash(input.password).await?;
     RbacService::new(app.db(), &auth.resolver).reset_password(Actor::User(&ctx.principal), id, hash).await?;
     Ok(StatusCode::NO_CONTENT)

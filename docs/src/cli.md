@@ -179,5 +179,5 @@ Create declared permissions and mark undeclared ones orphaned
 
 ### `session:prune`
 
-Delete expired admin sessions
+Delete expired admin sessions and ended JWT sign-ins
 

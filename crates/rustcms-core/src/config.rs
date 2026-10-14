@@ -3,7 +3,7 @@
 //! Precedence (last wins):
 //! 1. built-in defaults,
 //! 2. `config/<section>.toml` files, each merged under `<section>`,
-//! 3. well-known variables: `APP_NAME`, `APP_ENV`, `APP_DEBUG`, `APP_URL`, `APP_KEY`, `DATABASE_URL`,
+//! 3. well-known variables: `APP_NAME`, `APP_ENV`, `APP_DEBUG`, `APP_URL`, `APP_KEY`, `DATABASE_URL`, `REDIS_URL`,
 //! 4. `RUSTCMS_<SECTION>__<KEY>` variables (e.g. `RUSTCMS_HTTP__BODY_LIMIT=2097152`).
 //!
 //! `.env` is loaded first and never overrides variables already set.
@@ -138,6 +138,7 @@ impl Config {
             ("APP_URL", "app.url"),
             ("APP_KEY", "app.key"),
             ("DATABASE_URL", "database.url"),
+            ("REDIS_URL", "redis.url"),
         ];
         for (var, path) in well_known {
             figment = figment.merge(Env::raw().only(&[var]).map(move |_| path.into()));

@@ -88,6 +88,10 @@ pub struct AuthState {
     pub(crate) secure_cookies: bool,
     /// Keys session ids to `APP_KEY`: a new key orphans every stored session.
     session_key: AppKey,
+    /// Signs JWT access tokens (derived from `APP_KEY`).
+    pub(crate) jwt_key: crate::guards::jwt::JwtKey,
+    /// Keys refresh-token hashes (derived from `APP_KEY`).
+    pub(crate) refresh_key: [u8; 32],
 }
 
 impl AuthState {
@@ -109,6 +113,8 @@ impl AuthState {
             allowed_origins,
             secure_cookies,
             session_key: key.clone(),
+            jwt_key: crate::guards::jwt::JwtKey::derive(key),
+            refresh_key: crate::guards::jwt::derive(key, "rustcms/refresh/v1"),
             config,
         }
     }

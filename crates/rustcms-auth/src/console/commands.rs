@@ -144,18 +144,20 @@ impl AppCommand for PermissionSync {
     }
 }
 
-/// `session:prune`: deletes expired sessions (also done hourly by `serve`).
+/// `session:prune`: deletes expired sessions and ended JWT sign-ins (also done hourly by `serve`).
 pub struct SessionPrune;
 
 #[async_trait]
 impl AppCommand for SessionPrune {
     fn definition(&self) -> Command {
-        Command::new("session:prune").about("Delete expired admin sessions")
+        Command::new("session:prune").about("Delete expired admin sessions and ended JWT sign-ins")
     }
 
     async fn run(&self, state: &AppState, _: &ArgMatches) -> anyhow::Result<()> {
         let pruned = crate::session::prune_expired(state.db()).await?;
         println!("{pruned} expired sessions deleted");
+        let ended = crate::guards::jwt_session::prune(state.db()).await?;
+        println!("{ended} ended JWT sign-ins deleted");
         Ok(())
     }
 }

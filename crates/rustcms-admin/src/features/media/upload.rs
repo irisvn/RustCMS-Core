@@ -26,7 +26,7 @@ pub(crate) async fn upload(
     let media = state_of(&app)?;
     let key = crate::http::idempotency_key(request.headers())?;
     let auth = app.service::<rustcms_auth::AuthState>().ok_or_else(|| AppError::internal("auth not registered"))?;
-    auth.limiter.reserve(&[(&format!("media-upload:{}", ctx.principal.id), 60)])?;
+    auth.limiter.reserve(&[(&format!("media-upload:{}", ctx.principal.id), 60)]).await?;
     let _slot = media.uploads.try_acquire().map_err(|_| AppError::TooManyRequests { retry_after: 5 })?;
     let mut multipart = <Multipart as axum::extract::FromRequest<AppState>>::from_request(request, &app)
         .await

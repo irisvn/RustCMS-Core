@@ -1,6 +1,7 @@
 # Developer commands. Install: `brew install just` (or `cargo install just`).
 pg_url := env_var_or_default("RUSTCMS_TEST_PG", "postgres://postgres:postgres@localhost:55439/postgres")
 mysql_url := env_var_or_default("RUSTCMS_TEST_MYSQL", "mysql://root:mysql@localhost:53306/mysql")
+redis_url := env_var_or_default("RUSTCMS_TEST_REDIS", "redis://localhost:56379")
 
 default:
     @just --list
@@ -33,11 +34,14 @@ features:
     cargo check -p rustcms --no-default-features --features postgres
     cargo check -p rustcms --no-default-features --features mysql
     cargo check -p rustcms --features s3
+    cargo check -p rustcms --features redis
+    cargo check -p rustcms-auth --features redis
+    cargo check -p rustcms-core --no-default-features --features redis
 
-# Tests on SQLite (temp files), PostgreSQL and MySQL (docker compose).
+# Tests on SQLite (temp files), PostgreSQL and MySQL, with Redis (docker compose).
 test-matrix:
-    docker compose up -d --wait postgres mysql
-    RUSTCMS_TEST_PG={{pg_url}} RUSTCMS_TEST_MYSQL={{mysql_url}} RUSTCMS_TEST_REQUIRE=postgres,mysql cargo nextest run --workspace
+    docker compose up -d --wait postgres mysql redis
+    RUSTCMS_TEST_PG={{pg_url}} RUSTCMS_TEST_MYSQL={{mysql_url}} RUSTCMS_TEST_REDIS={{redis_url}} RUSTCMS_TEST_REQUIRE=postgres,mysql,redis cargo nextest run --workspace --features rustcms/redis
 
 test:
     cargo nextest run --workspace

@@ -15,12 +15,16 @@ use serde_json::{Value, json};
 
 use crate::credentials;
 use crate::guard::Auth;
+use crate::guards::jwt_session;
 use crate::session::Session;
 use crate::state::{ADMIN_GUARD, AuthState};
 use crate::tokens;
 
 const BAD_CREDENTIALS: &str = "These credentials do not match our records.";
 const MAX_ABILITIES: usize = 100;
+/// Abilities of a JWT sign-in, in bytes: they are copied into every access
+/// token, which must stay under `jwt::MAX_LEN` (4 KiB).
+const JWT_ABILITY_BYTES: usize = 2048;
 /// Longest accepted email; longer input is rejected before any throttling key or hash is built.
 pub const MAX_EMAIL_LEN: usize = 255;
 /// Longest accepted password; bounds the hashing work per request.
@@ -39,6 +43,9 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::POST, "/api/v1/auth/token".into()),
         (Method::DELETE, "/api/v1/auth/token".into()),
         (Method::GET, "/api/v1/auth/me".into()),
+        (Method::POST, "/api/v1/auth/jwt".into()),
+        (Method::POST, "/api/v1/auth/refresh".into()),
+        (Method::POST, "/api/v1/auth/jwt/logout".into()),
     ]
 }
 
@@ -55,6 +62,9 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route("/api/v1/auth/token", post(issue_token))
         .route("/api/v1/auth/token", delete(revoke_token))
         .route("/api/v1/auth/me", get(me))
+        .route("/api/v1/auth/jwt", post(issue_jwt))
+        .route("/api/v1/auth/refresh", post(refresh_jwt))
+        .route("/api/v1/auth/jwt/logout", post(logout_jwt))
         // Unknown admin API paths answer JSON 404 inside the admin stack (session
         // guard, no-store), and never fall through to the panel's HTML pages.
         .route(&base, any(api_not_found))
@@ -125,14 +135,16 @@ async fn attempt(
     let account_key = format!("login:{email}|{ip}");
     let ip_key = format!("login-ip:{ip}");
     auth.limiter
-        .reserve(&[(&account_key, auth.config.attempts_per_identifier), (&ip_key, auth.config.attempts_per_ip)])?;
+        .reserve(&[(&account_key, auth.config.attempts_per_identifier), (&ip_key, auth.config.attempts_per_ip)])
+        .await?;
 
     let user = user::Entity::find().filter(user::Column::Email.eq(&email)).one(app.db()).await?;
     let matches = auth.passwords.verify(password, user.as_ref().map(|u| u.password.clone())).await;
     match user.filter(|u| matches && u.is_active) {
         Some(user) => {
-            auth.limiter.clear(&account_key);
-            auth.limiter.release(&ip_key);
+            // Refunds are best effort: a failed one only leaves less budget.
+            auth.limiter.clear(&account_key).await.ok();
+            auth.limiter.release(&ip_key).await.ok();
             Ok(user)
         }
         None => Err(ValidationErrors::field("email", BAD_CREDENTIALS).into()),
@@ -144,10 +156,12 @@ async fn attempt(
 async fn csrf(State(app): State<AppState>, ClientIp(ip): ClientIp, session: Session) -> AppResult<Json<Value>> {
     if !session.is_stored() {
         let auth = auth_state(&app)?;
-        auth.limiter.reserve(&[
-            (&format!("session-new:{ip}"), auth.config.anonymous_sessions_per_ip),
-            ("session-new:*", auth.config.anonymous_sessions_per_minute),
-        ])?;
+        auth.limiter
+            .reserve(&[
+                (&format!("session-new:{ip}"), auth.config.anonymous_sessions_per_ip),
+                ("session-new:*", auth.config.anonymous_sessions_per_minute),
+            ])
+            .await?;
     }
     // The signed-in user the token belongs to, so a client can tell when the
     // cookie changed accounts under an open page.
@@ -189,9 +203,9 @@ pub async fn confirm_password(auth: &AuthState, user: &user::Model, password: St
         return Err(ValidationErrors::field("current_password", "The password is incorrect.").into());
     }
     let key = format!("confirm:{}", user.id);
-    auth.limiter.reserve(&[(&key, auth.config.attempts_per_identifier)])?;
+    auth.limiter.reserve(&[(&key, auth.config.attempts_per_identifier)]).await?;
     if auth.passwords.verify(password, Some(user.password.clone())).await {
-        auth.limiter.clear(&key);
+        auth.limiter.clear(&key).await.ok();
         Ok(())
     } else {
         Err(ValidationErrors::field("current_password", "The password is incorrect.").into())
@@ -294,5 +308,113 @@ async fn issue_token(
 async fn revoke_token(State(app): State<AppState>, Auth(current): Auth) -> AppResult<StatusCode> {
     let token_id = current.token_id.ok_or(AppError::Unauthenticated)?;
     tokens::revoke(app.db(), token_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Refreshes and logouts allowed per IP per minute (before any database work).
+const REFRESHES_PER_IP: u32 = 60;
+/// Refreshes allowed per family per minute (successes count too).
+const REFRESHES_PER_FAMILY: u32 = 30;
+/// JWT sign-ins allowed per user per minute (successes count too: bounds families).
+const JWT_ISSUES_PER_USER: u32 = 20;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JwtRequest {
+    email: String,
+    password: String,
+    /// Omitted: all of the user's API permissions (`*`).
+    abilities: Option<Vec<String>>,
+}
+
+fn jwt_response(issued: jwt_session::Issued) -> Json<Value> {
+    Json(json!({
+        "accessToken": issued.access_token,
+        "tokenType": "Bearer",
+        "expiresIn": issued.expires_in,
+        "refreshToken": issued.refresh_token,
+        "refreshExpiresAt": issued.refresh_expires_at,
+        "abilities": issued.abilities,
+    }))
+}
+
+fn jwt_enabled(auth: &AuthState) -> AppResult<()> {
+    if auth.config.jwt.enabled { Ok(()) } else { Err(AppError::NotFound) }
+}
+
+/// `POST /api/v1/auth/jwt`: signs in for an access token and a refresh token.
+async fn issue_jwt(
+    State(app): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Json(input): Json<JwtRequest>,
+) -> AppResult<(StatusCode, Json<Value>)> {
+    let auth = auth_state(&app)?;
+    jwt_enabled(&auth)?;
+    if let Some(abilities) = &input.abilities
+        && (abilities.is_empty()
+            || abilities.len() > MAX_ABILITIES
+            || abilities.iter().any(|a| a.is_empty() || a.len() > 255)
+            || abilities.iter().map(String::len).sum::<usize>() > JWT_ABILITY_BYTES)
+    {
+        return Err(ValidationErrors::field(
+            "abilities",
+            format!("must be 1 to {MAX_ABILITIES} non-empty names, {JWT_ABILITY_BYTES} bytes in all"),
+        )
+        .into());
+    }
+    let user = attempt(&app, &auth, ip, &input.email, input.password).await?;
+    auth.limiter.reserve(&[(&format!("jwt-issue:{}", user.id), JWT_ISSUES_PER_USER)]).await?;
+    let issued = jwt_session::issue(&auth, app.db(), &user, input.abilities.as_deref().unwrap_or_default())
+        .await
+        .map_err(|e| match e {
+            // The credentials changed since they were checked: as for a wrong password.
+            AppError::Unauthenticated => ValidationErrors::field("email", BAD_CREDENTIALS).into(),
+            other => other,
+        })?;
+    Ok((StatusCode::CREATED, jwt_response(issued)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RefreshRequest {
+    refresh_token: String,
+}
+
+/// Counts a refresh or logout: per IP first, then (once the token's secret is
+/// known good) per family. Over the limit: 429; a bad token: 401.
+async fn refresh_limits(app: &AppState, auth: &AuthState, ip: IpAddr, token: &str) -> AppResult<()> {
+    auth.limiter.reserve(&[(&format!("refresh-ip:{ip}"), REFRESHES_PER_IP)]).await?;
+    if token.len() > jwt_session::MAX_REFRESH_LEN {
+        return Err(AppError::Unauthenticated);
+    }
+    let family = jwt_session::family_of(auth, app.db(), token).await?;
+    auth.limiter.reserve(&[(&format!("refresh-family:{family}"), REFRESHES_PER_FAMILY)]).await?;
+    Ok(())
+}
+
+/// `POST /api/v1/auth/refresh`: a new access token and the next refresh token.
+/// The refresh token is single-use: using one twice ends the sign-in.
+async fn refresh_jwt(
+    State(app): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Json(input): Json<RefreshRequest>,
+) -> AppResult<Json<Value>> {
+    let auth = auth_state(&app)?;
+    jwt_enabled(&auth)?;
+    refresh_limits(&app, &auth, ip, &input.refresh_token).await?;
+    Ok(jwt_response(jwt_session::rotate(&auth, app.db(), &input.refresh_token).await?))
+}
+
+/// `POST /api/v1/auth/jwt/logout`: ends the sign-in of a refresh token (works
+/// after the access token expired). 204, also when it had already ended.
+async fn logout_jwt(
+    State(app): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Json(input): Json<RefreshRequest>,
+) -> AppResult<StatusCode> {
+    let auth = auth_state(&app)?;
+    jwt_enabled(&auth)?;
+    refresh_limits(&app, &auth, ip, &input.refresh_token).await?;
+    jwt_session::logout(&auth, app.db(), &input.refresh_token).await?;
     Ok(StatusCode::NO_CONTENT)
 }

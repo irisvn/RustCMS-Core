@@ -113,3 +113,41 @@ status = 401
 route = "GET /api/v1/auth/me"
 actor = "reader"
 status = 200
+
+# JWT sign-in: credentials are the only gate (shared limits with sign-in).
+[[case]]
+route = "POST /api/v1/auth/jwt"
+actor = "guest"
+body = '{"email": "member@example.test", "password": "wrong"}'
+status = 422
+
+[[case]]
+route = "POST /api/v1/auth/jwt"
+actor = "reader"
+body = '{"email": "member@example.test", "password": "wrong"}'
+status = 422
+
+# Refresh and logout: only a valid refresh token counts, whoever sends it.
+[[case]]
+route = "POST /api/v1/auth/refresh"
+actor = "guest"
+body = '{"refreshToken": "rcmsr_1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+status = 401
+
+[[case]]
+route = "POST /api/v1/auth/refresh"
+actor = "reader"
+body = '{"refreshToken": "not-a-token"}'
+status = 401
+
+[[case]]
+route = "POST /api/v1/auth/jwt/logout"
+actor = "guest"
+body = '{"refreshToken": "rcmsr_1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+status = 401
+
+[[case]]
+route = "POST /api/v1/auth/jwt/logout"
+actor = "member"
+body = '{"refreshToken": "rcmsr_1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+status = 401

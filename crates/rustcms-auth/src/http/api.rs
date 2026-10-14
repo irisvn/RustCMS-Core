@@ -276,7 +276,7 @@ impl<const PER_MINUTE: u32> FromRequestParts<AppState> for Throttle<PER_MINUTE> 
         let caller = parts.extensions.get::<Authenticated>().ok_or(AppError::Unauthenticated)?;
         let route = parts.extensions.get::<MatchedPath>().map_or_else(|| parts.uri.path(), MatchedPath::as_str);
         let state = app.service::<AuthState>().ok_or_else(|| AppError::internal("AuthProvider not registered"))?;
-        state.limiter.reserve(&[(&format!("api:{route}:{}", caller.user.id), PER_MINUTE)])?;
+        state.limiter.reserve(&[(&format!("api:{route}:{}", caller.user.id), PER_MINUTE)]).await?;
         Ok(Self)
     }
 }

@@ -27,8 +27,9 @@ pub async fn lock_unchanged<C: ConnectionTrait>(db: &C, snapshot: &user::Model) 
         .ok_or(AppError::Unauthenticated)
 }
 
-/// Invalidates every session of `user_id` (by bumping `auth_version`) and, if
-/// `tokens`, revokes all of their API tokens. Returns the new `auth_version`.
+/// Invalidates every session and JWT sign-in of `user_id` (by bumping
+/// `auth_version`; JWT families are also marked revoked) and, if `tokens`,
+/// revokes all of their API tokens. Returns the new `auth_version`.
 ///
 /// Run inside the transaction that changes the account, so the revocation
 /// commits or rolls back with it.
@@ -40,6 +41,7 @@ pub async fn revoke_all<C: ConnectionTrait>(db: &C, user_id: i64, tokens: bool) 
         .filter(user::Column::Id.eq(user_id))
         .exec(db)
         .await?;
+    crate::guards::jwt_session::revoke_user(db, user_id).await?;
     if tokens {
         revoke_tokens(db, user_id).await?;
     }

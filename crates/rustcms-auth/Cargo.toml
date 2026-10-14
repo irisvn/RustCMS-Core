@@ -11,7 +11,12 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+# Rate limits shared by every instance through Redis (see `rustcms_core::redis`).
+redis = ["rustcms-core/redis", "dep:redis"]
+
 [dependencies]
+redis = { workspace = true, optional = true }
 rustcms-core.workspace = true
 anyhow.workspace = true
 argon2.workspace = true
