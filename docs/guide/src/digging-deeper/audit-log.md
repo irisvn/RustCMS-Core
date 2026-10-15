@@ -30,9 +30,9 @@ Each entry holds:
 | Column | |
 |---|---|
 | `at`, `event`, `subject_type`, `subject_key` | when, what, on which record |
-| `actor_kind` | `user`, `system` (console, jobs) or `guest` (failed sign-ins, a replayed refresh token) |
+| `actor_kind` | `user`, `system` (console, periodic jobs), `job` (a [queued job](queues.md), on behalf of its initiator) or `guest` (failed sign-ins, a replayed refresh token) |
 | `actor_user_id`, `actor_guard` | the acting user (no foreign key: entries outlive users) |
-| `credential` | `session`, `token:<id>`, `jwt:<family>` or `console:<command>` |
+| `credential` | `session`, `token:<id>`, `jwt:<family>`, `console:<command>` or `queue:<kind>` |
 | `ip`, `user_agent`, `request_id` | the client address (after [trusted proxies](../getting-started/configuration.md)), its user agent (cut to 255 characters), and the request id |
 | `changes` | `{field: [old, new]}` for the fields that changed |
 | `meta` | facts specific to the event (an action's result, a relation's parent, …) |

@@ -94,6 +94,18 @@ db_test!(upgrade_adds_settings, |db: TestDb| async move {
     assert!(has_table(&db, "settings").await);
 });
 
+// M14 → M15: the queue's tables appear empty, and roll back cleanly.
+db_test!(upgrade_adds_jobs, |db: TestDb| async move {
+    Migrator::up(db.conn(), Some(before("create_jobs_tables"))).await.unwrap();
+    assert!(!has_table(&db, "jobs").await);
+    Migrator::up(db.conn(), None).await.unwrap();
+    assert!(has_table(&db, "jobs").await && has_table(&db, "job_receipts").await);
+    Migrator::down(db.conn(), Some(from("create_jobs_tables"))).await.unwrap();
+    assert!(!has_table(&db, "jobs").await && !has_table(&db, "job_receipts").await);
+    assert!(has_table(&db, "settings").await, "earlier tables are kept");
+    Migrator::up(db.conn(), None).await.unwrap();
+});
+
 // M1 → M2: users created before the auth tables keep working; system roles are seeded.
 db_test!(upgrade_from_m1_adds_auth_tables, |db: TestDb| async move {
     Migrator::up(db.conn(), Some(2)).await.unwrap();
@@ -137,6 +149,8 @@ db_test!(down_then_up_is_clean, |db: TestDb| async move {
         "model_has_roles",
         "audit_logs",
         "settings",
+        "jobs",
+        "job_receipts",
     ] {
         assert!(!has_table(&db, table).await, "{table} dropped");
     }

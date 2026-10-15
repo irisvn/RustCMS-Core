@@ -23,6 +23,10 @@ RustCMS is in pre-release. The current published version is
   (`settings.<group>.view` / `.update`), read with `rustcms::settings::get`;
   secrets encrypted and never sent to the browser
   ([Settings](admin/settings.md)).
+- **Queues**: jobs stored in the database, dispatched in the transaction of
+  the change, run by workers in `serve` or `queue:work` with leases,
+  retries, timeouts and graceful shutdown; `queue:failed` / `retry` /
+  `forget` ([Queues](digging-deeper/queues.md)).
 - **Databases**: MySQL 8.4 alongside SQLite and PostgreSQL.
 - **APIs**: `ApiRoutes` with declared access, `Validated<T>`, `Pagination`,
   `Throttle<N>`, `make:api`; JWT access tokens with rotating refresh tokens.

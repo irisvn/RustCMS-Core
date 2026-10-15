@@ -186,6 +186,8 @@ export const en = {
   "audit.tooLarge": "Too large to record; changed: {fields}",
   "audit.user": "User #{id}",
   "audit.system": "System",
+  "audit.job": "Background job",
+  "audit.jobFor": "Background job for {user}",
   "audit.guest": "Guest",
   "audit.show": "Show details",
   "audit.hide": "Hide details",

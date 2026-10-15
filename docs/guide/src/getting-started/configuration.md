@@ -67,6 +67,10 @@ Uploads and the media library: see [File storage](../digging-deeper/storage.md).
 
 See [Audit log](../digging-deeper/audit-log.md).
 
+### `[queue]` (`config/queue.toml`)
+
+Workers and job leases: see [Queues](../digging-deeper/queues.md#configuration).
+
 ### `[redis]` (`config/redis.toml`, feature `redis`)
 
 | Key            | Default               |                                                  |

@@ -38,7 +38,12 @@ const server = setupServer(
   http.get("*/admin/api/audit", ({ request }) => {
     const query = new URL(request.url).searchParams;
     queries.push(query);
-    if (query.get("cursor") === "c1") return HttpResponse.json({ data: [entry("3", { event: "orders.refunded", changes: undefined })], meta: {} });
+    if (query.get("cursor") === "c1") {
+      return HttpResponse.json({
+        data: [entry("3", { event: "orders.refunded", changes: undefined, actor: { kind: "job", id: "7", name: "Editor", credential: "queue" } })],
+        meta: {},
+      });
+    }
     return HttpResponse.json({
       data: [entry("1"), entry("2", { event: "action:publish", actor: { kind: "system", credential: "console" }, changes: { overflow: true, fields: ["body"] } })],
       meta: { nextCursor: "c1" },
@@ -81,6 +86,7 @@ it("lists entries, filters them and loads older ones", async () => {
 
   await userEvent.click(screen.getByRole("button", { name: "Load more" }));
   expect(await within(list).findByText("orders.refunded")).toBeInTheDocument();
+  expect(within(list).getByText("Background job for Editor")).toBeInTheDocument();
   expect(queries.at(-1)?.get("cursor")).toBe("c1");
   expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
 

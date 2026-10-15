@@ -13,6 +13,16 @@ All notable changes are documented here. The format follows
   (architecture, admin protocol, ADRs, reports, this changelog, review
   checklist, contributor guides). `CHANGELOG.md` moved to `docs/core/`.
 
+### Added (0.3 — M15a)
+- **Job queue** (ADR 0016): `rustcms::queue` (`Job`, `dispatch` in the
+  change's transaction, `dispatch_with`, `enqueue`, `once`, `Failure`),
+  `AppBuilder::job`, `Ctx::dispatch`; `jobs` and `job_receipts` tables (new
+  migration); workers in `serve` and `queue:work` with owner tokens, leases,
+  heartbeats, timeouts, retries with backoff, rolling-deploy tolerance and
+  graceful shutdown; `queue:failed`, `queue:retry`, `queue:forget`; `[queue]`
+  settings validated at boot; audit actor `job` (shown as "Background job"
+  in the audit viewer).
+
 ### Added (0.3 — M14b)
 - **Audit log viewer**: System → Audit log (`audit.view_all`; sign-in
   families and addresses with `audit.view_auth`), filters and keyset paging in

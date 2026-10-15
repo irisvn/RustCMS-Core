@@ -56,6 +56,7 @@
 - [File storage](digging-deeper/storage.md)
 - [Several instances](digging-deeper/instances.md)
 - [Audit log](digging-deeper/audit-log.md)
+- [Queues](digging-deeper/queues.md)
 
 # Reference
 

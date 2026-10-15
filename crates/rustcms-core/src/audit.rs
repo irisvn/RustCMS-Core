@@ -110,6 +110,8 @@ pub enum ActorKind {
     System,
     /// Nobody signed in (failed sign-ins).
     Guest,
+    /// A queued job, on behalf of the user who asked for it (if any).
+    Job,
 }
 
 impl ActorKind {
@@ -118,6 +120,7 @@ impl ActorKind {
             Self::User => "user",
             Self::System => "system",
             Self::Guest => "guest",
+            Self::Job => "job",
         }
     }
 }
@@ -154,6 +157,11 @@ impl AuditActor {
             guard: Some(guard.to_owned()),
             credential: credential.as_ref().map(Credential::label),
         }
+    }
+
+    /// A queued job of `kind` (`queue:<kind>`), started by `initiated_by`.
+    pub fn job(kind: &str, initiated_by: Option<i64>) -> Self {
+        Self { kind: ActorKind::Job, user_id: initiated_by, guard: None, credential: Some(format!("queue:{kind}")) }
     }
 
     /// A console command (`console:<command>`), or the application (`None`).

@@ -57,6 +57,17 @@ impl Ctx {
         self
     }
 
+    /// Queues `job` in `txn`, the transaction of the change it follows from
+    /// (it exists only if that change commits), on behalf of this user.
+    pub async fn dispatch<J: rustcms_core::queue::Job>(
+        &self,
+        txn: &DatabaseTransaction,
+        job: &J,
+    ) -> rustcms_core::AppResult<uuid::Uuid> {
+        let user = self.audit_context.actor.user_id;
+        rustcms_core::queue::dispatch_with(txn, job, None, user).await
+    }
+
     /// Records `entry` in the audit log, in the transaction `txn` of the change
     /// it describes (for writes a hook or an action makes beyond the records
     /// the engine records itself).

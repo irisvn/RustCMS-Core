@@ -136,6 +136,38 @@ Generate APP_KEY and write it to .env
 | `--show` | Print the key instead of writing .env |
 | `--force` | Replace an existing APP_KEY |
 
+### `queue:work`
+
+Run queued jobs until stopped (Ctrl-C / SIGTERM lets running jobs finish)
+
+| Argument | Description |
+|---|---|
+| `--queue` | Queue to take jobs from (repeatable; default: queue.queues) |
+| `--once` | Run the jobs ready now (at most 1,000), then exit |
+| `--workers` | Workers (default: queue.workers) |
+
+### `queue:failed`
+
+List failed jobs
+
+### `queue:retry`
+
+Run failed jobs again (attempts start over)
+
+| Argument | Description |
+|---|---|
+| `<id>` | Job id |
+| `--all` | Every failed job |
+
+### `queue:forget`
+
+Delete failed jobs
+
+| Argument | Description |
+|---|---|
+| `<id>` | Job id |
+| `--all` | Every failed job |
+
 ## Auth commands
 
 Added by `AuthProvider` (registered in new applications).

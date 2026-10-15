@@ -14,6 +14,7 @@ pub mod jobs;
 pub mod key;
 pub mod models;
 pub mod principal;
+pub mod queue;
 #[cfg(feature = "redis")]
 pub mod redis;
 pub mod settings;

@@ -185,6 +185,8 @@ export const vi: Record<keyof typeof en, string> = {
   "audit.tooLarge": "Quá lớn để ghi; đã đổi: {fields}",
   "audit.user": "Người dùng #{id}",
   "audit.system": "Hệ thống",
+  "audit.job": "Tác vụ nền",
+  "audit.jobFor": "Tác vụ nền cho {user}",
   "audit.guest": "Khách",
   "audit.show": "Xem chi tiết",
   "audit.hide": "Ẩn chi tiết",

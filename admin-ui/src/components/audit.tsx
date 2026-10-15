@@ -58,9 +58,10 @@ function Entry({ entry, showSubject }: { entry: AuditEntryView; showSubject: boo
   const t = useT();
   const label = useEventLabel();
   const [open, setOpen] = useState(false);
-  const actor = entry.actor.kind === "user"
-    ? entry.actor.name ?? t("audit.user", { id: entry.actor.id ?? "?" })
-    : entry.actor.kind === "system" ? t("audit.system") : t("audit.guest");
+  const user = entry.actor.name ?? t("audit.user", { id: entry.actor.id ?? "?" });
+  const actor = entry.actor.kind === "user" ? user
+    : entry.actor.kind === "job" ? (entry.actor.id ? t("audit.jobFor", { user }) : t("audit.job"))
+      : entry.actor.kind === "system" ? t("audit.system") : t("audit.guest");
   const details = entry.changes || entry.meta || entry.ip || entry.userAgent || entry.requestId;
   return (
     <li className="border-b border-border px-4 py-3 last:border-0">

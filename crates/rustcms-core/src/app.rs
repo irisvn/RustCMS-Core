@@ -108,6 +108,7 @@ pub struct AppBuilder {
     middleware: Vec<MiddlewareFn>,
     described: Vec<RouteInfo>,
     body_limits: Vec<http::BodyLimit>,
+    jobs: crate::queue::Jobs,
 }
 
 /// A route as listed by `route:list`.
@@ -129,7 +130,12 @@ impl AppBuilder {
             services: ServiceMap::default(),
             routes: Vec::new(),
             providers: Vec::new(),
-            commands: Vec::new(),
+            commands: vec![
+                Arc::new(crate::queue::QueueWork),
+                Arc::new(crate::queue::QueueFailed),
+                Arc::new(crate::queue::QueueRetry),
+                Arc::new(crate::queue::QueueForget),
+            ],
             middleware: Vec::new(),
             described: vec![RouteInfo {
                 method: axum::http::Method::GET,
@@ -137,6 +143,7 @@ impl AppBuilder {
                 source: "core".into(),
             }],
             body_limits: Vec::new(),
+            jobs: crate::queue::Jobs::default(),
         }
     }
 
@@ -202,6 +209,15 @@ impl AppBuilder {
         self
     }
 
+    /// Registers a job the queue's workers run (see [`crate::queue::Job`]).
+    ///
+    /// # Panics
+    /// On an invalid or repeated kind.
+    pub fn job<J: crate::queue::Job>(&mut self) -> &mut Self {
+        self.jobs.register::<J>();
+        self
+    }
+
     /// Adds a console command.
     pub fn command(&mut self, command: impl AppCommand) -> &mut Self {
         self.commands.push(Arc::new(command));
@@ -246,6 +262,8 @@ impl AppBuilder {
         {
             anyhow::bail!("[redis] url is set, but rustcms was built without its `redis` feature");
         }
+        crate::queue::QueueConfig::of(&self.config)?;
+        self.services.insert(self.jobs);
         let state = AppState(Arc::new(StateInner { config: self.config, db, services: self.services }));
         for provider in &self.providers {
             provider.boot(&state).await?;
@@ -277,14 +295,50 @@ impl App {
         let addr = listen.unwrap_or(self.state.config().app.listen);
         let listener = tokio::net::TcpListener::bind(addr).await?;
         tracing::info!(%addr, "listening");
-        axum::serve(listener, self.router.into_make_service_with_connect_info::<std::net::SocketAddr>())
-            .with_graceful_shutdown(shutdown_signal())
-            .await?;
+        // Workers run beside the server and stop after it (jobs may finish).
+        let queue = crate::queue::QueueConfig::of(self.state.config())?;
+        let workers = (queue.enabled && queue.workers > 0)
+            .then(|| crate::queue::Workers::start(&self.state, &queue, None, queue.workers));
+        // One signal for both: workers stop claiming at once and drain while
+        // the server drains its requests.
+        let (signalled, signal) = tokio::sync::watch::channel(false);
+        let listen = tokio::spawn(async move {
+            shutdown_signal().await;
+            let _ = signalled.send(true);
+        });
+        let (mut server_signal, mut worker_signal) = (signal.clone(), signal.clone());
+        let server = axum::serve(listener, self.router.into_make_service_with_connect_info::<std::net::SocketAddr>())
+            .with_graceful_shutdown(async move {
+                let _ = server_signal.wait_for(|s| *s).await;
+            });
+        let drain = async move {
+            let _ = worker_signal.wait_for(|s| *s).await;
+            if let Some(workers) = workers {
+                workers.shutdown().await;
+            }
+        };
+        let mut server = std::pin::pin!(async { server.await });
+        let mut drain = std::pin::pin!(drain);
+        let mut drained = false;
+        let served = tokio::select! {
+            served = &mut server => served,
+            () = &mut drain => {
+                drained = true;
+                server.await
+            }
+        };
+        // After the signal both drain; a server that stopped on its own (an
+        // error) drops the workers, which stop without waiting.
+        if !drained && *signal.borrow() {
+            drain.await;
+        }
+        listen.abort();
+        served?;
         Ok(())
     }
 }
 
-async fn shutdown_signal() {
+pub(crate) async fn shutdown_signal() {
     let ctrl_c = async {
         let _ = tokio::signal::ctrl_c().await;
     };

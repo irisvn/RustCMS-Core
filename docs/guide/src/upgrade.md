@@ -4,7 +4,8 @@
 
 1. Update the `rustcms` dependency, then run `rustcms migrate` (new tables for
    media, JWT sign-ins, idempotency keys, locks, the audit log, settings,
-   and `users.locale`).
+   jobs, and `users.locale`). `serve` now also runs queue workers (set
+   `queue.enabled = false` to keep them out of web instances).
 2. Rust API changes:
    - API routes: move them to `ApiRoutes` with an explicit `Access` per route
      ([Routing](basics/routing.md)); register them with
@@ -24,6 +25,7 @@
    - Resource slugs are limited to 64 bytes and action names to 57, and
      `user`, `role`, `permission`, `settings`, `session` are reserved (boot
      fails); `Ctx::new` records writes as its principal.
+   - `ActorKind` has a `Job` variant (exhaustive matches need it).
    - `SystemLinks` has an `audit` field; resource schemas gain the
      `history` ability.
    - Tests that build tables from entities instead of running migrations also
