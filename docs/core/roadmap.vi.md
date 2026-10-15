@@ -38,8 +38,8 @@ settings, audit log, i18n, media S3/R2, tin tức, nhiều-nhiều, import/expor
 | M14b | Xem audit log (kiểm toán viên) + tab Lịch sử trên bản ghi | ✅ `0750544` |
 | M15a | Queue trong DB: dispatch trong transaction, worker có lease/heartbeat/timeout, retry, dừng êm | ✅ `17ad424` |
 | M15b | Kiểm thật S3-compatible (S3Mock), cấu hình Cloudflare R2, timeout/streaming | ✅ `4fd54a0` + fix |
-| R3 | Cấu trúc app kiểu Laravel trong `src/` (bootstrap, providers, routes, http, services, jobs, settings, admin/{resources,pages}, database/{migrations,seeders,factories}), `db:seed`, generator mới, `lock_parent` | 🔧 |
-| M15c | `examples/lms` khung tối thiểu: khoá học, bài học, học viên, ghi danh (sĩ số, instructor) — viết lại theo R3 | 🔧 |
+| R3 | Cấu trúc app kiểu Laravel trong `src/` (bootstrap, providers, routes, http, services, jobs, settings, admin/{resources,pages}, database/{migrations,seeders,factories}), `db:seed`, generator mới, `lock_parent` | ✅ `ac50ab5` + fix |
+| M15c | `examples/lms` khung tối thiểu: khoá học, bài học, học viên, ghi danh (sĩ số, instructor) — viết lại theo R3 | ✅ `ac50ab5` + fix |
 | M16 | Quan hệ nhiều-nhiều (attach/detach/pivot) + action có form (modal) + ma trận quyền theo resource | ⏳ |
 | M17 | Import / Export CSV (chạy nền qua queue, kiểm quyền mỗi lô, chống CSV injection) | ⏳ |
 | M18 | Excel (XLSX): giới hạn zip bomb, kiểu dữ liệu tường minh | ⏳ |

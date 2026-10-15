@@ -70,6 +70,11 @@ pub fn make_test(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
     let file = dir.join(format!("{module}.rs"));
     let main = dir.join("main.rs");
     preflight(&[&file], &[(&main, TESTS_ANCHOR)])?;
+    // `support` (shared helpers) and modules declared by hand are taken.
+    let declared = std::fs::read_to_string(&main)?.lines().any(|l| l.trim() == format!("mod {module};"));
+    if module == "main" || declared {
+        bail!("tests/feature/main.rs already declares `mod {module};`: pick another name");
+    }
     let contents = render(TEST, json!({ "name": module, "crate_name": project.package.replace('-', "_") }))?;
     write_new(&file, &contents)?;
     register(&main, TESTS_ANCHOR, &format!("mod {module};"))?;
@@ -217,6 +222,8 @@ mod tests {
         let main = std::fs::read_to_string(dir.path().join("tests/feature/main.rs")).unwrap();
         assert!(main.contains("mod health;\nmod post_admin_test;\n// rustcms:tests"), "{main}");
         assert!(make_test(&project, "PostAdminTest").is_err(), "never overwrites");
+        assert!(make_test(&project, "Support").is_err(), "the helpers' module");
+        assert!(make_test(&project, "Health").is_err(), "already declared");
     }
 
     #[test]

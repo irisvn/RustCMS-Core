@@ -51,6 +51,11 @@ const KEYWORDS: &[&str] = &[
 ];
 
 /// PascalCase model name whose module name is not a keyword.
+/// Whether `word` is a Rust keyword (not usable as a module name).
+pub fn is_keyword(word: &str) -> bool {
+    KEYWORDS.contains(&word)
+}
+
 pub fn validate_model(name: &str) -> anyhow::Result<()> {
     ensure!(
         name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && name.chars().all(|c| c.is_ascii_alphanumeric()),

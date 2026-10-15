@@ -369,7 +369,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let input = self.accept_input(ctx, Operation::Create, input)?;
         let parents = self.lock_parents(&wctx, &txn, self.parent_of_data(&input).flatten()).await?;
         let data = R::mutate_before_create(&wctx, &txn, input).await?;
-        self.check_parent_written(&data, &parents)?;
+        self.check_parent_written(&wctx, &data, &parents)?;
         if let Some((field, value)) = &bound
             && data.get(field) != Some(value)
         {
@@ -393,6 +393,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             KeyStrategy::Natural => {}
         }
         let model = active.insert(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?;
+        self.check_parent_stored(&wctx, &model, &parents)?;
         R::after_save(&wctx, &txn, &model).await?;
         // As stored once the hooks ran.
         self.audit_outcome(&wctx, &txn, "created", None, &model, false, true).await?;
@@ -413,7 +414,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             .await?;
         let before = self.audit_snapshot(&model);
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
-        self.check_parent_written(&data, &parents)?;
+        self.check_parent_written(&wctx, &data, &parents)?;
         self.check_written(&wctx, &txn, &data).await?;
         let model = if data.is_empty() {
             model
@@ -422,6 +423,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             self.apply(&mut active, &data, Operation::Update)?;
             active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?
         };
+        self.check_parent_stored(&wctx, &model, &parents)?;
         R::after_save(&wctx, &txn, &model).await?;
         // Nothing changed: nothing to record.
         self.audit_outcome(&wctx, &txn, "updated", Some(&before), &model, false, false).await?;
@@ -572,8 +574,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             // Handlers write freely: none may move a record to a parent not held.
             if self.meta.parent_lock.is_some() {
                 for model in self.models_by_keys(txn.as_ref(), &processed).await? {
-                    let record = Self::record(&model);
-                    self.check_parent_written(&record, &parents)?;
+                    self.check_parent_stored(&wctx, &model, &parents)?;
                 }
             }
             self.audit_action(&wctx, &txn, name, before).await?;

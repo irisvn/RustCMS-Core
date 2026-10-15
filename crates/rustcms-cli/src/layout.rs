@@ -127,18 +127,38 @@ impl Project {
         self.ensure_module_path(dir.path, dir.doc, dir.anchor)
     }
 
+    /// [`Self::ensure_module`], then checks its anchor: the module is ready
+    /// for a `pub mod` line.
+    pub fn prepare_module(&self, dir: &ModuleDir) -> anyhow::Result<PathBuf> {
+        let index = self.ensure_module(dir)?;
+        crate::generate::preflight(&[], &[(&index, dir.anchor)])?;
+        Ok(index)
+    }
+
     fn ensure_module_path(&self, path: &str, doc: &str, anchor: &str) -> anyhow::Result<PathBuf> {
         let index = self.src(path).join("mod.rs");
+        let (parent, name) = path.rsplit_once('/').unwrap_or(("", path));
+        let parent_file = if parent.is_empty() { self.src("lib.rs") } else { self.src(parent).join("mod.rs") };
+        // `src/services.rs` and `src/services/mod.rs` cannot both be the module.
+        let flat = self.src(&format!("{path}.rs"));
+        if flat.exists() {
+            bail!("{} exists: generators use {} instead; move it there first", flat.display(), index.display());
+        }
         if index.exists() {
+            let declared = std::fs::read_to_string(&parent_file).is_ok_and(|parent| {
+                parent
+                    .lines()
+                    .any(|l| matches!(l.trim(), d if d == format!("pub mod {name};") || d == format!("mod {name};")))
+            });
+            if !declared {
+                bail!("{} exists but {} does not declare `pub mod {name};`", index.display(), parent_file.display());
+            }
             return Ok(index);
         }
-        let (parent, name) = path.rsplit_once('/').unwrap_or(("", path));
-        let parent_file = if parent.is_empty() {
-            self.src("lib.rs")
-        } else {
+        if !parent.is_empty() {
             let doc = format!("The `{parent}` modules.");
-            self.ensure_module_path(parent, &doc, parent_anchor(parent))?
-        };
+            self.ensure_module_path(parent, &doc, parent_anchor(parent))?;
+        }
         crate::generate::preflight(&[], &[(&parent_file, parent_anchor(parent))])?;
         std::fs::create_dir_all(self.src(path))?;
         std::fs::write(&index, format!("//! {doc}\n\n{anchor}\n"))?;

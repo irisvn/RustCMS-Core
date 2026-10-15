@@ -78,6 +78,33 @@ struct DriftPolicy;
 #[async_trait::async_trait]
 impl Policy for DriftPolicy {
     async fn allows(&self, ctx: &Ctx, ability: &str, record: Option<&Data>) -> bool {
+        // `race`: while this update waits for its shelf, the shelf is hidden
+        // (its owner changes) and committed; the scope, checked again under
+        // the shelf's lock, no longer admits the book.
+        if ability == "update"
+            && ctx.txn.is_some()
+            && let Some(record) = record
+            && record["title"] == "race"
+        {
+            let shelf: i32 = record["shelf_id"].as_i64().unwrap() as i32;
+            let db = ctx.db.clone();
+            let (locked, ready) = tokio::sync::oneshot::channel();
+            tokio::spawn(async move {
+                use sea_orm::TransactionTrait;
+                let txn = db.begin().await.unwrap();
+                shelf::Entity::find_by_id(shelf).lock_exclusive().one(&txn).await.unwrap();
+                locked.send(()).ok();
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                shelf::Entity::update_many()
+                    .col_expr(shelf::Column::Name, sea_orm::sea_query::Expr::value("hidden"))
+                    .filter(shelf::Column::Id.eq(shelf))
+                    .exec(&txn)
+                    .await
+                    .unwrap();
+                txn.commit().await.unwrap();
+            });
+            ready.await.ok();
+        }
         // Only inside the update's transaction (not for a response's abilities),
         // and once: the record is not on the target shelf yet.
         if ability == "update"
@@ -153,6 +180,17 @@ impl Resource for Books {
         Arc::new(DriftPolicy)
     }
 
+    /// Books on hidden shelves are out of reach (ownership read through the parent).
+    fn scope(query: sea_orm::Select<book::Entity>, _ctx: &Ctx) -> sea_orm::Select<book::Entity> {
+        use sea_orm::sea_query::{Expr, ExprTrait, Query};
+        let hidden = Query::select()
+            .column(shelf::Column::Id)
+            .from(shelf::Entity)
+            .and_where(Expr::col(shelf::Column::Name).eq("hidden"))
+            .to_owned();
+        query.filter(Expr::col((book::Entity, book::Column::ShelfId)).not_in_subquery(hidden))
+    }
+
     fn actions() -> Vec<Action<book::Entity>> {
         vec![
             // Moves records itself: refused, the target shelf is not locked.
@@ -215,10 +253,27 @@ impl Resource for Books {
     }
 }
 
+/// Books whose shelf may be left out: the column's default (shelf 1) is
+/// filled in by the database, not locked; refused.
+struct Drafts;
+
+impl Resource for Drafts {
+    type Entity = book::Entity;
+    const SLUG: &'static str = "drafts";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Draft").title("title").soft_deletes().lock_parent("shelf_id", "shelves")
+    }
+
+    fn fields() -> Vec<Field> {
+        vec![Field::column(book::Column::ShelfId).belongs_to("shelves"), Field::column(book::Column::Title).required()]
+    }
+}
+
 fn build(config: rustcms_core::Config) -> rustcms_core::AppBuilder {
     let mut app = rustcms_core::AppBuilder::new(config);
     app.provider(rustcms_auth::AuthProvider::new());
-    app.provider(rustcms_admin::AdminProvider::new().resource::<Shelves>().resource::<Books>());
+    app.provider(rustcms_admin::AdminProvider::new().resource::<Shelves>().resource::<Books>().resource::<Drafts>());
     app
 }
 
@@ -234,7 +289,7 @@ async fn setup(db: TestDb) -> (TestApp, rustcms_core::models::user::Model) {
     let books = Table::create()
         .table(book::Entity)
         .col(ColumnDef::new(book::Column::Id).integer().not_null().auto_increment().primary_key())
-        .col(ColumnDef::new(book::Column::ShelfId).integer().not_null())
+        .col(ColumnDef::new(book::Column::ShelfId).integer().not_null().default(1))
         .col(ColumnDef::new(book::Column::Title).string().not_null())
         .col(ColumnDef::new(book::Column::DeletedAt).timestamp_with_time_zone().null())
         .foreign_key(
@@ -440,3 +495,32 @@ fn parent_locks_are_checked_at_boot() {
     assert!(fails(|| Registry::new().register::<Shelves>().register::<Books>().register::<Chained>()));
     assert!(!fails(|| Registry::new().register::<Shelves>().register::<Books>()));
 }
+
+db_test!(a_default_parent_is_never_written_unlocked, |db: TestDb| async move {
+    let (app, admin) = setup(db).await;
+    let client = app.acting_as(&admin).await;
+    let first = shelf(&app, 5).await;
+    assert_eq!(first, 1, "the column default points here");
+    let drafts = app.admin_api("resources/drafts/records");
+    // Left out: the database fills in shelf 1, which nothing locked. Refused, rolled back.
+    client.post_json(&drafts, &json!({"title": "defaulted"})).await.assert_status(StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(book::Entity::find().count(app.state().db()).await.unwrap(), 0);
+    // Named: locked first, written.
+    client.post_json(&drafts, &json!({"title": "named", "shelf_id": first})).await.assert_status(StatusCode::CREATED);
+});
+
+db_test!(an_owner_change_while_waiting_for_the_parent_is_seen, |db: TestDb| async move {
+    let (app, admin) = setup(db).await;
+    // SQLite runs one writer at a time: nothing can change in between.
+    if app.state().db().get_database_backend() == DbBackend::Sqlite {
+        return;
+    }
+    let client = app.acting_as(&admin).await;
+    let s = shelf(&app, 5).await;
+    let book = key(&create(&app, &client, s, "race").await);
+    // The shelf is hidden while the update waits for it: out of scope under the lock.
+    let changed = client.send(Method::PATCH, &record(&app, &book), Some(&json!({"title": "too late"}))).await;
+    changed.assert_status(StatusCode::NOT_FOUND);
+    let stored = book::Entity::find_by_id(book.parse::<i32>().unwrap()).one(app.state().db()).await.unwrap().unwrap();
+    assert_eq!(stored.title, "race", "nothing written");
+});

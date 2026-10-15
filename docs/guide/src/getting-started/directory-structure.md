@@ -95,7 +95,10 @@ Generators write one file and register it at a `// rustcms:…` anchor comment
 (`rustcms:resources`, `rustcms:jobs`, `rustcms:seeders`, `rustcms:mods`, …).
 They check every file and anchor first and write nothing if one is missing,
 or if the file already exists. A folder created on demand gets its `mod.rs`
-and a `pub mod` line in its parent.
+and a `pub mod` line in its parent; a flat `src/services.rs` next to it, or a
+folder its parent does not declare, is refused. Names that would make a Rust
+keyword (`make:command type`), a second `DatabaseSeeder` or a settings group
+longer than 32 characters are refused too.
 
 Applications created before 0.3 (`src/app.rs`, `src/migrations/`,
 `src/http/api/`) are refused until moved: see the

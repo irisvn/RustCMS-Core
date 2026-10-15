@@ -204,6 +204,20 @@ fn chrono_now() -> sea_orm::prelude::DateTimeUtc {
         .failure()
         .stderr(predicates::str::contains("registered: database, blog_post"));
     rustcms(&app).arg("blog:report").env("CARGO_TARGET_DIR", &target).assert().success();
+    // Production needs --force (checked before anything runs); a fresh start seeds too.
+    rustcms(&app)
+        .arg("db:seed")
+        .env("CARGO_TARGET_DIR", &target)
+        .env("APP_ENV", "production")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("refusing to seed in production"));
+    rustcms(&app)
+        .args(["migrate:fresh", "--seed"])
+        .env("CARGO_TARGET_DIR", &target)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Database seeded."));
 
     rustcms(&app)
         .arg("migrate:status")

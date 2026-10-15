@@ -314,7 +314,7 @@ pub fn make_resource(
     let file = project.src(layout::RESOURCES.path).join(format!("{module}_resource.rs"));
     let provider = project.src(ADMIN_PROVIDER);
     preflight(&[&file], &[(&provider, "// rustcms:resources")])?;
-    let index = project.ensure_module(&layout::RESOURCES)?;
+    let index = project.prepare_module(&layout::RESOURCES)?;
     let fields: Vec<String> =
         generated.fields.iter().map(|f| f.replace("Column::", &format!("{module}::Column::"))).collect();
     let contents = render(
@@ -360,8 +360,7 @@ pub fn make_policy(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
     let contents = render(POLICY, json!({ "name": name, "slug": slug }))?;
     let file = project.src(layout::POLICIES.path).join(format!("{module}.rs"));
     preflight(&[&file], &[])?;
-    let index = project.ensure_module(&layout::POLICIES)?;
-    preflight(&[], &[(&index, layout::POLICIES.anchor)])?;
+    let index = project.prepare_module(&layout::POLICIES)?;
     write_new(&file, &contents)?;
     register(&index, layout::POLICIES.anchor, &format!("pub mod {module};"))?;
     println!(

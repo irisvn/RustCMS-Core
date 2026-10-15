@@ -154,8 +154,8 @@ pub fn make_api(project: &Project, model: &str) -> anyhow::Result<ExitCode> {
         "key_type": key_type,
         "fields": fields.iter().map(|f| json!({"name": f.name, "ty": f.ty, "expr": f.expr})).collect::<Vec<_>>(),
     });
-    let index = project.ensure_module(&layout::CONTROLLERS)?;
-    let resources = project.ensure_module(&layout::HTTP_RESOURCES)?;
+    let index = project.prepare_module(&layout::CONTROLLERS)?;
+    let resources = project.prepare_module(&layout::HTTP_RESOURCES)?;
     write_new(&controller, &render(CONTROLLER, &vars)?)?;
     write_new(&json_file, &render(JSON, &vars)?)?;
     register(&index, layout::CONTROLLERS.anchor, &format!("pub mod {module}_controller;"))?;
@@ -193,6 +193,7 @@ mod tests {
                 "src/routes/api.rs",
                 "pub fn routes() -> ApiRoutes {\n    ApiRoutes::new(\"/api/v1\")\n        // rustcms:api-routes\n}\n",
             ),
+            ("src/lib.rs", "pub mod http;\npub mod routes;\n// rustcms:mods\n"),
             ("src/http/mod.rs", "pub mod controllers;\n// rustcms:http-mods\n"),
             ("src/http/controllers/mod.rs", "// rustcms:controller-mods\n"),
         ] {
@@ -301,5 +302,16 @@ pub struct Model {
         assert!(make_api(&project, "BlogPost").is_err());
         assert!(!dir.path().join("src/http/controllers/blog_post_controller.rs").exists());
         assert!(!dir.path().join("src/http/resources").exists());
+        // A module index without its anchor: nothing written either.
+        std::fs::write(
+            dir.path().join("src/routes/api.rs"),
+            "pub fn routes() -> ApiRoutes {\n    ApiRoutes::new(\"/api/v1\")\n        // rustcms:api-routes\n}\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("src/http/controllers/mod.rs"), "// edited by hand\n").unwrap();
+        assert!(make_api(&project, "BlogPost").is_err());
+        assert!(!dir.path().join("src/http/controllers/blog_post_controller.rs").exists());
+        let routes = std::fs::read_to_string(dir.path().join("src/routes/api.rs")).unwrap();
+        assert!(!routes.contains("blog_post_controller"), "{routes}");
     }
 }

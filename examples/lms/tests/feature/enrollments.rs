@@ -34,6 +34,10 @@ db_test!(seats_bound_active_enrollments, migrate = Migrator, |db: TestDb| async 
             .contains("active or withdrawn")
     );
     assert_eq!(active(&app, course.id).await, 1);
+    // A key spelled another way (`0…`) is refused as input, never a server error.
+    let spelled = CourseFactory::new().create(db).await;
+    let body = json!({"course_id": format!("0{}", spelled.id), "learner_id": bob.id.to_string()});
+    staff.post_json(&records(&app, "enrollments"), &body).await.assert_validation_error("course_id");
     // One row per learner and course.
     let rows = enrollment::Entity::find().filter(enrollment::Column::CourseId.eq(course.id)).count(db).await.unwrap();
     assert_eq!(rows, 2);

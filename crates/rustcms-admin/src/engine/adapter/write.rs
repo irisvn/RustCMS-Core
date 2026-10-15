@@ -166,17 +166,38 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 
     /// After the hooks: the parent written must be one locked before.
-    pub(super) fn check_parent_written(&self, data: &Data, locked: &BTreeSet<String>) -> AppResult<()> {
-        if let Some(Some(parent)) = self.parent_of_data(data)
-            && !locked.iter().any(|k| *k == parent)
-        {
-            let (field, _) = self.meta.parent_lock.as_ref().expect("parent_of_data");
-            return Err(AppError::internal(format!(
-                "`{}`: a hook or action moved `{field}` to a parent that was not locked",
-                R::SLUG
-            )));
+    pub(super) fn check_parent_written(&self, ctx: &Ctx, data: &Data, locked: &BTreeSet<String>) -> AppResult<()> {
+        match self.parent_of_data(data) {
+            Some(Some(parent)) => self.check_parent_locked(ctx, &parent, locked),
+            _ => Ok(()),
         }
-        Ok(())
+    }
+
+    /// As stored, after the write (column defaults included): the record's
+    /// parent is one locked before, or none.
+    pub(super) fn check_parent_stored(&self, ctx: &Ctx, model: &Model<R>, locked: &BTreeSet<String>) -> AppResult<()> {
+        match self.parent_of_model(model) {
+            Some(parent) => self.check_parent_locked(ctx, &parent, locked),
+            None => Ok(()),
+        }
+    }
+
+    /// `parent` (any spelling: `01`, an upper-case UUID) is among `locked`
+    /// (canonical keys).
+    fn check_parent_locked(&self, ctx: &Ctx, parent: &str, locked: &BTreeSet<String>) -> AppResult<()> {
+        let Some((field, target)) = &self.meta.parent_lock else {
+            return Ok(());
+        };
+        match ctx.registry.get(target).and_then(|p| p.canonical_key(parent)) {
+            Some(key) if locked.contains(&key) => return Ok(()),
+            // Not a valid key: the reference check reports it.
+            None => return Ok(()),
+            Some(_) => {}
+        }
+        Err(AppError::internal(format!(
+            "`{}`: `{field}` was set to a parent that was not locked (by a hook, an action or a column default)",
+            R::SLUG
+        )))
     }
 
     /// Locks the rows of `keys` until commit, by primary key only (scope joins or

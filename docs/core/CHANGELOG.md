@@ -13,6 +13,17 @@ All notable changes are documented here. The format follows
   (architecture, admin protocol, ADRs, reports, this changelog, review
   checklist, contributor guides). `CHANGELOG.md` moved to `docs/core/`.
 
+### Fixed (0.3 — R3, Codex verify)
+- Parent locks: a parent set by a column default (field left out) or spelled
+  differently (`01`, upper-case UUID) is checked against the locked keys after
+  the write; an unlocked one rolls the write back.
+- Generators: module indexes and their anchors are checked before any file is
+  written (`make:api`, `make:resource`, `make:settings` writes both halves or
+  neither); a flat `src/<module>.rs` or an undeclared folder is refused; Rust
+  keywords (`make:command type`), `DatabaseSeeder`, settings groups over 32
+  characters, job kinds and seeder names over 64, and test modules already
+  declared (`support`) are refused.
+
 ### Changed (0.3 — R3, application layout; ADR 0017)
 - Applications are laid out like Laravel inside `src/`: `bootstrap/`,
   `providers/` (auth, admin panel, app service providers), `routes/api.rs`,

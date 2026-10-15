@@ -46,8 +46,7 @@ fn write_module(
     let anchors: Vec<(std::path::PathBuf, &str)> = anchors.iter().map(|(f, a)| (project.src(f), *a)).collect();
     let checks: Vec<(&std::path::Path, &str)> = anchors.iter().map(|(f, a)| (f.as_path(), *a)).collect();
     preflight(&[&file], &checks)?;
-    let index = project.ensure_module(dir)?;
-    preflight(&[], &[(&index, dir.anchor)])?;
+    let index = project.prepare_module(dir)?;
     write_new(&file, contents)?;
     register(&index, dir.anchor, &format!("pub mod {module};"))?;
     Ok(())
@@ -64,6 +63,9 @@ pub fn make_service(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
 pub fn make_job(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
     validate_model(name)?;
     let module = snake_case(name);
+    if module.len() > 64 {
+        bail!("job kinds are at most 64 characters: `{module}`");
+    }
     let contents = render(JOB, json!({ "name": name, "kind": module }))?;
     write_module(project, &layout::JOBS, &module, &contents, &[(APP_PROVIDER, "// rustcms:jobs")])?;
     register(&project.src(APP_PROVIDER), "// rustcms:jobs", &format!("app.job::<crate::jobs::{module}::{name}>();"))?;
@@ -74,6 +76,12 @@ pub fn make_seeder(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
     let stem = suffixed(name, "Seeder")?;
     let module = snake_case(name);
     let seeder_name = snake_case(stem);
+    if seeder_name == "database" {
+        bail!("`DatabaseSeeder` comes with the application (src/database/seeders/mod.rs)");
+    }
+    if seeder_name.len() > 64 {
+        bail!("seeder names are at most 64 characters: `{seeder_name}`");
+    }
     let contents = render(SEEDER, json!({ "name": name, "seeder_name": seeder_name }))?;
     let seeders = format!("{}/mod.rs", layout::SEEDERS.path);
     write_module(
@@ -108,12 +116,21 @@ pub fn make_settings(project: &Project, name: &str) -> anyhow::Result<ExitCode> 
     let stem = suffixed(name, "Settings")?;
     let module = snake_case(name);
     let group = snake_case(stem);
+    if !rustcms_core::settings::valid_group(&group) {
+        bail!("settings groups are 1-32 of a-z, 0-9 and _: `{group}` (from {name})");
+    }
     let vars = json!({ "name": name, "module": module, "group": group, "label": stem });
     let page = format!("{module}_page");
+    let data_file = project.src(layout::SETTINGS.path).join(format!("{module}.rs"));
     let page_file = project.src(layout::PAGES.path).join(format!("{page}.rs"));
-    preflight(&[&page_file], &[(&project.src(ADMIN_PROVIDER), "// rustcms:pages")])?;
-    write_module(project, &layout::SETTINGS, &module, &render(SETTINGS, &vars)?, &[])?;
-    write_module(project, &layout::PAGES, &page, &render(SETTINGS_PAGE, &vars)?, &[])?;
+    // Both halves or neither: every check before the first write.
+    preflight(&[&data_file, &page_file], &[(&project.src(ADMIN_PROVIDER), "// rustcms:pages")])?;
+    let data_index = project.prepare_module(&layout::SETTINGS)?;
+    let page_index = project.prepare_module(&layout::PAGES)?;
+    write_new(&data_file, &render(SETTINGS, &vars)?)?;
+    write_new(&page_file, &render(SETTINGS_PAGE, &vars)?)?;
+    register(&data_index, layout::SETTINGS.anchor, &format!("pub mod {module};"))?;
+    register(&page_index, layout::PAGES.anchor, &format!("pub mod {page};"))?;
     register(
         &project.src(ADMIN_PROVIDER),
         "// rustcms:pages",
@@ -134,6 +151,9 @@ pub fn make_command(project: &Project, command: &str) -> anyhow::Result<ExitCode
         bail!("command names are lowercase words joined by `:`, `-` or `_`, e.g. `lms:report`: {command}");
     }
     let module = command.replace([':', '-'], "_");
+    if crate::naming::is_keyword(&module) {
+        bail!("`{command}` would make the module `{module}`, a Rust keyword: pick another name");
+    }
     let name = pascal_case(&module);
     let contents = render(COMMAND, json!({ "name": name, "command": command }))?;
     write_module(project, &layout::CONSOLE, &module, &contents, &[(APP_PROVIDER, "// rustcms:commands")])?;
@@ -237,9 +257,33 @@ mod tests {
         assert!(make_service(&project, "Enrollment").is_err(), "suffix");
         assert!(make_seeder(&project, "Seeder").is_err(), "stem");
         assert!(make_settings(&project, "school_settings").is_err(), "PascalCase");
-        for bad in ["", "Lms:report", "lms report", ":x"] {
+        for bad in ["", "Lms:report", "lms report", ":x", "type", "match"] {
             assert!(make_command(&project, bad).is_err(), "{bad:?}");
         }
+        assert!(make_seeder(&project, "DatabaseSeeder").is_err(), "the application's own");
+        let long = format!("{}Settings", "Long".repeat(9));
+        assert!(make_settings(&project, &long).is_err(), "a group of more than 32 characters");
+        assert!(!_dir.path().join("src/settings").exists() && !_dir.path().join("src/console").exists());
+    }
+
+    #[test]
+    fn module_chains_are_checked_before_writing() {
+        let (dir, project) = project();
+        // A flat `services.rs` would clash with `services/mod.rs`.
+        std::fs::write(dir.path().join("src/services.rs"), "").unwrap();
+        assert!(make_service(&project, "EnrollmentService").is_err());
+        assert!(!dir.path().join("src/services").exists());
+        // An index the parent does not declare is not a module.
+        std::fs::create_dir_all(dir.path().join("src/jobs")).unwrap();
+        std::fs::write(dir.path().join("src/jobs/mod.rs"), "// rustcms:jobs\n").unwrap();
+        assert!(make_job(&project, "SendWelcome").is_err());
+        assert!(!dir.path().join("src/jobs/send_welcome.rs").exists());
+        // Settings: both halves or neither.
+        std::fs::create_dir_all(dir.path().join("src/admin/pages")).unwrap();
+        std::fs::write(dir.path().join("src/admin/mod.rs"), "pub mod pages;\n").unwrap();
+        std::fs::write(dir.path().join("src/admin/pages/mod.rs"), "// edited by hand\n").unwrap();
+        assert!(make_settings(&project, "SchoolSettings").is_err());
+        assert!(!dir.path().join("src/settings/school_settings.rs").exists(), "no half");
     }
 
     #[test]

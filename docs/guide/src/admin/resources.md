@@ -132,8 +132,9 @@ course meanwhile no longer passes the scope, checked again under the lock.
   one `xact_lock` and takes it first; parent locks come after it.
 - The field must be a `belongs_to` the target; one parent per resource, and
   the parent may not lock a parent of its own (checked at boot).
-- A hook or action that moves a record to a parent that was not locked fails
-  (500, nothing written): change the parent through an update. A record moved
+- A hook, an action or a column default that puts a record under a parent
+  that was not locked fails (500, nothing written): send the parent field
+  (make it `.required()`), and change it through an update. A record moved
   by someone else between reading and locking answers 409 `write_conflict`;
   send the request again.
 - Writes under one parent wait for each other; writes under different parents
