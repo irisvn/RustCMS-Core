@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function RecordSlots({ resource, recordKey, record }: { resource: string; recordKey: string; record: unknown }) {
   const slots = useSlots(resource, recordKey);
-  // A slot is extra: no data (or an error) shows nothing rather than a broken page.
-  if (!slots.data || slots.data.data.length === 0) return null;
+  // A slot is extra: no data (or an error, even after an earlier success)
+  // shows nothing rather than a broken page or stale content.
+  if (slots.isError || !slots.data || slots.data.data.length === 0) return null;
   return (
     <div className="flex min-w-0 flex-col gap-4">
       {slots.data.data.map((slot) => (

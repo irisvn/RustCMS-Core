@@ -1,6 +1,6 @@
 //! Post stats (`/admin/p/post-stats`): a custom page from a server template.
 
-use rustcms::admin::{Ctx, ListQuery, PageView, PanelPage, PanelPageMeta};
+use rustcms::admin::{Ctx, Filter, FilterOp, ListQuery, PageView, PanelPage, PanelPageMeta};
 use rustcms::{AppResult, async_trait};
 use serde_json::{Value, json};
 
@@ -20,9 +20,13 @@ impl PanelPage for PostStatsPage {
 
     /// Posts as the user may list them (editors: their own).
     async fn data(ctx: &Ctx) -> AppResult<Value> {
-        let posts = ctx.records("posts", &ListQuery { per_page: Some(100), ..Default::default() }).await?;
-        let published = posts.data.iter().filter(|p| p.data.get("published") == Some(&json!(true))).count();
-        let latest: Vec<Value> = posts.data.iter().take(5).map(|p| json!({"key": p.key, "title": p.title})).collect();
-        Ok(json!({ "total": posts.meta.total, "published": published, "latest": latest }))
+        let posts = ctx.records("posts", &ListQuery { per_page: Some(5), ..Default::default() }).await?;
+        // Counted by the list itself: a page of records would undercount.
+        let published = Filter { field: "published".into(), op: FilterOp::Eq, value: json!(true) };
+        let published = ctx
+            .records("posts", &ListQuery { per_page: Some(1), filters: vec![published], ..Default::default() })
+            .await?;
+        let latest: Vec<Value> = posts.data.iter().map(|p| json!({"key": p.key, "title": p.title})).collect();
+        Ok(json!({ "total": posts.meta.total, "published": published.meta.total, "latest": latest }))
     }
 }

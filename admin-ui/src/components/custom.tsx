@@ -2,7 +2,7 @@
 // server, inert under the CSP) or an extension script's view.
 import { useNavigate } from "@tanstack/react-router";
 import { type MouseEvent, useEffect, useRef, useSyncExternalStore } from "react";
-import { usePanelConfig } from "@/api/context";
+import { useApi, usePanelConfig } from "@/api/context";
 import type { CustomContent } from "@/api/types";
 import { Alert } from "@/components/ui/alert";
 import { useLocale, useT } from "@/i18n";
@@ -70,53 +70,65 @@ function Unavailable() {
   return <Alert variant="warning">{t("custom.unavailable")}</Alert>;
 }
 
-/** Mounted once, told about changes, unmounted with its element. */
+/**
+ * Mounted once per session epoch, told about changes, unmounted with its
+ * element. Callbacks of an unmounted view, or from an earlier epoch, are ignored.
+ */
 function MountedView({ kind, name, data, record, props, reload, impl }: ScriptViewProps & { impl: View }) {
   const element = useRef<HTMLDivElement>(null);
   const live = useRef<{ instance: ViewInstance } | null>(null);
+  const api = useApi();
+  const epoch = api.epoch;
   const locale = useLocale();
   const open = useOpen();
   const state = JSON.stringify([data ?? null, record ?? null, props ?? null, locale]);
   const latest = useRef({ open, reload });
   latest.current = { open, reload };
-  const context = (mount: { instance: ViewInstance } | null): ViewContext => ({
+  const current = (mount: { instance: ViewInstance }) => live.current === mount && api.epoch === epoch;
+  const context = (mount: { instance: ViewInstance }): ViewContext => ({
     data: structuredClone(data),
     record: record === undefined ? undefined : structuredClone(record),
     props: props === undefined ? undefined : structuredClone(props),
     locale,
     t: translateExtension,
-    // Callbacks of an unmounted view are ignored.
     navigate: (path) => {
-      if (live.current === mount) latest.current.open(String(path));
+      if (current(mount)) latest.current.open(String(path));
     },
     reload: () => {
-      if (live.current === mount) latest.current.reload?.();
+      if (current(mount)) latest.current.reload?.();
     },
   });
   useEffect(() => {
-    if (!element.current) return;
+    const host = element.current;
+    if (!host) return;
+    // The mount's identity exists before `mount` runs, so its callbacks can be bound to it.
     const mount = { instance: undefined as unknown as ViewInstance };
-    live.current = mount;
     try {
-      mount.instance = impl.mount(element.current, context(mount));
+      const instance = impl.mount(host, context(mount));
+      if (typeof instance?.update !== "function" || typeof instance?.unmount !== "function") {
+        throw new Error(`view ${name} did not return {update, unmount}`);
+      }
+      mount.instance = instance;
+      live.current = mount;
     } catch (e) {
-      live.current = null;
+      host.replaceChildren();
       markViewFailed(kind, name, e);
       return;
     }
     return () => {
-      live.current = null;
+      if (live.current === mount) live.current = null;
       try {
-        mount.instance?.unmount();
+        mount.instance.unmount();
       } catch (e) {
-        markViewFailed(kind, name, e);
+        console.error(e);
       }
+      host.replaceChildren();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [impl, kind, name]);
+  }, [impl, kind, name, epoch]);
   useEffect(() => {
     const mount = live.current;
-    if (!mount?.instance) return;
+    if (!mount) return;
     try {
       mount.instance.update(context(mount));
     } catch (e) {

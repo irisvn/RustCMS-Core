@@ -11,6 +11,7 @@ use serde_json::Value;
 use super::{CustomPanel, MAX_DATA_BYTES, PageView, Placement};
 use crate::context::Ctx;
 use crate::http::{AdminCtx, AdminPanel};
+use crate::policy::ability;
 
 /// Every custom-page route as `(method, path)`.
 pub(crate) fn routes(admin_path: &str) -> Vec<(Method, String)> {
@@ -179,17 +180,27 @@ async fn slots(
             errors.add(name.as_ref(), "may only be given once");
         }
     }
-    if resource.is_none() {
-        errors.add("resource", "is required");
-    }
+    // The resource admits the user before any parameter error (no probing).
+    let target = match &resource {
+        Some(slug) => {
+            let target = ctx.registry.get(slug).cloned().ok_or(AppError::NotFound)?;
+            if !target.admits(&ctx, ability::VIEW).await {
+                return Err(AppError::Forbidden);
+            }
+            Some(target)
+        }
+        None => {
+            errors.add("resource", "is required");
+            None
+        }
+    };
     if key.is_none() {
         errors.add("key", "is required");
     }
     errors.into_result()?;
-    let (Some(resource), Some(key)) = (resource, key) else {
+    let (Some(resource), Some(key), Some(target)) = (resource, key, target) else {
         return Err(AppError::internal("checked above"));
     };
-    let target = ctx.registry.get(&resource).cloned().ok_or(AppError::NotFound)?;
     // As the record's page: in scope and allowed, readable fields only.
     let record = target.find(&ctx, &key).await?;
     let custom = custom(&state)?;

@@ -32,6 +32,23 @@ All notable changes are documented here. The format follows
 - Examples: LMS theme, course overview page, seats slot, progress cell; demo
   post stats page and visibility slot.
 
+### Fixed (0.3 — M15e, Codex verify)
+- Template statements are found by a lexer: `{%autoescape%}` and other
+  spacings no longer pass the boot check (also `include`, `import`, `from`,
+  `extends`).
+- Template output is written into a buffer bounded at 512 KiB: rendering
+  stops at the limit instead of building the whole string first.
+- `lang:missing` finds `t( "…" )` with spaces and escaped quotes, only inside
+  template code.
+- `GET slots`: a resource admitting by permission answers 403 before
+  parameter errors (no 422 to users without `view`).
+- SPA: a page or slot whose refetch fails (403/404) is no longer shown from
+  cache; script views are bound to the session epoch (callbacks of an earlier
+  epoch ignored, remounted; custom queries keyed by epoch); a view that does
+  not return `{update, unmount}` is marked failed and its element cleared.
+- `make:page --script` refuses script names the panel refuses at boot.
+- Demo post stats count published posts through a filtered list total.
+
 ### Changed (0.3 — M15e)
 - `VOCABULARY_VERSION` 6 (columns may name a cell).
 - `AdminPanel` gains `custom`; `spa::Extension` carries bytes and a content

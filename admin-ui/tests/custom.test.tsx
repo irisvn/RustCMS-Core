@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -9,7 +9,7 @@ import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
 import { panelPath } from "@/lib/config";
 import { applyTheme } from "@/lib/theme";
-import { registerCell, registerPage, resetWidgets, type View } from "@/lib/widgets";
+import { registerCell, registerPage, resetWidgets, type View, type ViewContext } from "@/lib/widgets";
 import posts from "../../fixtures/contract/posts.schema.json";
 
 const panel = {
@@ -50,6 +50,10 @@ afterEach(() => {
 });
 
 function mount(path: string) {
+  return mountWith(path).router;
+}
+
+function mountWith(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const session = createSession({ basePath: "/admin", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
   const router = createAppRouter({ queryClient, session }, createMemoryHistory({ initialEntries: [path] }));
@@ -60,7 +64,7 @@ function mount(path: string) {
       </QueryClientProvider>
     </SessionContext.Provider>,
   );
-  return router;
+  return { router, queryClient, session };
 }
 
 it("lists custom pages in their groups and shows a template page", async () => {
@@ -98,6 +102,58 @@ it("mounts a script page with its data, and unmounts it on leaving", async () =>
 it("says so when a page's script is missing", async () => {
   mount("/p/report");
   expect(await screen.findByText(/extension script is missing or failed/)).toBeInTheDocument();
+});
+
+it("drops a page and its script when a refetch is refused", async () => {
+  const calls: string[] = [];
+  registerPage("test/report", {
+    apiVersion: 1,
+    mount(element) {
+      element.textContent = "Report body";
+      return { update: () => {}, unmount: () => calls.push("unmount") };
+    },
+  });
+  const { queryClient } = mountWith("/p/report");
+  expect(await screen.findByText("Report body")).toBeInTheDocument();
+  server.use(http.get("*/admin/api/pages/report", () => HttpResponse.json({ message: "Forbidden", code: "forbidden" }, { status: 403 })));
+  await queryClient.refetchQueries({ queryKey: ["custom", "page", "report"] });
+  await waitFor(() => expect(screen.queryByText("Report body")).not.toBeInTheDocument());
+  expect(calls).toContain("unmount");
+});
+
+it("refuses a script that returns no {update, unmount}", async () => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  registerPage("test/report", {
+    apiVersion: 1,
+    mount(element) {
+      element.textContent = "Half drawn";
+      return undefined as never;
+    },
+  });
+  mount("/p/report");
+  expect(await screen.findByText(/extension script is missing or failed/)).toBeInTheDocument();
+  expect(screen.queryByText("Half drawn")).not.toBeInTheDocument();
+  error.mockRestore();
+});
+
+it("ignores a script's callbacks from an earlier session epoch", async () => {
+  let ctx: ViewContext | undefined;
+  registerPage("test/report", {
+    apiVersion: 1,
+    mount(element, context) {
+      ctx = context;
+      element.textContent = "Report body";
+      return { update: () => {}, unmount: () => {} };
+    },
+  });
+  const { router, session } = mountWith("/p/report");
+  await screen.findByText("Report body");
+  const earlier = ctx!;
+  // Credentials rotated (in this tab or another): the old mount is stale.
+  session.rotated();
+  earlier.navigate("/r/posts");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(router.state.location.pathname).toBe("/p/report");
 });
 
 it("draws cells with registered scripts and falls back when they fail", async () => {

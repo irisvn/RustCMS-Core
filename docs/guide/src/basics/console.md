@@ -33,7 +33,9 @@ rustcms make:widget acme/color       # resources/admin/js/acme/color.js: a custo
 rustcms make:test PostAdminTest      # tests/feature/post_admin_test.rs, added to tests/feature/main.rs
 ```
 
-Each generator checks its target files and anchors first and writes nothing
+`make:page --script` names the script `<package>/<slug>` and refuses a name
+the panel would refuse at boot (each part at most 32 lowercase letters,
+digits or `-`). Each generator checks its target files and anchors first and writes nothing
 when one is missing or the file exists ([Directory structure](../getting-started/directory-structure.md)).
 
 `make:resource --generate` maps column types to inputs (text, textarea for

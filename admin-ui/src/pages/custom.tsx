@@ -9,7 +9,8 @@ export function CustomPage() {
   const { slug } = useParams({ strict: false }) as { slug: string };
   const page = useCustomPage(slug);
   if (page.isLoading) return <Loading />;
-  if (!page.data) return <ErrorState error={page.error} />;
+  // A failed refetch (no longer allowed, gone) drops what was shown before.
+  if (page.isError || !page.data) return <ErrorState error={page.error} />;
   return (
     <Page>
       <PageHeader title={page.data.title} />

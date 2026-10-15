@@ -37,7 +37,7 @@ saves the choice (422 for a language not offered). The shell's
 | GET | `/audit?…` | `AuditPage` (`audit.view_all`; auth families with `audit.view_auth`) |
 | GET | `/resources/{slug}/records/{key}/history?cursor=&per_page=` | `AuditPage` of the record (`audit.view` + record `view`) |
 | GET | `/pages/{slug}` | `CustomPageResponse` (`content`: tagged `html` / `script`); 403 for users with no page, else 404 unknown / 403 not allowed; `data` only when allowed |
-| GET | `/slots?resource=&key=` | `SlotsResponse`; record as `find` (404 / 403); slots without their permissions omitted; 422 unknown or missing parameters |
+| GET | `/slots?resource=&key=` | `SlotsResponse`; unknown resource 404, then the resource's `admits(view)` (403) before 422 for unknown, repeated or missing parameters; record as `find` (404 / 403); slots without their permissions omitted |
 | GET | `/queue` | `QueueOverview` (`queue.view`) |
 | GET | `/queue/jobs?status=&queue=&kind=&cursor=&per_page=` | `QueueJobPage`, keyset `(created_at, id)` desc, exact-instant cursor (`queue.view`) |
 | POST | `/queue/jobs/{id}/{retry,forget,cancel}` | 204; 409 `write_conflict`: `not_failed` (retry/forget of any non-failed job), `running` / `not_waiting` (cancel); 404 missing or malformed id; 403 without `queue.view` + `queue.manage` (checked before the id is parsed, at admission and again under the RBAC lock) |

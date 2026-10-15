@@ -111,9 +111,12 @@ impl PanelPage for CourseOverviewPage {
   most 1 MiB.
 - **Templates** use [minijinja](https://docs.rs/minijinja) (Jinja syntax).
   HTML escaping is always on and cannot be turned off (`safe`, `tojson` and
-  `autoescape` are not available); one template per page (no `include`,
-  `import`, `extends`); compiled at boot (an error stops it); bounded work and
-  output (512 KiB). The context: `data`, `locale`, `user.id`,
+  the `autoescape` statement are not available, however it is spaced); one
+  template per page (no `include`, `import`, `from`, `extends`); compiled at
+  boot (an error stops it); bounded work, and output stops at 512 KiB (the
+  request fails with 500, nothing larger is held in memory). Templates are
+  application code, like `data`: the bounds catch mistakes over large data,
+  they do not make a hostile template safe. The context: `data`, `locale`, `user.id`,
   `t("text")` (your catalogs, like `ctx.t`), `can("permission")`,
   `admin_url("path")` (a link in the panel). **Quote every attribute value.**
 - **Then the HTML is cleaned** by an allowlist: structure, text, lists,
@@ -153,9 +156,14 @@ window.rustcms.registerPage("lms/calendar", {
 
 The script gets the page's `data` (a copy), is told about changes (language)
 with `update`, and is unmounted when the user leaves. `navigate` opens a
-page of the panel; `reload` reads the page again. Scripts register while the
-panel loads (names `vendor/name`). A script that is missing or throws shows a
-notice instead of the page. **Scripts run with the panel's full privileges**
+page of the panel; `reload` reads the page again. Both do nothing once the
+view is unmounted or the session changed (sign-in, sign-out, credentials
+rotated in any tab): the view is mounted again for the new session. If the
+page can no longer be read (403, 404), the view is unmounted and the error
+shown. Scripts register while the panel loads (names `vendor/name`, each part
+at most 32 lowercase letters, digits or `-`). A script that is missing, throws
+or does not return `{ update, unmount }` shows a notice instead of the page
+(what it drew is removed). **Scripts run with the panel's full privileges**
 (the same origin, the user's session): build elements rather than writing
 `innerHTML` with data, and write through resources and actions.
 
@@ -177,7 +185,10 @@ impl PanelSlot for CourseSeatsSlot {
 
 A slot appears on the record's view page, in a card titled with its label.
 The record is loaded as that page loads it (missing or out of scope: 404;
-denied: 403) and `data` gets it with readable fields only. Slots whose
+denied: 403) and `data` gets it with readable fields only. A resource whose
+policy admits by permission (the default policy) answers 403 to a user
+without its `view` before any parameter is checked. A slot that fails to load
+again (no longer allowed) disappears. Slots whose
 permissions the user lacks are left out before their data is read. Templates
 and scripts work as for pages (`registerSlot` for scripts; `ctx.record` is
 the record). Dashboard and header placements are planned.
@@ -210,5 +221,8 @@ column is drawn by its type. No inline styles: use attributes (`meter`,
 ## Translations
 
 `rustcms lang:missing vi` lists page labels and groups, slot labels and every
-literal `t("…")` of your templates. Script text uses
+call of `t` with a string literal in your templates' code (`{{ t("Seats") }}`,
+`t( 'It\'s' )`, inside `{% %}` too; not text outside `{{ }}` / `{% %}` nor
+comments). Text computed at render (`t(name)`) is not found: add it to the
+catalog yourself. Script text uses
 `window.rustcms.registerTranslations` ([Custom fields](custom-fields.md)).

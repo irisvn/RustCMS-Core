@@ -6,16 +6,18 @@ mod support;
 
 use axum::http::StatusCode;
 use rustcms_admin::{
-    AdminProvider, ColorScheme, Ctx, PageView, PanelPage, PanelPageMeta, PanelSlot, Placement, SlotMeta, Theme,
+    AdminProvider, ColorScheme, Ctx, Field, KeyStrategy, PageView, PanelPage, PanelPageMeta, PanelSlot, Placement,
+    Resource, ResourceMeta, SlotMeta, Theme,
 };
 use rustcms_auth::{ADMIN_GUARD, Actor, AuthProvider, AuthState, RbacService};
 use rustcms_core::AppResult;
 use rustcms_core::models::user;
 use rustcms_testing::{Factory, TestApp, TestDb, UserFactory, db_test};
-use sea_orm::{ActiveModelTrait, Set};
+use sea_orm::sea_query::Value as SqlValue;
+use sea_orm::{ActiveModelTrait, ColumnTrait, QueryFilter, Select, Set};
 use serde_json::{Value, json};
 
-use support::{CategoryResource, NoteResource, PostResource, TagResource, category};
+use support::{CategoryResource, NoteResource, PostResource, TagResource, category, post};
 
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01";
 
@@ -48,7 +50,34 @@ impl PanelPage for OverviewPage {
     }
 }
 
-/// Posts for a script: what reaches the browser is what the user may read.
+/// Posts as a ledger: the price is declared but read only with
+/// `ledger.view_price`; `secret` is not declared; each user sees their own.
+struct LedgerResource;
+
+#[async_trait::async_trait]
+impl Resource for LedgerResource {
+    type Entity = post::Entity;
+    const SLUG: &'static str = "ledger";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Ledger")
+            .title("title")
+            .key(KeyStrategy::AppGenerated(|| SqlValue::Uuid(Some(uuid::Uuid::now_v7()))))
+    }
+
+    fn fields() -> Vec<Field> {
+        vec![
+            Field::column(post::Column::Title).required(),
+            Field::column(post::Column::Price).readable(|ctx| ctx.can("ledger.view_price")),
+        ]
+    }
+
+    fn scope(query: Select<post::Entity>, ctx: &Ctx) -> Select<post::Entity> {
+        query.filter(post::Column::AuthorId.eq(ctx.principal.id.parse::<i64>().unwrap_or(-1)))
+    }
+}
+
+/// The ledger for a script: what reaches the browser is what the user may read.
 struct ReportPage;
 
 #[async_trait::async_trait]
@@ -56,7 +85,7 @@ impl PanelPage for ReportPage {
     const SLUG: &'static str = "report";
 
     fn meta() -> PanelPageMeta {
-        PanelPageMeta::new("Report").permission("posts.view_any")
+        PanelPageMeta::new("Report").permission("ledger.view_any")
     }
 
     fn view() -> PageView {
@@ -64,7 +93,7 @@ impl PanelPage for ReportPage {
     }
 
     async fn data(ctx: &Ctx) -> AppResult<Value> {
-        let page = ctx.records("posts", &Default::default()).await?;
+        let page = ctx.records("ledger", &Default::default()).await?;
         Ok(serde_json::to_value(page.data).unwrap())
     }
 }
@@ -154,6 +183,7 @@ fn build(config: rustcms_core::Config) -> rustcms_core::AppBuilder {
             .resource::<PostResource>()
             .resource::<TagResource>()
             .resource::<NoteResource>()
+            .resource::<LedgerResource>()
             .page::<OverviewPage>()
             .page::<ReportPage>()
             .page::<ReservedPage>()
@@ -187,7 +217,10 @@ async fn setup(db: TestDb) -> (TestApp, Users) {
     let super_admin = rustcms_auth::entities::role::super_admin_id(db, ADMIN_GUARD).await.unwrap().unwrap();
     rbac.assign_role(Actor::System, admin.id, super_admin).await.unwrap();
     let permissions: Vec<String> =
-        ["categories.view_any", "categories.view", "posts.view_any"].iter().map(|p| (*p).to_owned()).collect();
+        ["categories.view_any", "categories.view", "posts.view_any", "ledger.view_any", "ledger.view"]
+            .iter()
+            .map(|p| (*p).to_owned())
+            .collect();
     let role = rbac.create_role(Actor::System, ADMIN_GUARD, "editor", &permissions).await.unwrap();
     rbac.assign_role(Actor::System, editor.id, role.id).await.unwrap();
     (app, Users { admin, editor, member })
@@ -269,21 +302,34 @@ db_test!(templates_escape_data_and_sanitize_markup, |db: TestDb| async move {
 
 db_test!(scripts_get_what_the_user_may_read, |db: TestDb| async move {
     let (app, users) = setup(db).await;
-    let editor = app.acting_as(&users.editor).await;
     // A post of the editor, and one of the admin (outside the editor's scope).
-    let mine =
-        editor.post_json(&app.admin_api("resources/posts/records"), &json!({"title": "Mine", "price": "1.00"})).await;
-    let _ = mine;
-    let admin = app.acting_as(&users.admin).await;
-    admin.post_json(&app.admin_api("resources/posts/records"), &json!({"title": "Theirs"})).await;
+    for (title, author) in [("Mine", users.editor.id), ("Theirs", users.admin.id)] {
+        post::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            title: Set(title.into()),
+            author_id: Set(author),
+            price: Set(Some(rust_decimal::Decimal::new(4242, 2))),
+            secret: Set("undeclared-secret".into()),
+            ..Default::default()
+        }
+        .insert(app.state().db())
+        .await
+        .unwrap();
+    }
+    let editor = app.acting_as(&users.editor).await;
     let report = editor.get(&app.admin_api("pages/report")).await;
     report.assert_status(StatusCode::OK);
     let content = &report.json()["content"];
     assert_eq!(content["kind"], json!("script"));
     assert_eq!(content["script"], json!("test/report"));
+    let rows = content["data"].as_array().unwrap();
+    assert_eq!(rows.len(), 1, "scope applies: {rows:?}");
+    assert_eq!(rows[0]["title"], json!("Mine"));
+    assert_eq!(rows[0]["data"]["title"], json!("Mine"));
     let text = content["data"].to_string();
-    assert!(!text.contains("Theirs"), "scope applies: {text}");
-    assert!(!text.contains("\"secret\""), "undeclared columns never leave: {text}");
+    for absent in ["Theirs", "42.42", "price", "undeclared-secret", "\"secret\""] {
+        assert!(!text.contains(absent), "{absent} reached the script: {text}");
+    }
 });
 
 db_test!(slots_follow_the_record_and_their_permissions, |db: TestDb| async move {
@@ -307,6 +353,10 @@ db_test!(slots_follow_the_record_and_their_permissions, |db: TestDb| async move 
     editor.get(&app.admin_api("slots?resource=categories&key=1&x=1")).await.assert_validation_error("x");
     let member = app.acting_as(&users.member).await;
     member.get(&slots(visible.to_string())).await.assert_status(StatusCode::FORBIDDEN);
+    // A resource that admits by permission does so before parameter errors (no probing).
+    for query in ["resource=ledger&key=1&x=1", "resource=ledger", "resource=ledger&key=1&key=2"] {
+        member.get(&app.admin_api(&format!("slots?{query}"))).await.assert_status(StatusCode::FORBIDDEN);
+    }
 });
 
 db_test!(the_theme_is_served_as_checked_assets, |db: TestDb| async move {

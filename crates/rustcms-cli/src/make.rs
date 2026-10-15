@@ -178,6 +178,15 @@ pub fn make_page(project: &Project, name: &str, script: bool) -> anyhow::Result<
     }
     let vendor = project.package.replace('_', "-");
     let script_name = format!("{vendor}/{slug}");
+    // As the panel checks scripts at boot: each part 1–32 of a-z, 0-9, `-`.
+    let part = |p: &str| {
+        (1..=32).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    };
+    if script && !(part(&vendor) && part(&slug)) {
+        bail!(
+            "script pages are named `vendor/name`, each part at most 32 lowercase letters, digits or `-`: `{script_name}` (from the package name and the page name)"
+        );
+    }
     let label = crate::naming::humanize(stem);
     let vars = json!({
         "name": name,
@@ -303,6 +312,13 @@ mod tests {
         assert!(read(&dir, "src/providers/admin_panel_provider.rs").contains("/resources/admin/js/lms/progress.js"));
         assert!(make_page(&project, "SeatOverviewPage", false).is_err(), "never twice");
         assert!(make_page(&project, "Overview", false).is_err(), "names end with Page");
+        let long = "AVeryLongNameForAScriptPageThatIsTooLongPage";
+        assert!(make_page(&project, long, true).is_err(), "script names the panel would refuse");
+        assert!(
+            !dir.path().join("src/admin/pages/a_very_long_name_for_a_script_page_that_is_too_long_page.rs").exists()
+        );
+        let upper = Project { root: dir.path().to_path_buf(), package: "My_Lms".into() };
+        assert!(make_page(&upper, "CalendarPage", true).is_err(), "the vendor comes from the package name");
 
         make_command(&project, "lms:report").unwrap();
         assert!(read(&dir, "src/console/lms_report.rs").contains("Command::new(\"lms:report\")"));

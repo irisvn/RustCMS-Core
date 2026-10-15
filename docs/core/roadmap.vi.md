@@ -41,7 +41,7 @@ settings, audit log, i18n, media S3/R2, tin tức, nhiều-nhiều, import/expor
 | R3 | Cấu trúc app kiểu Laravel trong `src/` (bootstrap, providers, routes, http, services, jobs, settings, admin/{resources,pages}, database/{migrations,seeders,factories}), `db:seed`, generator mới, `lock_parent` | ✅ `ac50ab5` + fix |
 | M15c | `examples/lms` khung tối thiểu: khoá học, bài học, học viên, ghi danh (sĩ số, instructor) — viết lại theo R3 | ✅ `ac50ab5` + fix |
 | M15d | Trang Queue trong Admin (System → Queue): tổng quan, danh sách job, retry/forget/cancel, `queue.view`/`queue.manage` | ✅ `111f25a` + fix |
-| M15e | Tuỳ biến Admin: Theme API, trang/slot tuỳ biến (template HTML `resources/views/admin` hoặc script), `registerCell`, `make:page`; thư mục `resources/` | 🔧 |
+| M15e | Tuỳ biến Admin: Theme API, trang/slot tuỳ biến (template HTML `resources/views/admin` hoặc script), `registerCell`, `make:page`; thư mục `resources/` | ✅ `68a5366` + fix |
 | M16 | Quan hệ nhiều-nhiều (attach/detach/pivot) + action có form (modal) + ma trận quyền theo resource | ⏳ |
 | M17 | Import / Export CSV (chạy nền qua queue, kiểm quyền mỗi lô, chống CSV injection) | ⏳ |
 | M18 | Excel (XLSX): giới hạn zip bomb, kiểu dữ liệu tường minh | ⏳ |

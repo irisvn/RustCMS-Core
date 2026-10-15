@@ -42,11 +42,8 @@ impl Templates {
     /// another (one template per page or slot), or turns escaping off.
     pub(crate) fn add(&mut self, name: &str, source: &'static str) {
         // One template per page or slot, escaping always on.
-        for tag in ["include", "import", "from", "extends", "autoescape"] {
-            for open in ["{%", "{%-", "{%+"] {
-                let needle = format!("{open} {tag}");
-                assert!(!source.contains(&needle), "template `{name}`: `{needle} …` is not supported");
-            }
+        for tag in Lexer::new(source).tags() {
+            assert!(!BANNED_TAGS.contains(&tag), "template `{name}`: `{{% {tag} … %}}` is not supported");
         }
         if let Err(err) = self.env.add_template_owned(name.to_owned(), source) {
             panic!("template `{name}`: {err:#}");
@@ -55,21 +52,7 @@ impl Templates {
 
     /// The literal strings passed to `t("…")` in every template (for `lang:missing`).
     pub(crate) fn literals(sources: &[&str]) -> Vec<String> {
-        let mut out = Vec::new();
-        for source in sources {
-            for quote in ['"', '\''] {
-                let open = format!("t({quote}");
-                let mut rest = *source;
-                while let Some(start) = rest.find(&open) {
-                    rest = &rest[start + open.len()..];
-                    if let Some(end) = rest.find(quote) {
-                        out.push(rest[..end].to_owned());
-                        rest = &rest[end..];
-                    }
-                }
-            }
-        }
-        out
+        sources.iter().flat_map(|source| Lexer::new(source).literal_calls("t")).collect()
     }
 
     /// Renders `name` for `ctx` with `data`.
@@ -98,12 +81,177 @@ impl Templates {
             can => can,
             admin_url => admin_url,
         };
-        let html = template.render(context).map_err(|err| AppError::internal(format!("template `{name}`: {err:#}")))?;
-        if html.len() > MAX_HTML_BYTES {
-            return Err(AppError::internal(format!("template `{name}`: more than {MAX_HTML_BYTES} bytes")));
+        // Written into a bounded buffer: rendering stops at the limit, before
+        // anything larger is allocated.
+        let mut out = Bounded(Vec::new());
+        if let Err(err) = template.render_captured_to(context, &mut out) {
+            if out.0.len() >= MAX_HTML_BYTES {
+                return Err(AppError::internal(format!("template `{name}`: more than {MAX_HTML_BYTES} bytes")));
+            }
+            return Err(AppError::internal(format!("template `{name}`: {err:#}")));
         }
-        Ok(html)
+        String::from_utf8(out.0).map_err(AppError::internal)
     }
+}
+
+/// Statements a template may not use.
+const BANNED_TAGS: [&str; 5] = ["include", "import", "from", "extends", "autoescape"];
+
+/// Output buffer refusing to grow past [`MAX_HTML_BYTES`].
+struct Bounded(Vec<u8>);
+
+impl std::io::Write for Bounded {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.0.len() + buf.len() > MAX_HTML_BYTES {
+            self.0.resize(MAX_HTML_BYTES, 0);
+            return Err(std::io::Error::other("output limit"));
+        }
+        self.0.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Reads the code of a template (inside `{{ }}` and `{% %}`, past comments
+/// and string literals) as minijinja does with its default syntax: enough to
+/// name statements and literal calls whatever the whitespace.
+struct Lexer<'a> {
+    source: &'a str,
+}
+
+/// One block of code: statement (`{% %}`) or expression (`{{ }}`).
+struct Block<'a> {
+    statement: bool,
+    code: &'a str,
+}
+
+impl<'a> Lexer<'a> {
+    fn new(source: &'a str) -> Self {
+        Self { source }
+    }
+
+    /// Every block of code, in order.
+    fn blocks(&self) -> Vec<Block<'a>> {
+        let bytes = self.source.as_bytes();
+        let mut blocks = Vec::new();
+        let mut i = 0;
+        while i + 1 < bytes.len() {
+            if bytes[i] != b'{' || !matches!(bytes[i + 1], b'{' | b'%' | b'#') {
+                i += 1;
+                continue;
+            }
+            let kind = bytes[i + 1];
+            let start = i + 2;
+            if kind == b'#' {
+                i = self.source[start..].find("#}").map_or(bytes.len(), |end| start + end + 2);
+                continue;
+            }
+            let close = if kind == b'{' { b'}' } else { b'%' };
+            // To the closing delimiter outside strings.
+            let mut j = start;
+            let mut quote = None;
+            while j < bytes.len() {
+                match (quote, bytes[j]) {
+                    (Some(_), b'\\') => j += 1,
+                    (Some(q), b) if b == q => quote = None,
+                    (None, b'"' | b'\'') => quote = Some(bytes[j]),
+                    (None, b) if b == close && bytes.get(j + 1) == Some(&b'}') => break,
+                    _ => {}
+                }
+                j += 1;
+            }
+            let end = j.min(bytes.len());
+            blocks.push(Block { statement: kind == b'%', code: &self.source[start..end] });
+            i = end + 2;
+        }
+        blocks
+    }
+
+    /// The name of every statement (`{%- autoescape … %}` → `autoescape`).
+    fn tags(&self) -> Vec<&'a str> {
+        self.blocks()
+            .into_iter()
+            .filter(|b| b.statement)
+            .map(|b| {
+                let code = b.code.trim_start_matches(['-', '+']).trim_start();
+                let end = code.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(code.len());
+                &code[..end]
+            })
+            .collect()
+    }
+
+    /// The string of every call `function("literal")`.
+    fn literal_calls(&self, function: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for block in self.blocks() {
+            let code = block.code;
+            let bytes = code.as_bytes();
+            let mut i = 0;
+            let mut quote = None;
+            while i < bytes.len() {
+                let b = bytes[i];
+                if let Some(q) = quote {
+                    if b == b'\\' {
+                        i += 1;
+                    } else if b == q {
+                        quote = None;
+                    }
+                    i += 1;
+                    continue;
+                }
+                if matches!(b, b'"' | b'\'') {
+                    quote = Some(b);
+                    i += 1;
+                    continue;
+                }
+                let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+                let preceded = i > 0 && (ident(bytes[i - 1]) || bytes[i - 1] == b'.');
+                if !preceded
+                    && code[i..].starts_with(function)
+                    && !bytes.get(i + function.len()).is_some_and(|&b| ident(b))
+                {
+                    let rest = code[i + function.len()..].trim_start();
+                    if let Some(rest) = rest.strip_prefix('(')
+                        && let Some((text, after)) = string_literal(rest.trim_start())
+                        && after.trim_start().starts_with(')')
+                    {
+                        out.push(text);
+                    }
+                }
+                i += 1;
+            }
+        }
+        out
+    }
+}
+
+/// A string literal at the start of `code` (its value and what follows), with
+/// minijinja's escapes.
+fn string_literal(code: &str) -> Option<(String, &str)> {
+    let mut chars = code.char_indices();
+    let (_, quote) = chars.next().filter(|(_, c)| matches!(c, '"' | '\''))?;
+    let mut text = String::new();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '\\' => {
+                let (_, escaped) = chars.next()?;
+                text.push(match escaped {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    '"' | '\'' | '\\' | '/' => escaped,
+                    // Unicode and other escapes: not a plain literal.
+                    _ => return None,
+                });
+            }
+            c if c == quote => return Some((text, &code[i + 1..])),
+            c => text.push(c),
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -112,13 +260,17 @@ mod tests {
 
     #[test]
     fn literals_are_found() {
-        let found = Templates::literals(&["{{ t(\"Seats\") }} {{ t('Free') }} {{ data.t }}"]);
-        assert_eq!(found, ["Seats", "Free"]);
+        let found = Templates::literals(&[
+            "{{ t(\"Seats\") }} {{ t('Free') }} {{ data.t }} {{ t( \"Spaced\" ) }}",
+            r#"{%- if x %}{{ t ("Say \"hi\"") ~ t('It\'s') }}{% endif %} t("not code") {# t("comment") #}"#,
+            r#"{{ data.t("x") }} {{ at("y") }} {{ t(name) }} {{ "t('in a string')" }}"#,
+        ]);
+        assert_eq!(found, ["Seats", "Free", "Spaced", "Say \"hi\"", "It's"]);
     }
 
     #[test]
     fn includes_and_syntax_errors_stop_the_boot() {
-        for bad in ["{% include 'x.html' %}", "{% extends 'x' %}", "{{ unclosed"] {
+        for bad in ["{% include 'x.html' %}", "{%extends 'x'%}", "{%-\nimport 'x' as y %}", "{{ unclosed"] {
             let result = std::panic::catch_unwind(|| Templates::new().add("bad", bad));
             assert!(result.is_err(), "{bad}");
         }
@@ -135,9 +287,14 @@ mod tests {
             .render(minijinja::context! { data => Value::from(minijinja::value::Serde(serde_json::json!({"v": "<script>\"x\"</script>"}))) })
             .unwrap();
         assert_eq!(out, "&lt;script&gt;&quot;x&quot;&lt;&#x2f;script&gt;");
-        for bypass in
-            ["{{ data.v|safe }}", "{{ data.v|tojson }}", "{% autoescape false %}{{ data.v }}{% endautoescape %}"]
-        {
+        for bypass in [
+            "{{ data.v|safe }}",
+            "{{ data.v|tojson }}",
+            "{% autoescape false %}{{ data.v }}{% endautoescape %}",
+            "{%autoescape false%}{{ data.v }}{%endautoescape%}",
+            "{%-\tautoescape false -%}{{ data.v }}{% endautoescape %}",
+            "{%+\n autoescape false %}{{ data.v }}{% endautoescape %}",
+        ] {
             let mut templates = Templates::new();
             let compiled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| templates.add("y", bypass)));
             if compiled.is_ok() {
@@ -149,5 +306,20 @@ mod tests {
                 assert!(out.is_err() || !out.unwrap().contains("<b>"), "{bypass}");
             }
         }
+    }
+
+    #[test]
+    fn output_stops_at_the_limit() {
+        let mut templates = Templates::new();
+        templates.add("big", "{% for i in range(10000) %}{{ data.v }}{% endfor %}");
+        let data = serde_json::json!({ "v": "x".repeat(64 * 1024) });
+        let mut out = Bounded(Vec::new());
+        let result = templates
+            .env
+            .get_template("big")
+            .unwrap()
+            .render_captured_to(minijinja::context! { data => Value::from(minijinja::value::Serde(data)) }, &mut out);
+        assert!(result.is_err());
+        assert!(out.0.len() <= MAX_HTML_BYTES, "{}", out.0.len());
     }
 }
