@@ -6,7 +6,9 @@
 - Rust toolchain via Homebrew rustup: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
 - Postgres for tests runs on port 55439 (55432 belongs to another project); MySQL 8.4 on 53306
   (`RUSTCMS_TEST_MYSQL=mysql://root:mysql@localhost:53306/mysql`); Redis on 56379
-  (`RUSTCMS_TEST_REDIS=redis://localhost:56379`, tests need `--features rustcms/redis`, as `just test-matrix` does).
+  (`RUSTCMS_TEST_REDIS=redis://localhost:56379`, tests need `--features rustcms/redis`, as `just test-matrix` does);
+  S3Mock on 59000 (`RUSTCMS_TEST_S3=http://localhost:59000/rustcms-test`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`
+  any value, `--features rustcms/s3`). MinIO no longer publishes images.
 - Database tests must use `rustcms_testing::db_test!` so they run on SQLite, PostgreSQL and MySQL;
   tables built from entities go through `rustcms_testing::create_table`.
 - Serializing transactions: `rustcms_core::db::xact_lock` (first lock of the transaction), never

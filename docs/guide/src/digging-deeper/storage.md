@@ -20,6 +20,7 @@ app.provider(rustcms::storage::StorageProvider);   // reads `[storage]`
 | `max_concurrent_uploads` | 4 | more answer 429 |
 | `allowed_types` | `["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"]` | MIME types, a subset of these five |
 | `s3.bucket`, `s3.region`, `s3.endpoint`, `s3.allow_http` | | private bucket; credentials from `AWS_*` variables |
+| `s3.timeout_secs` | `30` | longest wait for one request to the bucket, retries included (1 to 600) |
 
 Object keys are generated (`yyyy/mm/<uuid>.<ext>`), never taken from the client.
 
@@ -30,9 +31,46 @@ Object keys are generated (`yyyy/mm/<uuid>.<ext>`), never taken from the client.
   Keep the directory out of the web root, back it up, and share it (one
   volume) when you run several instances.
 - **`s3`** (feature `s3`): a private bucket on AWS S3 or any S3-compatible
-  service (MinIO, Cloudflare R2, …). Credentials come from the usual `AWS_*`
+  service (Cloudflare R2, MinIO, …). Credentials come from the usual `AWS_*`
   variables; set `s3.endpoint` for non-AWS services. Configure an *abort
-  incomplete multipart uploads* lifecycle rule on the bucket.
+  incomplete multipart uploads* lifecycle rule on the bucket (large files go
+  up in parts; an upload interrupted by a crash leaves parts behind).
+  Uploads are staged in the system's temporary directory
+  (`rustcms-staging-s3/`) before they are sent; `media:prune` removes what
+  interrupted uploads left there.
+
+### Cloudflare R2
+
+```toml
+# config/storage.toml
+disk = "s3"
+
+[s3]
+bucket = "my-app-media"
+region = "auto"
+endpoint = "https://<account-id>.r2.cloudflarestorage.com"
+```
+
+```sh
+AWS_ACCESS_KEY_ID=<R2 access key id>
+AWS_SECRET_ACCESS_KEY=<R2 secret access key>
+```
+
+Create an R2 API token with *Object Read & Write* on that bucket only.
+
+### Other S3-compatible services
+
+Set `endpoint` to the service's URL (path-style requests are used) and its
+`region` (often `us-east-1`). `allow_http = true` only for a local test
+server; production endpoints use HTTPS.
+
+### Failures
+
+A bucket that does not answer fails the request within `s3.timeout_secs`
+(retries included): an upload or a download answers 500, and the error's
+details (endpoint, key, credentials) go to the log only. A download that
+fails after its first bytes is cut short: the client sees an incomplete
+response, never an error page inside the file.
 
 Files are always served through the application (no presigned URLs), so
 authorization and safe response headers apply to every byte.

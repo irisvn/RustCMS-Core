@@ -2,6 +2,7 @@
 pg_url := env_var_or_default("RUSTCMS_TEST_PG", "postgres://postgres:postgres@localhost:55439/postgres")
 mysql_url := env_var_or_default("RUSTCMS_TEST_MYSQL", "mysql://root:mysql@localhost:53306/mysql")
 redis_url := env_var_or_default("RUSTCMS_TEST_REDIS", "redis://localhost:56379")
+s3_url := env_var_or_default("RUSTCMS_TEST_S3", "http://localhost:59000/rustcms-test")
 
 default:
     @just --list
@@ -17,6 +18,7 @@ msrv:
 lint:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy --workspace --all-targets --features rustcms/redis,rustcms/s3 -- -D warnings
     cd admin-ui && npm run lint && npm run typecheck
 
 # Every supported feature combination compiles.
@@ -38,10 +40,11 @@ features:
     cargo check -p rustcms-auth --features redis
     cargo check -p rustcms-core --no-default-features --features redis
 
-# Tests on SQLite (temp files), PostgreSQL and MySQL, with Redis (docker compose).
+# Tests on SQLite (temp files), PostgreSQL and MySQL, with Redis and an S3-compatible bucket (docker compose).
 test-matrix:
-    docker compose up -d --wait postgres mysql redis
-    RUSTCMS_TEST_PG={{pg_url}} RUSTCMS_TEST_MYSQL={{mysql_url}} RUSTCMS_TEST_REDIS={{redis_url}} RUSTCMS_TEST_REQUIRE=postgres,mysql,redis cargo nextest run --workspace --features rustcms/redis
+    docker compose up -d --wait postgres mysql redis s3
+    @for i in $(seq 1 60); do curl -sf -o /dev/null {{s3_url}} && exit 0; sleep 1; done; echo "the S3 bucket is not ready: {{s3_url}}"; exit 1
+    RUSTCMS_TEST_PG={{pg_url}} RUSTCMS_TEST_MYSQL={{mysql_url}} RUSTCMS_TEST_REDIS={{redis_url}} RUSTCMS_TEST_S3={{s3_url}} AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test RUSTCMS_TEST_REQUIRE=postgres,mysql,redis,s3 cargo nextest run --workspace --features rustcms/redis,rustcms/s3
 
 test:
     cargo nextest run --workspace

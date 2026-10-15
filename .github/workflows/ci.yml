@@ -19,6 +19,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets --features rustcms/redis,rustcms/s3 -- -D warnings
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: admin-ui/package-lock.json }
       - run: npm ci
@@ -67,19 +68,29 @@ jobs:
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
+      # S3-compatible bucket for the storage tests (MinIO no longer publishes images).
+      s3:
+        image: adobe/s3mock:5.2.3
+        env: { COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: rustcms-test }
+        ports: ["9090:9090"]
     env:
       RUSTCMS_TEST_PG: postgres://postgres:postgres@localhost:5432/postgres
       RUSTCMS_TEST_MYSQL: mysql://root:mysql@localhost:3306/mysql
       RUSTCMS_TEST_REDIS: redis://localhost:6379
+      RUSTCMS_TEST_S3: http://localhost:9090/rustcms-test
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
       # A server that is not reachable fails the run instead of being skipped.
-      RUSTCMS_TEST_REQUIRE: postgres,mysql,redis
+      RUSTCMS_TEST_REQUIRE: postgres,mysql,redis,s3
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-nextest }
-      - run: cargo nextest run --workspace --features rustcms/redis
+      - name: Wait for the S3 bucket
+        run: for i in $(seq 1 60); do curl -sf -o /dev/null "$RUSTCMS_TEST_S3" && exit 0; sleep 1; done; exit 1
+      - run: cargo nextest run --workspace --features rustcms/redis,rustcms/s3
 
   doc:
     runs-on: ubuntu-latest

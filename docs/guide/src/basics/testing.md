@@ -41,6 +41,11 @@ db_test!(lists_posts, migrate = Migrator, |db: TestDb| async move {
   `audit_logs` table (`rustcms::models::audit_log::Entity`): resource writes
   record into it.
 
+- **S3:** `rustcms_testing::TestS3::from_env()` reads `RUSTCMS_TEST_S3`
+  (`http://host:port/bucket`, e.g. S3Mock: `docker run -p 59000:9090 -e
+  COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS=test adobe/s3mock:5.2.3`)
+  and `TestS3::configure(config)` points `[storage]` at it.
+
 Without `RUSTCMS_TEST_PG` / `RUSTCMS_TEST_MYSQL`, those variants print a skip
 notice and pass, unless `RUSTCMS_TEST_REQUIRE` lists them (`postgres,mysql`):
 then they fail. Set them in CI so every test runs on the three databases.

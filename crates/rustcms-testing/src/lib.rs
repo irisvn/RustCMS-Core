@@ -35,6 +35,50 @@ pub fn skip(backend: Backend) {
 }
 pub use factory::{Factory, UserFactory};
 
+/// An S3-compatible bucket for tests: `RUSTCMS_TEST_S3=http://host:port/bucket`
+/// (credentials from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`).
+#[derive(Debug, Clone)]
+pub struct TestS3 {
+    /// Endpoint URL (`http://localhost:59000`).
+    pub endpoint: String,
+    /// Bucket name.
+    pub bucket: String,
+}
+
+impl TestS3 {
+    /// The bucket, or `None` (a skip notice) when `RUSTCMS_TEST_S3` is not set;
+    /// fails when `RUSTCMS_TEST_REQUIRE` lists `s3`, or when the URL or the
+    /// credentials are missing.
+    pub fn from_env() -> Option<Self> {
+        let Ok(url) = std::env::var("RUSTCMS_TEST_S3") else {
+            let required = std::env::var("RUSTCMS_TEST_REQUIRE").unwrap_or_default();
+            assert!(
+                !required.split(',').any(|b| b.trim() == "s3"),
+                "RUSTCMS_TEST_S3 is required (RUSTCMS_TEST_REQUIRE) but not set"
+            );
+            eprintln!("skipped: RUSTCMS_TEST_S3 is not set");
+            return None;
+        };
+        let (scheme, rest) = url.split_once("://").expect("RUSTCMS_TEST_S3 is http(s)://host:port/bucket");
+        let (host, bucket) = rest.split_once('/').expect("RUSTCMS_TEST_S3 names a bucket");
+        assert!(!bucket.is_empty() && !bucket.contains('/'), "RUSTCMS_TEST_S3 names one bucket");
+        for variable in ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"] {
+            assert!(std::env::var(variable).is_ok(), "RUSTCMS_TEST_S3 needs {variable}");
+        }
+        Some(Self { endpoint: format!("{scheme}://{host}"), bucket: bucket.to_owned() })
+    }
+
+    /// `config` with `[storage]` on this bucket.
+    pub fn configure(&self, config: rustcms_core::Config) -> rustcms_core::Config {
+        config
+            .with("storage.disk", "s3")
+            .and_then(|c| c.with("storage.s3.bucket", &self.bucket))
+            .and_then(|c| c.with("storage.s3.endpoint", &self.endpoint))
+            .and_then(|c| c.with("storage.s3.allow_http", self.endpoint.starts_with("http://")))
+            .expect("storage configuration")
+    }
+}
+
 /// Declares a database test that runs on SQLite, PostgreSQL and MySQL.
 ///
 /// PostgreSQL runs when `RUSTCMS_TEST_PG` holds an admin connection URL, MySQL

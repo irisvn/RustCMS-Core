@@ -13,6 +13,19 @@ All notable changes are documented here. The format follows
   (architecture, admin protocol, ADRs, reports, this changelog, review
   checklist, contributor guides). `CHANGELOG.md` moved to `docs/core/`.
 
+### Added (0.3 — M15b)
+- S3 storage tested against a real S3-compatible server (S3Mock in docker
+  compose and CI; MinIO no longer publishes images): round trips, multipart,
+  media upload/download/deletion on a bucket, staging sweep, timeouts.
+- `storage.s3.timeout_secs` (default 30): request timeout and retry budget.
+- `rustcms_testing::TestS3`, `TestApp::router`; `RUSTCMS_TEST_S3` and `s3` in
+  `RUSTCMS_TEST_REQUIRE`; `just test-matrix` and CI run with `rustcms/s3`.
+
+### Fixed (0.3 — M15b)
+- S3 uploads are staged in their own directory, swept by `media:prune`
+  (they were left in the system temp directory).
+- `allow_http` is kept when client options are set (plain-HTTP endpoints).
+
 ### Added (0.3 — M15a)
 - **Job queue** (ADR 0016): `rustcms::queue` (`Job`, `dispatch` in the
   change's transaction, `dispatch_with`, `enqueue`, `once`, `Failure`),

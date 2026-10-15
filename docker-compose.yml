@@ -2,6 +2,7 @@
 # Tests: RUSTCMS_TEST_PG=postgres://postgres:postgres@localhost:55439/postgres
 #        RUSTCMS_TEST_MYSQL=mysql://root:mysql@localhost:53306/mysql
 #        RUSTCMS_TEST_REDIS=redis://localhost:56379
+#        RUSTCMS_TEST_S3=http://localhost:59000/rustcms-test (any AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)
 services:
   postgres:
     image: postgres:17-alpine
@@ -35,3 +36,10 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+  # S3-compatible server for the storage tests (MinIO no longer publishes images).
+  s3:
+    image: adobe/s3mock:5.2.3
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: rustcms-test
+    ports:
+      - "${RUSTCMS_S3_PORT:-59000}:9090"

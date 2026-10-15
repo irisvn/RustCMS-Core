@@ -124,7 +124,7 @@ pub struct StorageConfig {
 }
 
 /// S3-compatible bucket settings.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct S3Config {
     /// Bucket name.
@@ -133,8 +133,16 @@ pub struct S3Config {
     pub region: Option<String>,
     /// Endpoint for S3-compatible services (MinIO, R2, …).
     pub endpoint: Option<String>,
-    /// Allow plain HTTP endpoints (local MinIO only).
+    /// Allow plain HTTP endpoints (a local test server only).
     pub allow_http: bool,
+    /// Longest wait for one request to the bucket, retries included (seconds).
+    pub timeout_secs: u64,
+}
+
+impl Default for S3Config {
+    fn default() -> Self {
+        Self { bucket: String::new(), region: None, endpoint: None, allow_http: false, timeout_secs: 30 }
+    }
 }
 
 impl Default for StorageConfig {

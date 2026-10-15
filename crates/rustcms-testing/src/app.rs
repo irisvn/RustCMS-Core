@@ -52,6 +52,12 @@ impl TestApp {
         &self.db
     }
 
+    /// The full router, for tests that read a response themselves (a body
+    /// that fails while streaming).
+    pub fn router(&self) -> axum::Router {
+        self.app.router()
+    }
+
     /// Sends a request from `127.0.0.1`.
     pub async fn request(&self, request: Request<Body>) -> TestResponse {
         self.request_from(SocketAddr::from(([127, 0, 0, 1], 40000)), request).await

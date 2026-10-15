@@ -9,6 +9,13 @@ use object_store::{ObjectStore, ObjectStoreExt};
 /// A private S3-compatible bucket.
 pub struct S3Storage {
     store: Arc<dyn ObjectStore>,
+    staging: PathBuf,
+}
+
+/// Uploads are staged here before they are sent (one directory for every
+/// S3 disk of the host; `sweep` removes what interrupted uploads left).
+fn staging() -> PathBuf {
+    std::env::temp_dir().join("rustcms-staging-s3")
 }
 
 impl S3Storage {
@@ -16,15 +23,30 @@ impl S3Storage {
         if config.bucket.is_empty() {
             return Err(StorageError::Backend("`storage.s3.bucket` is required".into()));
         }
+        if !(1..=600).contains(&config.timeout_secs) {
+            return Err(StorageError::Backend("`storage.s3.timeout_secs` must be between 1 and 600".into()));
+        }
+        // A slow bucket fails a request within the budget instead of holding
+        // a database transaction (prune) or a worker for minutes.
+        let budget = std::time::Duration::from_secs(config.timeout_secs);
+        // `with_client_options` replaces every client option: `allow_http` goes here too.
+        let client = object_store::ClientOptions::new()
+            .with_allow_http(config.allow_http)
+            .with_timeout(budget)
+            .with_connect_timeout(budget.min(std::time::Duration::from_secs(10)));
+        let retry =
+            object_store::RetryConfig { max_retries: 3, retry_timeout: budget, ..object_store::RetryConfig::default() };
         let mut builder = AmazonS3Builder::from_env()
             .with_bucket_name(&config.bucket)
             .with_region(config.region.clone().unwrap_or_else(|| "us-east-1".into()))
-            .with_allow_http(config.allow_http);
+            .with_client_options(client)
+            .with_retry(retry);
         if let Some(endpoint) = &config.endpoint {
             builder = builder.with_endpoint(endpoint).with_virtual_hosted_style_request(false);
         }
         let store = builder.build().map_err(|e| StorageError::Backend(e.to_string()))?;
-        Ok(Self { store: Arc::new(store) })
+        std::fs::create_dir_all(staging())?;
+        Ok(Self { store: Arc::new(store), staging: staging() })
     }
 }
 
@@ -42,7 +64,7 @@ impl Storage for S3Storage {
     }
 
     fn staging_dir(&self) -> PathBuf {
-        std::env::temp_dir()
+        self.staging.clone()
     }
 
     async fn put_file(&self, key: &StorageKey, file: &Path, content_type: &str) -> Result<(), StorageError> {
@@ -83,5 +105,27 @@ impl Storage for S3Storage {
             Err(object_store::Error::NotFound { .. }) => Ok(false),
             Err(err) => Err(backend(err)),
         }
+    }
+
+    async fn sweep(&self, older_than: std::time::Duration) -> Result<u64, StorageError> {
+        let dir = self.staging.clone();
+        let removed = tokio::task::spawn_blocking(move || -> std::io::Result<u64> {
+            let cutoff = std::time::SystemTime::now() - older_than;
+            let mut removed = 0;
+            for entry in std::fs::read_dir(&dir)? {
+                let entry = entry?;
+                let meta = entry.metadata()?;
+                if meta.is_file()
+                    && meta.modified().is_ok_and(|m| m < cutoff)
+                    && std::fs::remove_file(entry.path()).is_ok()
+                {
+                    removed += 1;
+                }
+            }
+            Ok(removed)
+        })
+        .await
+        .map_err(|e| StorageError::Backend(e.to_string()))??;
+        Ok(removed)
     }
 }
