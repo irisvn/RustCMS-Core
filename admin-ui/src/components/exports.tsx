@@ -54,6 +54,17 @@ export function ExportButton({ slug, query }: { slug: string; query: URLSearchPa
   );
 }
 
+function reason(t: ReturnType<typeof useT>, code: string): string {
+  switch (code) {
+    case "revoked": return t("export.reason.revoked");
+    case "account_changed": return t("export.reason.account_changed");
+    case "fields_changed": return t("export.reason.fields_changed");
+    case "too_large": return t("export.reason.too_large");
+    case "unfinished": return t("export.reason.unfinished");
+    default: return t("export.reason.failed");
+  }
+}
+
 function status(t: ReturnType<typeof useT>, item: ExportView): string {
   switch (item.status) {
     case "pending": return t("export.pending");
@@ -93,7 +104,7 @@ export function ExportsPanel({ slug }: { slug: string }) {
                 <Badge color={item.status === "done" ? "success" : item.status === "failed" ? "danger" : "gray"}>{status(t, item)}</Badge>
                 <span className="tabular-nums text-muted-foreground">{new Date(item.createdAt).toLocaleString()}</span>
                 {item.status === "done" && <span>{t("export.rows", { count: item.rows })}</span>}
-                {item.error && <span className="text-destructive">{item.error}</span>}
+                {item.error && <span className="text-destructive">{reason(t, item.error)}</span>}
               </span>
               {item.status === "done" && (
                 <Button size="sm" variant="outline" disabled={download.isPending} onClick={() => void get(item)}>

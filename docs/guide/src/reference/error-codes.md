@@ -11,6 +11,9 @@ A message that follows none of these templates has the code `custom` and
 | `required` | `is required` |
 | `invalid` | `is invalid` |
 | `not_allowed` | `is not allowed` |
+| `not_found` | `was not found` |
+| `several_matches` | `matches several records` |
+| `not_imported` | `could not be imported` |
 | `set_by_relation` | `is set by the relation` |
 | `taken` | `has already been taken` |
 | `confirmation` | `does not match` |
@@ -67,6 +70,7 @@ A message that follows none of these templates has the code `custom` and
 | `search_too_broad` | `matches too many records to check; refine the search` |
 | `too_many_matches` | `Too many matching records to check individually; narrow the search or filters.` |
 | `too_many_to_export` | `More than {max} records to export; narrow the search or filters.` |
+| `too_large_to_export` | `Too large to export at once; export in the background.` |
 | `invalid_parent` | `invalid parent key` |
 | `invalid_key` | `invalid key` |
 | `unsupported_key` | `unsupported key type` |

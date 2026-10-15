@@ -78,6 +78,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if self.meta.exportable {
             abilities.push(ability::EXPORT);
         }
+        if self.meta.importable {
+            abilities.push(ability::IMPORT);
+        }
         abilities.extend(self.actions.iter().map(|a| a.ability));
         let mut permissions: Vec<String> = abilities.into_iter().map(|a| format!("{}.{a}", R::SLUG)).collect();
         // Writes to belongs-to-many relations.
@@ -108,6 +111,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if self.meta.exportable {
             abilities.push(ability::EXPORT.to_owned());
         }
+        if self.meta.importable {
+            abilities.push(ability::IMPORT.to_owned());
+        }
         abilities.extend(self.actions.iter().map(|a| a.ability.to_owned()));
         for relation in self.relations.iter().filter(|r| r.is_many()) {
             use crate::links::LinkOp;
@@ -132,6 +138,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         abilities.insert("history", self.meta.audit && ctx.can(crate::audit::VIEW));
         if self.meta.exportable {
             abilities.insert("export", ResourceAdapter::admit_export(self, ctx).await.is_ok());
+        }
+        if self.meta.importable {
+            abilities.insert("import", ResourceAdapter::admit_import(self, ctx).await.is_ok());
         }
         if self.soft.is_some() {
             // Whether the trash can be listed; each record still decides.
@@ -432,8 +441,27 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
 
     async fn update(&self, ctx: &Ctx, key: &str, input: Data) -> AppResult<Envelope> {
         self.admit(ctx, ability::UPDATE).await?;
+        // With an idempotency key (imports set one per row): applied once,
+        // a retry answers with the record.
+        let claim = ctx.idempotency_key.as_deref().map(|k| {
+            crate::idempotency::Claim::new(
+                &ctx.principal,
+                R::SLUG,
+                &format!("update:{key}"),
+                k,
+                &serde_json::Value::Object(input.clone()),
+            )
+        });
         let input = self.accept_input(ctx, Operation::Update, input)?;
         let (txn, wctx) = self.begin(ctx).await?;
+        if let Some(claim) = &claim
+            && !crate::idempotency::acquire(txn.as_ref(), claim).await?
+        {
+            Self::abort(txn, wctx).await?;
+            let receipt = crate::idempotency::receipt(&ctx.db, claim).await?;
+            let key = receipt["key"].as_str().ok_or_else(|| AppError::internal("update receipt without a key"))?;
+            return Ok(self.committed_key_envelope(ctx, key.to_owned()).await);
+        }
         let (model, parents) = self
             .find_authorized_locked_moving(&wctx, &txn, key, ability::UPDATE, Trashed::Without, Some(&input))
             .await?;
@@ -452,6 +480,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         R::after_save(&wctx, &txn, &model).await?;
         // Nothing changed: nothing to record.
         self.audit_outcome(&wctx, &txn, "updated", Some(&before), &model, false, false).await?;
+        if let Some(claim) = &claim {
+            crate::idempotency::complete(txn.as_ref(), claim, &serde_json::json!({ "key": self.key_of(&model) }))
+                .await?;
+        }
         Self::commit(txn, wctx).await?;
         Ok(self.committed_envelope(ctx, model).await)
     }
@@ -636,11 +668,35 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         Ok(())
     }
 
+    async fn admit_import(&self, ctx: &Ctx) -> AppResult<()> {
+        ResourceAdapter::admit_import(self, ctx).await
+    }
+
+    fn import_fields(&self, ctx: &Ctx) -> Vec<crate::ImportField> {
+        ResourceAdapter::import_fields(self, ctx)
+    }
+
+    fn import_key(&self) -> Option<&str> {
+        self.meta.import_key.as_deref()
+    }
+
+    fn import_value(&self, name: &str, text: &str) -> serde_json::Value {
+        ResourceAdapter::import_value(self, name, text)
+    }
+
+    fn check_import_row(&self, ctx: &Ctx, op: Operation, data: Data) -> AppResult<Data> {
+        ResourceAdapter::check_import_row(self, ctx, op, data)
+    }
+
+    async fn import_matches(&self, ctx: &Ctx, value: &serde_json::Value) -> AppResult<Vec<String>> {
+        ResourceAdapter::import_matches(self, ctx, value).await
+    }
+
     async fn admit_export(&self, ctx: &Ctx) -> AppResult<()> {
         ResourceAdapter::admit_export(self, ctx).await
     }
 
-    fn export_columns(&self, ctx: &Ctx) -> Vec<(String, bool)> {
+    fn export_columns(&self, ctx: &Ctx) -> Vec<(String, crate::exports::CellKind)> {
         ResourceAdapter::export_columns(self, ctx)
     }
 

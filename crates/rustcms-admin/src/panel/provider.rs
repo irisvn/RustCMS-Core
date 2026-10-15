@@ -229,6 +229,15 @@ impl ServiceProvider for AdminProvider {
         // Background exports keep their files in the application's storage.
         if app.service::<std::sync::Arc<dyn rustcms_core::storage::Storage>>().is_some() {
             app.job::<crate::exports::ExportJob>();
+            app.job::<crate::imports::ImportJob>();
+            // Import uploads alone accept files up to their limit.
+            for resource in registry.all().into_iter().filter(|r| r.meta().importable) {
+                app.body_limit(
+                    axum::http::Method::POST,
+                    crate::imports::upload_path(&admin_path, resource.slug()),
+                    crate::imports::MAX_BYTES + 1024,
+                );
+            }
         }
         app.describe_routes("admin", http::routes(&admin_path));
         app.describe_routes("admin", spa::routes(&admin_path));
@@ -263,11 +272,14 @@ impl ServiceProvider for AdminProvider {
         app.routes(move |router| {
             spa::router(
                 crate::custom::router(
-                    crate::exports::router(
-                        crate::queue::router(
-                            crate::audit::router(
-                                crate::settings::router(
-                                    system::router(http::router(router, &admin_path), &admin_path),
+                    crate::imports::router(
+                        crate::exports::router(
+                            crate::queue::router(
+                                crate::audit::router(
+                                    crate::settings::router(
+                                        system::router(http::router(router, &admin_path), &admin_path),
+                                        &admin_path,
+                                    ),
                                     &admin_path,
                                 ),
                                 &admin_path,
@@ -319,6 +331,9 @@ impl ServiceProvider for AdminProvider {
                     rustcms_core::jobs::exclusive(&app, &lease, EXPORTS_PRUNE_EVERY, || async move {
                         if let Err(err) = crate::exports::prune(&db, storage.as_ref().as_ref()).await {
                             tracing::warn!(%err, "export pruning failed");
+                        }
+                        if let Err(err) = crate::imports::prune(&db, storage.as_ref().as_ref()).await {
+                            tracing::warn!(%err, "import pruning failed");
                         }
                     })
                     .await;

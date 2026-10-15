@@ -90,6 +90,10 @@ fn the_admin_route_list_is_unchanged() {
         "POST /admin/api/resources/{slug}/exports",
         "GET /admin/api/exports",
         "GET /admin/api/exports/{id}/file",
+        "POST /admin/api/resources/{slug}/imports",
+        "GET /admin/api/imports/{id}",
+        "POST /admin/api/imports/{id}/preview",
+        "POST /admin/api/imports/{id}/run",
     ];
     assert_eq!(listed, expected);
 }

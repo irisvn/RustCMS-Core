@@ -63,6 +63,8 @@ pub struct ResourceMeta {
     pub(crate) audit: bool,
     pub(crate) parent_lock: Option<(String, &'static str)>,
     pub(crate) exportable: bool,
+    pub(crate) importable: bool,
+    pub(crate) import_key: Option<String>,
 }
 
 impl ResourceMeta {
@@ -80,7 +82,26 @@ impl ResourceMeta {
             audit: true,
             parent_lock: None,
             exportable: false,
+            importable: false,
+            import_key: None,
         }
+    }
+
+    /// Records can be imported from CSV files (each row created through the
+    /// usual create path: field rules, hooks, policy), with the ability
+    /// `import` (`{slug}.import` by default) on top of `create`.
+    pub fn importable(mut self) -> Self {
+        self.importable = true;
+        self
+    }
+
+    /// Imported rows whose `field` matches a record the user may see update
+    /// it instead of creating one (also needs `update`). `field` must have a
+    /// [`ResourceMeta::unique`] constraint of its own (checked at boot).
+    pub fn import_key(mut self, field: &str) -> Self {
+        self.importable = true;
+        self.import_key = Some(field.to_owned());
+        self
     }
 
     /// Records can be exported as CSV (the list as shown: scope, filters,

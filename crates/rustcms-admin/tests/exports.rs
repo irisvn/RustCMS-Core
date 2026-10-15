@@ -149,11 +149,29 @@ db_test!(background_exports_reload_their_user, |db: TestDb| async move {
     work(&app).await;
     let listed: Value = client.get(&app.admin_api("exports")).await.json();
     assert_eq!(listed[0]["status"], json!("failed"));
-    assert_eq!(listed[0]["error"], json!("You may no longer export these records."));
-    // At most three waiting at once.
+    assert_eq!(listed[0]["error"], json!("revoked"));
+    // At most three waiting at once; a retried request (same key) is the same export.
     set_permissions(&app, role, &EXPORTER).await;
     let client = app.acting_as(&exporter).await;
-    for _ in 0..3 {
+    let keyed = |key: &str| {
+        axum::http::Request::builder()
+            .method(Method::POST)
+            .uri(app.admin_api("resources/posts/exports?sort=title"))
+            .header("Idempotency-Key", key)
+            .header("Content-Type", "application/json")
+            .body(axum::body::Body::from("{}"))
+            .unwrap()
+    };
+    let first = client.request(keyed("export-1")).await;
+    first.assert_status(StatusCode::CREATED);
+    let again = client.request(keyed("export-1")).await;
+    assert_eq!(again.json()["id"], first.json()["id"]);
+    // The query is the URL's: a body is refused rather than ignored.
+    client
+        .post_json(&app.admin_api("resources/posts/exports"), &json!({"query": {"search": "x"}}))
+        .await
+        .assert_validation_error("body");
+    for _ in 0..2 {
         client
             .post_json(&app.admin_api("resources/posts/exports"), &json!({}))
             .await

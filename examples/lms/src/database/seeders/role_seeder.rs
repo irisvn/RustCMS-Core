@@ -43,6 +43,7 @@ pub const STAFF: &[&str] = &[
     "learners.create",
     "learners.update",
     "learners.delete",
+    "learners.import",
     "enrollments.view_any",
     "enrollments.view",
     "enrollments.create",

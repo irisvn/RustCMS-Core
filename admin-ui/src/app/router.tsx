@@ -20,6 +20,7 @@ import { SettingsPage } from "@/pages/settings";
 import { AuditLogPage } from "@/pages/audit";
 import { QueuePage } from "@/pages/queue";
 import { CustomPage } from "@/pages/custom";
+import { ImportPage } from "@/pages/import";
 import { RoleCreatePage, RolePage, RolesPage, UserCreatePage, UserPage, UsersPage } from "@/pages/system";
 import type { Session } from "./session";
 
@@ -97,6 +98,15 @@ const create = createRoute({
   },
 });
 
+const importPage = createRoute({
+  getParentRoute: () => app,
+  path: "/r/$slug/import",
+  component: function Import() {
+    const { slug } = importPage.useParams();
+    return <ImportPage key={slug} slug={slug} />;
+  },
+});
+
 const view = createRoute({
   getParentRoute: () => app,
   path: "/r/$slug/records/$key",
@@ -161,6 +171,7 @@ const routeTree = root.addChildren([
     index,
     list,
     create,
+    importPage,
     view,
     edit,
     systemUsers,

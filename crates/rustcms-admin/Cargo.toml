@@ -43,6 +43,7 @@ tracing.workspace = true
 tokio.workspace = true
 rust-embed.workspace = true
 ammonia.workspace = true
+csv.workspace = true
 minijinja = { workspace = true, features = ["fuel"] }
 ts-rs = { workspace = true, optional = true }
 

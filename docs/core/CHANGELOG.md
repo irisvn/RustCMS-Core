@@ -32,6 +32,29 @@ All notable changes are documented here. The format follows
 - Examples: LMS theme, course overview page, seats slot, progress cell; demo
   post stats page and visibility slot.
 
+### Added (0.3 — M17b; ADR 0021)
+- CSV imports: `ResourceMeta::importable()` / `import_key(field)`, ability
+  `import`; routes `POST {slug}/imports`, `GET imports/{id}`, `POST
+  imports/{id}/preview`, `POST imports/{id}/run`; job `admin.import` (user
+  reloaded per batch, a row per transaction with an idempotency receipt);
+  `imports` table; audit `imported`; templates `not_found`,
+  `several_matches`, `not_imported`.
+- `update` accepts an idempotency key (used by imports).
+- SPA import page (`/r/{slug}/import`); LMS learners (by email) and demo tags
+  (by name) importable. `csv` crate 1.3.1.
+
+### Fixed (0.3 — M17a, Codex verify)
+- Background exports: a file per run published together with its key list
+  (a late run never mixes files and manifests); fields re-checked at each
+  batch; 10 MiB / 50 MiB budgets; `Idempotency-Key` on creation; the
+  per-user limit counted under a lock; a body is refused (the query is the
+  URL's); failure reasons are codes translated by the panel; the last run's
+  failure marks the export; temporary files removed on cancellation and
+  swept; pruning deletes every run's file.
+- CSV: controls after leading spaces protected; JSON columns written as
+  their JSON text.
+- SPA: a download finished after a sign-out or account change is dropped.
+
 ### Added (0.3 — M17a; ADR 0021)
 - CSV exports: `ResourceMeta::exportable()`, ability `export`; `GET
   {slug}/export` (≤ 1 000 rows, built before sending), background exports

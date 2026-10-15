@@ -36,6 +36,10 @@ saves the choice (422 for a language not offered). The shell's
 | GET | `/resources/{slug}/export?{list query}` | `text/csv` file (≤ 1 000 rows, else 422 `too_many_to_export`); `export` + `view_any` admitted first; 404 when not exportable |
 | POST | `/resources/{slug}/exports?{list query}` | 201 `ExportView`; background job (needs storage), ≤ 3 waiting per user (429) |
 | GET | `/exports` | `[ExportView]` of the user (not expired, newest first) |
+| POST | `/resources/{slug}/imports` (CSV body) | 201 `ImportView`; `import` + `create` (or `update` with an import key) admitted before the body; 422 `file`; ≤ 3 waiting (429) |
+| GET | `/imports/{id}` | `ImportView` (owner only, else 404) |
+| POST | `/imports/{id}/preview` `{mapping}` | `ImportPreview {rows, valid, keyed, report}`; no write, no hook |
+| POST | `/imports/{id}/run` `{mapping}` | `ImportView` (running); once, then 409 `import_started` |
 | GET | `/exports/{id}/file` | `text/csv`; owner only (else 404), 409 `export_not_ready` / `export_stale` (credentials, permission, fields or any record no longer visible) |
 | GET | `/resources/{slug}/actions/{action}/fields/{field}/options?search=&keys=` | `{data: [SelectOption]}` of a form's `belongs_to` field (keys as text) |
 | POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (media library enabled) |

@@ -184,6 +184,12 @@
   "not_allowed": [
     "is not allowed"
   ],
+  "not_found": [
+    "was not found"
+  ],
+  "not_imported": [
+    "could not be imported"
+  ],
   "not_option": [
     "is not one of the options"
   ],
@@ -211,6 +217,9 @@
   "set_by_relation": [
     "is set by the relation"
   ],
+  "several_matches": [
+    "matches several records"
+  ],
   "stale": [
     "This was changed by someone else meanwhile. Reload and try again."
   ],
@@ -231,6 +240,9 @@
   ],
   "too_large": [
     "is too large"
+  ],
+  "too_large_to_export": [
+    "Too large to export at once; export in the background."
   ],
   "too_long": [
     "is too long"

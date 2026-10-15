@@ -20,12 +20,20 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 
     /// The fields exported for the user: readable ones, in declaration order,
-    /// with whether each is text (protected against spreadsheet formulas).
-    pub(super) fn export_columns(&self, ctx: &Ctx) -> Vec<(String, bool)> {
+    /// with how their cells are written.
+    pub(super) fn export_columns(&self, ctx: &Ctx) -> Vec<(String, crate::exports::CellKind)> {
+        use crate::exports::CellKind;
         self.fields
             .iter()
             .filter(|f| f.can_read(ctx))
-            .map(|f| (f.name.clone(), matches!(self.column(&f.name).kind, FieldKind::String | FieldKind::Json)))
+            .map(|f| {
+                let kind = match self.column(&f.name).kind {
+                    FieldKind::String => CellKind::Text,
+                    FieldKind::Json => CellKind::Json,
+                    _ => CellKind::Plain,
+                };
+                (f.name.clone(), kind)
+            })
             .collect()
     }
 

@@ -23,6 +23,8 @@ pub mod ability {
     pub const FORCE_DELETE: &str = "force_delete";
     /// Export the list as a file ([`ResourceMeta::exportable`](crate::ResourceMeta::exportable)).
     pub const EXPORT: &str = "export";
+    /// Import records from a file ([`ResourceMeta::importable`](crate::ResourceMeta::importable)).
+    pub const IMPORT: &str = "import";
 }
 
 /// Decides whether the current user may perform `ability`, optionally on `record`.

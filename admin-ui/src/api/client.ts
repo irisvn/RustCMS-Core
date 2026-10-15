@@ -191,7 +191,10 @@ export class ApiClient {
       if (response.status === 401) this.opts.onUnauthenticated?.();
       throw new ApiError(response.status, errorBody(response, payload));
     }
-    return response.blob();
+    const blob = await response.blob();
+    // Signed out or another account while the bytes arrived: not this session's file.
+    if (generation !== this.generation) throw sessionReset();
+    return blob;
   }
 
   async request<T>(method: string, path: string, body?: unknown, extra?: Record<string, string>): Promise<T> {
@@ -202,9 +205,11 @@ export class ApiClient {
       "Accept-Language": getLocale(),
       "X-Rustcms-Locale": getLocale(),
     };
-    // Multipart bodies (uploads) get their boundary from the browser.
+    // Multipart bodies (uploads) get their boundary from the browser; files are sent as they are.
     const multipart = typeof FormData !== "undefined" && body instanceof FormData;
-    if (body !== undefined && !multipart) headers["Content-Type"] = "application/json";
+    const file = typeof Blob !== "undefined" && body instanceof Blob;
+    if (file) headers["Content-Type"] = (body as Blob).type || "application/octet-stream";
+    else if (body !== undefined && !multipart) headers["Content-Type"] = "application/json";
     const generation = this.generation;
     // An answer to a request from an earlier session state (before a sign-in,
     // sign-out or account change) never reaches identity or auth handling: it
@@ -226,7 +231,7 @@ export class ApiClient {
       response = await doFetch(this.opts.apiPath + path, {
         method,
         headers,
-        body: body === undefined ? undefined : multipart ? (body as FormData) : JSON.stringify(body),
+        body: body === undefined ? undefined : multipart ? (body as FormData) : file ? (body as Blob) : JSON.stringify(body),
         credentials: "same-origin",
         cache: "no-store",
       });

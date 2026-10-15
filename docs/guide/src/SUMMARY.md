@@ -41,7 +41,7 @@
 - [Actions](admin/actions.md)
 - [Authorization](admin/authorization.md)
 - [Relationships](admin/relationships.md)
-- [Exporting lists](admin/import-export.md)
+- [Import and export](admin/import-export.md)
 - [Media, uploads & rich text](admin/media.md)
 - [Custom fields](admin/custom-fields.md)
 - [Customizing the panel](admin/customizing.md)

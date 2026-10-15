@@ -575,7 +575,8 @@ status: string,
  */
 rows: number, 
 /**
- * Why it failed.
+ * Why it failed: `revoked`, `account_changed`, `fields_changed`,
+ * `too_large`, `unfinished` or `failed`.
  */
 error?: string, 
 /**
@@ -586,6 +587,114 @@ createdAt: string,
  * When the file is deleted (RFC 3339).
  */
 expiresAt: string, };
+
+export type ImportField = { 
+/**
+ * Field name (also what a file's column is matched with).
+ */
+name: string, 
+/**
+ * Label in the user's language.
+ */
+label: string, 
+/**
+ * Required when creating.
+ */
+required: boolean, 
+/**
+ * The import key (finds the record to update).
+ */
+key: boolean, };
+
+export type RowIssue = { 
+/**
+ * Line in the file (the header is line 1).
+ */
+row: number, 
+/**
+ * Field (absent: the whole row).
+ */
+field?: string, 
+/**
+ * Message (English source).
+ */
+message: string, 
+/**
+ * Its code and placeholder values, for the panel to translate.
+ */
+code: string, 
+/**
+ * Placeholder values of the code.
+ */
+params?: { [key in string]: string }, };
+
+export type ImportView = { 
+/**
+ * Id (UUID).
+ */
+id: string, 
+/**
+ * Resource slug.
+ */
+resource: string, 
+/**
+ * `uploaded`, `running`, `done` or `failed`.
+ */
+status: string, 
+/**
+ * Column names of the file.
+ */
+header: Array<string>, 
+/**
+ * Rows of the file.
+ */
+rows: number, 
+/**
+ * Fields the user may set, with the import key marked.
+ */
+fields: Array<ImportField>, 
+/**
+ * Column → field suggested (by name or label) or fixed (once it runs).
+ */
+mapping: { [key in string]: string }, 
+/**
+ * Records created.
+ */
+created: number, 
+/**
+ * Records updated.
+ */
+updated: number, 
+/**
+ * Rows that failed.
+ */
+failed: number, 
+/**
+ * Problems of the rows that failed (at most 1,000).
+ */
+report: Array<RowIssue>, 
+/**
+ * Why it stopped: `revoked`, `account_changed`, `unfinished` or `failed`.
+ */
+error?: string, };
+
+export type ImportPreview = { 
+/**
+ * Rows checked.
+ */
+rows: number, 
+/**
+ * Rows with no problem.
+ */
+valid: number, 
+/**
+ * Rows with an import key: created or updated, decided when it runs.
+ */
+keyed: number, 
+/**
+ * Problems found (at most 1,000).
+ */
+report: Array<RowIssue>, };
 
 export type PanelUser = { 
 /**

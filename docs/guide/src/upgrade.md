@@ -39,7 +39,7 @@
      Actions are admitted before the body is read: a policy deciding per record
      should override `Policy::admits` for abilities that need a permission.
      Actions the policy does not admit are no longer listed in the schema.
-   - Run `rustcms migrate` (new `exports` table). `ResourceSchema.abilities`
+   - Run `rustcms migrate` (new `exports` and `imports` tables). `ResourceSchema.abilities`
      may hold `export`; `DynResource` has new methods (implementations outside
      the crate are not expected).
    - `Relation` has new fields and `RelationSchema` a `kind`; `ActionSchema`

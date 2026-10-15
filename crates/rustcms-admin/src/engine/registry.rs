@@ -102,10 +102,22 @@ pub trait DynResource: Send + Sync {
     async fn lock_keys(&self, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<()>;
     /// Which of `keys` the user may reference from another record.
     async fn keys_in_scope(&self, ctx: &Ctx, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>>;
+    /// Refuses an import the user may not make (403; 404 when not importable).
+    async fn admit_import(&self, ctx: &Ctx) -> AppResult<()>;
+    /// Fields the user may set by import.
+    fn import_fields(&self, ctx: &Ctx) -> Vec<crate::ImportField>;
+    /// The import key field, if any.
+    fn import_key(&self) -> Option<&str>;
+    /// The value of a CSV cell for field `name` (empty: null).
+    fn import_value(&self, name: &str, text: &str) -> serde_json::Value;
+    /// A row checked as create (or update) input, before any hook.
+    fn check_import_row(&self, ctx: &Ctx, op: crate::Operation, data: Data) -> AppResult<Data>;
+    /// Keys (at most two) of visible records whose import key equals `value`.
+    async fn import_matches(&self, ctx: &Ctx, value: &serde_json::Value) -> AppResult<Vec<String>>;
     /// Refuses an export the user may not make (403; 404 when not exportable).
     async fn admit_export(&self, ctx: &Ctx) -> AppResult<()>;
     /// Fields exported for the user (readable ones, in order) and whether each is text.
-    fn export_columns(&self, ctx: &Ctx) -> Vec<(String, bool)>;
+    fn export_columns(&self, ctx: &Ctx) -> Vec<(String, crate::exports::CellKind)>;
     /// `query` checked as a list query, in canonical form (typed filters, no page).
     async fn canonical_query(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<ListQuery>;
     /// Keys the list `query` shows the user, in order; more than `max`: 422.

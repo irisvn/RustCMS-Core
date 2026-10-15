@@ -53,3 +53,15 @@ pub(crate) async fn json_body<T: serde::de::DeserializeOwned>(
         errors.into()
     })
 }
+
+/// The raw body of a request whose access was checked first: 413 when too large.
+pub(crate) async fn raw_body(request: axum::extract::Request, state: &AppState) -> Result<axum::body::Bytes, AppError> {
+    use axum::extract::FromRequest;
+    axum::body::Bytes::from_request(request, state).await.map_err(|e| {
+        if e.status() == axum::http::StatusCode::PAYLOAD_TOO_LARGE {
+            AppError::PayloadTooLarge
+        } else {
+            AppError::BadRequest("the body could not be read".into())
+        }
+    })
+}

@@ -98,6 +98,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
     .chain(crate::queue::routes(admin_path))
     .chain(crate::custom::routes(admin_path))
     .chain(crate::exports::routes(admin_path))
+    .chain(crate::imports::routes(admin_path))
     .collect()
 }
 
@@ -133,6 +134,7 @@ mod resources;
 
 use actions::*;
 pub use extract::AdminCtx;
+pub(crate) use extract::{json_body, raw_body};
 pub use relations::LinkPage;
 use relations::*;
 use resources::*;

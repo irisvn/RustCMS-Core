@@ -11,11 +11,13 @@ impl Resource for TagResource {
     const SLUG: &'static str = "tags";
 
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("Tag").title("name").icon("tag").group("Content").unique(
-            "tags_name_key",
-            &["name"],
-            "has already been taken",
-        )
+        // Tags can be imported from CSV; a known name is updated, not added twice.
+        ResourceMeta::new("Tag")
+            .title("name")
+            .icon("tag")
+            .group("Content")
+            .unique("tags_name_key", &["name"], "has already been taken")
+            .import_key("name")
     }
 
     fn fields() -> Vec<Field> {

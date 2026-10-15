@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowDown, ArrowUp, Eye, ListFilter, Pencil, Plus, RotateCcw, Search, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Eye, ListFilter, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useUncertain } from "@/api/context";
 import { useDeleteRecord, useForceDeleteRecord, useRecords, useRestoreRecord, useRunAction, useSchema } from "@/api/queries";
@@ -7,7 +7,7 @@ import type { ActionOutcome, ActionSchema, Envelope } from "@/api/types";
 import { ErrorState, Loading, PausedBanner, VersionBanner, compatibility } from "@/components/states";
 import { Page, PageHeader } from "@/components/layout";
 import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
@@ -220,6 +220,11 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
       <PageHeader title={s.resource.pluralLabel} description={t("list.description", { resource: s.resource.pluralLabel.toLocaleLowerCase() })} actions={
         <div className="flex flex-wrap items-start gap-2">
           {s.abilities.export && <ExportButton slug={slug} query={exportQuery} />}
+          {s.abilities.import && !readOnly && (
+            <Link to="/r/$slug/import" params={{ slug }} className={buttonVariants({ variant: "outline" })}>
+              <Upload /> {t("import.button")}
+            </Link>
+          )}
           {s.abilities.create && !readOnly && !uncertain && (
             <Button onClick={() => navigate({ to: "/r/$slug/create", params: { slug } })}>
               <Plus /> {t("list.new", { resource: s.resource.label.toLocaleLowerCase() })}

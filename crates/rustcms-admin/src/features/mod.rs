@@ -4,6 +4,7 @@
 pub mod audit;
 pub mod custom;
 pub mod exports;
+pub mod imports;
 pub mod media;
 pub mod queue;
 pub mod rich_text;

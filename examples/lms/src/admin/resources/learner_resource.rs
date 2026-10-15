@@ -13,11 +13,13 @@ impl Resource for LearnerResource {
     const SLUG: &'static str = "learners";
 
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("Learner").title("name").icon("users").group("Learning").unique(
-            "learners_email_key",
-            &["email"],
-            "is already registered",
-        )
+        // Imported learners are matched by email: known ones are updated.
+        ResourceMeta::new("Learner")
+            .title("name")
+            .icon("users")
+            .group("Learning")
+            .unique("learners_email_key", &["email"], "is already registered")
+            .import_key("email")
     }
 
     fn fields() -> Vec<Field> {

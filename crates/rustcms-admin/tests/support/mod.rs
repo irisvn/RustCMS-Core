@@ -170,7 +170,11 @@ impl Resource for NoteResource {
     const SLUG: &'static str = "notes";
 
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("Note").title("title").soft_deletes().unique("notes_title_key", &["title"], "is taken")
+        ResourceMeta::new("Note")
+            .title("title")
+            .soft_deletes()
+            .unique("notes_title_key", &["title"], "is taken")
+            .import_key("title")
     }
 
     fn fields() -> Vec<Field> {

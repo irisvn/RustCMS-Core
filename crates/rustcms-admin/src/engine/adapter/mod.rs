@@ -4,6 +4,7 @@
 mod action_form;
 mod audit;
 mod export;
+mod import;
 mod input;
 mod many;
 mod operations;
@@ -13,6 +14,7 @@ mod references;
 mod schema;
 mod write;
 
+pub use import::ImportField;
 pub(crate) use pivot::{DbConn, DynPivot, PivotAdapter};
 pub(crate) use read::{escape_like, search_match};
 
@@ -158,6 +160,13 @@ impl<R: Resource> ResourceAdapter<R> {
             );
             (info.column, name.to_owned(), info.kind)
         });
+        if let Some(key) = &meta.import_key {
+            assert!(seen.contains(key.as_str()), "resource `{slug}`: import key `{key}` is not a field");
+            assert!(
+                meta.constraints.iter().any(|c| c.columns == [key.clone()]),
+                "resource `{slug}`: import key `{key}` needs a `ResourceMeta::unique` constraint on that column alone"
+            );
+        }
         for constraint in &meta.constraints {
             for column in &constraint.columns {
                 assert!(columns.contains_key(column), "resource `{slug}`: constraint column `{column}` is unknown");
@@ -260,7 +269,8 @@ impl<R: Resource> ResourceAdapter<R> {
                     ability::DELETE,
                     ability::RESTORE,
                     ability::FORCE_DELETE,
-                    ability::EXPORT
+                    ability::EXPORT,
+                    ability::IMPORT
                 ]
                 .contains(&action.name),
                 "resource `{slug}`: action name `{}` is reserved for CRUD abilities",

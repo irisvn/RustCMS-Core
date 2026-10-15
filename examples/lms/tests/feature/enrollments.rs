@@ -219,3 +219,36 @@ db_test!(staff_export_enrollments_as_csv, migrate = Migrator, |db: TestDb| async
     let teacher = as_user(&app, "teacher@example.test").await;
     teacher.get(&url).await.assert_status(StatusCode::FORBIDDEN);
 });
+
+db_test!(staff_import_learners_matched_by_email, migrate = Migrator, |db: TestDb| async move {
+    let app = seeded(db).await;
+    let staff = as_user(&app, "staff@example.test").await;
+    let db = app.state().db();
+    let known = LearnerFactory.create(db).await;
+    let csv = format!("name,email\r\nRenamed,{}\r\nNew Learner,new.learner@example.test\r\n", known.email);
+    let request = rustcms::axum::http::Request::builder()
+        .method(Method::POST)
+        .uri(app.admin_api("resources/learners/imports"))
+        .header("Content-Type", "text/csv")
+        .body(rustcms::axum::body::Body::from(csv))
+        .unwrap();
+    let uploaded = staff.request(request).await;
+    uploaded.assert_status(StatusCode::CREATED);
+    let id = uploaded.json()["id"].as_str().unwrap().to_owned();
+    let mapping = json!({"mapping": {"name": "name", "email": "email"}});
+    staff.post_json(&app.admin_api(&format!("imports/{id}/run")), &mapping).await.assert_status(StatusCode::OK);
+    // The seeded welcomes are queued before it.
+    rustcms::queue::run_until_idle(app.state(), None, 50).await.unwrap();
+    let shown = staff.get(&app.admin_api(&format!("imports/{id}"))).await.json();
+    assert_eq!((shown["created"].clone(), shown["updated"].clone()), (json!(1), json!(1)), "{shown}");
+    let renamed = lms::models::learner::Entity::find_by_id(known.id).one(db).await.unwrap().unwrap();
+    assert_eq!(renamed.name, "Renamed");
+    // Instructors do not import learners.
+    let teacher = as_user(&app, "teacher@example.test").await;
+    let request = rustcms::axum::http::Request::builder()
+        .method(Method::POST)
+        .uri(app.admin_api("resources/learners/imports"))
+        .body(rustcms::axum::body::Body::from("name\r\nx\r\n"))
+        .unwrap();
+    teacher.request(request).await.assert_status(StatusCode::FORBIDDEN);
+});
