@@ -1,0 +1,12 @@
+//! {{ label }}: business rules shared by the admin panel, the API, jobs and
+//! seeders. Functions take the transaction they write in, so callers decide
+//! what commits together (admin hooks pass theirs; others use
+//! `rustcms::db::begin_write`).
+
+use rustcms::AppResult;
+use sea_orm::DatabaseTransaction;
+
+/// Replace with your rules.
+pub async fn example(_txn: &DatabaseTransaction) -> AppResult<()> {
+    Ok(())
+}

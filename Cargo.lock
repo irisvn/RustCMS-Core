@@ -2178,6 +2178,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
+name = "lms"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "clap",
+ "rustcms",
+ "rustcms-testing",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3118,6 +3136,7 @@ version = "0.1.0-alpha.0"
 dependencies = [
  "async-trait",
  "axum",
+ "clap",
  "rustcms-admin",
  "rustcms-auth",
  "rustcms-core",

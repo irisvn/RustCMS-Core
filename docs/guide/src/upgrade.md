@@ -36,3 +36,35 @@
 4. API clients: error bodies gain `issues` and `formIssues` (and `reason` on
    409); existing fields are unchanged.
 5. Several instances: see [Several instances](digging-deeper/instances.md).
+
+## Application layout (0.3)
+
+Applications are laid out like Laravel applications, inside `src/`
+([Directory structure](getting-started/directory-structure.md)). Generators
+refuse an application in the old layout; move it once:
+
+| Before | Now |
+|---|---|
+| `src/app.rs` (`build`) | `src/bootstrap/mod.rs` (`build`) + `src/bootstrap/providers.rs` |
+| providers set up in `build` | `src/providers/{auth_service_provider,admin_panel_provider,app_service_provider}.rs` |
+| `src/migrations/` | `src/database/migrations/` (keep the file names: they are recorded in `seaql_migrations`) |
+| `src/admin/post.rs` | `src/admin/resources/post_resource.rs` |
+| `src/http/api/mod.rs` (`routes`) | `src/routes/api.rs` |
+| `src/http/api/posts/handlers.rs` | `src/http/controllers/post_controller.rs` |
+| `src/http/api/posts/requests.rs` | `src/http/requests/post_request.rs` |
+| `src/http/api/posts/json.rs` | `src/http/resources/post_resource.rs` |
+| a settings struct with its page | `src/settings/<x>_settings.rs` + `src/admin/pages/<x>_settings_page.rs` |
+| a `<app>:seed` command | `src/database/seeders/` + `rustcms db:seed` |
+| `tests/*.rs` | `tests/feature/*.rs` listed in `tests/feature/main.rs`, helpers in `tests/support/mod.rs` |
+
+Then:
+
+1. `src/main.rs`: `Console::<my_app::database::migrations::Migrator>::new(my_app::bootstrap::build)`.
+2. Add the generator anchors where generated lines go: `// rustcms:mods`
+   (`src/lib.rs`), `// rustcms:resources` and `// rustcms:pages`
+   (admin panel provider), `// rustcms:seeders`, `// rustcms:jobs`,
+   `// rustcms:commands` (app service provider), `// rustcms:api-routes`
+   (`src/routes/api.rs`), `// rustcms:tests` (`tests/feature/main.rs`). A new
+   application from `rustcms new` shows every one.
+3. `rustcms migrate:status` lists every migration as applied: nothing to run.
+

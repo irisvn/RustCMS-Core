@@ -3,10 +3,13 @@
 A resource exposes one SeaORM entity in the admin panel, like a Filament
 resource: its fields (data and permissions), form, table, actions, hooks and
 policy. `rustcms make:resource Post --generate` writes one from the model in
-`src/admin/post.rs`. Register resources with the panel (after `AuthProvider`):
+`src/admin/resources/post_resource.rs` and registers it in
+`src/providers/admin_panel_provider.rs`:
 
 ```rust,ignore
-app.provider(AdminProvider::new().brand("Blog").resource::<PostResource>().resource::<CategoryResource>());
+pub fn provider() -> AdminProvider {
+    AdminProvider::new().brand("Blog").resource::<PostResource>().resource::<CategoryResource>()
+}
 ```
 
 Each resource declares its permissions (`posts.view_any`, `posts.view`,
@@ -73,6 +76,7 @@ fields as columns.
 | `.key(KeyStrategy::…)` | [primary keys](#primary-keys) |
 | `.unique(constraint, &[columns], message)` | maps a unique constraint to a field error |
 | `.soft_deletes()`, `.soft_deletes_column("removed_at")` | [soft deletes](#soft-deletes) |
+| `.lock_parent("course_id", "courses")` | writes lock the parent record first ([parent locks](#parent-locks)) |
 | `.audit(false)` | writes are not recorded in the [audit log](../digging-deeper/audit-log.md) (on by default) |
 
 ## Hooks
@@ -104,6 +108,36 @@ async fn after_save(ctx: &Ctx, txn: &DatabaseTransaction, post: &post::Model) ->
 `mutate_before_update` receives the current record too; `after_force_delete`
 runs when a trashed record is deleted for good. A message a hook returns is
 shown as written: translate it with `ctx.t("…")` ([i18n](i18n.md)).
+
+## Parent locks
+
+A rule over a parent's children (at most `capacity` active enrollments per
+course) or a permission read through the parent (the course's instructor)
+holds only if writes under one parent do not interleave. Declare the parent:
+
+```rust,ignore
+fn meta() -> ResourceMeta {
+    ResourceMeta::new("Enrollment").lock_parent("course_id", "courses")
+}
+```
+
+Every write to an enrollment (create, update, delete, restore, force delete,
+actions, creates from a course's page) then locks its course row before the
+enrollment, and both courses when it moves. Hooks run under that lock, so a
+count in `mutate_before_create` is exact, and an instructor removed from the
+course meanwhile no longer passes the scope, checked again under the lock.
+
+- One order everywhere: parent, then child, the order a parent's deletion
+  cascades in, so writes and deletions never deadlock. A write takes at most
+  one `xact_lock` and takes it first; parent locks come after it.
+- The field must be a `belongs_to` the target; one parent per resource, and
+  the parent may not lock a parent of its own (checked at boot).
+- A hook or action that moves a record to a parent that was not locked fails
+  (500, nothing written): change the parent through an update. A record moved
+  by someone else between reading and locking answers 409 `write_conflict`;
+  send the request again.
+- Writes under one parent wait for each other; writes under different parents
+  do not. SQLite runs one writer at a time anyway.
 
 ## Soft deletes
 

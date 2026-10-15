@@ -1,0 +1,17 @@
+//! The admin page of `{{ name }}` (`/admin/settings/{{ group }}`).
+
+use rustcms::admin::{SettingField, SettingsMeta, SettingsPage};
+use rustcms::async_trait;
+
+use crate::settings::{{ module }}::{{ name }};
+
+#[async_trait]
+impl SettingsPage for {{ name }} {
+    fn meta() -> SettingsMeta {
+        SettingsMeta::new("{{ label }}")
+    }
+
+    fn fields() -> Vec<SettingField> {
+        vec![SettingField::text("title").max_length(120)]
+    }
+}

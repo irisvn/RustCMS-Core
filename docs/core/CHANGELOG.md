@@ -13,6 +13,51 @@ All notable changes are documented here. The format follows
   (architecture, admin protocol, ADRs, reports, this changelog, review
   checklist, contributor guides). `CHANGELOG.md` moved to `docs/core/`.
 
+### Changed (0.3 — R3, application layout; ADR 0017)
+- Applications are laid out like Laravel inside `src/`: `bootstrap/`,
+  `providers/` (auth, admin panel, app service providers), `routes/api.rs`,
+  `http/{controllers,requests,resources}`, `models/`, `services/`,
+  `policies/`, `jobs/`, `settings/`, `console/`, `admin/{resources,pages}`,
+  `database/{migrations,seeders,factories}`, `tests/{support,feature}`.
+  `rustcms new`, every generator, `examples/demo` and `examples/lms` follow
+  it; generators refuse the old layout (upgrade guide: "Application layout").
+- Generators check every file and anchor before writing anything.
+- `make:resource` writes `admin/resources/<model>_resource.rs`; `make:api`
+  writes a controller, a JSON resource and explicit routes in `routes/api.rs`;
+  `make:migration` writes to `database/migrations`; `make:test` to
+  `tests/feature` (one test binary).
+- Demo: `demo:seed` replaced by seeders and `db:seed`; settings data and page
+  split.
+
+### Added (0.3 — R3)
+- `rustcms::database`: `Seeder`, `call`, `Factory` (moved from
+  `rustcms-testing`, still re-exported there; `try_create`,
+  `try_create_many`); `AppBuilder::seeder`; `db:seed [--class] [--force]`;
+  `migrate:fresh --seed`; `rustcms::clap`.
+- Generators `make:service`, `make:job`, `make:seeder`, `make:factory`,
+  `make:settings`, `make:command`.
+- `ResourceMeta::lock_parent(field, target)` (ADR 0018): writes lock the
+  parent record first (both when moving), in the order a parent's deletion
+  cascades; hooks and actions may not move a record to a parent not locked;
+  a parent changed before the lock is a 409.
+- Unique constraint messages (`ResourceMeta::unique`) are translated in the
+  request's language and listed by `lang:missing`.
+
+### Added (0.3 — M15c)
+- `examples/lms`: courses (capacity, instructor), lessons, learners and
+  enrollments; seat rules in `services/enrollment_service.rs` (panel hooks and
+  seeders alike) under the course lock (`lock_parent`); instructors scoped to
+  their courses with `EXISTS` subqueries; progress behind
+  `enrollments.update_progress`; `EnrollmentPolicy` refuses before lookup and
+  needs no list scan; `lms.enrolled` job dispatched in the enrollment's
+  transaction; `lms` settings group; seeders; Vietnamese catalog; tests on
+  SQLite, PostgreSQL and MySQL. Guide page "Example: an LMS back office".
+
+### Fixed (0.3 — M15c)
+- The framework's Vietnamese catalog translates the "Audit" and "Settings"
+  permission groups (`lang:missing vi` reported them in every app); demo and
+  lms test that their catalogs are complete.
+
 ### Added (0.3 — M15b)
 - S3 storage tested against a real S3-compatible server (S3Mock in docker
   compose and CI; MinIO no longer publishes images): round trips, multipart,

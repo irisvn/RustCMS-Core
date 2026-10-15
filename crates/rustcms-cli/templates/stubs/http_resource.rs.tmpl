@@ -1,0 +1,19 @@
+//! What the API returns for a {{ label_lower }}, like a Laravel API resource
+//! (wire format: 64-bit integers, decimals, UUIDs and times as strings).
+
+use serde::Serialize;
+
+use crate::models::{{ module }};
+
+#[derive(Serialize)]
+pub struct {{ model }}Json {
+{% for f in fields %}    {{ f.name }}: {{ f.ty }},
+{% endfor %}}
+
+impl From<{{ module }}::Model> for {{ model }}Json {
+    fn from(m: {{ module }}::Model) -> Self {
+        Self {
+{% for f in fields %}            {{ f.name }}: {{ f.expr }},
+{% endfor %}        }
+    }
+}

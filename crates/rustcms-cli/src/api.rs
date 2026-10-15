@@ -1,21 +1,22 @@
-//! `make:api`: a JSON API module for a model (`src/http/api/<table>/`).
+//! `make:api`: a JSON API for a model: a controller (`src/http/controllers`),
+//! its JSON shape (`src/http/resources`) and routes in `src/routes/api.rs`.
 
 use std::process::ExitCode;
 
 use anyhow::{Context, bail};
 use serde_json::json;
 
-use crate::generate::{register, write_new};
+use crate::generate::{preflight, register, write_new};
+use crate::layout;
 use crate::naming::{plural, snake_case, validate_model};
 use crate::project::Project;
 use crate::resource::{Column, attr_value, parse_model};
 use crate::scaffold::render;
 
-const MOD: &str = include_str!("../templates/stubs/api_mod.rs.tmpl");
-const HANDLERS: &str = include_str!("../templates/stubs/api_handlers.rs.tmpl");
-const JSON: &str = include_str!("../templates/stubs/api_json.rs.tmpl");
+const CONTROLLER: &str = include_str!("../templates/stubs/controller.rs.tmpl");
+const JSON: &str = include_str!("../templates/stubs/http_resource.rs.tmpl");
 
-const MODS_ANCHOR: &str = "// rustcms:api-mods";
+const ROUTES_FILE: &str = "routes/api.rs";
 const ROUTES_ANCHOR: &str = "// rustcms:api-routes";
 /// Never exposed by a generated API (secrets).
 const SENSITIVE: &[&str] = &["password", "secret", "token", "hash", "api_key", "salt"];
@@ -29,19 +30,6 @@ const KEYWORDS: &[&str] = &[
 /// `name` as a Rust identifier (`r#type`).
 fn ident(name: &str) -> String {
     if KEYWORDS.contains(&name) { format!("r#{name}") } else { name.to_owned() }
-}
-
-/// A module name for a table: `blog-posts` → `blog_posts`, `type` → `type_`.
-fn module_ident(table: &str) -> String {
-    let mut out: String =
-        table.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect();
-    if out.is_empty() || out.starts_with(|c: char| c.is_ascii_digit()) {
-        out.insert_str(0, "t_");
-    }
-    if KEYWORDS.contains(&out.as_str()) {
-        out.push('_');
-    }
-    out
 }
 
 /// The scale of `column_type = "Decimal(Some((p, s)))"`, if declared.
@@ -129,20 +117,14 @@ pub fn make_api(project: &Project, model: &str) -> anyhow::Result<ExitCode> {
     };
     let table = table_of(&source, &module);
     // Check everything before writing anything.
-    let api_dir = project.root.join("src/http/api");
-    let index = api_dir.join("mod.rs");
-    let index_source = std::fs::read_to_string(&index)
-        .with_context(|| format!("{} not found (apps created before 0.2: see the API guide)", index.display()))?;
-    for anchor in [MODS_ANCHOR, ROUTES_ANCHOR] {
-        if !index_source.lines().any(|l| l.trim() == anchor) {
-            bail!("{} has no `{anchor}` line: add it where `make:api` should register modules", index.display());
-        }
-    }
-    // The URL keeps the table name; the module needs a Rust identifier.
-    let module_name = module_ident(&table);
-    let dir = api_dir.join(&module_name);
-    if dir.exists() {
-        bail!("{} already exists", dir.display());
+    let controller = project.src(layout::CONTROLLERS.path).join(format!("{module}_controller.rs"));
+    let json_file = project.src(layout::HTTP_RESOURCES.path).join(format!("{module}_resource.rs"));
+    preflight(
+        &[&controller, &json_file],
+        &[(&project.src(ROUTES_FILE), ROUTES_ANCHOR), (&project.src("http/mod.rs"), "// rustcms:http-mods")],
+    )?;
+    if table.is_empty() || !table.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_-".contains(&b)) {
+        bail!("`{model}`: table `{table}` is not a valid URL segment for make:api");
     }
 
     let mut fields = Vec::new();
@@ -164,7 +146,6 @@ pub fn make_api(project: &Project, model: &str) -> anyhow::Result<ExitCode> {
         "label": label,
         "label_lower": module.replace('_', " "),
         "key_column": key.variant,
-        "module_name": module_name,
         // Newest first when the model has a creation time, else by key.
         "created_column": columns
             .iter()
@@ -173,12 +154,24 @@ pub fn make_api(project: &Project, model: &str) -> anyhow::Result<ExitCode> {
         "key_type": key_type,
         "fields": fields.iter().map(|f| json!({"name": f.name, "ty": f.ty, "expr": f.expr})).collect::<Vec<_>>(),
     });
-    std::fs::create_dir_all(&dir)?;
-    write_new(&dir.join("mod.rs"), &render(MOD, &vars)?)?;
-    write_new(&dir.join("handlers.rs"), &render(HANDLERS, &vars)?)?;
-    write_new(&dir.join("json.rs"), &render(JSON, &vars)?)?;
-    register(&index, MODS_ANCHOR, &format!("pub mod {module_name};"))?;
-    register(&index, ROUTES_ANCHOR, &format!(".nest(\"/{table}\", {module_name}::routes())"))?;
+    let index = project.ensure_module(&layout::CONTROLLERS)?;
+    let resources = project.ensure_module(&layout::HTTP_RESOURCES)?;
+    write_new(&controller, &render(CONTROLLER, &vars)?)?;
+    write_new(&json_file, &render(JSON, &vars)?)?;
+    register(&index, layout::CONTROLLERS.anchor, &format!("pub mod {module}_controller;"))?;
+    register(&resources, layout::HTTP_RESOURCES.anchor, &format!("pub mod {module}_resource;"))?;
+    let routes = project.src(ROUTES_FILE);
+    let handler = format!("controllers::{module}_controller");
+    register(
+        &routes,
+        ROUTES_ANCHOR,
+        &format!(".get(\"/{table}\", Access::can(\"{table}.view_any\"), {handler}::index)"),
+    )?;
+    register(
+        &routes,
+        ROUTES_ANCHOR,
+        &format!(".get(\"/{table}/{{id}}\", Access::can(\"{table}.view\"), {handler}::show)"),
+    )?;
     println!(
         "Permissions `{table}.view_any` and `{table}.view` are declared on the API guard; run `rustcms permission:sync`."
     );
@@ -197,9 +190,11 @@ mod tests {
                 "#[sea_orm(table_name = \"blog_posts\")]\npub struct Model {\n    #[sea_orm(primary_key)]\n    pub id: i64,\n    pub title: String,\n    pub price: Option<Decimal>,\n    pub password_hash: String,\n    pub geo: Point,\n    pub created_at: DateTimeUtc,\n}\n",
             ),
             (
-                "src/http/api/mod.rs",
-                "// rustcms:api-mods\n\npub fn routes() -> ApiRoutes {\n    ApiRoutes::new(\"/api/v1\")\n        // rustcms:api-routes\n}\n",
+                "src/routes/api.rs",
+                "pub fn routes() -> ApiRoutes {\n    ApiRoutes::new(\"/api/v1\")\n        // rustcms:api-routes\n}\n",
             ),
+            ("src/http/mod.rs", "pub mod controllers;\n// rustcms:http-mods\n"),
+            ("src/http/controllers/mod.rs", "// rustcms:controller-mods\n"),
         ] {
             let file = dir.path().join(path);
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -213,18 +208,21 @@ mod tests {
     fn writes_a_module_and_registers_it_once() {
         let (dir, project) = project();
         make_api(&project, "BlogPost").unwrap();
-        let root = dir.path().join("src/http/api");
-        let index = std::fs::read_to_string(root.join("mod.rs")).unwrap();
-        assert!(index.contains("pub mod blog_posts;\n// rustcms:api-mods"), "{index}");
+        let read = |path: &str| std::fs::read_to_string(dir.path().join(path)).unwrap();
+        let routes = read("src/routes/api.rs");
         assert!(
-            index.contains(".nest(\"/blog_posts\", blog_posts::routes())\n        // rustcms:api-routes"),
-            "{index}"
+            routes.contains(
+                ".get(\"/blog_posts\", Access::can(\"blog_posts.view_any\"), controllers::blog_post_controller::index)\n        .get(\"/blog_posts/{id}\", Access::can(\"blog_posts.view\"), controllers::blog_post_controller::show)\n        // rustcms:api-routes"
+            ),
+            "{routes}"
         );
-        let routes = std::fs::read_to_string(root.join("blog_posts/mod.rs")).unwrap();
-        assert!(routes.contains("Access::can(\"blog_posts.view_any\"), handlers::list"));
-        let handlers = std::fs::read_to_string(root.join("blog_posts/handlers.rs")).unwrap();
+        assert!(read("src/http/controllers/mod.rs").contains("pub mod blog_post_controller;"));
+        assert!(read("src/http/mod.rs").contains("pub mod resources;\n// rustcms:http-mods"));
+        assert!(read("src/http/resources/mod.rs").contains("pub mod blog_post_resource;"));
+        let handlers = read("src/http/controllers/blog_post_controller.rs");
         assert!(handlers.contains("Path(id): Path<i64>") && handlers.contains("order_by_desc(blog_post::Column::Id)"));
-        let json = std::fs::read_to_string(root.join("blog_posts/json.rs")).unwrap();
+        assert!(handlers.contains("use crate::http::resources::blog_post_resource::BlogPostJson;"));
+        let json = read("src/http/resources/blog_post_resource.rs");
         assert!(json.contains("id: String,") && json.contains("id: m.id.to_string(),"), "{json}");
         assert!(json.contains("price: Option<String>,") && json.contains("price: m.price.map(|v| v.to_string()),"));
         assert!(!json.contains("password_hash") && !json.contains("geo"), "secrets and unsupported types left out");
@@ -258,13 +256,15 @@ pub struct Model {
         )
         .unwrap();
         make_api(&project, "Item").unwrap();
-        let root = dir.path().join("src/http/api");
-        let index = std::fs::read_to_string(root.join("mod.rs")).unwrap();
+        let read = |path: &str| std::fs::read_to_string(dir.path().join(path)).unwrap();
+        let routes = read("src/routes/api.rs");
         assert!(
-            index.contains("pub mod stock_items;") && index.contains(".nest(\"/stock-items\", stock_items::routes())"),
-            "{index}"
+            routes.contains(
+                ".get(\"/stock-items\", Access::can(\"stock-items.view_any\"), controllers::item_controller::index)"
+            ),
+            "{routes}"
         );
-        let json = std::fs::read_to_string(root.join("stock_items/json.rs")).unwrap();
+        let json = read("src/http/resources/item_resource.rs");
         assert!(!json.contains("credential"), "a secret behind a multi-line alias stays out: {json}");
         assert!(json.contains("r#type: String,") && json.contains("r#type: m.r#type,"), "{json}");
         assert!(json.contains("price: format!(\"{:.2}\", m.price),"), "{json}");
@@ -272,20 +272,18 @@ pub struct Model {
             json.contains("seen_at: m.seen_at.map(|v| v.naive_utc().format(\"%Y-%m-%dT%H:%M:%S%.fZ\").to_string()),"),
             "{json}"
         );
-        let handlers = std::fs::read_to_string(root.join("stock_items/handlers.rs")).unwrap();
+        let handlers = read("src/http/controllers/item_controller.rs");
         assert!(handlers.contains("Path<u32>") && handlers.contains("Column::Code)"), "{handlers}");
         assert!(handlers.contains("highest key first") && !handlers.contains("CreatedAt"), "{handlers}");
         // The default model sorts by creation time, then key.
         make_api(&project, "BlogPost").unwrap();
-        let handlers = std::fs::read_to_string(root.join("blog_posts/handlers.rs")).unwrap();
+        let handlers = read("src/http/controllers/blog_post_controller.rs");
         assert!(
             handlers.contains(
                 ".order_by_desc(blog_post::Column::CreatedAt)\n        .order_by_desc(blog_post::Column::Id)"
             ),
             "{handlers}"
         );
-        assert_eq!(module_ident("type"), "type_");
-        assert_eq!(module_ident("2024-logs"), "t_2024_logs");
     }
 
     #[test]
@@ -299,8 +297,9 @@ pub struct Model {
         .unwrap();
         assert!(make_api(&project, "Pair").unwrap_err().to_string().contains("composite"));
         // Without the anchors nothing is written.
-        std::fs::write(dir.path().join("src/http/api/mod.rs"), "pub fn routes() {}\n").unwrap();
+        std::fs::write(dir.path().join("src/routes/api.rs"), "pub fn routes() {}\n").unwrap();
         assert!(make_api(&project, "BlogPost").is_err());
-        assert!(!dir.path().join("src/http/api/blog_posts").exists());
+        assert!(!dir.path().join("src/http/controllers/blog_post_controller.rs").exists());
+        assert!(!dir.path().join("src/http/resources").exists());
     }
 }

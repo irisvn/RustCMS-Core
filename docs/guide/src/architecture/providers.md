@@ -1,17 +1,24 @@
 # Service providers & container
 
-`src/app.rs` assembles the application from **providers**. RustCMS's own
-features are providers too: `AuthProvider`, `AdminProvider`, `StorageProvider`.
+`src/bootstrap/mod.rs` assembles the application from **providers**, listed
+in order in `src/bootstrap/providers.rs` (like Laravel's
+`bootstrap/providers.php`). RustCMS's own features are providers too:
+`AuthProvider`, `AdminProvider`, `StorageProvider`. A new application has
+three of its own in `src/providers/`:
+
+| File | Registers |
+|---|---|
+| `auth_service_provider.rs` | permissions beyond each resource's own (`AuthProvider`) |
+| `admin_panel_provider.rs` | the panel: resources, settings pages, translations (`AdminProvider`) |
+| `app_service_provider.rs` | jobs, seeders and console commands (`ServiceProvider`) |
 
 ```rust,ignore
-use rustcms::prelude::*;
-
-pub fn build(config: Config) -> AppBuilder {
-    let mut app = AppBuilder::new(config);
-    app.provider(AuthProvider::new());
+// src/bootstrap/providers.rs
+pub fn register(app: &mut AppBuilder, api: &ApiRoutes) {
+    app.provider(providers::auth_service_provider::provider(api));
+    app.provider(providers::admin_panel_provider::provider());
+    app.provider(providers::app_service_provider::AppServiceProvider);
     app.provider(BillingProvider);
-    app.routes(|router| router.route("/webhooks/stripe", post(stripe_webhook)));
-    app
 }
 ```
 

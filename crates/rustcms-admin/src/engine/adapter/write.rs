@@ -92,18 +92,91 @@ impl<R: Resource> ResourceAdapter<R> {
         ability: &str,
         trashed: Trashed,
     ) -> AppResult<Model<R>> {
+        Ok(self.find_authorized_locked_moving(ctx, txn, key, ability, trashed, None).await?.0)
+    }
+
+    /// [`Self::find_authorized_locked`], locking the record's parent first
+    /// ([`ResourceMeta::lock_parent`]), and the parent `input` moves it to.
+    /// Returns the record and the parent keys locked.
+    pub(super) async fn find_authorized_locked_moving(
+        &self,
+        ctx: &Ctx,
+        txn: &sea_orm::DatabaseTransaction,
+        key: &str,
+        ability: &str,
+        trashed: Trashed,
+        input: Option<&Data>,
+    ) -> AppResult<(Model<R>, BTreeSet<String>)> {
         let model = self.find_model_in(ctx, txn, key, trashed).await?;
         if !self.policy.allows(ctx, ability, Some(&Self::record(&model))).await {
             return Err(AppError::Forbidden);
         }
+        let read_parent = self.parent_of_model(&model);
+        let moved_to = input.and_then(|input| self.parent_of_data(input)).flatten();
+        let parents = self.lock_parents(ctx, txn, read_parent.iter().chain(moved_to.iter()).cloned()).await?;
         if self.lock_rows(txn, std::slice::from_ref(&self.key_of(&model)), trashed).await?.is_empty() {
             return Err(AppError::NotFound);
         }
         let model = self.find_model_in(ctx, txn, key, trashed).await?;
+        // Moved to another parent before the lock: that parent is not held.
+        if self.parent_of_model(&model) != read_parent {
+            return Err(parent_moved());
+        }
         if !self.policy.allows(ctx, ability, Some(&Self::record(&model))).await {
             return Err(AppError::Forbidden);
         }
-        Ok(model)
+        Ok((model, parents))
+    }
+
+    /// The parent key of `model` ([`ResourceMeta::lock_parent`]), if any.
+    pub(super) fn parent_of_model(&self, model: &Model<R>) -> Option<String> {
+        let (field, _) = self.meta.parent_lock.as_ref()?;
+        key_text(Self::record(model).get(field)?)
+    }
+
+    /// The parent key `data` sets: `None` when it does not set the field,
+    /// `Some(None)` when it clears it.
+    pub(super) fn parent_of_data(&self, data: &Data) -> Option<Option<String>> {
+        let (field, _) = self.meta.parent_lock.as_ref()?;
+        data.get(field).map(key_text)
+    }
+
+    /// Locks the parent rows `keys` (canonical, deduplicated, in key order),
+    /// before any record of this resource. Returns the keys locked.
+    pub(super) async fn lock_parents(
+        &self,
+        ctx: &Ctx,
+        txn: &sea_orm::DatabaseTransaction,
+        keys: impl IntoIterator<Item = String>,
+    ) -> AppResult<BTreeSet<String>> {
+        let Some((_, target)) = &self.meta.parent_lock else {
+            return Ok(BTreeSet::new());
+        };
+        let parent = ctx
+            .registry
+            .get(target)
+            .ok_or_else(|| AppError::internal(format!("`{}`: no resource `{target}`", R::SLUG)))?;
+        // Keys that are not valid keys of the parent lock nothing (the
+        // reference check reports them).
+        let keys: BTreeSet<String> = keys.into_iter().filter_map(|k| parent.canonical_key(&k)).collect();
+        if !keys.is_empty() {
+            parent.lock_keys(txn, &keys.iter().cloned().collect::<Vec<_>>()).await?;
+        }
+        Ok(keys)
+    }
+
+    /// After the hooks: the parent written must be one locked before.
+    pub(super) fn check_parent_written(&self, data: &Data, locked: &BTreeSet<String>) -> AppResult<()> {
+        if let Some(Some(parent)) = self.parent_of_data(data)
+            && !locked.iter().any(|k| *k == parent)
+        {
+            let (field, _) = self.meta.parent_lock.as_ref().expect("parent_of_data");
+            return Err(AppError::internal(format!(
+                "`{}`: a hook or action moved `{field}` to a parent that was not locked",
+                R::SLUG
+            )));
+        }
+        Ok(())
     }
 
     /// Locks the rows of `keys` until commit, by primary key only (scope joins or
@@ -174,5 +247,23 @@ impl<R: Resource> ResourceAdapter<R> {
         } else {
             Err(AppError::internal(format!("`{}`: cannot write the soft delete column `{name}`", R::SLUG)))
         }
+    }
+}
+
+/// A key as written on the wire (`"12"`, `12` or a UUID string); null → none.
+pub(super) fn key_text(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Number(number) => Some(number.to_string()),
+        _ => None,
+    }
+}
+
+/// The record moved to another parent between reading and locking it.
+pub(super) fn parent_moved() -> AppError {
+    AppError::Conflict {
+        code: "write_conflict",
+        reason: "busy",
+        message: "Another change to the same data is in progress. Nothing was saved; try again.",
     }
 }

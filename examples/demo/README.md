@@ -8,7 +8,7 @@ key/value attributes), cover images and rich text, and a token/JWT API.
 ```sh
 cp .env.example .env && cargo run -- key:generate   # first time only
 cargo run -- migrate
-cargo run -- demo:seed     # admin@example.test / editor@example.test, password `password123`
+cargo run -- db:seed     # admin@example.test / editor@example.test, password `password123`
 cargo run -- serve         # http://localhost:8000/admin
 ```
 
@@ -20,6 +20,7 @@ curl -H "Authorization: Bearer rcms_…" http://localhost:8000/api/v1/posts
 ```
 
 Tests: `cargo test` (SQLite; PostgreSQL with `RUSTCMS_TEST_PG`, MySQL with
-`RUSTCMS_TEST_MYSQL`). The layout is the one `rustcms new` generates: one resource
-per file in `src/admin/`, policies in `src/policies/`, so `rustcms make:resource`
-and `make:policy` work here too.
+`RUSTCMS_TEST_MYSQL`). The layout is the one `rustcms new` generates (resources in
+`src/admin/resources/`, settings in `src/settings/` with their page in
+`src/admin/pages/`, seeders in `src/database/seeders/`), so every
+`rustcms make:*` works here too.

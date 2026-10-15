@@ -20,6 +20,9 @@
 "Between 1 and 100" = "Từ 1 đến 100"
 "Mail password" = "Mật khẩu mail"
 
+# Unique constraint messages (`ResourceMeta::unique`).
+"has already been taken" = "đã được sử dụng"
+
 [posts]
 # "Content" is also a navigation group; on the post form it is the first tab.
 "Content" = "Nội dung"

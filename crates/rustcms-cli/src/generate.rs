@@ -6,6 +6,7 @@ use std::process::ExitCode;
 use anyhow::{Context, bail};
 use serde_json::json;
 
+use crate::layout;
 use crate::naming::{pascal_case, plural, snake_case, validate_model, validate_snake};
 use crate::project::Project;
 use crate::scaffold::render;
@@ -20,14 +21,26 @@ pub fn make_model(project: &Project, name: &str, migration: bool) -> anyhow::Res
     validate_model(name)?;
     let module = snake_case(name);
     let table = plural(&module);
-    let file = project.root.join("src/models").join(format!("{module}.rs"));
+    let file = project.src(layout::MODELS.path).join(format!("{module}.rs"));
+    preflight(&[&file], &[(&project.src("models/mod.rs"), layout::MODELS.anchor)])?;
+    if migration {
+        preflight_migration(project)?;
+    }
     write_new(&file, &render(MODEL, json!({ "table": table }))?)?;
-    register(&project.root.join("src/models/mod.rs"), "// rustcms:models", &format!("pub mod {module};"))?;
+    register(&project.src("models/mod.rs"), layout::MODELS.anchor, &format!("pub mod {module};"))?;
     if migration {
         make_migration(project, &format!("create_{table}_table"))?;
     }
     Ok(ExitCode::SUCCESS)
 }
+
+fn preflight_migration(project: &Project) -> anyhow::Result<()> {
+    let index = project.src(layout::MIGRATIONS).join("mod.rs");
+    preflight(&[], &[(&index, MIGRATION_MODS), (&index, MIGRATION_LIST)])
+}
+
+const MIGRATION_MODS: &str = "// rustcms:migration-mods";
+const MIGRATION_LIST: &str = "// rustcms:migrations";
 
 pub fn make_migration(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
     validate_snake(name)?;
@@ -36,21 +49,30 @@ pub fn make_migration(project: &Project, name: &str) -> anyhow::Result<ExitCode>
         Some(table) => render(MIGRATION_CREATE, json!({ "iden": pascal_case(table) }))?,
         None => render(MIGRATION_BLANK, json!({ "name": name }))?,
     };
-    let dir = project.root.join("src/migrations");
-    write_new(&dir.join(format!("{module}.rs")), &contents)?;
+    let dir = project.src(layout::MIGRATIONS);
+    let file = dir.join(format!("{module}.rs"));
+    preflight(&[&file], &[])?;
+    preflight_migration(project)?;
+    write_new(&file, &contents)?;
     let index = dir.join("mod.rs");
-    register(&index, "// rustcms:migration-mods", &format!("mod {module};"))?;
-    register(&index, "// rustcms:migrations", &format!("Box::new({module}::Migration),"))?;
+    register(&index, MIGRATION_MODS, &format!("mod {module};"))?;
+    register(&index, MIGRATION_LIST, &format!("Box::new({module}::Migration),"))?;
     Ok(ExitCode::SUCCESS)
 }
+
+/// The feature suite's entry point: one test binary (`cargo test --test feature`).
+const TESTS_ANCHOR: &str = "// rustcms:tests";
 
 pub fn make_test(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
     validate_model(name)?;
     let module = snake_case(name);
-    let dir = project.root.join("tests");
-    std::fs::create_dir_all(&dir)?;
+    let dir = project.root.join("tests/feature");
+    let file = dir.join(format!("{module}.rs"));
+    let main = dir.join("main.rs");
+    preflight(&[&file], &[(&main, TESTS_ANCHOR)])?;
     let contents = render(TEST, json!({ "name": module, "crate_name": project.package.replace('-', "_") }))?;
-    write_new(&dir.join(format!("{module}.rs")), &contents)?;
+    write_new(&file, &contents)?;
+    register(&main, TESTS_ANCHOR, &format!("mod {module};"))?;
     Ok(ExitCode::SUCCESS)
 }
 
@@ -81,6 +103,24 @@ fn extension_name(widget: &str) -> String {
     let hash: String = sha2::Sha256::digest(widget).iter().take(4).map(|b| format!("{b:02x}")).collect();
     let readable: String = widget.replace('/', "-").chars().take(55).collect();
     format!("{readable}-{hash}")
+}
+
+/// Checks before writing anything: none of `new` exists yet, and every
+/// `(file, anchor)` has its anchor line (generators never half-apply).
+pub(crate) fn preflight(new: &[&Path], anchors: &[(&Path, &str)]) -> anyhow::Result<()> {
+    for path in new {
+        if path.exists() {
+            bail!("{} already exists", path.display());
+        }
+    }
+    for (file, anchor) in anchors {
+        let contents = std::fs::read_to_string(file)
+            .with_context(|| format!("{} not found (see the upgrade guide, \"Application layout\")", file.display()))?;
+        if !contents.lines().any(|l| l.trim() == *anchor) {
+            bail!("{} has no `{anchor}` line: add it where generated code should be registered", file.display());
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn write_new(path: &Path, contents: &str) -> anyhow::Result<()> {
@@ -125,8 +165,12 @@ mod tests {
         for (path, contents) in [
             ("src/models/mod.rs", "// rustcms:models\n"),
             (
-                "src/migrations/mod.rs",
+                "src/database/migrations/mod.rs",
                 "// rustcms:migration-mods\nfn x() {\n    vec![\n        // rustcms:migrations\n    ]\n}\n",
+            ),
+            (
+                "tests/feature/main.rs",
+                "#[path = \"../support/mod.rs\"]\nmod support;\n\nmod health;\n// rustcms:tests\n",
             ),
         ] {
             let file = dir.path().join(path);
@@ -148,14 +192,15 @@ mod tests {
             "pub mod blog_post;\n// rustcms:models\n"
         );
 
-        let index = std::fs::read_to_string(dir.path().join("src/migrations/mod.rs")).unwrap();
+        let index = std::fs::read_to_string(dir.path().join("src/database/migrations/mod.rs")).unwrap();
         let module = index.lines().next().unwrap().trim_start_matches("mod ").trim_end_matches(';').to_owned();
         assert!(module.ends_with("_create_blog_posts_table"), "{index}");
         assert!(
             index.contains(&format!("        Box::new({module}::Migration),\n        // rustcms:migrations")),
             "{index}"
         );
-        let migration = std::fs::read_to_string(dir.path().join(format!("src/migrations/{module}.rs"))).unwrap();
+        let migration =
+            std::fs::read_to_string(dir.path().join(format!("src/database/migrations/{module}.rs"))).unwrap();
         assert!(migration.contains("enum BlogPosts"));
 
         assert!(make_model(&project, "BlogPost", false).is_err(), "never overwrites");
@@ -166,9 +211,11 @@ mod tests {
         let (dir, project) = project();
         let project = Project { package: "my-blog".into(), ..project };
         make_test(&project, "PostAdminTest").unwrap();
-        let test = std::fs::read_to_string(dir.path().join("tests/post_admin_test.rs")).unwrap();
-        assert!(test.contains("use my_blog::{app, migrations::Migrator};"));
+        let test = std::fs::read_to_string(dir.path().join("tests/feature/post_admin_test.rs")).unwrap();
+        assert!(test.contains("use my_blog::database::migrations::Migrator;"), "{test}");
         assert!(test.contains("db_test!(post_admin_test,"));
+        let main = std::fs::read_to_string(dir.path().join("tests/feature/main.rs")).unwrap();
+        assert!(main.contains("mod health;\nmod post_admin_test;\n// rustcms:tests"), "{main}");
         assert!(make_test(&project, "PostAdminTest").is_err(), "never overwrites");
     }
 
@@ -193,9 +240,14 @@ mod tests {
     #[test]
     fn blank_migration_and_missing_anchor() {
         let (dir, project) = project();
-        std::fs::write(dir.path().join("src/migrations/mod.rs"), "// edited by hand\n").unwrap();
-        make_migration(&project, "add_slug_to_posts").unwrap();
-        assert_eq!(std::fs::read_to_string(dir.path().join("src/migrations/mod.rs")).unwrap(), "// edited by hand\n");
+        std::fs::write(dir.path().join("src/database/migrations/mod.rs"), "// edited by hand\n").unwrap();
+        // Without its anchors, nothing is written.
+        assert!(make_migration(&project, "add_slug_to_posts").is_err());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("src/database/migrations/mod.rs")).unwrap(),
+            "// edited by hand\n"
+        );
+        assert_eq!(std::fs::read_dir(dir.path().join("src/database/migrations")).unwrap().count(), 1);
         assert!(make_migration(&project, "Bad Name").is_err());
     }
 }

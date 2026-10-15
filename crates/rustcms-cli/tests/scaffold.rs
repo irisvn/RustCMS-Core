@@ -24,7 +24,7 @@ fn generated_app_builds_and_passes_its_tests() {
     rustcms(&app).args(["make:model", "BlogPost", "-m"]).assert().success();
     rustcms(&app.join("src")).args(["make:migration", "add_slug_to_blog_posts"]).assert().success();
     // The blank migration is a `todo!()` for the developer; replace it so the app migrates.
-    let blank = std::fs::read_dir(app.join("src/migrations"))
+    let blank = std::fs::read_dir(app.join("src/database/migrations"))
         .unwrap()
         .map(|e| e.unwrap().path())
         .find(|p| p.to_string_lossy().ends_with("_add_slug_to_blog_posts.rs"))
@@ -43,7 +43,7 @@ fn generated_app_builds_and_passes_its_tests() {
     );
     std::fs::write(&model, source).unwrap();
     // The table gets the same columns, so the generated API can read rows.
-    let create = std::fs::read_dir(app.join("src/migrations"))
+    let create = std::fs::read_dir(app.join("src/database/migrations"))
         .unwrap()
         .map(|e| e.unwrap().path())
         .find(|p| p.to_string_lossy().ends_with("_create_blog_posts_table.rs"))
@@ -86,17 +86,34 @@ impl ActiveModelBehavior for ActiveModel {}
     .unwrap();
     rustcms(&app).args(["make:api", "StockItem"]).assert().success();
     rustcms(&app).args(["make:policy", "BlogPostPolicy"]).assert().success();
-    let app_rs = std::fs::read_to_string(app.join("src/app.rs")).unwrap();
-    assert!(app_rs.contains(".resource::<crate::admin::blog_post::BlogPostResource>()"), "{app_rs}");
+    let provider = std::fs::read_to_string(app.join("src/providers/admin_panel_provider.rs")).unwrap();
+    assert!(
+        provider.contains(".resource::<crate::admin::resources::blog_post_resource::BlogPostResource>()"),
+        "{provider}"
+    );
+    // Every other generator, as a new app would use them.
+    for args in [
+        &["make:service", "PublishingService"][..],
+        &["make:job", "NotifyAuthor"],
+        &["make:seeder", "BlogPostSeeder"],
+        &["make:factory", "BlogPost"],
+        &["make:settings", "BlogSettings"],
+        &["make:command", "blog:report"],
+        &["make:test", "AdminResource"],
+    ] {
+        rustcms(&app).args(args).assert().success();
+    }
+    // A generated test module, replaced by these checks.
     std::fs::write(
-        app.join("tests/admin_resource.rs"),
-        r#"use blog::{app, migrations::Migrator};
+        app.join("tests/feature/admin_resource.rs"),
+        r#"use blog::bootstrap;
+use blog::database::migrations::Migrator;
 use rustcms::axum::http::StatusCode;
 use rustcms_testing::{Factory, TestApp, TestDb, UserFactory, db_test};
 use serde_json::json;
 
 db_test!(generated_resource_is_served, migrate = Migrator, |db: TestDb| async move {
-    let app = TestApp::new(app::build, db).await;
+    let app = TestApp::new(bootstrap::build, db).await;
     let user = UserFactory::new().create(app.state().db()).await;
     app.make_super_admin(&user).await;
     let schema = app.acting_as(&user).await.get("/admin/api/resources/blog_posts/schema?operation=create").await;
@@ -105,7 +122,7 @@ db_test!(generated_resource_is_served, migrate = Migrator, |db: TestDb| async mo
 
 db_test!(generated_api_is_served, migrate = Migrator, |db: TestDb| async move {
     use sea_orm::{ActiveModelTrait, Set};
-    let app = TestApp::new(app::build, db).await;
+    let app = TestApp::new(bootstrap::build, db).await;
     app.get("/api/v1/blog_posts").await.assert_status(StatusCode::UNAUTHORIZED);
     let user = UserFactory::new().create(app.state().db()).await;
     app.make_super_admin(&user).await;
@@ -134,6 +151,16 @@ db_test!(generated_api_is_served, migrate = Migrator, |db: TestDb| async move {
     past.assert_json("/meta/lastPage", json!(1)).assert_json("/meta/page", json!(5));
 });
 
+db_test!(generated_settings_and_seeders_run, migrate = Migrator, |db: TestDb| async move {
+    use rustcms::database::Seeder;
+    let app = TestApp::new(bootstrap::build, db).await;
+    blog::database::seeders::DatabaseSeeder.run(app.state()).await.unwrap();
+    let user = UserFactory::new().create(app.state().db()).await;
+    app.make_super_admin(&user).await;
+    let page = app.acting_as(&user).await.get("/admin/api/settings/blog").await;
+    page.assert_status(StatusCode::OK);
+});
+
 fn chrono_now() -> sea_orm::prelude::DateTimeUtc {
     sea_orm::prelude::DateTimeUtc::from(std::time::SystemTime::now())
 }
@@ -152,8 +179,32 @@ fn chrono_now() -> sea_orm::prelude::DateTimeUtc {
         .status()
         .unwrap();
     assert!(status.success(), "generated app tests failed");
-
+    // The feature suite is one binary that holds every generated module.
+    let listed = Command::new(env!("CARGO"))
+        .current_dir(&app)
+        .env("CARGO_TARGET_DIR", &target)
+        .args(["test", "--quiet", "--test", "feature", "--", "--list"])
+        .output()
+        .unwrap();
+    let listed = String::from_utf8_lossy(&listed.stdout);
+    for test in [
+        "health::health_and_ping",
+        "admin_resource::generated_api_is_served",
+        "admin_resource::generated_settings_and_seeders_run",
+    ] {
+        assert!(listed.contains(test), "{test} not in the feature suite:\n{listed}");
+    }
     rustcms(&app).arg("migrate").env("CARGO_TARGET_DIR", &target).assert().success();
+    rustcms(&app).arg("db:seed").env("CARGO_TARGET_DIR", &target).assert().success();
+    rustcms(&app).args(["db:seed", "--class", "blog_post"]).env("CARGO_TARGET_DIR", &target).assert().success();
+    rustcms(&app)
+        .args(["db:seed", "--class", "nope"])
+        .env("CARGO_TARGET_DIR", &target)
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("registered: database, blog_post"));
+    rustcms(&app).arg("blog:report").env("CARGO_TARGET_DIR", &target).assert().success();
+
     rustcms(&app)
         .arg("migrate:status")
         .env("CARGO_TARGET_DIR", &target)

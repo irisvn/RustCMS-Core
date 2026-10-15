@@ -1,14 +1,22 @@
 # Testing
 
 `rustcms-testing` gives each test its own database and drives the full router
-(middleware included) without opening a socket. `rustcms make:test PostAdminTest`
-writes a starting point in `tests/`.
+(middleware included) without opening a socket.
+
+Feature tests live in `tests/feature/`, one module per file, compiled as one
+test binary (`tests/feature/main.rs` lists them; `cargo test --test feature`
+runs them alone). Helpers shared by suites go in `tests/support/mod.rs`,
+included with `#[path = "../support/mod.rs"] mod support;`.
+`rustcms make:test PostAdminTest` writes `tests/feature/post_admin_test.rs`
+and adds it to `main.rs`.
 
 ```rust,ignore
+use blog::bootstrap;
+use blog::database::migrations::Migrator;
 use rustcms_testing::{TestApp, TestDb, UserFactory, Factory, db_test};
 
 db_test!(lists_posts, migrate = Migrator, |db: TestDb| async move {
-    let app = TestApp::new(app::build, db).await;
+    let app = TestApp::new(bootstrap::build, db).await;
     let user = UserFactory::new().create(app.state().db()).await;
     // Without credentials the route is closed; with a token holding the permission it answers.
     app.get("/api/v1/posts").await.assert_status(StatusCode::UNAUTHORIZED);

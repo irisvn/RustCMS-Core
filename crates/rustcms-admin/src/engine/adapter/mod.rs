@@ -341,6 +341,15 @@ impl<R: Resource> ResourceAdapter<R> {
         self.base(ctx, trashed).filter(self.pk.eq(key)).one(conn).await?.ok_or(AppError::NotFound)
     }
 
+    /// The rows of `keys` as stored (no scope, any trash state).
+    async fn models_by_keys<C: ConnectionTrait>(&self, conn: &C, keys: &[String]) -> AppResult<Vec<Model<R>>> {
+        let values = self.decode_keys(keys)?;
+        if values.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(Entity::<R>::find().filter(self.pk.is_in(values)).all(conn).await?)
+    }
+
     /// Models in scope among `keys`, together with their trusted records.
     async fn models_in_scope<C: ConnectionTrait>(
         &self,

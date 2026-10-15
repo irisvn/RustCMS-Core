@@ -91,6 +91,9 @@ pub trait DynResource: Send + Sync {
     async fn run_action(&self, ctx: &Ctx, name: &str, keys: &[String], data: Data) -> AppResult<ActionOutcome>;
     /// Titles of visible records, for relationship labels and options. Invisible keys are absent.
     async fn titles(&self, ctx: &Ctx, keys: &[String]) -> AppResult<BTreeMap<String, String>>;
+    /// Locks the rows of `keys` (active or trashed) until commit, in key order,
+    /// for children declared with [`ResourceMeta::lock_parent`].
+    async fn lock_keys(&self, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<()>;
     /// Which of `keys` the user may reference from another record.
     async fn keys_in_scope(&self, ctx: &Ctx, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>>;
 }
@@ -141,6 +144,21 @@ impl Registry {
                 assert!(self.resources.contains_key(target), "unknown belongs_to target `{target}`");
             }
             let slug = resource.slug();
+            if let Some((field, target)) = &resource.meta().parent_lock {
+                let parent = self
+                    .resources
+                    .get(target)
+                    .unwrap_or_else(|| panic!("resource `{slug}`: lock_parent targets unknown `{target}`"));
+                assert!(*target != slug, "resource `{slug}`: lock_parent cannot target itself");
+                assert!(
+                    matches!(resource.field_link(field), Some((Some(linked), _)) if linked == *target),
+                    "resource `{slug}`: lock_parent needs `{field}` to be a field with `belongs_to(\"{target}\")`"
+                );
+                assert!(
+                    parent.meta().parent_lock.is_none(),
+                    "resource `{slug}`: lock_parent target `{target}` locks a parent of its own (no chains)"
+                );
+            }
             let mut names = HashSet::new();
             for relation in resource.relations() {
                 assert!(

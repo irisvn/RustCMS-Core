@@ -1,11 +1,13 @@
 use rustcms::axum::http::StatusCode;
-use rustcms_testing::{Factory, TestApp, TestDb, UserFactory, db_test};
+use rustcms_testing::{Factory, TestDb, UserFactory, db_test};
 use serde_json::json;
-use {{ crate_name }}::{app, migrations::Migrator};
+use {{ crate_name }}::database::migrations::Migrator;
+
+use crate::support;
 
 // Runs on SQLite, on PostgreSQL when RUSTCMS_TEST_PG is set and on MySQL when RUSTCMS_TEST_MYSQL is.
 db_test!({{ name }}, migrate = Migrator, |db: TestDb| async move {
-    let app = TestApp::new(app::build, db).await;
+    let app = support::app(db).await;
     let user = UserFactory::new().password("secret password").create(app.state().db()).await;
 
     // `acting_as` for authorization tests, `login_as` for the real sign-in flow,

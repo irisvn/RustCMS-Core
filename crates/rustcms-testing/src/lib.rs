@@ -33,7 +33,9 @@ pub fn skip(backend: Backend) {
     );
     eprintln!("skipped: {variable} is not set");
 }
-pub use factory::{Factory, UserFactory};
+pub use factory::UserFactory;
+/// Moved to [`rustcms_core::database::Factory`] (seeders use it too); kept here for tests.
+pub use rustcms_core::database::Factory;
 
 /// An S3-compatible bucket for tests: `RUSTCMS_TEST_S3=http://host:port/bucket`
 /// (credentials from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`).

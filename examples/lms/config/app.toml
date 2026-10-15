@@ -1,0 +1,6 @@
+# Overridden by APP_* variables in .env.
+name = "lms"
+listen = "127.0.0.1:8000"
+# Interface languages users may choose (the panel ships English and Vietnamese).
+locale = "en"
+locales = ["en", "vi"]

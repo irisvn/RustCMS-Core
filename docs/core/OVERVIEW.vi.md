@@ -26,7 +26,7 @@ hứng từ Laravel và FilamentPHP:
 cd examples/demo
 cp .env.example .env && cargo run -- key:generate   # chỉ cần lần đầu (máy anh đã có .env)
 cargo run -- migrate          # tạo/cập nhật bảng (SQLite: examples/demo/database.sqlite)
-cargo run -- demo:seed        # tạo tài khoản + dữ liệu mẫu (chạy lại an toàn)
+cargo run -- db:seed        # tạo tài khoản + dữ liệu mẫu (chạy lại an toàn)
 cargo run -- serve            # chạy server
 ```
 
@@ -43,7 +43,7 @@ Mở **http://localhost:8000/admin**.
 | **admin@example.test** | `password123` | **Super admin** (guard admin + api): thấy và làm được mọi thứ, gồm mục *System → Users/Roles* |
 | editor@example.test | `password123` | Editor: xem categories; tạo bài; chỉ xem/sửa **bài của chính mình** |
 
-Muốn làm sạch dữ liệu demo: `cargo run -- migrate:fresh && cargo run -- demo:seed`.
+Muốn làm sạch dữ liệu demo: `cargo run -- migrate:fresh && cargo run -- db:seed`.
 
 ### Tạo app mới và super admin của riêng anh
 

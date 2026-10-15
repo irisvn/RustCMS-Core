@@ -4,6 +4,8 @@
 mod api;
 mod docs;
 mod generate;
+mod layout;
+mod make;
 mod naming;
 mod project;
 mod resource;
@@ -46,7 +48,7 @@ enum Command {
         #[arg(short = 'm', long)]
         migration: bool,
     },
-    /// Create an admin resource in `src/admin` for a model
+    /// Create an admin resource in `src/admin/resources` for a model
     #[command(name = "make:resource")]
     MakeResource {
         /// Model name in PascalCase (the model must exist in `src/models`)
@@ -64,23 +66,59 @@ enum Command {
         /// Policy name in PascalCase, e.g. `PostPolicy`
         name: String,
     },
-    /// Create a migration in `src/migrations`
+    /// Create a migration in `src/database/migrations`
     #[command(name = "make:migration")]
     MakeMigration {
         /// snake_case name; `create_<table>_table` generates a table skeleton
         name: String,
     },
-    /// Create an integration test in `tests/`
+    /// Create a feature test in `tests/feature`
     #[command(name = "make:test")]
     MakeTest {
         /// Test name in PascalCase, e.g. `PostAdminTest`
         name: String,
     },
-    /// Create a JSON API module for a model in `src/http/api` (list and show)
+    /// Create a JSON API for a model: controller, JSON resource and routes (list and show)
     #[command(name = "make:api")]
     MakeApi {
         /// Model name in PascalCase (the model must exist in `src/models`)
         model: String,
+    },
+    /// Create a service (business rules) in `src/services`
+    #[command(name = "make:service")]
+    MakeService {
+        /// Name ending in `Service`, e.g. `EnrollmentService`
+        name: String,
+    },
+    /// Create a background job in `src/jobs` and register it
+    #[command(name = "make:job")]
+    MakeJob {
+        /// Job name in PascalCase, e.g. `SendWelcome`
+        name: String,
+    },
+    /// Create a seeder in `src/database/seeders` and register it
+    #[command(name = "make:seeder")]
+    MakeSeeder {
+        /// Name ending in `Seeder`, e.g. `CourseSeeder`
+        name: String,
+    },
+    /// Create a model factory in `src/database/factories`
+    #[command(name = "make:factory")]
+    MakeFactory {
+        /// Model name in PascalCase (the model must exist in `src/models`)
+        model: String,
+    },
+    /// Create a settings group (`src/settings`) and its admin page (`src/admin/pages`)
+    #[command(name = "make:settings")]
+    MakeSettings {
+        /// Name ending in `Settings`, e.g. `SchoolSettings`
+        name: String,
+    },
+    /// Create a console command in `src/console` and register it
+    #[command(name = "make:command")]
+    MakeConsole {
+        /// Command name, e.g. `lms:report`
+        name: String,
     },
     /// Create an admin widget script in `assets/admin`
     #[command(name = "make:widget")]
@@ -102,17 +140,21 @@ fn main() -> ExitCode {
         Command::New { name, path, rustcms_path, in_workspace } => {
             scaffold::new_app(&name, &path, rustcms_path.as_deref(), in_workspace)
         }
-        Command::MakeModel { name, migration } => {
-            project::Project::find().and_then(|p| generate::make_model(&p, &name, migration))
-        }
+        Command::MakeModel { name, migration } => app().and_then(|p| generate::make_model(&p, &name, migration)),
         Command::MakeResource { model, generate, belongs_to } => {
-            project::Project::find().and_then(|p| resource::make_resource(&p, &model, generate, &belongs_to))
+            app().and_then(|p| resource::make_resource(&p, &model, generate, &belongs_to))
         }
-        Command::MakePolicy { name } => project::Project::find().and_then(|p| resource::make_policy(&p, &name)),
-        Command::MakeTest { name } => project::Project::find().and_then(|p| generate::make_test(&p, &name)),
-        Command::MakeMigration { name } => project::Project::find().and_then(|p| generate::make_migration(&p, &name)),
-        Command::MakeApi { model } => project::Project::find().and_then(|p| api::make_api(&p, &model)),
-        Command::MakeWidget { name } => project::Project::find().and_then(|p| generate::make_widget(&p, &name)),
+        Command::MakePolicy { name } => app().and_then(|p| resource::make_policy(&p, &name)),
+        Command::MakeTest { name } => app().and_then(|p| generate::make_test(&p, &name)),
+        Command::MakeMigration { name } => app().and_then(|p| generate::make_migration(&p, &name)),
+        Command::MakeApi { model } => app().and_then(|p| api::make_api(&p, &model)),
+        Command::MakeService { name } => app().and_then(|p| make::make_service(&p, &name)),
+        Command::MakeJob { name } => app().and_then(|p| make::make_job(&p, &name)),
+        Command::MakeSeeder { name } => app().and_then(|p| make::make_seeder(&p, &name)),
+        Command::MakeFactory { model } => app().and_then(|p| make::make_factory(&p, &model)),
+        Command::MakeSettings { name } => app().and_then(|p| make::make_settings(&p, &name)),
+        Command::MakeConsole { name } => app().and_then(|p| make::make_command(&p, &name)),
+        Command::MakeWidget { name } => app().and_then(|p| generate::make_widget(&p, &name)),
         Command::DocsCli => {
             let auth = clap::Command::new("auth").subcommands(rustcms_auth::commands::definitions());
             let admin = clap::Command::new("admin").subcommands(rustcms_admin::panel::provider::command_definitions());
@@ -130,4 +172,11 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// The application around the current directory, in the current layout.
+fn app() -> anyhow::Result<project::Project> {
+    let project = project::Project::find()?;
+    project.require_layout()?;
+    Ok(project)
 }

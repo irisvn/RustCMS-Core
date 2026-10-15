@@ -109,6 +109,7 @@ pub struct AppBuilder {
     described: Vec<RouteInfo>,
     body_limits: Vec<http::BodyLimit>,
     jobs: crate::queue::Jobs,
+    seeders: crate::database::Seeders,
 }
 
 /// A route as listed by `route:list`.
@@ -144,6 +145,7 @@ impl AppBuilder {
             }],
             body_limits: Vec::new(),
             jobs: crate::queue::Jobs::default(),
+            seeders: crate::database::Seeders::default(),
         }
     }
 
@@ -216,6 +218,20 @@ impl AppBuilder {
     pub fn job<J: crate::queue::Job>(&mut self) -> &mut Self {
         self.jobs.register::<J>();
         self
+    }
+
+    /// Registers a seeder for `db:seed` (the one named `database` runs by default).
+    ///
+    /// # Panics
+    /// On an invalid or repeated name.
+    pub fn seeder(&mut self, seeder: impl crate::database::Seeder) -> &mut Self {
+        self.seeders.register(Arc::new(seeder));
+        self
+    }
+
+    /// The registered seeders (`db:seed`).
+    pub fn seeders(&self) -> crate::database::Seeders {
+        self.seeders.clone()
     }
 
     /// Adds a console command.

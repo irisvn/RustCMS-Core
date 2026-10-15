@@ -18,5 +18,5 @@ export RUSTCMS_AUTH__ANONYMOUS_SESSIONS_PER_IP=1000
 # Run outside the checkout: the binary must not depend on source paths.
 cd "$db_dir"
 "$bin" migrate
-"$bin" demo:seed
+"$bin" db:seed
 exec "$bin" serve

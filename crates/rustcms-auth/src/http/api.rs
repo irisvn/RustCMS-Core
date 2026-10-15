@@ -1,18 +1,14 @@
 //! Routes of an application's JSON API, each with the access it requires.
 //!
 //! ```rust,ignore
-//! // src/http/api/mod.rs
+//! // src/routes/api.rs
 //! pub fn routes() -> ApiRoutes {
-//!     ApiRoutes::new("/api/v1").nest("/posts", posts::routes())
+//!     ApiRoutes::new("/api/v1")
+//!         .get("/posts", Access::can("posts.view_any"), controllers::post_controller::index)
+//!         .post("/posts", Access::can("posts.create"), controllers::post_controller::store)
 //! }
-//! // src/http/api/posts/mod.rs
-//! pub fn routes() -> ApiRoutes {
-//!     ApiRoutes::scope()
-//!         .get("/", Access::can("posts.view_any"), handlers::list)
-//!         .post("/", Access::can("posts.create"), handlers::create)
-//! }
-//! // src/app.rs
-//! let api = crate::http::api::routes();
+//! // src/bootstrap/mod.rs
+//! let api = crate::routes::api::routes();
 //! app.provider(AuthProvider::new().api_permissions(&api));
 //! api.register(&mut app);
 //! ```

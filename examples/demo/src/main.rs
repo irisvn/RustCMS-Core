@@ -1,3 +1,3 @@
 fn main() -> std::process::ExitCode {
-    rustcms::Console::<demo::migrations::Migrator>::new(demo::app::build).run_blocking()
+    rustcms::Console::<demo::database::migrations::Migrator>::new(demo::bootstrap::build).run_blocking()
 }

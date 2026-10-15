@@ -61,6 +61,7 @@ pub struct ResourceMeta {
     pub(crate) constraints: Vec<ConstraintMap>,
     pub(crate) soft_delete: Option<String>,
     pub(crate) audit: bool,
+    pub(crate) parent_lock: Option<(String, &'static str)>,
 }
 
 impl ResourceMeta {
@@ -76,7 +77,22 @@ impl ResourceMeta {
             constraints: Vec::new(),
             soft_delete: None,
             audit: true,
+            parent_lock: None,
         }
+    }
+
+    /// Every write to a record of this resource first locks its parent: the
+    /// record of `target` that the `belongs_to` field `field` points to (both
+    /// parents when a write moves the record). Writes under one parent then
+    /// run one at a time, in the same order as writes to the parent itself
+    /// (parent, then child), so a hook can check a rule over the parent's
+    /// children (a course's seats) and ownership read through the parent
+    /// (its instructor) cannot change during the write.
+    ///
+    /// At most one per resource; `target` must not lock a parent of its own.
+    pub fn lock_parent(mut self, field: impl Into<String>, target: &'static str) -> Self {
+        self.parent_lock = Some((field.into(), target));
+        self
     }
 
     /// Whether writes to this resource are recorded in the audit log (on by default).

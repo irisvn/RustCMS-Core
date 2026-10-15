@@ -1,5 +1,5 @@
-//! Admin panel resources. `rustcms make:resource <Model>` adds modules here.
+//! The admin panel (like `app/Filament`): `resources` (one per model) and
+//! `pages` (settings pages).
 
-pub mod category;
-pub mod post;
-// rustcms:resource-mods
+pub mod pages;
+pub mod resources;

@@ -27,6 +27,16 @@ RustCMS is in pre-release. The current published version is
   the change, run by workers in `serve` or `queue:work` with leases,
   retries, timeouts and graceful shutdown; `queue:failed` / `retry` /
   `forget` ([Queues](digging-deeper/queues.md)).
+- **Application layout**: Laravel's folders inside `src/` (bootstrap,
+  providers, routes, http controllers/requests/resources, services, jobs,
+  settings, admin resources/pages, database migrations/seeders/factories);
+  seeders and `db:seed`, factories, generators for each
+  ([Directory structure](getting-started/directory-structure.md); moving an
+  existing app: [upgrade guide](upgrade.md#application-layout-03)).
+- **Parent locks**: `ResourceMeta::lock_parent` for rules over a parent's
+  children ([Resources](admin/resources.md#parent-locks)).
+- **Example**: `examples/lms`, a small LMS back office (seats under a lock,
+  instructor scopes, a job per enrollment) ([Example](examples/lms.md)).
 - **Databases**: MySQL 8.4 alongside SQLite and PostgreSQL.
 - **APIs**: `ApiRoutes` with declared access, `Validated<T>`, `Pagination`,
   `Throttle<N>`, `make:api`; JWT access tokens with rotating refresh tokens.

@@ -16,6 +16,9 @@ pub use rustcms_auth as auth;
 /// HTTP toolkit used by rustcms.
 pub use axum;
 
+/// Command-line parser of console commands (`AppCommand::definition`).
+pub use clap;
+
 /// `use rustcms::async_trait;` then `#[async_trait]` for policies, hooks and migrations
 /// (no extra dependency; `#[rustcms::…]` paths are reserved by rustc's `rustc` prefix rule).
 pub use async_trait::async_trait;

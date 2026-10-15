@@ -15,7 +15,8 @@ rustcms             the crate applications depend on: re-exports, prelude
 rustcms-testing     TestApp, TestDb, db_test!, factories
 rustcms-cli         `rustcms new`, `make:*`
 admin-ui/           the React SPA, built into rustcms-admin/assets
-examples/demo       an application, laid out as `rustcms new` generates
+examples/demo       a blog, laid out as `rustcms new` generates (ADR 0017)
+examples/lms        a small LMS back office (seats under a lock, instructor scopes, a job)
 ```
 
 Dependencies go one way: `rustcms-auth` uses `rustcms-core`, `rustcms-admin`
@@ -26,7 +27,7 @@ on the admin engine, so it can change without touching them.
 |---|---|
 | `Illuminate\Foundation`, service providers, container | `rustcms_core::app` (`AppBuilder`, `ServiceProvider`, `Inject`) |
 | `Illuminate\Http`, middleware | `rustcms_core::http` |
-| `Illuminate\Database`, migrations | `rustcms_core::db`, `rustcms-migration` |
+| `Illuminate\Database`, migrations, seeders, factories | `rustcms_core::db`, `rustcms_core::database`, `rustcms-migration` |
 | `Illuminate\Console`, artisan | `rustcms_core::console`, `AppCommand`, `rustcms-cli` |
 | `Illuminate\Filesystem` | `rustcms_core::storage` |
 | `Illuminate\Auth`, gates, policies | `rustcms-auth` |
@@ -45,7 +46,7 @@ on the admin engine, so it can change without touching them.
 | `forms/`, `tables/` | builders (`TextInput::make`, `Table::new`, …); `ui` re-exports both |
 | `panel/` | `AdminProvider` and the SPA shell (assets, extensions) |
 | `engine/` | the generic engine: `Registry`/`DynResource`, `Ctx`, wire format, idempotency, `validate` (value checks shared by resources and settings) |
-| `engine/adapter/` | `ResourceAdapter<R>`: `input` (acceptance), `references` (checks after hooks), `read`, `write` (transactions, locks), `schema`, `operations` (the `DynResource` impl), `audit` (snapshots, redaction, entries) |
+| `engine/adapter/` | `ResourceAdapter<R>`: `input` (acceptance), `references` (checks after hooks), `read`, `write` (transactions, row and parent locks, ADR 0018), `schema`, `operations` (the `DynResource` impl), `audit` (snapshots, redaction, entries) |
 | `http/` | routes and handlers: `resources`, `relations`, `actions`, `extract` (`AdminCtx`) |
 | `contract/` | the DTOs the SPA receives (`ResourceSchema`, …); also reachable as `schema` |
 | `features/` | built-in features: `audit` (log viewer, record history), `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
@@ -93,15 +94,27 @@ in each crate.
 
 ## Applications
 
-`rustcms new` lays an application out like Laravel's `app/`:
+`rustcms new` lays an application out like Laravel, inside `src/` (ADR 0017;
+guide: Directory structure):
 
 | Laravel | rustcms application |
 |---|---|
-| `app/Filament/Resources/PostResource.php` | `src/admin/post.rs` (`make:resource`) |
-| `app/Models` | `src/models` (`make:model`) |
+| `bootstrap/app.php`, `bootstrap/providers.php` | `src/bootstrap/mod.rs` (`build`), `src/bootstrap/providers.rs` |
+| `app/Providers` | `src/providers/` (auth, admin panel, app service providers) |
+| `app/Filament/Resources/PostResource.php`, `app/Filament/Pages` | `src/admin/resources/post_resource.rs` (`make:resource`), `src/admin/pages/` |
+| `app/Models` (+ local scopes) | `src/models` (`make:model`) |
+| `app/Services` | `src/services` (`make:service`) |
 | `app/Policies` | `src/policies` (`make:policy`) |
-| `routes/api.php`, `app/Http/Controllers`, form requests, API resources | `src/http/api/<table>/` (`make:api`): `mod.rs` routes, `handlers.rs`, `requests.rs`, `json.rs` |
-| `database/migrations` | `src/migrations` (`make:migration`) |
+| `app/Jobs` | `src/jobs` (`make:job`) |
+| `app/Console/Commands` | `src/console` (`make:command`) |
+| spatie `app/Settings` | `src/settings` (`make:settings`, with its page) |
+| `routes/api.php` | `src/routes/api.rs` |
+| `app/Http/{Controllers,Requests,Resources}` | `src/http/{controllers,requests,resources}` (`make:api`) |
+| `database/{migrations,seeders,factories}` | `src/database/…` (`make:migration`, `make:seeder`, `make:factory`) |
 | `config/*.php` | `config/*.toml` |
-| `tests/` | `tests/` (`make:test`) |
+| `tests/Feature` | `tests/feature/` (one binary, `make:test`), `tests/support/` |
 | Filament assets | `assets/admin/<vendor>/` (`make:widget`) |
+
+The CLI's `layout.rs` holds these paths and the module plumbing
+(`ensure_module`: `mod.rs` + `pub mod` in the parent); every generator
+preflights files and anchors before writing.

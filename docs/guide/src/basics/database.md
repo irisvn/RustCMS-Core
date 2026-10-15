@@ -87,7 +87,8 @@ create_table(manager, Table::create().table(Posts::Table)
 
 ## Migrations
 
-`src/migrations/mod.rs` runs the framework migrations and then yours:
+`src/database/migrations/mod.rs` runs the framework migrations and then
+yours (one file per change, `rustcms make:migration <name>`):
 
 | Command                              | Does                                        |
 |--------------------------------------|---------------------------------------------|
@@ -107,3 +108,45 @@ migrations unless a statement cannot run in a transaction.
 
 Never edit a migration that has run in production; add a new one. A migration
 that cannot be reversed must say so in its `down` and in its doc comment.
+
+## Seeding
+
+Seeders fill the database with the records an application needs, or shows
+off. They live in `src/database/seeders/`: `DatabaseSeeder` (named
+`database`) calls the others in order, and every seeder is registered in
+`src/providers/app_service_provider.rs` (`rustcms make:seeder CourseSeeder`
+does both).
+
+```rust,ignore
+use rustcms::database::Seeder;
+use rustcms::{AppState, async_trait};
+
+pub struct CourseSeeder;
+
+#[async_trait]
+impl Seeder for CourseSeeder {
+    fn name(&self) -> &'static str {
+        "course" // `rustcms db:seed --class course`
+    }
+
+    async fn run(&self, state: &AppState) -> anyhow::Result<()> {
+        // Find by a natural key before creating: seeders run again.
+        Ok(())
+    }
+}
+```
+
+| Command | Does |
+|---|---|
+| `rustcms db:seed` | runs the `database` seeder |
+| `rustcms db:seed --class course` | runs one seeder |
+| `rustcms migrate:fresh --seed` | drops every table, migrates, seeds |
+
+- **Production**: `db:seed` refuses without `--force`. A seeder that creates
+  accounts with known passwords must refuse in production itself, whatever
+  `--force` says.
+- **No shared transaction**: a seeder that fails halfway leaves what it wrote.
+  Write seeders that complete on the next run (find rows by a natural key),
+  and write through your services (which open their own transactions) so the
+  application's rules hold; roles and permissions go through `RbacService`.
+

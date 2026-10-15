@@ -29,7 +29,7 @@ Create a SeaORM entity in `src/models`
 
 ### `make:resource`
 
-Create an admin resource in `src/admin` for a model
+Create an admin resource in `src/admin/resources` for a model
 
 | Argument | Description |
 |---|---|
@@ -47,7 +47,7 @@ Create a policy in `src/policies`
 
 ### `make:migration`
 
-Create a migration in `src/migrations`
+Create a migration in `src/database/migrations`
 
 | Argument | Description |
 |---|---|
@@ -55,7 +55,7 @@ Create a migration in `src/migrations`
 
 ### `make:test`
 
-Create an integration test in `tests/`
+Create a feature test in `tests/feature`
 
 | Argument | Description |
 |---|---|
@@ -63,11 +63,59 @@ Create an integration test in `tests/`
 
 ### `make:api`
 
-Create a JSON API module for a model in `src/http/api` (list and show)
+Create a JSON API for a model: controller, JSON resource and routes (list and show)
 
 | Argument | Description |
 |---|---|
 | `<model>` | Model name in PascalCase (the model must exist in `src/models`) |
+
+### `make:service`
+
+Create a service (business rules) in `src/services`
+
+| Argument | Description |
+|---|---|
+| `<name>` | Name ending in `Service`, e.g. `EnrollmentService` |
+
+### `make:job`
+
+Create a background job in `src/jobs` and register it
+
+| Argument | Description |
+|---|---|
+| `<name>` | Job name in PascalCase, e.g. `SendWelcome` |
+
+### `make:seeder`
+
+Create a seeder in `src/database/seeders` and register it
+
+| Argument | Description |
+|---|---|
+| `<name>` | Name ending in `Seeder`, e.g. `CourseSeeder` |
+
+### `make:factory`
+
+Create a model factory in `src/database/factories`
+
+| Argument | Description |
+|---|---|
+| `<model>` | Model name in PascalCase (the model must exist in `src/models`) |
+
+### `make:settings`
+
+Create a settings group (`src/settings`) and its admin page (`src/admin/pages`)
+
+| Argument | Description |
+|---|---|
+| `<name>` | Name ending in `Settings`, e.g. `SchoolSettings` |
+
+### `make:command`
+
+Create a console command in `src/console` and register it
+
+| Argument | Description |
+|---|---|
+| `<name>` | Command name, e.g. `lms:report` |
 
 ### `make:widget`
 
@@ -110,6 +158,7 @@ Drop all tables and re-run every migration
 | Argument | Description |
 |---|---|
 | `--force` | Required in production |
+| `--seed` | Run the `database` seeder afterwards |
 
 ### `migrate:refresh`
 
@@ -122,6 +171,15 @@ Roll back every migration and run them again
 ### `migrate:status`
 
 Show applied and pending migrations
+
+### `db:seed`
+
+Seed the database (the `database` seeder, or `--class <name>`)
+
+| Argument | Description |
+|---|---|
+| `--class` | Seeder to run (default: `database`) |
+| `--force` | Required in production |
 
 ### `route:list`
 

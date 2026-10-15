@@ -37,7 +37,7 @@ built, the binary takes the same commands: `./blog migrate`, `./blog serve`.
 rustcms make:model Post -m                 # src/models/post.rs + a create_posts_table migration
 # edit the model and the migration, then:
 rustcms migrate
-rustcms make:resource Post --generate      # src/admin/post.rs: fields, form, table from the model
+rustcms make:resource Post --generate      # src/admin/resources/post_resource.rs: fields, form, table
 rustcms permission:sync                    # declares posts.view_any, posts.create, …
 rustcms serve
 ```

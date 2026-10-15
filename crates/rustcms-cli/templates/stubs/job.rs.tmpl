@@ -1,0 +1,21 @@
+//! The `{{ kind }}` job (registered in `providers/app_service_provider.rs`).
+//! Queue it in the transaction of the change it follows from:
+//! `rustcms::queue::dispatch(&txn, &{{ name }} { … })` (admin hooks: `ctx.dispatch`).
+
+use rustcms::async_trait;
+use rustcms::queue::{Job, JobCtx};
+use serde::{Deserialize, Serialize};
+
+/// Ids only, never secrets: read the rows again when the job runs.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct {{ name }} {}
+
+#[async_trait]
+impl Job for {{ name }} {
+    const KIND: &'static str = "{{ kind }}";
+
+    /// Runs at least once: make it safe to run again (`rustcms::queue::once`).
+    async fn handle(self, _ctx: JobCtx) -> anyhow::Result<()> {
+        Ok(())
+    }
+}

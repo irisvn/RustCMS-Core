@@ -1,45 +1,6 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-
-use async_trait::async_trait;
+use rustcms_core::database::Factory;
 use rustcms_core::models::user;
-use sea_orm::{ActiveModelBehavior, ActiveModelTrait, ConnectionTrait, EntityTrait, IntoActiveModel, Set};
-
-static SEQUENCE: AtomicU64 = AtomicU64::new(1);
-
-/// Builds records for tests, like Laravel model factories.
-///
-/// Implement [`Factory::definition`]; `create` and `create_many` insert.
-/// The sequence number is unique per process, so unique columns stay unique.
-#[async_trait]
-pub trait Factory: Sync {
-    /// Entity produced.
-    type Entity: EntityTrait;
-
-    /// Column values of record number `n`.
-    fn definition(&self, n: u64) -> <Self::Entity as EntityTrait>::ActiveModel;
-
-    /// Inserts one record.
-    async fn create<C: ConnectionTrait>(&self, db: &C) -> <Self::Entity as EntityTrait>::Model
-    where
-        <Self::Entity as EntityTrait>::Model: IntoActiveModel<<Self::Entity as EntityTrait>::ActiveModel>,
-        <Self::Entity as EntityTrait>::ActiveModel: ActiveModelBehavior + Send,
-    {
-        self.definition(SEQUENCE.fetch_add(1, Ordering::Relaxed)).insert(db).await.expect("factory insert")
-    }
-
-    /// Inserts `count` records.
-    async fn create_many<C: ConnectionTrait>(&self, db: &C, count: usize) -> Vec<<Self::Entity as EntityTrait>::Model>
-    where
-        <Self::Entity as EntityTrait>::Model: IntoActiveModel<<Self::Entity as EntityTrait>::ActiveModel> + Send,
-        <Self::Entity as EntityTrait>::ActiveModel: ActiveModelBehavior + Send,
-    {
-        let mut out = Vec::with_capacity(count);
-        for _ in 0..count {
-            out.push(self.create(db).await);
-        }
-        out
-    }
-}
+use sea_orm::Set;
 
 /// Users with unique emails. Without `.password(..)`, the stored hash matches
 /// no password (use `TestApp::acting_as` to sign in without one).

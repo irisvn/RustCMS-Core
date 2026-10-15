@@ -1,0 +1,17 @@
+//! {{ table }} records for seeders (`try_create`) and tests (`create`).
+
+use rustcms::database::Factory;
+
+use crate::models::{{ module }};
+
+pub struct {{ name }}Factory;
+
+impl Factory for {{ name }}Factory {
+    type Entity = {{ module }}::Entity;
+
+    /// Column values of record number `n` (unique per process: use it for
+    /// unique columns), e.g. `title: Set(format!("Title {n}"))`.
+    fn definition(&self, _n: u64) -> {{ module }}::ActiveModel {
+        {{ module }}::ActiveModel { ..Default::default() }
+    }
+}

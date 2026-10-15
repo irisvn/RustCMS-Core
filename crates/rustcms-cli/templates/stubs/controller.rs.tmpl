@@ -1,0 +1,24 @@
+//! Handlers of `/api/v1/{{ table }}`. Routes and their access are declared in
+//! `crate::routes::api` (checked before these run). Add writes with a
+//! `crate::http::requests` input (`Validated<T>`) and a `post`/`patch` route.
+
+use rustcms::prelude::*;
+use sea_orm::{EntityTrait, QueryOrder};
+
+use crate::http::resources::{{ module }}_resource::{{ model }}Json;
+use crate::models::{{ module }};
+
+{% if created_column %}/// A page of {{ table }}, newest first.
+{% else %}/// A page of {{ table }}, highest key first.
+{% endif %}pub async fn index(State(app): State<AppState>, page: Pagination) -> AppResult<Json<ApiPage<{{ model }}Json>>> {
+    let select = {{ module }}::Entity::find()
+{% if created_column %}        .order_by_desc({{ module }}::Column::{{ created_column }})
+{% endif %}        .order_by_desc({{ module }}::Column::{{ key_column }});
+    Ok(Json(ApiPage::fetch(select, app.db(), &page, {{ model }}Json::from).await?))
+}
+
+/// One record, or 404.
+pub async fn show(State(app): State<AppState>, Path(id): Path<{{ key_type }}>) -> AppResult<Json<{{ model }}Json>> {
+    let found = {{ module }}::Entity::find_by_id(id).one(app.db()).await?.ok_or(AppError::NotFound)?;
+    Ok(Json(found.into()))
+}

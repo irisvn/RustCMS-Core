@@ -1,0 +1,17 @@
+//! `{{ command }}` (registered in `providers/app_service_provider.rs`).
+
+use rustcms::{AppCommand, AppState, async_trait};
+
+pub struct {{ name }};
+
+#[async_trait]
+impl AppCommand for {{ name }} {
+    fn definition(&self) -> rustcms::clap::Command {
+        rustcms::clap::Command::new("{{ command }}").about("Describe what it does")
+    }
+
+    async fn run(&self, state: &AppState, _args: &rustcms::clap::ArgMatches) -> anyhow::Result<()> {
+        let _db = state.db();
+        Ok(())
+    }
+}

@@ -1,0 +1,21 @@
+//! The `{{ group }}` settings group: stored in the database, edited at
+//! `/admin/settings/{{ group }}` (`crate::admin::pages::{{ module }}_page`),
+//! read with `rustcms::settings::get::<{{ name }}>(&state)`.
+
+use rustcms::settings::Settings;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct {{ name }} {
+    pub title: String,
+}
+
+impl Default for {{ name }} {
+    fn default() -> Self {
+        Self { title: String::new() }
+    }
+}
+
+impl Settings for {{ name }} {
+    const GROUP: &'static str = "{{ group }}";
+}

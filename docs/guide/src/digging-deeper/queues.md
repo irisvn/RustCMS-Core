@@ -29,7 +29,9 @@ impl Job for SendWelcome {
 }
 ```
 
-Register it when the application is built:
+Jobs live in `src/jobs/`, one per file. Register each in
+`src/providers/app_service_provider.rs` (`rustcms make:job SendWelcome` writes
+the file and this line):
 
 ```rust,ignore
 app.job::<SendWelcome>();

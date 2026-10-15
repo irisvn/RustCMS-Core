@@ -18,12 +18,21 @@ The full list is in the [CLI reference](../reference/cli.md).
 rustcms make:model Post -m           # src/models/post.rs + a create_posts_table migration
 rustcms make:migration add_slug_to_posts
 rustcms make:resource Post --generate --belongs-to category_id=categories
-                                     # src/admin/post.rs: fields, form, table and filters from the model
+                                     # src/admin/resources/post_resource.rs: fields, form, table and filters
 rustcms make:policy PostPolicy       # src/policies/post_policy.rs
-rustcms make:api Post                # src/http/api/posts/: list and show
+rustcms make:api Post                # src/http/controllers/post_controller.rs + JSON resource + routes
+rustcms make:service EnrollmentService  # src/services/enrollment_service.rs: shared business rules
+rustcms make:job SendWelcome         # src/jobs/send_welcome.rs, registered in app_service_provider.rs
+rustcms make:seeder CourseSeeder     # src/database/seeders/course_seeder.rs, registered and called
+rustcms make:factory Course          # src/database/factories/course_factory.rs
+rustcms make:settings SchoolSettings # src/settings/school_settings.rs + src/admin/pages/school_settings_page.rs
+rustcms make:command lms:report      # src/console/lms_report.rs, registered in app_service_provider.rs
 rustcms make:widget acme/color       # assets/admin/acme/color.js: a custom field widget
-rustcms make:test PostAdminTest      # tests/post_admin_test.rs
+rustcms make:test PostAdminTest      # tests/feature/post_admin_test.rs, added to tests/feature/main.rs
 ```
+
+Each generator checks its target files and anchors first and writes nothing
+when one is missing or the file exists ([Directory structure](../getting-started/directory-structure.md)).
 
 `make:resource --generate` maps column types to inputs (text, textarea for
 `body`/`content`/…, number, toggle, date, date-time), adds table columns and
@@ -37,8 +46,8 @@ server. The model must be in `src/models/<snake_name>.rs`.
 ## Writing commands
 
 ```rust,ignore
-// Cargo.toml: clap = "4", anyhow = "1"
-use clap::{Arg, ArgMatches, Command};
+// Cargo.toml: anyhow = "1" (clap comes as `rustcms::clap`)
+use rustcms::clap::{Arg, ArgMatches, Command};
 use rustcms::prelude::*;
 use rustcms::{AppCommand, AppState, async_trait};
 
@@ -60,7 +69,7 @@ impl AppCommand for SyncInvoices {
     }
 }
 
-// src/app.rs (or a provider's `register`)
+// src/providers/app_service_provider.rs (`rustcms make:command invoices:sync` writes both)
 app.command(SyncInvoices);
 ```
 

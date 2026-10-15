@@ -1,0 +1,20 @@
+//! `rustcms db:seed --class {{ seeder_name }}` (also called by `DatabaseSeeder`).
+
+use rustcms::database::Seeder;
+use rustcms::{AppState, async_trait};
+
+pub struct {{ name }};
+
+#[async_trait]
+impl Seeder for {{ name }} {
+    fn name(&self) -> &'static str {
+        "{{ seeder_name }}"
+    }
+
+    /// May run again: find rows by a natural key before creating them, and
+    /// write through `crate::services` so your rules hold.
+    async fn run(&self, state: &AppState) -> anyhow::Result<()> {
+        let _db = state.db();
+        Ok(())
+    }
+}

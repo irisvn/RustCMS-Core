@@ -37,7 +37,7 @@ rustcms serve                                  # http://localhost:8000/admin
 Or run the demo (blog with categories, posts, an editor role and a token API):
 
 ```sh
-cd examples/demo && cargo run -- migrate && cargo run -- demo:seed && cargo run -- serve
+cd examples/demo && cargo run -- migrate && cargo run -- db:seed && cargo run -- serve
 # http://localhost:8000/admin — admin@example.test / password123
 ```
 

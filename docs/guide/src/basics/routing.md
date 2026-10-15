@@ -1,22 +1,18 @@
 # Routing
 
-Your JSON API lives in `src/http/api/`, one module per model (Laravel keeps
-the same things in `routes/api.php`, controllers, form requests and API
-resources):
+Your JSON API is laid out as in Laravel:
 
 ```text
-src/http/api/
-├── mod.rs              routes(): every API route
-└── posts/
-    ├── mod.rs          routes() of posts, with the access each requires
-    ├── handlers.rs     list, show, create, …        (≈ controller)
-    ├── requests.rs     NewPost + Validate           (≈ form request)
-    └── json.rs         PostJson                     (≈ API resource)
+src/routes/api.rs                        routes(): every API route and its access
+src/http/controllers/post_controller.rs  index, show, store, …
+src/http/requests/post_request.rs        NewPost + Validate   (≈ form request)
+src/http/resources/post_resource.rs      PostJson             (≈ API resource)
 ```
 
-`rustcms make:api Post` writes `posts/` with `list` (newest first when the
-model has `created_at`, else highest key first) and `show`, and registers it.
-`json.rs` follows the [wire format](../reference/wire-format.md): 64-bit
+`rustcms make:api Post` writes the controller (`index`, newest first when the
+model has `created_at`, else highest key first, and `show`), the JSON
+resource, and their two routes in `src/routes/api.rs`. The JSON resource
+follows the [wire format](../reference/wire-format.md): 64-bit
 integers, UUIDs and dates as strings, decimals at their declared scale,
 instants in UTC with `Z`; secret-looking columns (`password`, `token`, …) are
 left out.
@@ -24,23 +20,20 @@ left out.
 ## Declaring routes
 
 ```rust,ignore
-// src/http/api/mod.rs
+// src/routes/api.rs
+use crate::http::controllers::post_controller;
+
 pub fn routes() -> ApiRoutes {
     ApiRoutes::new("/api/v1")
         .get("/ping", Access::public(), ping)
-        .nest("/posts", posts::routes())
+        .get("/posts", Access::can("posts.view_any"), post_controller::index)
+        .post("/posts", Access::can("posts.create"), post_controller::store)
+        .get("/posts/{id}", Access::can("posts.view_any"), post_controller::show)
+        // rustcms:api-routes
 }
 
-// src/http/api/posts/mod.rs
-pub fn routes() -> ApiRoutes {
-    ApiRoutes::scope()
-        .get("/", Access::can("posts.view_any"), handlers::list)
-        .post("/", Access::can("posts.create"), handlers::create)
-        .get("/{id}", Access::can("posts.view_any"), handlers::show)
-}
-
-// src/app.rs
-let api = crate::http::api::routes();
+// src/bootstrap/mod.rs (and providers/auth_service_provider.rs)
+let api = crate::routes::api::routes();
 app.provider(AuthProvider::new().api_permissions(&api)); // declares posts.view_any, posts.create
 api.register(&mut app);                                  // mounts them and lists them in `route:list`
 ```

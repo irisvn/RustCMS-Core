@@ -43,6 +43,9 @@ enum Command {
         /// Required in production
         #[arg(long)]
         force: bool,
+        /// Run the `database` seeder afterwards
+        #[arg(long)]
+        seed: bool,
     },
     /// Roll back every migration and run them again
     #[command(name = "migrate:refresh")]
@@ -54,6 +57,16 @@ enum Command {
     /// Show applied and pending migrations
     #[command(name = "migrate:status")]
     MigrateStatus,
+    /// Seed the database (the `database` seeder, or `--class <name>`)
+    #[command(name = "db:seed")]
+    DbSeed {
+        /// Seeder to run (default: `database`)
+        #[arg(long)]
+        class: Option<String>,
+        /// Required in production
+        #[arg(long)]
+        force: bool,
+    },
     /// List the HTTP routes described by the framework, providers and the application
     #[command(name = "route:list")]
     RouteList,
@@ -81,7 +94,7 @@ pub fn command() -> clap::Command {
 ///
 /// ```rust,ignore
 /// fn main() -> std::process::ExitCode {
-///     rustcms::Console::<migrations::Migrator>::new(app::build).run_blocking()
+///     rustcms::Console::<database::migrations::Migrator>::new(bootstrap::build).run_blocking()
 /// }
 /// ```
 pub struct Console<M: MigratorTrait> {
@@ -135,9 +148,13 @@ impl<M: MigratorTrait> Console<M> {
                 crate::db::check(&db, true).await?;
                 Ok(M::down(&db, Some(step)).await?)
             }
-            Command::MigrateFresh { force } => {
+            Command::MigrateFresh { force, seed } => {
                 guard_production(production, force)?;
-                crate::db::migrate_fresh::<M>(&config.database).await.context("migrate:fresh failed")
+                crate::db::migrate_fresh::<M>(&config.database).await.context("migrate:fresh failed")?;
+                if seed {
+                    self.seed(config, None).await?;
+                }
+                Ok(())
             }
             Command::MigrateRefresh { force } => {
                 guard_production(production, force)?;
@@ -145,6 +162,12 @@ impl<M: MigratorTrait> Console<M> {
                 // Every table is recreated: the database itself must be right.
                 crate::db::check(&db, false).await?;
                 Ok(M::refresh(&db).await?)
+            }
+            Command::DbSeed { class, force } => {
+                if production && !force {
+                    bail!("refusing to seed in production; pass --force");
+                }
+                self.seed(config, class).await
             }
             Command::RouteList => {
                 let routes = (self.build)(config).described_routes();
@@ -179,6 +202,26 @@ impl<M: MigratorTrait> Console<M> {
             }
             Command::KeyGenerate { .. } => unreachable!(),
         }
+    }
+}
+
+impl<M: MigratorTrait> Console<M> {
+    /// Runs the seeder `class` (default: `database`) on the booted application.
+    async fn seed(&self, config: Config, class: Option<String>) -> anyhow::Result<()> {
+        let builder = (self.build)(config);
+        let seeders = builder.seeders();
+        let name = class.as_deref().unwrap_or(crate::database::DEFAULT_SEEDER);
+        let Some(seeder) = seeders.get(name).cloned() else {
+            let known = seeders.names();
+            if known.is_empty() {
+                bail!("no seeder registered (AppBuilder::seeder)");
+            }
+            bail!("no seeder named `{name}`; registered: {}", known.join(", "));
+        };
+        let app = builder.build().await?;
+        crate::database::call(app.state(), &[seeder.as_ref()]).await?;
+        println!("Database seeded.");
+        Ok(())
     }
 }
 

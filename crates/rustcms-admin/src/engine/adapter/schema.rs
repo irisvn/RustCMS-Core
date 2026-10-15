@@ -54,6 +54,8 @@ impl<R: Resource> ResourceAdapter<R> {
             out.extend(filter.label.clone().or_else(|| field_label(&filter.name)));
             out.extend(filter.options.iter().map(|o| o.label.clone()));
         }
+        // Messages of declared unique constraints (translated when they fire).
+        out.extend(self.meta.constraints.iter().map(|c| c.message.clone()));
         for action in &self.actions {
             out.push(action.label.clone().unwrap_or_else(|| humanize(action.name)));
             out.extend(action.confirm.clone());

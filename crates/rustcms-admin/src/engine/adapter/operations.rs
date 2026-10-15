@@ -367,7 +367,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         }
         // The usual rules apply to the bound key too (writable, typed, required).
         let input = self.accept_input(ctx, Operation::Create, input)?;
+        let parents = self.lock_parents(&wctx, &txn, self.parent_of_data(&input).flatten()).await?;
         let data = R::mutate_before_create(&wctx, &txn, input).await?;
+        self.check_parent_written(&data, &parents)?;
         if let Some((field, value)) = &bound
             && data.get(field) != Some(value)
         {
@@ -390,7 +392,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             }
             KeyStrategy::Natural => {}
         }
-        let model = active.insert(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?;
+        let model = active.insert(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?;
         R::after_save(&wctx, &txn, &model).await?;
         // As stored once the hooks ran.
         self.audit_outcome(&wctx, &txn, "created", None, &model, false, true).await?;
@@ -406,16 +408,19 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.admit(ctx, ability::UPDATE).await?;
         let input = self.accept_input(ctx, Operation::Update, input)?;
         let (txn, wctx) = self.begin(ctx).await?;
-        let model = self.find_authorized_locked(&wctx, &txn, key, ability::UPDATE, Trashed::Without).await?;
+        let (model, parents) = self
+            .find_authorized_locked_moving(&wctx, &txn, key, ability::UPDATE, Trashed::Without, Some(&input))
+            .await?;
         let before = self.audit_snapshot(&model);
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
+        self.check_parent_written(&data, &parents)?;
         self.check_written(&wctx, &txn, &data).await?;
         let model = if data.is_empty() {
             model
         } else {
             let mut active = model.into_active_model();
             self.apply(&mut active, &data, Operation::Update)?;
-            active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?
+            active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?
         };
         R::after_save(&wctx, &txn, &model).await?;
         // Nothing changed: nothing to record.
@@ -434,13 +439,13 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             // To the trash: related records are kept (no database cascade runs).
             let mut active = model.into_active_model();
             self.set_marker(&mut active, true)?;
-            active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?;
+            active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?;
         } else {
             Entity::<R>::delete_many()
                 .filter(self.pk.eq(model.get(self.pk)))
                 .exec(txn.as_ref())
                 .await
-                .map_err(|e| self.map_db_err(e))?;
+                .map_err(|e| self.map_db_err(&wctx, e))?;
         }
         Self::commit(txn, wctx).await?;
         Ok(())
@@ -466,7 +471,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let before = self.audit_snapshot(&model);
         let mut active = model.into_active_model();
         self.set_marker(&mut active, false)?;
-        let model = active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(e))?;
+        let model = active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?;
         R::after_save(&wctx, &txn, &model).await?;
         self.audit_outcome(&wctx, &txn, "restored", Some(&before), &model, false, true).await?;
         Self::commit(txn, wctx).await?;
@@ -484,7 +489,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             .filter(self.pk.eq(model.get(self.pk)))
             .exec(txn.as_ref())
             .await
-            .map_err(|e| self.map_db_err(e))?;
+            .map_err(|e| self.map_db_err(&wctx, e))?;
         R::after_force_delete(&wctx, &txn, &model).await?;
         self.audit_write(&wctx, &txn, "force_deleted", &self.key_of(&model), None, None).await?;
         Self::commit(txn, wctx).await?;
@@ -521,10 +526,11 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let mut outcome = ActionOutcome::default();
         let mut candidates = Vec::new();
         let mut seen = HashSet::new();
-        for (model, record) in self.models_in_scope(&wctx, txn.as_ref(), keys).await? {
-            let key = self.key_of(&model);
+        let first_pass = self.models_in_scope(&wctx, txn.as_ref(), keys).await?;
+        for (model, record) in &first_pass {
+            let key = self.key_of(model);
             seen.insert(key.clone());
-            if self.policy.allows(&wctx, action.ability, Some(&record)).await {
+            if self.policy.allows(&wctx, action.ability, Some(record)).await {
                 candidates.push(key);
             } else {
                 outcome.denied.push(key);
@@ -533,11 +539,21 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         // Candidates are re-counted below; any not locked (deleted meanwhile)
         // or gone on reload end up in `missing`.
         seen.retain(|k| !candidates.contains(k));
+        // Parents of the whole batch first, then the records (one order for every writer).
+        let read_parents: HashMap<String, Option<String>> = first_pass
+            .iter()
+            .filter(|(model, _)| candidates.contains(&self.key_of(model)))
+            .map(|(model, _)| (self.key_of(model), self.parent_of_model(model)))
+            .collect();
+        let parents = self.lock_parents(&wctx, &txn, read_parents.values().flatten().cloned()).await?;
         let locked = self.lock_rows(&txn, &candidates, Trashed::Without).await?;
         candidates.retain(|k| locked.contains(k));
         let mut allowed = Vec::new();
         for (model, record) in self.models_in_scope(&wctx, txn.as_ref(), &candidates).await? {
             let key = self.key_of(&model);
+            if read_parents.get(&key).is_some_and(|parent| *parent != self.parent_of_model(&model)) {
+                return Err(super::write::parent_moved());
+            }
             seen.insert(key.clone());
             if self.policy.allows(&wctx, action.ability, Some(&record)).await {
                 outcome.processed.push(key);
@@ -551,7 +567,15 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if !allowed.is_empty() {
             let before: Vec<_> =
                 allowed.iter().map(|m| (self.key_of(m), self.audit_snapshot(m), self.trashed(m))).collect();
+            let processed: Vec<String> = allowed.iter().map(|m| self.key_of(m)).collect();
             (action.handler)(&wctx, txn.as_ref(), allowed, data).await?;
+            // Handlers write freely: none may move a record to a parent not held.
+            if self.meta.parent_lock.is_some() {
+                for model in self.models_by_keys(txn.as_ref(), &processed).await? {
+                    let record = Self::record(&model);
+                    self.check_parent_written(&record, &parents)?;
+                }
+            }
             self.audit_action(&wctx, &txn, name, before).await?;
         }
         outcome.processed.sort();
@@ -580,6 +604,11 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             }
         }
         Ok(out)
+    }
+
+    async fn lock_keys(&self, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<()> {
+        self.lock_rows(txn, keys, Trashed::With).await?;
+        Ok(())
     }
 
     async fn keys_in_scope(&self, ctx: &Ctx, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>> {

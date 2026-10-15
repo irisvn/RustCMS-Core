@@ -6,13 +6,15 @@ use std::process::ExitCode;
 use anyhow::{Context, bail};
 use serde_json::json;
 
-use crate::generate::{register, write_new};
+use crate::generate::{preflight, register, write_new};
+use crate::layout;
 use crate::naming::{pascal_case, plural, snake_case, validate_model, validate_snake};
 use crate::project::Project;
 use crate::scaffold::render;
 
 const RESOURCE: &str = include_str!("../templates/stubs/resource.rs.tmpl");
 const POLICY: &str = include_str!("../templates/stubs/policy.rs.tmpl");
+const ADMIN_PROVIDER: &str = "providers/admin_panel_provider.rs";
 
 /// A column of the model, as written in its `Model` struct.
 #[derive(Debug, Clone, PartialEq)]
@@ -309,15 +311,10 @@ pub fn make_resource(
             warnings: vec![],
         }
     };
-    let dir = project.root.join("src/admin");
-    if project.root.join("src/admin.rs").exists() {
-        bail!("src/admin.rs exists: move it to src/admin/mod.rs (with a `// rustcms:resource-mods` line) first");
-    }
-    ensure_module_dir(
-        &dir,
-        "Admin panel resources. `rustcms make:resource <Model>` adds modules here.",
-        "// rustcms:resource-mods",
-    )?;
+    let file = project.src(layout::RESOURCES.path).join(format!("{module}_resource.rs"));
+    let provider = project.src(ADMIN_PROVIDER);
+    preflight(&[&file], &[(&provider, "// rustcms:resources")])?;
+    let index = project.ensure_module(&layout::RESOURCES)?;
     let fields: Vec<String> =
         generated.fields.iter().map(|f| f.replace("Column::", &format!("{module}::Column::"))).collect();
     let contents = render(
@@ -337,12 +334,12 @@ pub fn make_resource(
             "filters": generated.filters,
         }),
     )?;
-    write_new(&dir.join(format!("{module}.rs")), &contents)?;
-    register(&dir.join("mod.rs"), "// rustcms:resource-mods", &format!("pub mod {module};"))?;
+    write_new(&file, &contents)?;
+    register(&index, layout::RESOURCES.anchor, &format!("pub mod {module}_resource;"))?;
     let wired = register(
-        &project.root.join("src/app.rs"),
+        &provider,
         "// rustcms:resources",
-        &format!(".resource::<crate::admin::{module}::{model}Resource>()"),
+        &format!(".resource::<crate::admin::resources::{module}_resource::{model}Resource>()"),
     )?;
     for warning in &generated.warnings {
         println!("warning: {warning}");
@@ -361,28 +358,16 @@ pub fn make_policy(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
     let module = snake_case(name);
     let slug = plural(&snake_case(stem));
     let contents = render(POLICY, json!({ "name": name, "slug": slug }))?;
-    let dir = project.root.join("src/policies");
-    ensure_module_dir(&dir, "Policies. `rustcms make:policy <Name>` adds modules here.", "// rustcms:policies")?;
-    write_new(&dir.join(format!("{module}.rs")), &contents)?;
-    register(&dir.join("mod.rs"), "// rustcms:policies", &format!("pub mod {module};"))?;
+    let file = project.src(layout::POLICIES.path).join(format!("{module}.rs"));
+    preflight(&[&file], &[])?;
+    let index = project.ensure_module(&layout::POLICIES)?;
+    preflight(&[], &[(&index, layout::POLICIES.anchor)])?;
+    write_new(&file, &contents)?;
+    register(&index, layout::POLICIES.anchor, &format!("pub mod {module};"))?;
     println!(
         "Use it in a resource: `fn policy() -> std::sync::Arc<dyn Policy> {{ std::sync::Arc::new(crate::policies::{module}::{name}) }}`"
     );
     Ok(ExitCode::SUCCESS)
-}
-
-/// Creates `dir/mod.rs` with its anchor if missing (apps created before the
-/// generator), and says which line `src/lib.rs` needs.
-fn ensure_module_dir(dir: &std::path::Path, doc: &str, anchor: &str) -> anyhow::Result<()> {
-    let index = dir.join("mod.rs");
-    if index.exists() {
-        return Ok(());
-    }
-    std::fs::create_dir_all(dir)?;
-    std::fs::write(&index, format!("//! {doc}\n\n{anchor}\n"))?;
-    let module = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-    println!("Created {}; add `pub mod {module};` to src/lib.rs", index.display());
-    Ok(())
 }
 
 /// `blog_posts` → `Blog posts`.
@@ -540,7 +525,11 @@ impl ActiveModelBehavior for ActiveModel {}
         let dir = tempfile::tempdir().unwrap();
         for (path, contents) in [
             ("src/models/post.rs", POST),
-            ("src/app.rs", "fn build() {\n    AdminProvider::new()\n        // rustcms:resources\n    ;\n}\n"),
+            (
+                "src/providers/admin_panel_provider.rs",
+                "fn provider() {\n    AdminProvider::new()\n        // rustcms:resources\n}\n",
+            ),
+            ("src/lib.rs", "pub mod providers;\n// rustcms:mods\n"),
         ] {
             let file = dir.path().join(path);
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -554,19 +543,23 @@ impl ActiveModelBehavior for ActiveModel {}
     fn writes_registers_once_and_validates_input() {
         let (dir, project) = project();
         make_resource(&project, "Post", true, &["category_id=categories".into()]).unwrap();
-        let app = std::fs::read_to_string(dir.path().join("src/app.rs")).unwrap();
-        assert_eq!(app.matches(".resource::<crate::admin::post::PostResource>()").count(), 1);
-        assert!(dir.path().join("src/admin/mod.rs").exists(), "module directory created");
-        let resource = std::fs::read_to_string(dir.path().join("src/admin/post.rs")).unwrap();
-        assert!(resource.contains(".plural(\"Posts\")"));
+        let provider = || std::fs::read_to_string(dir.path().join("src/providers/admin_panel_provider.rs")).unwrap();
+        assert_eq!(
+            provider().matches(".resource::<crate::admin::resources::post_resource::PostResource>()").count(),
+            1
+        );
+        // The module chain is created: lib.rs → admin → resources.
+        assert!(std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap().contains("pub mod admin;"));
+        assert!(std::fs::read_to_string(dir.path().join("src/admin/mod.rs")).unwrap().contains("pub mod resources;"));
+        let file = dir.path().join("src/admin/resources/post_resource.rs");
+        assert!(std::fs::read_to_string(&file).unwrap().contains(".plural(\"Posts\")"));
         // Regenerating after deleting the file does not register twice.
-        std::fs::remove_file(dir.path().join("src/admin/post.rs")).unwrap();
+        std::fs::remove_file(&file).unwrap();
         make_resource(&project, "Post", true, &[]).unwrap();
-        let app = std::fs::read_to_string(dir.path().join("src/app.rs")).unwrap();
-        assert_eq!(app.matches("PostResource").count(), 1);
-        let index = std::fs::read_to_string(dir.path().join("src/admin/mod.rs")).unwrap();
-        assert_eq!(index.matches("pub mod post;").count(), 1);
-        std::fs::remove_file(dir.path().join("src/admin/post.rs")).unwrap();
+        assert_eq!(provider().matches("PostResource").count(), 1);
+        let index = std::fs::read_to_string(dir.path().join("src/admin/resources/mod.rs")).unwrap();
+        assert_eq!(index.matches("pub mod post_resource;").count(), 1);
+        std::fs::remove_file(&file).unwrap();
         for bad in ["category_id", "category_id=cat\"egories", "category_id=", "id=x", "nope=x"] {
             assert!(make_resource(&project, "Post", true, &[bad.into()]).is_err(), "{bad}");
         }

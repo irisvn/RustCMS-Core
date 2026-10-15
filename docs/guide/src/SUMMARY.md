@@ -58,6 +58,10 @@
 - [Audit log](digging-deeper/audit-log.md)
 - [Queues](digging-deeper/queues.md)
 
+# Examples
+
+- [An LMS back office](examples/lms.md)
+
 # Reference
 
 - [CLI](reference/cli.md)

@@ -105,7 +105,9 @@ impl<R: Resource> ResourceAdapter<R> {
         errors.into_result()
     }
 
-    pub(super) fn map_db_err(&self, err: DbErr) -> AppError {
+    /// A database error as the user sees it: constraint messages declared with
+    /// [`ResourceMeta::unique`] in the request's language (like hook messages).
+    pub(super) fn map_db_err(&self, ctx: &Ctx, err: DbErr) -> AppError {
         match err.sql_err() {
             Some(SqlErr::UniqueConstraintViolation(message)) => {
                 let constraint = self.meta.constraints.iter().find(|c| {
@@ -123,8 +125,8 @@ impl<R: Resource> ResourceAdapter<R> {
                 let mut errors = ValidationErrors::new();
                 match constraint {
                     Some(c) => match &c.field {
-                        Some(field) => errors.add(field.as_str(), c.message.as_str()),
-                        None => errors.add_form(c.message.as_str()),
+                        Some(field) => errors.add(field.as_str(), ctx.t_in(R::SLUG, &c.message)),
+                        None => errors.add_form(ctx.t_in(R::SLUG, &c.message)),
                     },
                     None => {
                         tracing::warn!(resource = R::SLUG, %message, "unmapped unique constraint");

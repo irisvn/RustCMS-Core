@@ -8,12 +8,17 @@ soon as it is saved.
 
 ## Declaring a group
 
-A group is a struct. Its fields are the settings; `Default` gives their
-values until someone saves the page.
+A group has two halves, in two files (`rustcms make:settings GeneralSettings`
+writes both and registers the page):
+
+- the **data**, `src/settings/general_settings.rs`: a struct whose fields are
+  the settings (`impl Settings`); `Default` gives their values until someone
+  saves the page. Services, jobs and handlers read it.
+- the **page**, `src/admin/pages/general_settings_page.rs`: how the panel
+  shows and checks it (`impl SettingsPage` for the same struct).
 
 ```rust,ignore
-use rustcms::admin::{SettingField, SettingsMeta, SettingsPage};
-use rustcms::async_trait;
+// src/settings/general_settings.rs
 use rustcms::settings::{Secret, Settings};
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +46,14 @@ impl Default for GeneralSettings {
 impl Settings for GeneralSettings {
     const GROUP: &'static str = "general";
 }
+```
+
+```rust,ignore
+// src/admin/pages/general_settings_page.rs
+use rustcms::admin::{SettingField, SettingsMeta, SettingsPage};
+use rustcms::async_trait;
+
+use crate::settings::general_settings::GeneralSettings;
 
 #[async_trait]
 impl SettingsPage for GeneralSettings {
@@ -60,11 +73,15 @@ impl SettingsPage for GeneralSettings {
 }
 ```
 
-Register it with the panel:
+Register it with the panel (`src/providers/admin_panel_provider.rs`):
 
 ```rust,ignore
 AdminProvider::new().settings::<GeneralSettings>()
 ```
+
+Settings are for values administrators change while the application runs;
+values that change with a deploy (URLs, credentials of the database) belong
+in `config/` and `.env`.
 
 The page appears under **Settings** in the navigation, at
 `/admin/settings/general`. The group name is 1–32 of `a-z`, `0-9`, `_`.
