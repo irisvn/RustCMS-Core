@@ -23,11 +23,13 @@
      (exhaustive matches and struct literals need them); admin clients see
      `vocabularyVersion` 5.
    - Resource slugs are limited to 64 bytes and action names to 57, and
-     `user`, `role`, `permission`, `settings`, `session` are reserved (boot
-     fails); `Ctx::new` records writes as its principal.
+     `user`, `role`, `permission`, `settings`, `session` (and `job`, `queue`,
+     see below) are reserved (boot fails); `Ctx::new` records writes as its principal.
    - `ActorKind` has a `Job` variant (exhaustive matches need it).
-   - `SystemLinks` has an `audit` field; resource schemas gain the
+   - `SystemLinks` has `audit` and `queue` fields; resource schemas gain the
      `history` ability.
+   - Resource slugs `job` and `queue` are reserved too (subjects of the
+     Queue page's audit entries).
    - Tests that build tables from entities instead of running migrations also
      need the `audit_logs` table ([Testing](basics/testing.md)).
 3. Optional: translate your labels. Add `lang/vi.toml`, register it with

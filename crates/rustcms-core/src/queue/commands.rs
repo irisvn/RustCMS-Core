@@ -124,6 +124,8 @@ impl AppCommand for QueueRetry {
             .col_expr(job::Column::FailedAt, Expr::value(Option::<chrono::DateTime<chrono::Utc>>::None))
             .col_expr(job::Column::Attempts, Expr::value(0))
             .col_expr(job::Column::AvailableAt, Expr::value(now()))
+            .col_expr(job::Column::ReservedBy, Expr::value(Option::<String>::None))
+            .col_expr(job::Column::ReservedUntil, Expr::value(Option::<chrono::DateTime<chrono::Utc>>::None))
             .filter(job::Column::FailedAt.is_not_null());
         if let Some(id) = target(args)? {
             update = update.filter(job::Column::Id.eq(id));

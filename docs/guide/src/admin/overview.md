@@ -28,7 +28,9 @@ It is served under `auth.admin_path` (default `/admin`):
 
 Each resource declares its permissions (`posts.view_any`, `posts.create`, …)
 for `rustcms permission:sync`. Users see the panel's System pages
-([users & roles](users-roles.md)) and their own Account page.
+([users & roles](users-roles.md), [audit log](../digging-deeper/audit-log.md#viewing-the-log),
+[queue](../digging-deeper/queues.md#the-queue-page)) as their permissions
+allow, and their own Account page.
 
 ## Navigation
 
@@ -39,8 +41,8 @@ Resources the user may list (`view_any`) appear in the sidebar, grouped by
 ResourceMeta::new("Post").plural("Posts").group("Content").icon("file-text")
 ```
 
-Icons: `box`, `file-text`, `folder`, `image`, `settings`, `shield`,
-`shopping-cart`, `tag`, `users`.
+Icons: `box`, `file-text`, `folder`, `history`, `image`, `layers`,
+`settings`, `shield`, `shopping-cart`, `tag`, `users`.
 
 ## What users get
 

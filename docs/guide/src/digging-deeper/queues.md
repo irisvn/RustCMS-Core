@@ -157,6 +157,46 @@ fn upgrade(version: u32, payload: serde_json::Value) -> anyhow::Result<serde_jso
 }
 ```
 
+## The Queue page
+
+The admin panel shows jobs under **System → Queue** to users with
+`queue.view`, and lets those who also hold `queue.manage` act on them. Both
+permissions are declared by the admin panel (group `queue`); grant them
+through roles.
+
+Statuses are the workers' own (application time, and the lease counts until
+`queue.clock_skew_secs` after it ends, as when a worker reclaims a job):
+
+| Status | Meaning | Actions |
+|---|---|---|
+| pending | runs as soon as a worker is free (also a job whose worker vanished, with attempts left) | cancel |
+| scheduled | waits for its `available_at` (a backoff, a delayed dispatch) | cancel |
+| running | a worker owns it | none |
+| stalled | its last attempt's worker vanished; the next worker pass marks it failed | cancel |
+| failed | will not run again | retry, forget |
+
+- **Retry** runs a failed job again: attempts start over, it is available now.
+  It keeps its id, so `once` receipts and idempotency keys built from
+  `ctx.id` still recognise work an earlier attempt finished.
+- **Forget** deletes a failed job and its error.
+- **Cancel** deletes a job waiting to run, in one statement with the
+  workers' claim condition: if a worker took it first, the cancel answers
+  409 (`running`). What earlier attempts committed stays.
+- Each action re-reads the user's permissions under the RBAC lock, needs both
+  permissions, and is recorded in the audit log (`queue.retried`,
+  `queue.forgotten`, `queue.cancelled`, subject `job`, with its kind and
+  queue). A job in the wrong state answers 409 (`not_failed`,
+  `not_waiting`); one that is gone, 404.
+- The page shows kind, queue, status, attempts, times, the dispatching user
+  (named for those who may list users) and the safe error message. It never
+  shows payloads or worker tokens.
+- Counts are per queue, read in SQL; the list pages through jobs newest first.
+
+The same statuses and actions are available in Rust, for your own tools:
+`rustcms::queue::manage::{counts, retry, forget, cancel}` with a
+`rustcms::queue::Clock`. The commands `queue:failed`, `queue:retry` and
+`queue:forget` remain for scripts and cron.
+
 ## Permissions and the audit log
 
 A job does not carry the permissions of the user who asked for it. When the

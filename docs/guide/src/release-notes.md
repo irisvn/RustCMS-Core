@@ -26,7 +26,9 @@ RustCMS is in pre-release. The current published version is
 - **Queues**: jobs stored in the database, dispatched in the transaction of
   the change, run by workers in `serve` or `queue:work` with leases,
   retries, timeouts and graceful shutdown; `queue:failed` / `retry` /
-  `forget` ([Queues](digging-deeper/queues.md)).
+  `forget`; a **Queue page** in the panel (System → Queue: jobs by status,
+  retry, forget, cancel; `queue.view` / `queue.manage`)
+  ([Queues](digging-deeper/queues.md)).
 - **Application layout**: Laravel's folders inside `src/` (bootstrap,
   providers, routes, http controllers/requests/resources, services, jobs,
   settings, admin resources/pages, database migrations/seeders/factories);

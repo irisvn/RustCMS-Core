@@ -157,6 +157,9 @@ impl ServiceProvider for AdminProvider {
         for permission in crate::audit::permissions() {
             auth.permissions.declare(ADMIN_GUARD, permission, Some("audit"));
         }
+        for permission in crate::queue::permissions() {
+            auth.permissions.declare(ADMIN_GUARD, permission, Some("queue"));
+        }
         for page in self.settings.all() {
             for permission in crate::settings::permissions(page.group()) {
                 auth.permissions.declare(ADMIN_GUARD, &permission, Some("settings"));
@@ -195,9 +198,12 @@ impl ServiceProvider for AdminProvider {
         let locales = spa::Locales { default: app.config().app.locale.clone(), all: app.config().app.locales.clone() };
         app.routes(move |router| {
             spa::router(
-                crate::audit::router(
-                    crate::settings::router(
-                        system::router(http::router(router, &admin_path), &admin_path),
+                crate::queue::router(
+                    crate::audit::router(
+                        crate::settings::router(
+                            system::router(http::router(router, &admin_path), &admin_path),
+                            &admin_path,
+                        ),
                         &admin_path,
                     ),
                     &admin_path,

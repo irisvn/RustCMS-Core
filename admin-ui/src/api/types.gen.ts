@@ -514,7 +514,11 @@ createRoles: boolean,
 /**
  * The audit log (`audit.view_all`).
  */
-audit: boolean, };
+audit: boolean, 
+/**
+ * The Queue page (`queue.view`).
+ */
+queue: boolean, };
 
 export type RoleRef = { 
 /**
@@ -758,6 +762,140 @@ data: Array<AuditEntryView>,
  * Continuation.
  */
 meta: AuditPageMeta, };
+
+export type QueueStats = { 
+/**
+ * Queue name.
+ */
+name: string, 
+/**
+ * Run as soon as a worker is free.
+ */
+pending: number, 
+/**
+ * Wait for their time (a backoff, a delayed dispatch).
+ */
+scheduled: number, 
+/**
+ * Owned by a worker.
+ */
+running: number, 
+/**
+ * Last attempt's lease ended without an answer: failed at the next worker pass.
+ */
+stalled: number, 
+/**
+ * Will not run again unless retried.
+ */
+failed: number, };
+
+export type QueueWorkers = { 
+/**
+ * `queue.enabled`: `serve` runs workers.
+ */
+enabled: boolean, 
+/**
+ * Workers per process.
+ */
+workers: number, 
+/**
+ * Queues they take jobs from, in order.
+ */
+queues: Array<string>, };
+
+export type QueueOverview = { 
+/**
+ * Queues with jobs, by name.
+ */
+queues: Array<QueueStats>, 
+/**
+ * This instance's worker settings.
+ */
+workers: QueueWorkers, 
+/**
+ * May retry, forget and cancel (`queue.manage`).
+ */
+canManage: boolean, };
+
+export type QueueUser = { 
+/**
+ * User id (string).
+ */
+id: string, 
+/**
+ * Name, for viewers who may list users.
+ */
+name?: string, };
+
+export type QueueJob = { 
+/**
+ * Job id (UUID).
+ */
+id: string, 
+/**
+ * Queue name.
+ */
+queue: string, 
+/**
+ * `Job::KIND`.
+ */
+kind: string, 
+/**
+ * `Job::VERSION` of its payload.
+ */
+version: number, 
+/**
+ * `pending`, `scheduled`, `running`, `stalled` or `failed`.
+ */
+status: string, 
+/**
+ * Runs so far.
+ */
+attempts: number, 
+/**
+ * Most runs.
+ */
+maxAttempts: number, 
+/**
+ * Not run before (RFC 3339).
+ */
+availableAt: string, 
+/**
+ * Its worker owns it until (running jobs).
+ */
+reservedUntil?: string, 
+/**
+ * Why the last run failed (a safe message).
+ */
+lastError?: string, 
+/**
+ * Dispatched at (RFC 3339).
+ */
+createdAt: string, 
+/**
+ * Failed at (RFC 3339).
+ */
+failedAt?: string, 
+/**
+ * The user who dispatched it.
+ */
+initiatedBy?: QueueUser, };
+
+export type QueueJobPageMeta = { 
+/**
+ * Pass as `cursor` for older jobs; absent on the last page.
+ */
+nextCursor?: string, };
+
+export type QueueJobPage = { 
+/**
+ * Jobs.
+ */
+data: Array<QueueJob>, 
+/**
+ * Continuation.
+ */
+meta: QueueJobPageMeta, };
 
 export type PanelResponse = { 
 /**

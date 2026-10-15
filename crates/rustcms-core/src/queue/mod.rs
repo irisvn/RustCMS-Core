@@ -11,6 +11,7 @@
 //!   `queue:retry`, `queue:forget`).
 
 mod commands;
+pub mod manage;
 mod worker;
 
 use std::collections::BTreeMap;
@@ -28,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use commands::{QueueFailed, QueueForget, QueueRetry, QueueWork, definitions};
+pub use manage::{Clock, JobStatus, QueueCounts};
 pub use worker::{Workers, run_until_idle};
 
 use crate::audit::{AuditActor, AuditContext};

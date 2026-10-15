@@ -74,6 +74,11 @@ fn the_admin_route_list_is_unchanged() {
         "PUT /admin/api/settings/{group}",
         "GET /admin/api/audit",
         "GET /admin/api/resources/{slug}/records/{key}/history",
+        "GET /admin/api/queue",
+        "GET /admin/api/queue/jobs",
+        "POST /admin/api/queue/jobs/{id}/retry",
+        "POST /admin/api/queue/jobs/{id}/forget",
+        "POST /admin/api/queue/jobs/{id}/cancel",
     ];
     assert_eq!(listed, expected);
 }

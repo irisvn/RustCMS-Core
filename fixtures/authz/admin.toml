@@ -543,6 +543,252 @@ actor = "admin"
 status = 200
 
 [[case]]
+route = "GET /admin/api/queue"
+path = "/admin/api/queue"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/queue"
+path = "/admin/api/queue"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue"
+path = "/admin/api/queue"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue"
+path = "/admin/api/queue"
+actor = "manager"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue"
+path = "/admin/api/queue"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/queue"
+path = "/admin/api/queue"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "GET /admin/api/queue"
+path = "/admin/api/queue?per_page=oops"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue/jobs"
+path = "/admin/api/queue/jobs?status=failed"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/queue/jobs"
+path = "/admin/api/queue/jobs?status=failed"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue/jobs"
+path = "/admin/api/queue/jobs?status=failed"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue/jobs"
+path = "/admin/api/queue/jobs?status=failed"
+actor = "manager"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue/jobs"
+path = "/admin/api/queue/jobs?status=failed"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/queue/jobs"
+path = "/admin/api/queue/jobs?status=failed"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "GET /admin/api/queue/jobs"
+path = "/admin/api/queue/jobs?per_page=oops"
+actor = "member"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/retry"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/retry"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/retry"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/retry"
+actor = "member"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/retry"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/retry"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/retry"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/retry"
+actor = "manager"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/retry"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/retry"
+actor = "token"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/retry"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/retry"
+actor = "foreign"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/retry"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/retry"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/retry"
+path = "/admin/api/queue/jobs/not-a-uuid/retry"
+actor = "member"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/retry"
+path = "/admin/api/queue/jobs/not-a-uuid/retry"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/forget"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/forget"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/forget"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/forget"
+actor = "member"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/forget"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/forget"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/forget"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/forget"
+actor = "manager"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/forget"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/forget"
+actor = "token"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/forget"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/forget"
+actor = "foreign"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/forget"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/forget"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/forget"
+path = "/admin/api/queue/jobs/not-a-uuid/forget"
+actor = "member"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/forget"
+path = "/admin/api/queue/jobs/not-a-uuid/forget"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/cancel"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/cancel"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/cancel"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/cancel"
+actor = "member"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/cancel"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/cancel"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/cancel"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/cancel"
+actor = "manager"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/cancel"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/cancel"
+actor = "token"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/cancel"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/cancel"
+actor = "foreign"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/cancel"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2/cancel"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/cancel"
+path = "/admin/api/queue/jobs/not-a-uuid/cancel"
+actor = "member"
+status = 403
+
+[[case]]
+route = "POST /admin/api/queue/jobs/{id}/cancel"
+path = "/admin/api/queue/jobs/not-a-uuid/cancel"
+actor = "admin"
+status = 404
+
+[[case]]
 route = "GET /admin/api/resources/{slug}/records/{key}/history"
 path = "/admin/api/resources/posts/records/{own}/history"
 actor = "editor"

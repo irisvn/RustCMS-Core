@@ -40,14 +40,19 @@ settings, audit log, i18n, media S3/R2, tin tức, nhiều-nhiều, import/expor
 | M15b | Kiểm thật S3-compatible (S3Mock), cấu hình Cloudflare R2, timeout/streaming | ✅ `4fd54a0` + fix |
 | R3 | Cấu trúc app kiểu Laravel trong `src/` (bootstrap, providers, routes, http, services, jobs, settings, admin/{resources,pages}, database/{migrations,seeders,factories}), `db:seed`, generator mới, `lock_parent` | ✅ `ac50ab5` + fix |
 | M15c | `examples/lms` khung tối thiểu: khoá học, bài học, học viên, ghi danh (sĩ số, instructor) — viết lại theo R3 | ✅ `ac50ab5` + fix |
+| M15d | Trang Queue trong Admin (System → Queue): tổng quan, danh sách job, retry/forget/cancel, `queue.view`/`queue.manage` | 🔧 |
+| M15e | Tuỳ biến Admin: Theme API, trang/slot tuỳ biến (template HTML `resources/views/admin` hoặc script), `registerCell`, `make:page`; thư mục `resources/` | ⏳ |
 | M16 | Quan hệ nhiều-nhiều (attach/detach/pivot) + action có form (modal) + ma trận quyền theo resource | ⏳ |
 | M17 | Import / Export CSV (chạy nền qua queue, kiểm quyền mỗi lô, chống CSV injection) | ⏳ |
 | M18 | Excel (XLSX): giới hạn zip bomb, kiểu dữ liệu tường minh | ⏳ |
 | M19 | Mail: SMTP qua settings, gửi qua queue | ⏳ |
 | M20 | Quên mật khẩu + mời user (token một lần, revoke trong cùng transaction) | ⏳ |
 | M21 | Media: Range/video, thumbnail (giới hạn decode an toàn) | ⏳ |
-| M22 | Dashboard widgets dựng sẵn (đếm/nhóm theo quyền, không cache) | ⏳ |
+| M22 | Dashboard widgets dựng sẵn (đếm/nhóm theo quyền, không cache), dùng cơ chế slot của M15e | ⏳ |
 | M23 | Hoàn thiện `examples/lms`, docs vận hành, tutorial tiếng Việt, tag `v0.3.0` | ⏳ |
+
+## Sau 0.3 (đã thống nhất hướng)
+- `admin:eject` (chép mã nguồn SPA vào app) và tài liệu dùng Admin API kiểu headless.
 
 ## Ngoài phạm vi 0.3
 Nội dung đa ngôn ngữ (translatable fields), plugin/marketplace, website public / headless pages & menus,

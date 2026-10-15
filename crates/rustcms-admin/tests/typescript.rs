@@ -56,6 +56,13 @@ fn bindings() -> String {
         rustcms_admin::audit::AuditEntryView::decl(&cfg),
         rustcms_admin::audit::AuditPageMeta::decl(&cfg),
         rustcms_admin::audit::AuditPage::decl(&cfg),
+        rustcms_admin::queue::QueueStats::decl(&cfg),
+        rustcms_admin::queue::QueueWorkers::decl(&cfg),
+        rustcms_admin::queue::QueueOverview::decl(&cfg),
+        rustcms_admin::queue::QueueUser::decl(&cfg),
+        rustcms_admin::queue::QueueJob::decl(&cfg),
+        rustcms_admin::queue::QueueJobPageMeta::decl(&cfg),
+        rustcms_admin::queue::QueueJobPage::decl(&cfg),
         PanelResponse::decl(&cfg),
         DataResponse::<ts_rs::Dummy>::decl(&cfg),
     ];

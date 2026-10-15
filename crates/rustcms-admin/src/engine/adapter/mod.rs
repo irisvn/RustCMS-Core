@@ -127,7 +127,7 @@ impl<R: Resource> ResourceAdapter<R> {
         assert!(slug.len() <= 64, "resource `{slug}`: slugs are at most 64 bytes");
         // Subjects of the framework's own audit entries.
         assert!(
-            !["user", "role", "permission", "settings", "session"].contains(&slug),
+            !["user", "role", "permission", "settings", "session", "job", "queue"].contains(&slug),
             "resource `{slug}`: this slug is reserved"
         );
         assert!(

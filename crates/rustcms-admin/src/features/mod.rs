@@ -3,6 +3,7 @@
 
 pub mod audit;
 pub mod media;
+pub mod queue;
 pub mod rich_text;
 pub mod settings;
 pub mod system;

@@ -4,9 +4,10 @@
 
 "Content" = "Nội dung"
 "System" = "Hệ thống"
-# Permission groups of the audit log and settings pages.
+# Permission groups of the audit log, settings and queue pages.
 "Audit" = "Nhật ký"
 "Settings" = "Cài đặt"
+"Queue" = "Hàng đợi"
 
 # Common fields (labels formed from column names).
 "Name" = "Tên"

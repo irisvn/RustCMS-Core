@@ -13,6 +13,21 @@ All notable changes are documented here. The format follows
   (architecture, admin protocol, ADRs, reports, this changelog, review
   checklist, contributor guides). `CHANGELOG.md` moved to `docs/core/`.
 
+### Added (0.3 — M15d)
+- Admin **Queue page** (System → Queue): counts per queue and status, job
+  list (status, queue, kind filters; keyset pages), retry / forget / cancel
+  of one job; `queue.view` and `queue.manage` (both for actions, re-read
+  under the RBAC lock); audit events `queue.retried`, `queue.forgotten`,
+  `queue.cancelled`; payloads and worker tokens never sent.
+- `rustcms::queue::manage`: `JobStatus` (pending, scheduled, running,
+  stalled, failed — the workers' own conditions, clock skew included),
+  `Clock`, `counts`, `retry`, `forget`, `cancel` (conditional statements).
+- `SystemLinks.queue`; resource slugs `job` and `queue` reserved; icon
+  `layers`.
+
+### Changed (0.3 — M15d)
+- `queue:retry` also clears a stale reservation of the jobs it retries.
+
 ### Fixed (0.3 — R3, Codex verify)
 - Parent locks: a parent set by a column default (field left out) or spelled
   differently (`01`, upper-case UUID) is checked against the locked keys after

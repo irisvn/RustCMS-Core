@@ -18,7 +18,8 @@
 - [ ] Password-hashing and upload concurrency limits are per instance (each bounds its own CPU and disk).
 - [ ] Queue workers: decide where they run (`serve`, or `queue:work` processes with `queue.enabled = false` on
       web instances); clocks synchronized (NTP); `queue:failed` watched; job payloads and error messages carry
-      no secrets ([Queues](../digging-deeper/queues.md)).
+      no secrets ([Queues](../digging-deeper/queues.md)); `queue.manage` (retry, forget, cancel jobs) only for
+      operators.
 - [ ] First super admin created with `make:user --super-admin`; `permission:sync` run after each deploy.
 - [ ] TLS terminates before the app; HTTP redirects to HTTPS at the proxy.
 - [ ] Database backups include `sessions` only if you want sessions to survive restores.

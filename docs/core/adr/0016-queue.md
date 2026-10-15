@@ -53,6 +53,17 @@ database is already shared and transactional.
 - **Actor**: `job`, user id of the initiator, credential `queue:<kind>`;
   permissions are not serialized (handlers reload them).
 
+## Admin page (M15d)
+
+`System → Queue`: statuses computed with the workers' own conditions
+(`queue::manage::JobStatus`: lease cutoff `now - clock_skew_secs`; `stalled`
+for an expired last attempt awaiting the reaper). Actions are single
+conditional statements (retry `WHERE failed_at IS NOT NULL`, cancel with the
+claim condition), run under `rbac::begin_as` (fresh grants, both
+`queue.view` and `queue.manage`) and audited in the same transaction. No
+bulk actions in the panel (the commands keep `--all`); payloads and worker
+tokens are never sent.
+
 ## Consequences
 
 - Polling (default 1 s per worker) costs one small query per idle worker.

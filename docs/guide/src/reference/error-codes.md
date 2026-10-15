@@ -107,7 +107,7 @@ A message that follows none of these templates has the code `custom` and
 | `forbidden`, `csrf_mismatch` | 403 | |
 | `not_found` | 404 | |
 | `method_not_allowed` | 405 | |
-| `write_conflict` | 409 | `busy` (another change in progress), `upload_expired`, `receipt_expired` |
+| `write_conflict` | 409 | `busy` (another change in progress), `upload_expired`, `receipt_expired`; queue actions: `not_failed`, `not_waiting`, `running` |
 | `payload_too_large` | 413 | |
 | `validation_failed` | 422 | |
 | `too_many_requests` | 429 | |

@@ -49,7 +49,7 @@ on the admin engine, so it can change without touching them.
 | `engine/adapter/` | `ResourceAdapter<R>`: `input` (acceptance), `references` (checks after hooks), `read`, `write` (transactions, row and parent locks, ADR 0018), `schema`, `operations` (the `DynResource` impl), `audit` (snapshots, redaction, entries) |
 | `http/` | routes and handlers: `resources`, `relations`, `actions`, `extract` (`AdminCtx`) |
 | `contract/` | the DTOs the SPA receives (`ResourceSchema`, …); also reachable as `schema` |
-| `features/` | built-in features: `audit` (log viewer, record history), `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
+| `features/` | built-in features: `audit` (log viewer, record history), `queue` (System → Queue page, M15d), `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
 
 ### rustcms-auth
 
@@ -65,7 +65,7 @@ on the admin engine, so it can change without touching them.
 ### rustcms-core
 
 Small modules stay at the top (`app`, `config`, `console`, `error`, `http`,
-`key`, `principal`, `telemetry`, `models`, `i18n` (locale, catalogs, issue codes), `audit` (entries, diff, bounds, prune; ADR 0014), `settings` (groups, `Secret`, encrypted storage; ADR 0015), `queue/` (jobs, workers, commands; ADR 0016), `jobs` (periodic jobs run by one
+`key`, `principal`, `telemetry`, `models`, `i18n` (locale, catalogs, issue codes), `audit` (entries, diff, bounds, prune; ADR 0014), `settings` (groups, `Secret`, encrypted storage; ADR 0015), `queue/` (jobs, workers, commands, `manage`: statuses and single-job actions; ADR 0016), `jobs` (periodic jobs run by one
 instance), `redis` with feature `redis`). Two are directories:
 
 - `db/`: `connect`, `check` (MySQL setup), `transactions`, `locks` (named locks).

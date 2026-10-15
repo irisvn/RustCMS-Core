@@ -31,6 +31,9 @@ values follow the [wire format](wire-format.md).
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../admin/users-roles.md) |
 | GET / PUT | `/settings/{group}` | settings pages, see [Settings](../admin/settings.md#api) |
 | GET | `/audit`, `/resources/{slug}/records/{key}/history` | the audit log and record histories, see [Audit log](../digging-deeper/audit-log.md#viewing-the-log) |
+| GET | `/queue` | counts per queue and status, worker settings, `canManage` (`queue.view`) |
+| GET | `/queue/jobs?status=&queue=&kind=&cursor=&per_page=` | `{data: [QueueJob], meta: {nextCursor?}}`, newest first (`queue.view`) |
+| POST | `/queue/jobs/{id}/retry`, `/forget`, `/cancel` | 204; 409 `not_failed` / `not_waiting` / `running` (`queue.view` + `queue.manage`), see [Queues](../digging-deeper/queues.md#the-queue-page) |
 
 Options are available to users who may use the field. When a record-level
 policy hides more than 1,000 candidates before 50 visible ones are found, the

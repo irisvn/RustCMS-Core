@@ -17,6 +17,8 @@ pub struct SystemLinks {
     pub create_roles: bool,
     /// The audit log (`audit.view_all`).
     pub audit: bool,
+    /// The Queue page (`queue.view`).
+    pub queue: bool,
 }
 
 impl SystemLinks {
@@ -27,6 +29,7 @@ impl SystemLinks {
             create_users: principal.can("users.create"),
             create_roles: principal.can("roles.create"),
             audit: principal.can(crate::audit::VIEW_ALL),
+            queue: principal.can(crate::queue::VIEW),
         }
     }
 }

@@ -1,4 +1,4 @@
-import { Box, FileText, Folder, History, Image, LayoutList, Settings, ShieldCheck, ShoppingCart, Tag, Users } from "lucide-react";
+import { Box, FileText, Folder, History, Image, Layers, LayoutList, Settings, ShieldCheck, ShoppingCart, Tag, Users } from "lucide-react";
 
 // Icon names a resource may use (`ResourceMeta::icon`); anything else falls back.
 const ICONS = {
@@ -7,6 +7,7 @@ const ICONS = {
   history: History,
   folder: Folder,
   image: Image,
+  layers: Layers,
   settings: Settings,
   shield: ShieldCheck,
   "shopping-cart": ShoppingCart,
