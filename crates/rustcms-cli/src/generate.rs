@@ -81,7 +81,7 @@ pub fn make_test(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Writes `assets/admin/<vendor>/<name>.js` for the widget `vendor/name` and
+/// Writes `resources/admin/js/<vendor>/<name>.js` for the widget `vendor/name` and
 /// prints how to register it.
 pub fn make_widget(project: &Project, widget: &str) -> anyhow::Result<ExitCode> {
     let part = |p: &str| {
@@ -91,12 +91,12 @@ pub fn make_widget(project: &Project, widget: &str) -> anyhow::Result<ExitCode> 
         bail!("widget names are `vendor/name`, each part 1-32 of a-z, 0-9 and -: {widget}");
     };
     let extension = extension_name(widget);
-    let dir = project.root.join("assets/admin").join(vendor);
+    let dir = project.root.join("resources/admin/js").join(vendor);
     std::fs::create_dir_all(&dir)?;
     let contents = render(WIDGET, json!({ "widget": widget, "class": format!("{extension}-input") }))?;
     write_new(&dir.join(format!("{name}.js")), &contents)?;
     println!(
-        "Register it on the admin provider:\n    .extension_script(\"{extension}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/assets/admin/{vendor}/{name}.js\")))\nand use it on a field:\n    CustomInput::make(\"field\", \"{widget}\")"
+        "Register it on the admin provider (src/providers/admin_panel_provider.rs):\n    .extension_script(\"{extension}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/resources/admin/js/{vendor}/{name}.js\")))\nand use it on a field:\n    CustomInput::make(\"field\", \"{widget}\")"
     );
     Ok(ExitCode::SUCCESS)
 }
@@ -230,7 +230,7 @@ mod tests {
     fn widget_stub_registers_the_widget() {
         let (dir, project) = project();
         make_widget(&project, "acme/color").unwrap();
-        let script = std::fs::read_to_string(dir.path().join("assets/admin/acme/color.js")).unwrap();
+        let script = std::fs::read_to_string(dir.path().join("resources/admin/js/acme/color.js")).unwrap();
         assert!(script.contains("window.rustcms.registerWidget(\"acme/color\", {"));
         assert!(script.contains("apiVersion: 1,"));
         assert!(make_widget(&project, "acme/color").is_err(), "never overwrites");

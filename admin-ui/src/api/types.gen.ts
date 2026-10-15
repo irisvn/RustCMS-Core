@@ -278,7 +278,15 @@ colors?: Array<BadgeColor>,
 /**
  * Related resource (display `labels[name]`).
  */
-relationship?: Relationship, };
+relationship?: Relationship, 
+/**
+ * Custom cell (`vendor/name`) drawing the value, if registered.
+ */
+cell?: string, 
+/**
+ * Settings of the custom cell.
+ */
+props?: JsonValue, };
 
 export type BadgeColor = { 
 /**
@@ -897,6 +905,72 @@ data: Array<QueueJob>,
  */
 meta: QueueJobPageMeta, };
 
+export type PageLink = { 
+/**
+ * URL segment (`/p/{slug}`).
+ */
+slug: string, 
+/**
+ * Title.
+ */
+label: string, 
+/**
+ * Icon name.
+ */
+icon?: string, 
+/**
+ * Navigation group.
+ */
+group?: string, };
+
+export type CustomContent = { "kind": "html", 
+/**
+ * The markup.
+ */
+html: string, } | { "kind": "script", 
+/**
+ * `vendor/name`.
+ */
+script: string, 
+/**
+ * What the script gets as `ctx.data`.
+ */
+data: JsonValue, };
+
+export type CustomPageResponse = { 
+/**
+ * URL segment.
+ */
+slug: string, 
+/**
+ * Title (translated).
+ */
+title: string, 
+/**
+ * Content.
+ */
+content: CustomContent, };
+
+export type SlotContent = { 
+/**
+ * Slot name.
+ */
+name: string, 
+/**
+ * Heading (translated).
+ */
+label?: string, 
+/**
+ * Content.
+ */
+content: CustomContent, };
+
+export type SlotsResponse = { 
+/**
+ * The slots the user may see, in registration order.
+ */
+data: Array<SlotContent>, };
+
 export type PanelResponse = { 
 /**
  * Name shown in the panel.
@@ -917,7 +991,11 @@ system: SystemLinks,
 /**
  * Settings pages the user may open.
  */
-settings: Array<SettingsLink>, };
+settings: Array<SettingsLink>, 
+/**
+ * Custom pages the user may open, in registration order.
+ */
+pages: Array<PageLink>, };
 
 export type DataResponse<T> = { 
 /**

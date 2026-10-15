@@ -8,7 +8,7 @@ use serde_json::json;
 
 use crate::generate::{preflight, register, write_new};
 use crate::layout;
-use crate::naming::{pascal_case, plural, snake_case, validate_model, validate_snake};
+use crate::naming::{humanize, pascal_case, plural, snake_case, validate_model, validate_snake};
 use crate::project::Project;
 use crate::scaffold::render;
 
@@ -372,13 +372,6 @@ pub fn make_policy(project: &Project, name: &str) -> anyhow::Result<ExitCode> {
 /// `blog_posts` → `Blog posts`.
 fn humanize_plural(table: &str) -> String {
     let words = table.replace('_', " ");
-    let mut chars = words.chars();
-    chars.next().map(|c| c.to_ascii_uppercase().to_string() + chars.as_str()).unwrap_or_default()
-}
-
-/// `BlogPost` → `Blog post`.
-fn humanize(model: &str) -> String {
-    let words = snake_case(model).replace('_', " ");
     let mut chars = words.chars();
     chars.next().map(|c| c.to_ascii_uppercase().to_string() + chars.as_str()).unwrap_or_default()
 }

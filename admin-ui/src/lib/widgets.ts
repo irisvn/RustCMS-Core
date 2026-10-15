@@ -34,6 +34,38 @@ export interface Widget {
 /** Version of the widget host API. */
 export const WIDGET_API_VERSION = 1;
 
+/** What a custom page, slot or cell is given (a copy: changing it changes nothing). */
+export interface ViewContext {
+  /** Data from the server (`PanelPage::data`, `PanelSlot::data`), or the cell's value. */
+  data: unknown;
+  /** The record (slots, cells): readable fields only. */
+  record?: unknown;
+  /** Settings of a cell (`TableColumn::props`). */
+  props?: unknown;
+  /** The panel's language; `update` is called when it changes. */
+  locale: string;
+  /** `text` in the panel's language (extension catalogs). */
+  t: (text: string) => string;
+  /** Opens a page of the panel (`/admin/...`); anything else is ignored. */
+  navigate: (path: string) => void;
+  /** Reads the page or slot again from the server (pages and slots). */
+  reload: () => void;
+}
+
+export interface ViewInstance {
+  update(ctx: ViewContext): void;
+  unmount(): void;
+}
+
+export interface View {
+  apiVersion: 1;
+  mount(element: HTMLElement, ctx: ViewContext): ViewInstance;
+}
+
+export type ViewKind = "page" | "slot" | "cell";
+const views: Record<ViewKind, Map<string, View>> = { page: new Map(), slot: new Map(), cell: new Map() };
+const failedViews = new Set<string>();
+
 const NAME = /^[a-z0-9-]{1,32}\/[a-z0-9-]{1,32}$/;
 const widgets = new Map<string, Widget>();
 const failed = new Set<string>();
@@ -53,6 +85,38 @@ export function registerWidget(name: string, widget: Widget): void {
     throw new Error(`rustcms: widget ${name} does not implement host API version ${WIDGET_API_VERSION}`);
   }
   widgets.set(name, widget);
+}
+
+function registerView(kind: ViewKind, name: string, view: View): void {
+  if (frozen || (document.currentScript && expired.has(document.currentScript))) {
+    throw new Error(`rustcms: ${kind}s must be registered while extensions load (${name})`);
+  }
+  if (!NAME.test(name)) throw new Error(`rustcms: invalid ${kind} name ${name}`);
+  if (views[kind].has(name)) throw new Error(`rustcms: ${kind} ${name} is already registered`);
+  if (!view || view.apiVersion !== WIDGET_API_VERSION || typeof view.mount !== "function") {
+    throw new Error(`rustcms: ${kind} ${name} does not implement host API version ${WIDGET_API_VERSION}`);
+  }
+  views[kind].set(name, view);
+}
+
+/** Registers a custom page drawn by a script (`PageView::Script("vendor/name")`). */
+export const registerPage = (name: string, view: View) => registerView("page", name, view);
+/** Registers a slot drawn by a script. */
+export const registerSlot = (name: string, view: View) => registerView("slot", name, view);
+/** Registers a table cell (`TableColumn::cell("vendor/name")`). */
+export const registerCell = (name: string, view: View) => registerView("cell", name, view);
+
+/** The view registered as `name`, unless it is missing or has failed. */
+export function view(kind: ViewKind, name: string | undefined): View | undefined {
+  return name && !failedViews.has(`${kind}:${name}`) ? views[kind].get(name) : undefined;
+}
+
+/** A view that threw: drawn the default way from now on (cells), or as unavailable. */
+export function markViewFailed(kind: ViewKind, name: string, error: unknown): void {
+  console.error(`rustcms: ${kind} ${name} failed`, error);
+  if (failedViews.has(`${kind}:${name}`)) return;
+  failedViews.add(`${kind}:${name}`);
+  for (const listener of listeners) listener();
 }
 
 const translations = new Map<string, Map<string, string>>();
@@ -98,7 +162,14 @@ export function subscribeWidgets(listener: () => void): () => void {
 
 /** Loads extension styles and scripts in order (each bounded), then freezes the registry. */
 export async function loadExtensions(basePath: string, extensions: { scripts: string[]; styles: string[] }): Promise<void> {
-  (window as unknown as { rustcms: unknown }).rustcms = { registerWidget, registerTranslations, apiVersion: WIDGET_API_VERSION };
+  (window as unknown as { rustcms: unknown }).rustcms = {
+    registerWidget,
+    registerTranslations,
+    registerPage,
+    registerSlot,
+    registerCell,
+    apiVersion: WIDGET_API_VERSION,
+  };
   const url = (path: string) => `${basePath}/${path}`;
   for (const href of extensions.styles) {
     const link = document.createElement("link");
@@ -136,6 +207,8 @@ export async function loadExtensions(basePath: string, extensions: { scripts: st
 export function resetWidgets(): void {
   widgets.clear();
   failed.clear();
+  for (const map of Object.values(views)) map.clear();
+  failedViews.clear();
   translations.clear();
   frozen = false;
 }

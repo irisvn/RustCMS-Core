@@ -132,7 +132,7 @@ impl Resource for GadgetResource {
                 DateColumn::make("day"),
                 DateColumn::make("happened_at"),
                 TextColumn::make("category_id"),
-                TextColumn::make("price"),
+                TextColumn::make("price").cell("acme/money").props(serde_json::json!({"currency": "VND"})),
                 TextColumn::make("serial"),
             ])
             .filters(vec![

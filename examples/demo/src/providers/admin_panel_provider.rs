@@ -13,10 +13,13 @@ pub fn provider() -> AdminProvider {
         .resource::<PostResource>()
         // rustcms:resources
         .settings::<crate::settings::site_settings::SiteSettings>()
+        .page::<crate::admin::pages::post_stats_page::PostStatsPage>()
         // rustcms:pages
+        .slot::<crate::admin::slots::post_summary_slot::PostSummarySlot>()
         // The `demo/color` widget of the category form.
-        .extension_script("demo-color", include_str!("../../assets/admin/demo/color.js"))
-        .extension_style("demo-color", include_str!("../../assets/admin/demo/color.css"))
+        .extension_script("demo-color", include_str!("../../resources/admin/js/demo/color.js"))
+        .extension_style("demo-color", include_str!("../../resources/admin/css/demo/color.css"))
+        // rustcms:extensions
         // Vietnamese labels (`cargo run -- lang:missing vi` lists what is missing).
         .translations("vi", include_str!("../../lang/vi.toml"))
 }

@@ -1,0 +1,33 @@
+//! The `{{ label }}` page of the admin panel (`/admin/p/{{ slug }}`).
+
+use rustcms::admin::{Ctx, PageView, PanelPage, PanelPageMeta};
+use rustcms::{AppResult, async_trait};
+use serde_json::{Value, json};
+
+pub struct {{ name }};
+
+#[async_trait]
+impl PanelPage for {{ name }} {
+    const SLUG: &'static str = "{{ slug }}";
+
+    /// Users need `{{ permission }}` (declared for `rustcms permission:sync`; grant it through a role).
+    fn meta() -> PanelPageMeta {
+        PanelPageMeta::new("{{ label }}").icon("layers").declare_permission("{{ permission }}")
+    }
+
+{% if script %}    /// Drawn by `{{ script }}` (resources/admin/js/{{ script }}.js).
+    fn view() -> PageView {
+        PageView::Script("{{ script }}")
+    }
+{% else %}    /// resources/views/admin/{{ module }}.html
+    fn view() -> PageView {
+        PageView::Template(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/views/admin/{{ module }}.html")))
+    }
+{% endif %}
+    /// What the {% if script %}script gets as `ctx.data`{% else %}template gets as `data`{% endif %}. Read records with
+    /// `ctx.records(slug, &query)` / `ctx.record(slug, key)`: scope, policies and
+    /// readable fields apply. Anything else you return, authorize yourself.
+    async fn data(ctx: &Ctx) -> AppResult<Value> {
+        Ok(json!({ "user": ctx.principal.id }))
+    }
+}

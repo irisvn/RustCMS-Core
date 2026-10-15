@@ -213,6 +213,13 @@ impl<R: Resource> ResourceAdapter<R> {
             );
         }
         let mut table_ui = R::table();
+        for column in &table_ui.columns {
+            if let Some(cell) = &column.cell {
+                assert!(crate::ui::valid_widget(cell), "resource `{slug}`: invalid cell name `{cell}`");
+            }
+            let size = column.props.as_ref().map_or(0, |p| p.to_string().len());
+            assert!(size <= 4096, "resource `{slug}`: props of column `{}` exceed 4 KiB", column.name);
+        }
         if table_ui.columns.is_empty() {
             table_ui.columns = auto_columns(&fields, &columns);
         }

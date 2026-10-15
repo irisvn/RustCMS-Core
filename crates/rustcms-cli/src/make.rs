@@ -19,6 +19,9 @@ const FACTORY: &str = include_str!("../templates/stubs/factory.rs.tmpl");
 const SETTINGS: &str = include_str!("../templates/stubs/settings.rs.tmpl");
 const SETTINGS_PAGE: &str = include_str!("../templates/stubs/settings_page.rs.tmpl");
 const COMMAND: &str = include_str!("../templates/stubs/command.rs.tmpl");
+const PAGE: &str = include_str!("../templates/stubs/page.rs.tmpl");
+const PAGE_HTML: &str = include_str!("../templates/stubs/page.html.tmpl");
+const PAGE_JS: &str = include_str!("../templates/stubs/page.js.tmpl");
 
 const APP_PROVIDER: &str = "providers/app_service_provider.rs";
 const ADMIN_PROVIDER: &str = "providers/admin_panel_provider.rs";
@@ -165,6 +168,57 @@ pub fn make_command(project: &Project, command: &str) -> anyhow::Result<ExitCode
     Ok(ExitCode::SUCCESS)
 }
 
+pub fn make_page(project: &Project, name: &str, script: bool) -> anyhow::Result<ExitCode> {
+    let stem = suffixed(name, "Page")?;
+    let snake = snake_case(stem);
+    let module = snake_case(name);
+    let slug = snake.replace('_', "-");
+    if slug.len() > 64 {
+        bail!("page slugs are at most 64 characters: `{slug}`");
+    }
+    let vendor = project.package.replace('_', "-");
+    let script_name = format!("{vendor}/{slug}");
+    let label = crate::naming::humanize(stem);
+    let vars = json!({
+        "name": name,
+        "slug": slug,
+        "module": snake,
+        "label": label,
+        "permission": format!("{snake}.view"),
+        "script": if script { Some(script_name.clone()) } else { None },
+    });
+    let page_file = project.src(layout::PAGES.path).join(format!("{module}.rs"));
+    let asset = if script {
+        project.root.join(format!("resources/admin/js/{vendor}/{slug}.js"))
+    } else {
+        project.root.join(format!("resources/views/admin/{snake}.html"))
+    };
+    let mut anchors = vec![(project.src(ADMIN_PROVIDER), "// rustcms:pages")];
+    if script {
+        anchors.push((project.src(ADMIN_PROVIDER), "// rustcms:extensions"));
+    }
+    let checks: Vec<(&std::path::Path, &str)> = anchors.iter().map(|(f, a)| (f.as_path(), *a)).collect();
+    preflight(&[&page_file, &asset], &checks)?;
+    let index = project.prepare_module(&layout::PAGES)?;
+    std::fs::create_dir_all(asset.parent().expect("a file"))?;
+    write_new(&page_file, &render(PAGE, &vars)?)?;
+    write_new(&asset, &render(if script { PAGE_JS } else { PAGE_HTML }, &vars)?)?;
+    register(&index, layout::PAGES.anchor, &format!("pub mod {module};"))?;
+    let provider = project.src(ADMIN_PROVIDER);
+    register(&provider, "// rustcms:pages", &format!(".page::<crate::admin::pages::{module}::{name}>()"))?;
+    if script {
+        register(
+            &provider,
+            "// rustcms:extensions",
+            &format!(
+                ".extension_script(\"{slug}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/resources/admin/js/{vendor}/{slug}.js\")))"
+            ),
+        )?;
+    }
+    println!("`{snake}.view` is declared; run `rustcms permission:sync` and grant it through a role.");
+    Ok(ExitCode::SUCCESS)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,6 +284,25 @@ mod tests {
             read(&dir, "src/providers/admin_panel_provider.rs")
                 .contains(".settings::<crate::settings::school_settings::SchoolSettings>()")
         );
+
+        make_page(&project, "SeatOverviewPage", false).unwrap();
+        let page = read(&dir, "src/admin/pages/seat_overview_page.rs");
+        assert!(
+            page.contains("const SLUG: &'static str = \"seat-overview\";")
+                && page.contains("declare_permission(\"seat_overview.view\")")
+        );
+        assert!(page.contains("/resources/views/admin/seat_overview.html"));
+        assert!(read(&dir, "resources/views/admin/seat_overview.html").contains("{{ t(\"Seat overview\") }}"));
+        assert!(
+            read(&dir, "src/providers/admin_panel_provider.rs")
+                .contains(".page::<crate::admin::pages::seat_overview_page::SeatOverviewPage>()")
+        );
+        make_page(&project, "ProgressPage", true).unwrap();
+        assert!(read(&dir, "src/admin/pages/progress_page.rs").contains("PageView::Script(\"lms/progress\")"));
+        assert!(read(&dir, "resources/admin/js/lms/progress.js").contains("registerPage(\"lms/progress\""));
+        assert!(read(&dir, "src/providers/admin_panel_provider.rs").contains("/resources/admin/js/lms/progress.js"));
+        assert!(make_page(&project, "SeatOverviewPage", false).is_err(), "never twice");
+        assert!(make_page(&project, "Overview", false).is_err(), "names end with Page");
 
         make_command(&project, "lms:report").unwrap();
         assert!(read(&dir, "src/console/lms_report.rs").contains("Command::new(\"lms:report\")"));

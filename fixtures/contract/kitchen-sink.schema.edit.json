@@ -386,8 +386,12 @@
         "valueType": "i32"
       },
       {
+        "cell": "acme/money",
         "label": "Price",
         "name": "price",
+        "props": {
+          "currency": "VND"
+        },
         "searchable": false,
         "sortable": false,
         "type": "text",
@@ -451,5 +455,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 5
+  "vocabularyVersion": 6
 }

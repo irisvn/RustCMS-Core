@@ -1,0 +1,21 @@
+// The `{{ slug }}` page, drawn by this script (`PageView::Script("{{ script }}")`).
+// Loaded by the panel before it renders. Scripts have the panel's full
+// privileges: never put user input into innerHTML; build elements instead.
+// No inline styles: put them in a stylesheet (`extension_style`).
+window.rustcms.registerPage("{{ script }}", {
+  apiVersion: 1,
+  mount(element, ctx) {
+    const title = document.createElement("p");
+    element.append(title);
+    const render = (current) => {
+      title.textContent = current.t("Signed in as user") + " " + String(current.data?.user ?? "");
+    };
+    render(ctx);
+    return {
+      update: render,
+      unmount() {
+        element.replaceChildren();
+      },
+    };
+  },
+});

@@ -13,12 +13,12 @@ CustomInput::make("color", "demo/color").props(json!({"palette": [{"value": "#25
 
 // The provider: scripts (and stylesheets) load in order before the panel renders.
 AdminProvider::new()
-    .extension_script("demo-color", include_str!("../assets/admin/demo/color.js"))
-    .extension_style("demo-color", include_str!("../assets/admin/demo/color.css"))
+    .extension_script("demo-color", include_str!("../../resources/admin/js/demo/color.js"))
+    .extension_style("demo-color", include_str!("../../resources/admin/css/demo/color.css"))
 ```
 
 `rustcms make:widget acme/color` writes a starting point to
-`assets/admin/acme/color.js` and prints the registration line.
+`resources/admin/js/acme/color.js` and prints the registration line.
 
 Widget names are `vendor/name` (each part 1–32 of `a-z`, `0-9`, `-`); extension
 names are 1–64 of the same characters. Each extension is served from
@@ -78,3 +78,11 @@ the panel's CSP does not isolate them from each other. Only ship code you
 review. The CSP still applies to them: no inline scripts, no `style`
 attributes or `<style>` elements (use `extension_style`), images only from the
 panel or `data:` URLs.
+
+## Pages, slots and cells
+
+The same extension scripts may draw custom pages (`registerPage`), content
+beside records (`registerSlot`) and table cells (`registerCell`), with the
+same lifecycle (`mount`, `update`, `unmount`): see
+[Customizing the panel](customizing.md).
+

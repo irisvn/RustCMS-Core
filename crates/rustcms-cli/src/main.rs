@@ -120,7 +120,16 @@ enum Command {
         /// Command name, e.g. `lms:report`
         name: String,
     },
-    /// Create an admin widget script in `assets/admin`
+    /// Create a custom admin page: `src/admin/pages` + a template in `resources/views/admin` (or a script)
+    #[command(name = "make:page")]
+    MakePage {
+        /// Name ending in `Page`, e.g. `CourseOverviewPage`
+        name: String,
+        /// Draw it with an extension script (`resources/admin/js`) instead of a template
+        #[arg(long)]
+        script: bool,
+    },
+    /// Create an admin widget script in `resources/admin/js`
     #[command(name = "make:widget")]
     MakeWidget {
         /// Widget name, `vendor/name`, e.g. `acme/color`
@@ -154,6 +163,7 @@ fn main() -> ExitCode {
         Command::MakeFactory { model } => app().and_then(|p| make::make_factory(&p, &model)),
         Command::MakeSettings { name } => app().and_then(|p| make::make_settings(&p, &name)),
         Command::MakeConsole { name } => app().and_then(|p| make::make_command(&p, &name)),
+        Command::MakePage { name, script } => app().and_then(|p| make::make_page(&p, &name, script)),
         Command::MakeWidget { name } => app().and_then(|p| generate::make_widget(&p, &name)),
         Command::DocsCli => {
             let auth = clap::Command::new("auth").subcommands(rustcms_auth::commands::definitions());

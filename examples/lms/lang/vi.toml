@@ -27,6 +27,13 @@
 "Id of the user who teaches the course" = "Mã người dùng giảng dạy khoá học"
 "Percent of the course done (0 to 100)" = "Phần trăm khoá học đã hoàn thành (0 đến 100)"
 
+"Course overview" = "Tổng quan khoá học"
+"Active enrollments against each course's capacity." = "Số học viên đang học so với sĩ số của từng khoá."
+"seats taken" = "chỗ đã có người"
+"No courses yet." = "Chưa có khoá học nào."
+"Seats" = "Sĩ số"
+"Average progress" = "Tiến độ trung bình"
+
 "School" = "Trường"
 "School name" = "Tên trường"
 "Default capacity" = "Sĩ số mặc định"

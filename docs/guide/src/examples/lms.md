@@ -116,6 +116,22 @@ Field rules and the policy do the rest:
   `ctx.t`) and the unique constraint messages; a test checks that
   `lang:missing vi` has nothing to report.
 
+## The panel's look and extras
+
+- **Theme**: blue primary color (lighter in dark mode), rounder corners, a
+  logo and a favicon from `resources/admin/`.
+- **Course overview** (`src/admin/pages/course_overview_page.rs`, template
+  `resources/views/admin/course_overview.html`): each course the user may
+  list, with a meter of seats taken. It reads courses through
+  `ctx.records("courses", …)`, so instructors see theirs only.
+- **Seats** beside a course (`src/admin/slots/course_seats_slot.rs`): active
+  and withdrawn enrollments, average progress.
+- **Progress cell** (`resources/admin/js/lms/progress.js`): the enrollments
+  table draws progress as a bar (a native `meter`, styled by
+  `resources/admin/css/lms/progress.css`).
+
+See [Customizing the panel](../admin/customizing.md).
+
 ## Conflicts
 
 A request that met another change to the same data answers 409

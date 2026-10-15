@@ -117,9 +117,18 @@ Create a console command in `src/console` and register it
 |---|---|
 | `<name>` | Command name, e.g. `lms:report` |
 
+### `make:page`
+
+Create a custom admin page: `src/admin/pages` + a template in `resources/views/admin` (or a script)
+
+| Argument | Description |
+|---|---|
+| `<name>` | Name ending in `Page`, e.g. `CourseOverviewPage` |
+| `--script` | Draw it with an extension script (`resources/admin/js`) instead of a template |
+
 ### `make:widget`
 
-Create an admin widget script in `assets/admin`
+Create an admin widget script in `resources/admin/js`
 
 | Argument | Description |
 |---|---|

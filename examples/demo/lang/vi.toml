@@ -19,6 +19,11 @@
 "Posts per page" = "Số bài mỗi trang"
 "Between 1 and 100" = "Từ 1 đến 100"
 "Mail password" = "Mật khẩu mail"
+"Post stats" = "Thống kê bài viết"
+"Latest posts" = "Bài viết mới"
+"Visibility" = "Hiển thị"
+"Visible to readers." = "Người đọc thấy bài này."
+"A draft: readers do not see it." = "Bản nháp: người đọc chưa thấy."
 
 # Unique constraint messages (`ResourceMeta::unique`).
 "has already been taken" = "đã được sử dụng"

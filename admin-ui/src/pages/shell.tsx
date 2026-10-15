@@ -2,12 +2,12 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { ArrowUpRight, ChevronRight, Home, LogOut, Menu, PanelLeftClose, PanelLeftOpen, PanelsTopLeft, Settings2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError } from "@/api/client";
-import { useSession } from "@/api/context";
+import { usePanelConfig, useSession } from "@/api/context";
 import { meQuery, usePanel } from "@/api/queries";
 import { useQuery } from "@tanstack/react-query";
 import { errorText, show, type Text, useLocale, useT } from "@/i18n";
 import { serverLocale } from "@/i18n/preference";
-import type { PanelResponse, ResourceInfo } from "@/api/types";
+import type { PageLink, PanelResponse, ResourceInfo } from "@/api/types";
 import { ResourceIcon } from "@/components/icons";
 import { Page, PageHeader } from "@/components/layout";
 import { ErrorState, Loading } from "@/components/states";
@@ -19,13 +19,25 @@ import { cn } from "@/lib/utils";
 const navLink = "flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&.active]:bg-muted [&.active]:font-medium [&.active]:text-foreground data-[status=active]:bg-muted data-[status=active]:font-medium data-[status=active]:text-foreground";
 const activeProps = { "aria-current": "page" as const };
 
-function groups(navigation: ResourceInfo[]): [string, ResourceInfo[]][] {
-  const out = new Map<string, ResourceInfo[]>();
-  for (const r of navigation) {
-    const g = r.group ?? "";
-    out.set(g, [...(out.get(g) ?? []), r]);
-  }
+type NavEntry = { kind: "resource"; item: ResourceInfo } | { kind: "page"; item: PageLink };
+
+/** Resources and custom pages by group, in registration order (resources first in a group). */
+function groups(navigation: ResourceInfo[], pages: PageLink[]): [string, NavEntry[]][] {
+  const out = new Map<string, NavEntry[]>();
+  const add = (group: string | undefined, entry: NavEntry) => {
+    const g = group ?? "";
+    out.set(g, [...(out.get(g) ?? []), entry]);
+  };
+  for (const r of navigation) add(r.group, { kind: "resource", item: r });
+  for (const p of pages) add(p.group, { kind: "page", item: p });
   return [...out.entries()];
+}
+
+/** The theme's logo, or the default mark. */
+function BrandMark() {
+  const { basePath, theme } = usePanelConfig();
+  if (theme?.logo) return <img src={`${basePath}/${theme.logo}`} alt="" className="size-8 shrink-0 rounded-lg object-contain" />;
+  return <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><PanelsTopLeft className="size-4" /></span>;
 }
 
 function Navigation({ panel, collapsed = false, onNavigate }: { panel: PanelResponse; collapsed?: boolean; onNavigate?: () => void }) {
@@ -40,14 +52,20 @@ function Navigation({ panel, collapsed = false, onNavigate }: { panel: PanelResp
           <Home className="size-4 shrink-0" /><span className={cn("truncate", collapsed && "sr-only")}>{t("nav.overview")}</span>
         </Link>
       </div>
-      {groups(panel.navigation).map(([group, items]) => (
+      {groups(panel.navigation, panel.pages ?? []).map(([group, items]) => (
         <div key={group} className="space-y-1">
           {group && groupLabel(group)}
-          {items.map((r) => (
-            <Link key={r.slug} to="/r/$slug" params={{ slug: r.slug }} className={linkStyle} activeProps={activeProps} title={collapsed ? r.pluralLabel : undefined}>
-              <ResourceIcon name={r.icon} /><span className={cn("truncate", collapsed && "sr-only")}>{r.pluralLabel}</span>
-            </Link>
-          ))}
+          {items.map((entry) =>
+            entry.kind === "resource" ? (
+              <Link key={`r:${entry.item.slug}`} to="/r/$slug" params={{ slug: entry.item.slug }} className={linkStyle} activeProps={activeProps} title={collapsed ? entry.item.pluralLabel : undefined}>
+                <ResourceIcon name={entry.item.icon} /><span className={cn("truncate", collapsed && "sr-only")}>{entry.item.pluralLabel}</span>
+              </Link>
+            ) : (
+              <Link key={`p:${entry.item.slug}`} to="/p/$slug" params={{ slug: entry.item.slug }} className={linkStyle} activeProps={activeProps} title={collapsed ? entry.item.label : undefined}>
+                <ResourceIcon name={entry.item.icon} /><span className={cn("truncate", collapsed && "sr-only")}>{entry.item.label}</span>
+              </Link>
+            ),
+          )}
         </div>
       ))}
       {(panel.system?.users || panel.system?.roles || panel.system?.audit || panel.system?.queue) && (
@@ -139,7 +157,8 @@ export function Shell() {
   const path = pathname.startsWith(session.config.basePath + "/") ? pathname.slice(session.config.basePath.length) : pathname;
   const resource = p.navigation.find((r) => path.startsWith(`/r/${r.slug}/`) || path === `/r/${r.slug}`);
   const settingsPage = (p.settings ?? []).find((s) => path === `/settings/${s.group}`);
-  const current = resource?.pluralLabel ?? settingsPage?.label ?? (path.startsWith("/system/users") ? t("nav.users") : path.startsWith("/system/roles") ? t("nav.roles") : path.startsWith("/system/audit") ? t("nav.audit") : path.startsWith("/system/queue") ? t("nav.queue") : path.startsWith("/account") ? t("nav.account") : t("nav.overview"));
+  const customPage = (p.pages ?? []).find((c) => path === `/p/${c.slug}`);
+  const current = resource?.pluralLabel ?? settingsPage?.label ?? customPage?.label ?? (path.startsWith("/system/users") ? t("nav.users") : path.startsWith("/system/roles") ? t("nav.roles") : path.startsWith("/system/audit") ? t("nav.audit") : path.startsWith("/system/queue") ? t("nav.queue") : path.startsWith("/account") ? t("nav.account") : t("nav.overview"));
   const detail = /\/create$/.test(path) ? t("crumb.create") : /\/edit$/.test(path) ? t("crumb.edit") : resource && path.includes("/records/") ? t("crumb.details") : undefined;
   const footer = { panel: p, leaving, logout: () => void logout(), error: error === null ? null : show(error) };
 
@@ -148,7 +167,7 @@ export function Shell() {
       <a href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById("main-content")?.focus(); }} className="sr-only z-50 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4">{t("shell.skip")}</a>
       <aside className={cn("sticky top-0 hidden h-dvh shrink-0 flex-col gap-4 border-r border-border bg-background p-3 md:flex", collapsed ? "w-16" : "w-64")}>
         <Link to="/" className={cn("flex h-11 min-w-0 items-center gap-3 px-2 font-semibold tracking-tight", collapsed && "justify-center px-0")} title={p.brand}>
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><PanelsTopLeft className="size-4" /></span><span className={cn("truncate", collapsed && "sr-only")}>{p.brand}</span>
+          <BrandMark /><span className={cn("truncate", collapsed && "sr-only")}>{p.brand}</span>
         </Link>
         <Navigation panel={p} collapsed={collapsed} />
         <UserFooter {...footer} collapsed={collapsed} />

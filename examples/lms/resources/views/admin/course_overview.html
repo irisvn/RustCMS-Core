@@ -1,0 +1,17 @@
+{# Course overview: seats of every course the user may see (instructors: theirs).
+   Escaping is always on; the panel keeps only safe markup. #}
+<section class="rc-stack">
+  <p class="rc-muted">{{ t("Active enrollments against each course's capacity.") }}</p>
+  <div class="rc-grid">
+    {% for course in data.courses %}
+    <article class="rc-card">
+      <h2 class="rc-title"><a class="rc-link" href="{{ admin_url('r/courses/records/' ~ course.key) }}">{{ course.title }}</a></h2>
+      <meter class="rc-meter" min="0" max="{{ course.capacity }}" value="{{ course.active }}" title="{{ course.active }} / {{ course.capacity }}"></meter>
+      <p class="rc-muted">{{ course.active }} / {{ course.capacity }} {{ t("seats taken") }}</p>
+      {% if course.published %}<span class="rc-badge">{{ t("Published") }}</span>{% endif %}
+    </article>
+    {% else %}
+    <p class="rc-muted">{{ t("No courses yet.") }}</p>
+    {% endfor %}
+  </div>
+</section>

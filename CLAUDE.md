@@ -17,7 +17,10 @@
 - `docs/guide/src/reference/cli.md` is generated: run `cargo run -p rustcms-cli -- docs:cli > docs/guide/src/reference/cli.md` after changing commands.
 - App template lives in `crates/rustcms-cli/templates/app`; `examples/demo` and `examples/lms` follow its layout
   (ADR 0017: Laravel folder names inside `src/` — bootstrap, providers, routes, http, models, services, policies,
-  jobs, settings, admin/{resources,pages}, database/{migrations,seeders,factories}; tests in `tests/feature`).
+  jobs, settings, admin/{resources,pages,slots}, database/{migrations,seeders,factories}; tests in `tests/feature`;
+  `resources/` for page templates, extension scripts/styles, logo).
+- Custom admin HTML (ADR 0019): templates are always escaped then sanitized server-side
+  (`features/custom/html.rs` allowlist); never add a way to mark template output safe or loosen the CSP.
 - Where code lives: `docs/core/architecture.md` (modules grouped by role; old public paths are kept by re-exports,
   checked by `tests/paths.rs` in core, auth and admin — keep them passing).
 - Security invariants: deny by default; undeclared columns never exposed; field rules

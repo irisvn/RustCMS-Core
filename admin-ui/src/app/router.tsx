@@ -19,6 +19,7 @@ import { AccountPage } from "@/pages/account";
 import { SettingsPage } from "@/pages/settings";
 import { AuditLogPage } from "@/pages/audit";
 import { QueuePage } from "@/pages/queue";
+import { CustomPage } from "@/pages/custom";
 import { RoleCreatePage, RolePage, RolesPage, UserCreatePage, UserPage, UsersPage } from "@/pages/system";
 import type { Session } from "./session";
 
@@ -136,6 +137,14 @@ const systemRole = createRoute({
 });
 const systemAudit = createRoute({ getParentRoute: () => app, path: "/system/audit", component: AuditLogPage });
 const systemQueue = createRoute({ getParentRoute: () => app, path: "/system/queue", component: QueuePage });
+const customPage = createRoute({
+  getParentRoute: () => app,
+  path: "/p/$slug",
+  component: function Custom() {
+    const { slug } = customPage.useParams();
+    return <CustomPage key={slug} />;
+  },
+});
 const settings = createRoute({
   getParentRoute: () => app,
   path: "/settings/$group",
@@ -162,6 +171,7 @@ const routeTree = root.addChildren([
     systemRole,
     systemAudit,
     systemQueue,
+    customPage,
     settings,
     account,
   ]),

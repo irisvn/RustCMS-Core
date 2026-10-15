@@ -185,6 +185,8 @@ impl<R: Resource> ResourceAdapter<R> {
                         .map(|(value, color)| BadgeColor { value: value.clone(), color: color.clone() })
                         .collect(),
                     relationship: field.belongs_to.map(|resource| Relationship { resource }),
+                    cell: c.cell.clone(),
+                    props: c.props.clone(),
                 }
             })
             .collect();

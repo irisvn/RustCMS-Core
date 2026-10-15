@@ -134,6 +134,7 @@ export const vi: Record<keyof typeof en, string> = {
   "error.write_conflict.running": "Một worker đang chạy tác vụ này; hãy đợi nó xong.",
   "error.write_conflict.not_waiting": "Chỉ huỷ được tác vụ đang chờ chạy. Hãy tải lại danh sách.",
   "nav.queue": "Hàng đợi",
+  "custom.unavailable": "Phần này của trang không dùng được (script extension bị thiếu hoặc lỗi).",
   "queue.description": "Tác vụ nền theo trạng thái. Không bao giờ hiển thị payload.",
   "queue.workersOff": "Worker đang tắt trên instance này (queue.enabled = false): tác vụ chạy ở nơi chạy queue:work.",
   "queue.empty": "Không có tác vụ nào.",

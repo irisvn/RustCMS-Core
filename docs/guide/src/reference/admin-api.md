@@ -33,6 +33,8 @@ values follow the [wire format](wire-format.md).
 | GET | `/audit`, `/resources/{slug}/records/{key}/history` | the audit log and record histories, see [Audit log](../digging-deeper/audit-log.md#viewing-the-log) |
 | GET | `/queue` | counts per queue and status, worker settings, `canManage` (`queue.view`) |
 | GET | `/queue/jobs?status=&queue=&kind=&cursor=&per_page=` | `{data: [QueueJob], meta: {nextCursor?}}`, newest first (`queue.view`) |
+| GET | `/pages/{slug}` | `{slug, title, content}` of a custom page: `{kind: "html", html}` or `{kind: "script", script, data}`, see [Customizing](../admin/customizing.md#custom-pages) |
+| GET | `/slots?resource=&key=` | `{data: [{name, label?, content}]}` beside a record |
 | POST | `/queue/jobs/{id}/retry`, `/forget`, `/cancel` | 204; 409 `not_failed` (retry, forget) or `running` / `not_waiting` (cancel) (`queue.view` + `queue.manage`), see [Queues](../digging-deeper/queues.md#the-queue-page) |
 
 Options are available to users who may use the field. When a record-level

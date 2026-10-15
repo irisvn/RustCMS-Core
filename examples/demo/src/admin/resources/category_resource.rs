@@ -32,7 +32,7 @@ impl Resource for CategoryResource {
         Form::new().columns(2).schema(components![
             TextInput::make("name"),
             TextInput::make("slug"),
-            // Edited by the demo's extension widget (assets/admin/demo/color.js).
+            // Edited by the demo's extension widget (resources/admin/js/demo/color.js).
             CustomInput::make("color", "demo/color").props(json!({"palette": [
                 {"value": "#dc2626", "label": "Red"},
                 {"value": "#16a34a", "label": "Green"},

@@ -13,6 +13,30 @@ All notable changes are documented here. The format follows
   (architecture, admin protocol, ADRs, reports, this changelog, review
   checklist, contributor guides). `CHANGELOG.md` moved to `docs/core/`.
 
+### Added (0.3 — M15e; ADR 0019)
+- `AdminProvider::theme(Theme)`: color tokens (light and dark), radius, font
+  family, PNG/WebP/ICO logo and favicon, `ColorScheme`; served as hashed
+  assets; dark mode follows `data-scheme`.
+- Custom pages (`PanelPage`, `AdminProvider::page`, `/admin/p/{slug}`) and
+  slots beside records (`PanelSlot`, `Placement::RecordAside`,
+  `AdminProvider::slot`), drawn from server templates (minijinja, always
+  escaped, then sanitized with ammonia 4.2.0) or extension scripts;
+  `GET pages/{slug}`, `GET slots`; navigation lists pages
+  (`PanelResponse.pages`).
+- `Ctx::records` / `Ctx::record`: resource reads with scope, policy and
+  field rules, for custom code.
+- Custom cells: `TableColumn::cell` / `props`, `registerCell`; script API
+  `registerPage`, `registerSlot`; template classes `rc-*`.
+- `make:page [--script]`; `resources/` folder (`views/admin`, `admin/js`,
+  `admin/css`); `make:widget` writes to `resources/admin/js`.
+- Examples: LMS theme, course overview page, seats slot, progress cell; demo
+  post stats page and visibility slot.
+
+### Changed (0.3 — M15e)
+- `VOCABULARY_VERSION` 6 (columns may name a cell).
+- `AdminPanel` gains `custom`; `spa::Extension` carries bytes and a content
+  type; `safeHref` refuses backslashes.
+
 ### Added (0.3 — M15d)
 - Admin **Queue page** (System → Queue): counts per queue and status, job
   list (status, queue, kind filters; keyset pages), retry / forget / cancel

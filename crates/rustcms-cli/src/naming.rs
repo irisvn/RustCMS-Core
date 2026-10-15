@@ -51,6 +51,13 @@ const KEYWORDS: &[&str] = &[
 ];
 
 /// PascalCase model name whose module name is not a keyword.
+/// `BlogPost` → `Blog post`.
+pub fn humanize(model: &str) -> String {
+    let words = snake_case(model).replace('_', " ");
+    let mut chars = words.chars();
+    chars.next().map(|c| c.to_ascii_uppercase().to_string() + chars.as_str()).unwrap_or_default()
+}
+
 /// Whether `word` is a Rust keyword (not usable as a module name).
 pub fn is_keyword(word: &str) -> bool {
     KEYWORDS.contains(&word)

@@ -7,6 +7,7 @@ import { useUncertain } from "@/api/context";
 import { type Via, useDeleteRecord, useRecord, useSaveRecord, useSchema } from "@/api/queries";
 import { RelationSection, withoutInput } from "./relations";
 import { RecordHistory } from "./audit";
+import { RecordSlots } from "@/components/slots";
 import type { Envelope, InputSchema, ResourceSchema } from "@/api/types";
 import { ErrorState, Loading, PausedBanner, VersionBanner, compatibility } from "@/components/states";
 import { Alert } from "@/components/ui/alert";
@@ -339,6 +340,7 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
           <ReadOnlyComponents components={s.form.components} data={record.data.data} slug={slug} record={recordKey} />
         </CardContent>
       </Card>
+      <RecordSlots resource={slug} recordKey={recordKey} record={record.data.data} />
       {(s.relations ?? []).map((relation) => (
         <RelationSection key={relation.name} parent={slug} record={recordKey} relation={relation} />
       ))}

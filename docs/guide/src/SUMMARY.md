@@ -43,6 +43,7 @@
 - [Relationships](admin/relationships.md)
 - [Media, uploads & rich text](admin/media.md)
 - [Custom fields](admin/custom-fields.md)
+- [Customizing the panel](admin/customizing.md)
 - [Users, roles & account](admin/users-roles.md)
 - [Languages (i18n)](admin/i18n.md)
 - [Settings](admin/settings.md)

@@ -22,6 +22,8 @@ pub struct AdminPanel {
     pub translator: Arc<rustcms_core::i18n::Translator>,
     /// Settings pages.
     pub settings: Arc<crate::settings::SettingsRegistry>,
+    /// Custom pages and slots.
+    pub custom: Arc<crate::custom::CustomPanel>,
 }
 
 /// `GET panel`.
@@ -38,6 +40,8 @@ pub struct PanelResponse {
     pub system: crate::system::SystemLinks,
     /// Settings pages the user may open.
     pub settings: Vec<crate::settings::SettingsLink>,
+    /// Custom pages the user may open, in registration order.
+    pub pages: Vec<crate::custom::PageLink>,
 }
 
 /// The signed-in user in [`PanelResponse`].
@@ -87,6 +91,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
     .chain(crate::settings::routes(admin_path))
     .chain(crate::audit::routes(admin_path))
     .chain(crate::queue::routes(admin_path))
+    .chain(crate::custom::routes(admin_path))
     .collect()
 }
 

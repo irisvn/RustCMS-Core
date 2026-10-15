@@ -1,0 +1,12 @@
+{# Posts at a glance (the posts the user may list). #}
+<section class="rc-grid">
+  <article class="rc-card">
+    <h2 class="rc-title">{{ t("Published") }}</h2>
+    <p>{{ data.published }} / {{ data.total }}</p>
+    <meter class="rc-meter" min="0" max="{{ data.total }}" value="{{ data.published }}"></meter>
+  </article>
+  <article class="rc-card">
+    <h2 class="rc-title">{{ t("Latest posts") }}</h2>
+    <ul>{% for post in data.latest %}<li><a class="rc-link" href="{{ admin_url('r/posts/records/' ~ post.key) }}">{{ post.title }}</a></li>{% endfor %}</ul>
+  </article>
+</section>

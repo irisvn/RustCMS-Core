@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-@custom-variant dark (@media (prefers-color-scheme: dark));
+@custom-variant dark (&:where([data-scheme=dark], [data-scheme=dark] *));
 
 @theme {
   --color-background: var(--background);
@@ -22,7 +22,12 @@
   --color-popover: var(--card);
   --color-success: var(--success);
   --color-warning: var(--warning);
-  --radius: 0.5rem;
+  /* Corners follow the theme's --radius. */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 :root {
@@ -41,10 +46,13 @@
   --destructive-foreground: #ffffff;
   --success: #3f3f46;
   --warning: #52525b;
+  --radius: 0.5rem;
 }
 
+/* Dark: as chosen (`data-scheme`, set from the theme's color scheme), or as
+   the operating system prefers until the panel has set it. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-scheme=light]) {
     color-scheme: dark;
     --background: #09090b;
     --foreground: #fafafa;
@@ -63,9 +71,27 @@
   }
 }
 
+:root[data-scheme=dark] {
+  color-scheme: dark;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #111113;
+  --muted: #202023;
+  --muted-foreground: #a1a1aa;
+  --border: #2b2b30;
+  --ring: #71717a;
+  --primary: #fafafa;
+  --primary-foreground: #18181b;
+  --secondary: #27272a;
+  --destructive: #f87171;
+  --destructive-foreground: #18181b;
+  --success: #d4d4d8;
+  --warning: #d4d4d8;
+}
+
 body {
   @apply m-0 bg-background text-foreground antialiased;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
 }
 
 button:not(:disabled), select:not(:disabled), summary {
@@ -119,3 +145,23 @@ body:has(dialog[open]) {
 .ProseMirror-gapcursor { display: none; pointer-events: none; position: absolute; }
 .ProseMirror-gapcursor:after { content: ""; display: block; position: absolute; top: -2px; width: 20px; border-top: 1px solid currentColor; }
 .ProseMirror-focused .ProseMirror-gapcursor { display: block; }
+
+/* Classes for custom page and slot templates (stable, theme API version 1):
+   templates cannot rely on the panel's utility classes. */
+.rc-stack { display: flex; flex-direction: column; gap: 1rem; }
+.rc-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); }
+.rc-card { border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-card); padding: 1rem; }
+.rc-title { font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem; }
+.rc-muted { color: var(--color-muted-foreground); font-size: 0.875rem; }
+.rc-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.rc-table th, .rc-table td { border-bottom: 1px solid var(--color-border); padding: 0.5rem; text-align: left; }
+.rc-table th { color: var(--color-muted-foreground); font-weight: 500; }
+.rc-badge { display: inline-flex; border-radius: var(--radius-md); background: var(--color-muted); padding: 0.125rem 0.5rem; font-size: 0.75rem; font-weight: 500; }
+.rc-link { text-decoration: underline; text-underline-offset: 4px; }
+.rc-meter { width: 100%; height: 0.5rem; }
+.custom-html h1, .custom-html h2 { font-size: 1.125rem; font-weight: 600; }
+.custom-html h3 { font-size: 1rem; font-weight: 600; }
+.custom-html ul { list-style: disc; padding-left: 1.5rem; }
+.custom-html ol { list-style: decimal; padding-left: 1.5rem; }
+.custom-html a { text-decoration: underline; }
+.custom-html img { max-width: 100%; }

@@ -49,7 +49,7 @@ on the admin engine, so it can change without touching them.
 | `engine/adapter/` | `ResourceAdapter<R>`: `input` (acceptance), `references` (checks after hooks), `read`, `write` (transactions, row and parent locks, ADR 0018), `schema`, `operations` (the `DynResource` impl), `audit` (snapshots, redaction, entries) |
 | `http/` | routes and handlers: `resources`, `relations`, `actions`, `extract` (`AdminCtx`) |
 | `contract/` | the DTOs the SPA receives (`ResourceSchema`, …); also reachable as `schema` |
-| `features/` | built-in features: `audit` (log viewer, record history), `queue` (System → Queue page, M15d), `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
+| `features/` | built-in features: `audit` (log viewer, record history), `queue` (System → Queue page, M15d), `custom/` (theme, custom pages and slots: templates + sanitizer, ADR 0019), `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
 
 ### rustcms-auth
 
@@ -113,7 +113,7 @@ guide: Directory structure):
 | `database/{migrations,seeders,factories}` | `src/database/…` (`make:migration`, `make:seeder`, `make:factory`) |
 | `config/*.php` | `config/*.toml` |
 | `tests/Feature` | `tests/feature/` (one binary, `make:test`), `tests/support/` |
-| Filament assets | `assets/admin/<vendor>/` (`make:widget`) |
+| Filament custom pages, widgets, assets; `resources/views` | `src/admin/pages/` + `resources/views/admin/` (`make:page`), `src/admin/slots/`, `resources/admin/{js,css}/` (`make:widget`) |
 
 The CLI's `layout.rs` holds these paths and the module plumbing
 (`ensure_module`: `mod.rs` + `pub mod` in the parent); every generator

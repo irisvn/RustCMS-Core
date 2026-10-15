@@ -3,3 +3,4 @@
 
 pub mod pages;
 pub mod resources;
+pub mod slots;

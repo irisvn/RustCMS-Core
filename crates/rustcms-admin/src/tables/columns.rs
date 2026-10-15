@@ -24,11 +24,26 @@ pub struct TableColumn {
     pub(crate) kind: ColumnType,
     pub(crate) label: Option<String>,
     pub(crate) colors: Vec<(Json, String)>,
+    pub(crate) cell: Option<String>,
+    pub(crate) props: Option<Json>,
 }
 
 impl TableColumn {
     fn new(name: impl Into<String>, kind: ColumnType) -> Self {
-        Self { name: name.into(), kind, label: None, colors: Vec::new() }
+        Self { name: name.into(), kind, label: None, colors: Vec::new(), cell: None, props: None }
+    }
+
+    /// Drawn by the cell an extension script registered as `vendor/name`
+    /// (`window.rustcms.registerCell`); as its column type otherwise.
+    pub fn cell(mut self, name: &str) -> Self {
+        self.cell = Some(name.to_owned());
+        self
+    }
+
+    /// Settings passed to the custom cell (JSON, at most 4 KiB).
+    pub fn props(mut self, props: Json) -> Self {
+        self.props = Some(props);
+        self
     }
 
     /// Header label (default: the field name, humanized).

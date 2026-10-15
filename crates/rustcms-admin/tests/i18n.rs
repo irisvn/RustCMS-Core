@@ -113,6 +113,7 @@ fn missing_labels_are_looked_up_as_they_are_shown() {
         registry,
         translator: std::sync::Arc::new(translator),
         settings: Default::default(),
+        custom: std::sync::Arc::new(rustcms_admin::custom::CustomPanel::empty("/admin")),
     };
     let missing = panel.missing_translations("vi", &["users".into(), "media".into()]);
     assert!(missing.contains(&"Content".to_owned()), "{missing:?}");

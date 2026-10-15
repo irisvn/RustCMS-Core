@@ -11,9 +11,11 @@ import { initialLocale, onOtherTabChoice } from "@/i18n/preference";
 import { keys } from "@/api/queries";
 import { readConfig } from "@/lib/config";
 import { loadExtensions } from "@/lib/widgets";
+import { applyTheme } from "@/lib/theme";
 import "./index.css";
 
 const config = readConfig();
+applyTheme(config);
 setLocale(initialLocale(config.locales, config.locale));
 const queryClient = new QueryClient({
   defaultOptions: {

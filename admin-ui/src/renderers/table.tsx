@@ -6,6 +6,7 @@ import { Input, NativeSelect } from "@/components/ui/input";
 import { display } from "@/lib/wire";
 import { t, useT } from "@/i18n";
 import { RelationSelect } from "./relation-select";
+import { ScriptView } from "@/components/custom";
 
 export const KNOWN_COLUMNS = new Set(["text", "badge", "boolean", "date"]);
 export const KNOWN_FILTERS = new Set(["select", "ternary", "date_range"]);
@@ -15,6 +16,17 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 export function Cell({ column, record }: { column: ColumnSchema; record: Envelope }) {
   useT();
   const value = record.data[column.name] as JsonValue | undefined;
+  // A registered cell draws the value; its column type is the fallback.
+  if (column.cell) {
+    return (
+      <ScriptView kind="cell" name={column.cell} data={value ?? null} record={record.data} props={column.props}
+        fallback={<DefaultCell column={column} record={record} value={value} />} />
+    );
+  }
+  return <DefaultCell column={column} record={record} value={value} />;
+}
+
+function DefaultCell({ column, record, value }: { column: ColumnSchema; record: Envelope; value: JsonValue | undefined }) {
   if (column.relationship) {
     const label = record.labels?.[column.name];
     return <span>{label ?? (value === null || value === undefined ? "" : `#${String(value)}`)}</span>;

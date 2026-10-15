@@ -27,7 +27,9 @@ rustcms make:seeder CourseSeeder     # src/database/seeders/course_seeder.rs, re
 rustcms make:factory Course          # src/database/factories/course_factory.rs
 rustcms make:settings SchoolSettings # src/settings/school_settings.rs + src/admin/pages/school_settings_page.rs
 rustcms make:command lms:report      # src/console/lms_report.rs, registered in app_service_provider.rs
-rustcms make:widget acme/color       # assets/admin/acme/color.js: a custom field widget
+rustcms make:page ReportPage         # src/admin/pages/report_page.rs + resources/views/admin/report.html
+rustcms make:page ChartPage --script # … drawn by resources/admin/js/<app>/chart.js instead
+rustcms make:widget acme/color       # resources/admin/js/acme/color.js: a custom field widget
 rustcms make:test PostAdminTest      # tests/feature/post_admin_test.rs, added to tests/feature/main.rs
 ```
 

@@ -3,6 +3,7 @@
 
 pub mod pages;
 pub mod resources;
+pub mod slots;
 
 /// The integer `field` of `data` (keys travel as strings, ADR 0003).
 pub(crate) fn int(data: &rustcms::admin::Data, field: &str) -> Option<i64> {

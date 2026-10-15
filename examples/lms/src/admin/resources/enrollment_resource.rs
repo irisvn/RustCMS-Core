@@ -73,7 +73,7 @@ impl Resource for EnrollmentResource {
                 TextColumn::make("course_id"),
                 TextColumn::make("learner_id"),
                 TextColumn::make("status"),
-                TextColumn::make("progress"),
+                TextColumn::make("progress").cell("lms/progress"),
                 DateColumn::make("enrolled_at"),
             ])
             .filters(vec![SelectFilter::make("course_id"), SelectFilter::make("status").options(STATUSES)])

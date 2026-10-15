@@ -26,6 +26,9 @@
      `user`, `role`, `permission`, `settings`, `session` (and `job`, `queue`,
      see below) are reserved (boot fails); `Ctx::new` records writes as its principal.
    - `ActorKind` has a `Job` variant (exhaustive matches need it).
+   - `AdminPanel` has a `custom` field (`CustomPanel::empty(base)` in hand-built
+     panels), `PanelResponse` a `pages` field and `ColumnSchema` `cell` /
+     `props`; admin clients see `vocabularyVersion` 6.
    - `SystemLinks` has `audit` and `queue` fields; resource schemas gain the
      `history` ability.
    - Resource slugs `job` and `queue` are reserved too (subjects of the
@@ -58,6 +61,7 @@ refuse an application in the old layout; move it once:
 | a settings struct with its page | `src/settings/<x>_settings.rs` + `src/admin/pages/<x>_settings_page.rs` |
 | a `<app>:seed` command | `src/database/seeders/` + `rustcms db:seed` |
 | `tests/*.rs` | `tests/feature/*.rs` listed in `tests/feature/main.rs`, helpers in `tests/support/mod.rs` |
+| `assets/admin/<vendor>/*.js`, `*.css` | `resources/admin/js/<vendor>/`, `resources/admin/css/<vendor>/` (update the `include_str!` paths) |
 
 Then:
 
@@ -66,7 +70,8 @@ Then:
    (`src/lib.rs`), `// rustcms:resources` and `// rustcms:pages`
    (admin panel provider), `// rustcms:seeders`, `// rustcms:jobs`,
    `// rustcms:commands` (app service provider), `// rustcms:api-routes`
-   (`src/routes/api.rs`), `// rustcms:tests` (`tests/feature/main.rs`). A new
+   (`src/routes/api.rs`), `// rustcms:tests` (`tests/feature/main.rs`),
+   `// rustcms:extensions` (admin panel provider, for `make:page --script`). A new
    application from `rustcms new` shows every one.
 3. `rustcms migrate:status` lists every migration as applied: nothing to run.
 

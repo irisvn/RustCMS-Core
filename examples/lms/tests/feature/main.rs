@@ -4,6 +4,7 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+mod customizing;
 mod enrollments;
 mod instructors;
 mod languages;

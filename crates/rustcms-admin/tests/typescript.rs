@@ -63,6 +63,11 @@ fn bindings() -> String {
         rustcms_admin::queue::QueueJob::decl(&cfg),
         rustcms_admin::queue::QueueJobPageMeta::decl(&cfg),
         rustcms_admin::queue::QueueJobPage::decl(&cfg),
+        rustcms_admin::custom::PageLink::decl(&cfg),
+        rustcms_admin::custom::CustomContent::decl(&cfg),
+        rustcms_admin::custom::CustomPageResponse::decl(&cfg),
+        rustcms_admin::custom::SlotContent::decl(&cfg),
+        rustcms_admin::custom::SlotsResponse::decl(&cfg),
         PanelResponse::decl(&cfg),
         DataResponse::<ts_rs::Dummy>::decl(&cfg),
     ];

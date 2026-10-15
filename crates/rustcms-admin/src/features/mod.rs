@@ -2,6 +2,7 @@
 //! documents, settings pages and the system pages (users and roles).
 
 pub mod audit;
+pub mod custom;
 pub mod media;
 pub mod queue;
 pub mod rich_text;

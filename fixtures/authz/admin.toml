@@ -789,6 +789,66 @@ actor = "admin"
 status = 404
 
 [[case]]
+route = "GET /admin/api/pages/{slug}"
+path = "/admin/api/pages/nope"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/pages/{slug}"
+path = "/admin/api/pages/nope"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/slots"
+path = "/admin/api/slots?resource=posts&key={own}"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/slots"
+path = "/admin/api/slots?resource=posts&key={own}"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/pages/{slug}"
+path = "/admin/api/pages/nope"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/pages/{slug}"
+path = "/admin/api/pages/nope"
+actor = "admin"
+status = 403
+
+[[case]]
+route = "GET /admin/api/slots"
+path = "/admin/api/slots?resource=posts&key={own}"
+actor = "editor"
+status = 200
+
+[[case]]
+route = "GET /admin/api/slots"
+path = "/admin/api/slots?resource=posts&key={theirs}"
+actor = "editor"
+status = 404
+
+[[case]]
+route = "GET /admin/api/slots"
+path = "/admin/api/slots?resource=posts&key={own}"
+actor = "member"
+status = 404
+
+[[case]]
+route = "GET /admin/api/slots"
+path = "/admin/api/slots?resource=posts"
+actor = "admin"
+status = 422
+
+[[case]]
 route = "GET /admin/api/resources/{slug}/records/{key}/history"
 path = "/admin/api/resources/posts/records/{own}/history"
 actor = "editor"

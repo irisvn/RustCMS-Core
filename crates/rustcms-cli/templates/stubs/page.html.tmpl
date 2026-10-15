@@ -1,0 +1,10 @@
+{# The {{ label }} page. HTML escaping is always on; the panel keeps only
+   safe markup (no script, style attribute, handler, form or foreign URL).
+   Quote every attribute value. Classes: rc-stack, rc-grid, rc-card,
+   rc-title, rc-muted, rc-table, rc-badge, rc-link, rc-meter. #}
+<section class="rc-stack">
+  <div class="rc-card">
+    <h2 class="rc-title">{{ "{{" }} t("{{ label }}") {{ "}}" }}</h2>
+    <p class="rc-muted">{{ "{{" }} t("Signed in as user") {{ "}}" }} {{ "{{" }} data.user {{ "}}" }}</p>
+  </div>
+</section>

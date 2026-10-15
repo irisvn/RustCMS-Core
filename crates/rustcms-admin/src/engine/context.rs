@@ -51,6 +51,26 @@ impl Ctx {
         }
     }
 
+    /// Records of the resource `slug` as this user may list them: scope,
+    /// policy and readable fields apply, as in the panel's table (for custom
+    /// pages and slots).
+    pub async fn records(
+        &self,
+        slug: &str,
+        query: &crate::resource::ListQuery,
+    ) -> rustcms_core::AppResult<crate::resource::Page> {
+        let resource = self.registry.get(slug).ok_or(rustcms_core::AppError::NotFound)?.clone();
+        resource.admit_list(self, query).await?;
+        resource.list(self, query).await
+    }
+
+    /// The record `key` of the resource `slug` as this user may view it
+    /// (404 when missing or out of scope, 403 when denied).
+    pub async fn record(&self, slug: &str, key: &str) -> rustcms_core::AppResult<crate::resource::Envelope> {
+        let resource = self.registry.get(slug).ok_or(rustcms_core::AppError::NotFound)?.clone();
+        resource.find(self, key).await
+    }
+
     /// The same context, audited as `audit_context`.
     pub fn with_audit(mut self, audit_context: AuditContext) -> Self {
         self.audit_context = audit_context;

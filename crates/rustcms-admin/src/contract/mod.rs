@@ -11,7 +11,7 @@ use crate::ui::{ColumnType, FilterType, InputType, LayoutType, SelectOption};
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 1;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 5;
+pub const VOCABULARY_VERSION: u32 = 6;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -245,6 +245,14 @@ pub struct ColumnSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship: Option<Relationship>,
+    /// Custom cell (`vendor/name`) drawing the value, if registered.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell: Option<String>,
+    /// Settings of the custom cell.
+    #[cfg_attr(feature = "ts", ts(optional, type = "JsonValue"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub props: Option<serde_json::Value>,
 }
 
 /// Badge color for one value.

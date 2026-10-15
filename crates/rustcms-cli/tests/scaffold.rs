@@ -100,6 +100,8 @@ impl ActiveModelBehavior for ActiveModel {}
         &["make:settings", "BlogSettings"],
         &["make:command", "blog:report"],
         &["make:test", "AdminResource"],
+        &["make:page", "ReportPage"],
+        &["make:page", "ChartPage", "--script"],
     ] {
         rustcms(&app).args(args).assert().success();
     }
@@ -159,6 +161,12 @@ db_test!(generated_settings_and_seeders_run, migrate = Migrator, |db: TestDb| as
     app.make_super_admin(&user).await;
     let page = app.acting_as(&user).await.get("/admin/api/settings/blog").await;
     page.assert_status(StatusCode::OK);
+    // Generated pages: a template, and a script.
+    let report = app.acting_as(&user).await.get("/admin/api/pages/report").await;
+    report.assert_status(StatusCode::OK).assert_json("/content/kind", json!("html"));
+    assert!(report.json()["content"]["html"].as_str().unwrap().contains("<h2 class=\"rc-title\">Report</h2>"));
+    let chart = app.acting_as(&user).await.get("/admin/api/pages/chart").await;
+    chart.assert_status(StatusCode::OK).assert_json("/content/script", json!("blog/chart"));
 });
 
 fn chrono_now() -> sea_orm::prelude::DateTimeUtc {

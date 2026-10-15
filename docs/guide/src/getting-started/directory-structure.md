@@ -10,6 +10,7 @@ blog/
 ├── .env, .env.example           # secrets and per-machine values (.env is git-ignored)
 ├── config/                      # app.toml, auth.toml, http.toml, log.toml
 ├── lang/vi.toml                 # translations of your admin labels and messages
+├── resources/                   # views/admin (page templates), admin/{js,css} (extensions), logo
 ├── storage/                     # uploaded files (git-ignored)
 ├── src/
 │   ├── main.rs                  # the console (≈ artisan): serve, migrate, db:seed, your commands
@@ -29,7 +30,8 @@ blog/
 │   ├── policies/                # who may do what                  (make:policy)
 │   ├── admin/                   # the admin panel (≈ app/Filament)
 │   │   ├── resources/           #   one resource per model         (make:resource)
-│   │   └── pages/               #   settings pages                 (make:settings)
+│   │   ├── pages/               #   custom and settings pages      (make:page, make:settings)
+│   │   └── slots/               #   content beside records
 │   └── database/
 │       ├── migrations/          # your migrations, after the framework's (make:migration)
 │       └── seeders/             # DatabaseSeeder and the others     (make:seeder)
@@ -47,10 +49,12 @@ More folders appear when a generator first needs them:
 | `src/settings/` | settings stored in the database ([Settings](../admin/settings.md)) | `make:settings` |
 | `src/console/` | console commands | `make:command` |
 | `src/database/factories/` | model factories for seeders and tests | `make:factory` |
-| `assets/admin/` | admin widget scripts ([Custom fields](../admin/custom-fields.md)) | `make:widget` |
+| `resources/views/admin/` | templates of custom pages and slots ([Customizing](../admin/customizing.md)) | `make:page` |
+| `resources/admin/` | extension scripts (`js/`), stylesheets (`css/`), logo and favicon | `make:widget`, `make:page --script` |
 
-Compared with Laravel: there is no `public/`, `resources/views` or `vendor/`
-(the admin panel is built into the binary, dependencies are Cargo's), and
+Compared with Laravel: there is no `public/` or `vendor/` (the admin panel
+is built into the binary, dependencies are Cargo's), `resources/` holds what
+the panel embeds (page templates, extension scripts and styles, logo), and
 module names are snake_case (`http/controllers`, not `Http/Controllers`).
 
 ## Assembly

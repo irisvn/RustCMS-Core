@@ -37,6 +37,10 @@ RustCMS is in pre-release. The current published version is
   existing app: [upgrade guide](upgrade.md#application-layout-03)).
 - **Parent locks**: `ResourceMeta::lock_parent` for rules over a parent's
   children ([Resources](admin/resources.md#parent-locks)).
+- **Customizing the panel**: a theme (color tokens, radius, fonts, logo,
+  favicon, light/dark), custom pages and slots beside records from server
+  templates (escaped, then sanitized) or extension scripts, custom table
+  cells, `make:page` ([Customizing](admin/customizing.md)).
 - **Example**: `examples/lms`, a small LMS back office (seats under a lock,
   instructor scopes, a job per enrollment) ([Example](examples/lms.md)).
 - **Databases**: MySQL 8.4 alongside SQLite and PostgreSQL.

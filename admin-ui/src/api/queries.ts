@@ -124,6 +124,8 @@ function invalidateAfterWrite(client: ReturnType<typeof useQueryClient>, slug: s
     client.invalidateQueries({ queryKey: ["options"] }),
     client.invalidateQueries({ queryKey: ["history", slug] }),
     client.invalidateQueries({ queryKey: ["audit"] }),
+    // Custom pages and slots may show what changed.
+    client.invalidateQueries({ queryKey: ["custom"] }),
   ]);
 }
 

@@ -79,6 +79,8 @@ fn the_admin_route_list_is_unchanged() {
         "POST /admin/api/queue/jobs/{id}/retry",
         "POST /admin/api/queue/jobs/{id}/forget",
         "POST /admin/api/queue/jobs/{id}/cancel",
+        "GET /admin/api/pages/{slug}",
+        "GET /admin/api/slots",
     ];
     assert_eq!(listed, expected);
 }

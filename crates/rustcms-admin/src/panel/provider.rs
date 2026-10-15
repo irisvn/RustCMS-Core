@@ -30,6 +30,9 @@ pub struct AdminProvider {
     extensions: Vec<crate::spa::Extension>,
     translator: Translator,
     settings: crate::settings::SettingsRegistry,
+    pages: Vec<std::sync::Arc<dyn crate::custom::DynPage>>,
+    slots: Vec<std::sync::Arc<dyn crate::custom::DynSlot>>,
+    theme: Option<crate::custom::Theme>,
 }
 
 /// Locales the panel's interface is written in (`admin-ui/src/i18n`).
@@ -48,6 +51,9 @@ impl Default for AdminProvider {
             extensions: Vec::new(),
             translator,
             settings: crate::settings::SettingsRegistry::default(),
+            pages: Vec::new(),
+            slots: Vec::new(),
+            theme: None,
         }
     }
 }
@@ -66,7 +72,7 @@ impl AdminProvider {
     }
 
     /// A script the panel loads (in order) before it renders, e.g. to register
-    /// custom widgets: `extension_script("acme", include_str!("../assets/admin/acme.js"))`.
+    /// custom widgets: `extension_script("acme", include_str!("../../resources/admin/js/acme/widget.js"))`.
     /// Extensions are trusted application code with the panel's full privileges.
     ///
     /// # Panics
@@ -121,6 +127,31 @@ impl AdminProvider {
     }
 
     /// Name shown in the panel.
+    /// The panel's look: colors, radius, fonts, logo, favicon, color scheme.
+    pub fn theme(mut self, theme: crate::custom::Theme) -> Self {
+        self.theme = Some(theme);
+        self
+    }
+
+    /// Adds a custom page (`/admin/p/{slug}`), drawn from a server template or a script.
+    ///
+    /// # Panics
+    /// At boot, on an invalid page (see [`crate::custom::PanelPage`]).
+    pub fn page<P: crate::custom::PanelPage>(mut self) -> Self {
+        self.pages.push(crate::custom::PageAdapter::<P>::shared());
+        self
+    }
+
+    /// Adds a slot beside a resource's records.
+    ///
+    /// # Panics
+    /// At boot, on an invalid slot (see [`crate::custom::PanelSlot`]).
+    pub fn slot<S: crate::custom::PanelSlot>(mut self) -> Self {
+        self.slots.push(crate::custom::SlotAdapter::<S>::shared());
+        self
+    }
+
+    /// Name shown in the panel.
     pub fn brand(mut self, brand: impl Into<String>) -> Self {
         self.brand = brand.into();
         self
@@ -166,6 +197,15 @@ impl ServiceProvider for AdminProvider {
             }
         }
         let admin_path = auth.config.admin_path.clone();
+        let custom = std::sync::Arc::new(crate::custom::CustomPanel::new(
+            &admin_path,
+            self.pages.clone(),
+            self.slots.clone(),
+            &registry,
+        ));
+        for permission in custom.declared_permissions() {
+            auth.permissions.declare(ADMIN_GUARD, &permission, Some("pages"));
+        }
         if self.media {
             let storage = app
                 .service::<std::sync::Arc<dyn rustcms_core::storage::Storage>>()
@@ -193,15 +233,37 @@ impl ServiceProvider for AdminProvider {
         }
         let translator = std::sync::Arc::new(self.translator.clone());
         let settings = std::sync::Arc::new(self.settings.clone());
-        app.bind(AdminPanel { brand: self.brand.clone(), registry, translator, settings });
-        let extensions = std::sync::Arc::new(self.extensions.clone());
+        app.bind(AdminPanel { brand: self.brand.clone(), registry, translator, settings, custom });
+        // The theme's stylesheet loads first, so extension styles may refine it.
+        let mut extensions = Vec::new();
+        let mut theme = spa::ThemeConfig::default();
+        if let Some(look) = &self.theme {
+            if let Some(css) = look.stylesheet() {
+                extensions.push(spa::Extension::generated_style("theme", css));
+            }
+            for (name, image, slot) in
+                [("logo", &look.logo, &mut theme.logo), ("favicon", &look.favicon, &mut theme.favicon)]
+            {
+                if let Some(image) = image {
+                    let asset = spa::Extension::image(name, image.bytes, image.mime);
+                    *slot = Some(asset.file.clone());
+                    extensions.push(asset);
+                }
+            }
+            theme.scheme = look.scheme.as_str();
+        }
+        extensions.extend(self.extensions.iter().cloned());
+        let extensions = std::sync::Arc::new(extensions);
         let locales = spa::Locales { default: app.config().app.locale.clone(), all: app.config().app.locales.clone() };
         app.routes(move |router| {
             spa::router(
-                crate::queue::router(
-                    crate::audit::router(
-                        crate::settings::router(
-                            system::router(http::router(router, &admin_path), &admin_path),
+                crate::custom::router(
+                    crate::queue::router(
+                        crate::audit::router(
+                            crate::settings::router(
+                                system::router(http::router(router, &admin_path), &admin_path),
+                                &admin_path,
+                            ),
                             &admin_path,
                         ),
                         &admin_path,
@@ -211,6 +273,7 @@ impl ServiceProvider for AdminProvider {
                 &admin_path,
                 extensions,
                 &locales,
+                &theme,
             )
         });
         app.command(IdempotencyPrune);
@@ -362,6 +425,7 @@ fn missing_translations(panel: &AdminPanel, locale: &str, permission_groups: &[S
         })
         .collect();
     missing.extend(panel.settings.display_strings().into_iter().filter(|s| !translated(None, s)));
+    missing.extend(panel.custom.display_strings().into_iter().filter(|s| !translated(None, s)));
     // Permission groups that are not resources are shown in words (`users` → "Users").
     for group in permission_groups {
         let source = crate::system::roles::group_source(group);
