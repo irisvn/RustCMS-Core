@@ -36,8 +36,8 @@ settings, audit log, i18n, media S3/R2, tin tức, nhiều-nhiều, import/expor
 | M13 | Audit log: ghi trong transaction, actor/request, che dữ liệu, retention | ✅ `c7533c3` |
 | M14a | Trang Settings theo nhóm, secret mã hoá AES-GCM | ✅ `7d1ee2d` |
 | M14b | Xem audit log (kiểm toán viên) + tab Lịch sử trên bản ghi | ✅ `0750544` |
-| M15a | Queue trong DB: dispatch trong transaction, worker có lease/heartbeat/timeout, retry, dừng êm | ✅ |
-| M15b | Kiểm thật S3-compatible bằng MinIO, cấu hình Cloudflare R2, timeout/streaming | 🔧 |
+| M15a | Queue trong DB: dispatch trong transaction, worker có lease/heartbeat/timeout, retry, dừng êm | ✅ `17ad424` |
+| M15b | Kiểm thật S3-compatible (S3Mock), cấu hình Cloudflare R2, timeout/streaming | ✅ `4fd54a0` + fix |
 | M15c | `examples/lms` khung tối thiểu: khoá học, bài học, học viên, ghi danh (sĩ số, instructor) | ⏳ |
 | M16 | Quan hệ nhiều-nhiều (attach/detach/pivot) + action có form (modal) + ma trận quyền theo resource | ⏳ |
 | M17 | Import / Export CSV (chạy nền qua queue, kiểm quyền mỗi lô, chống CSV injection) | ⏳ |

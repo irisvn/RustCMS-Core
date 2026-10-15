@@ -12,6 +12,9 @@
       jobs are safe to run twice, also at the same time);
       the permission cache needs nothing (it follows the database). Media storage must be shared
       (S3, or one volume mounted by every instance). Without Redis, run one instance.
+- [ ] S3 storage: a private bucket, credentials limited to it, an *abort incomplete multipart uploads* lifecycle
+      rule, `storage.root` writable by the app only (uploads are staged there), `media:prune` scheduled
+      ([File storage](../digging-deeper/storage.md)).
 - [ ] Password-hashing and upload concurrency limits are per instance (each bounds its own CPU and disk).
 - [ ] Queue workers: decide where they run (`serve`, or `queue:work` processes with `queue.enabled = false` on
       web instances); clocks synchronized (NTP); `queue:failed` watched; job payloads and error messages carry

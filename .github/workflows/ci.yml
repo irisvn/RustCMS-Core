@@ -45,6 +45,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.94
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --all-targets
+      - run: cargo check -p rustcms --features redis,s3
 
   test-rust:
     runs-on: ubuntu-latest
@@ -89,7 +90,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-nextest }
       - name: Wait for the S3 bucket
-        run: for i in $(seq 1 60); do curl -sf -o /dev/null "$RUSTCMS_TEST_S3" && exit 0; sleep 1; done; exit 1
+        run: for i in $(seq 1 60); do curl -sf --connect-timeout 2 -m 5 -o /dev/null "$RUSTCMS_TEST_S3" && exit 0; sleep 1; done; exit 1
       - run: cargo nextest run --workspace --features rustcms/redis,rustcms/s3
 
   doc:

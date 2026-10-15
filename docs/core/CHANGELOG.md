@@ -22,8 +22,13 @@ All notable changes are documented here. The format follows
   `RUSTCMS_TEST_REQUIRE`; `just test-matrix` and CI run with `rustcms/s3`.
 
 ### Fixed (0.3 — M15b)
-- S3 uploads are staged in their own directory, swept by `media:prune`
-  (they were left in the system temp directory).
+- S3 uploads are staged in `<storage.root>/.s3-staging` (private, never a
+  symbolic link), not a shared temp directory; the sweep removes only stale
+  `*.upload` files.
+- Control requests to the bucket (exists, delete, opening a download) end
+  within `s3.timeout_secs`, retries included; data transfers get
+  `s3.transfer_timeout_secs` (new, default 600).
+- `media:prune` stops taking work after a five-minute pass.
 - `allow_http` is kept when client options are set (plain-HTTP endpoints).
 
 ### Added (0.3 — M15a)

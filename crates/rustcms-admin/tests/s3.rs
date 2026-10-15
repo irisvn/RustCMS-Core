@@ -23,7 +23,11 @@ fn png() -> Vec<u8> {
 }
 
 fn s3_storage(s3: &TestS3, timeout_secs: u64) -> Result<Arc<dyn Storage>, StorageError> {
-    let mut config = StorageConfig { disk: "s3".into(), ..Default::default() };
+    s3_storage_in(s3, timeout_secs, std::path::Path::new("storage/app"))
+}
+
+fn s3_storage_in(s3: &TestS3, timeout_secs: u64, root: &std::path::Path) -> Result<Arc<dyn Storage>, StorageError> {
+    let mut config = StorageConfig { disk: "s3".into(), root: root.to_owned(), ..Default::default() };
     config.s3.bucket = s3.bucket.clone();
     config.s3.endpoint = Some(s3.endpoint.clone());
     config.s3.allow_http = s3.endpoint.starts_with("http://");
@@ -67,19 +71,45 @@ async fn objects_round_trip_through_the_bucket() {
     storage.delete(&key).await.unwrap();
 }
 
+/// A file in `dir` last modified two hours ago.
+fn stale(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let path = dir.join(name);
+    let file = std::fs::File::create(&path).unwrap();
+    file.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(7_200)).unwrap();
+    path
+}
+
 #[tokio::test]
 async fn interrupted_uploads_are_swept_from_staging() {
     let Some(s3) = TestS3::from_env() else { return };
-    let storage = s3_storage(&s3, 30).unwrap();
-    let left = storage.staging_dir().join(format!("{}.upload", uuid::Uuid::now_v7()));
-    std::fs::write(&left, b"half an upload").unwrap();
-    // Other tests stage uploads here at the same time: only files older than
-    // two seconds go, as interrupted uploads would be (hours, in production).
-    storage.sweep(std::time::Duration::from_secs(3_600)).await.unwrap();
-    assert!(left.exists(), "recent files stay");
-    tokio::time::sleep(std::time::Duration::from_millis(2_500)).await;
-    assert!(storage.sweep(std::time::Duration::from_secs(2)).await.unwrap() >= 1);
-    assert!(!left.exists());
+    // A root of its own: no other test stages files here.
+    let root = tempfile::tempdir().unwrap();
+    let storage = s3_storage_in(&s3, 30, root.path()).unwrap();
+    let staging = storage.staging_dir();
+    assert!(staging.starts_with(root.path()), "staged under the storage root");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(&staging).unwrap().permissions().mode() & 0o777, 0o700);
+    }
+    let left = stale(&staging, &format!("{}.upload", uuid::Uuid::now_v7()));
+    let recent = staging.join(format!("{}.upload", uuid::Uuid::now_v7()));
+    std::fs::write(&recent, b"in progress").unwrap();
+    let other = stale(&staging, "notes.txt");
+    assert_eq!(storage.sweep(std::time::Duration::from_secs(3_600)).await.unwrap(), 1);
+    assert!(!left.exists(), "the interrupted upload goes");
+    assert!(recent.exists(), "uploads in progress stay");
+    assert!(other.exists(), "only staged uploads are removed");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn staging_is_never_a_link() {
+    let Some(s3) = TestS3::from_env() else { return };
+    let root = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(elsewhere.path(), root.path().join(".s3-staging")).unwrap();
+    assert!(matches!(s3_storage_in(&s3, 30, root.path()), Err(StorageError::Refused(_))));
 }
 
 #[tokio::test]
@@ -99,19 +129,28 @@ async fn a_bucket_that_never_answers_fails_within_the_budget() {
         eprintln!("skipped: AWS_ACCESS_KEY_ID is not set");
         return;
     }
-    let storage = match s3_storage(&s3, 2) {
+    let root = tempfile::tempdir().unwrap();
+    let storage = match s3_storage_in(&s3, 2, root.path()) {
         Ok(storage) => storage,
         // Built without the `s3` feature.
         Err(StorageError::Backend(message)) if message.contains("unknown storage disk") => return,
         Err(other) => panic!("{other}"),
     };
-    let started = std::time::Instant::now();
     let key = StorageKey::generate("bin").unwrap();
+    // Every control request ends within its budget (2 s), retries included.
+    let started = std::time::Instant::now();
     assert!(storage.exists(&key).await.is_err());
-    assert!(started.elapsed() < std::time::Duration::from_secs(20), "{:?}", started.elapsed());
+    assert!(storage.delete(&key).await.is_err());
+    assert!(storage.open(&key).await.is_err());
+    let elapsed = started.elapsed();
+    assert!(elapsed < std::time::Duration::from_secs(9), "three calls of 2 s took {elapsed:?}");
 }
 
 async fn upload(app: &TestApp, client: &TestClient<'_>) -> TestResponse {
+    upload_with(app, client, None).await
+}
+
+async fn upload_with(app: &TestApp, client: &TestClient<'_>, idempotency_key: Option<&str>) -> TestResponse {
     let boundary = "rustcms-test-boundary";
     let mut body = format!(
         "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.png\"\r\n\
@@ -121,13 +160,15 @@ async fn upload(app: &TestApp, client: &TestClient<'_>) -> TestResponse {
     body.extend_from_slice(&png());
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
     client.fetch_csrf().await;
-    let request = Request::builder()
+    let mut request = Request::builder()
         .method(Method::POST)
         .uri(app.admin_api("media"))
         .header("content-type", format!("multipart/form-data; boundary={boundary}"))
-        .header("content-length", body.len())
-        .body(Body::from(body))
-        .unwrap();
+        .header("content-length", body.len());
+    if let Some(key) = idempotency_key {
+        request = request.header("idempotency-key", key);
+    }
+    let request = request.body(Body::from(body)).unwrap();
     client.request(request).await
 }
 
@@ -154,6 +195,14 @@ db_test!(media_live_in_the_bucket, |db: TestDb| async move {
     served.assert_status(StatusCode::OK);
     assert_eq!(served.body.as_ref(), png().as_slice());
     assert_eq!(served.headers["content-type"], "image/png");
+    // The object itself carries the detected type (S3Mock answers without signing).
+    let head = std::process::Command::new("curl")
+        .args(["-sfI", "--connect-timeout", "2", "-m", "5"])
+        .arg(format!("{}/{}/{}", s3.endpoint, s3.bucket, row.key))
+        .output()
+        .unwrap();
+    let head = String::from_utf8_lossy(&head.stdout).to_ascii_lowercase();
+    assert!(head.contains("content-type: image/png"), "{head}");
 
     // Deleted for good: the queued deletion removes the object.
     admin.fetch_csrf().await;
@@ -173,6 +222,8 @@ struct Flaky {
     fail_open: std::sync::atomic::AtomicBool,
     /// The body fails after its first chunk.
     fail_midway: std::sync::atomic::AtomicBool,
+    /// The body ends cleanly after its first chunk, short of its length.
+    short: std::sync::atomic::AtomicBool,
 }
 
 /// One chunk, then an error.
@@ -216,6 +267,11 @@ impl Storage for Flaky {
         }
         let bytes = self.objects.lock().unwrap().get(key.as_str()).cloned().ok_or(StorageError::NotFound)?;
         let len = bytes.len() as u64;
+        if self.short.load(Ordering::SeqCst) {
+            // A stream, as a bucket's body is: its length is not known up front.
+            let chunk = Ok::<_, std::io::Error>(axum::body::Bytes::from(bytes[..4].to_vec()));
+            return Ok((Body::from_stream(futures_util::stream::iter([chunk])), len));
+        }
         if self.fail_midway.load(Ordering::SeqCst) {
             return Ok((Body::new(Broken(Some(axum::body::Bytes::from(bytes[..4].to_vec())))), len));
         }
@@ -232,11 +288,13 @@ impl Storage for Flaky {
     }
 }
 
-static FLAKY: std::sync::OnceLock<Arc<Flaky>> = std::sync::OnceLock::new();
-
+/// A fresh `Flaky` per app (the database variants run in parallel), also
+/// bound as itself so the test can reach it.
 fn flaky_build(config: rustcms_core::Config) -> rustcms_core::AppBuilder {
     let mut app = rustcms_core::AppBuilder::new(config);
-    let storage: Arc<dyn Storage> = FLAKY.get_or_init(Default::default).clone();
+    let flaky = Arc::new(Flaky::default());
+    let storage: Arc<dyn Storage> = flaky.clone();
+    app.bind(flaky);
     app.bind(storage);
     app.bind(StorageConfig::default());
     app.provider(rustcms_auth::AuthProvider::new());
@@ -251,9 +309,7 @@ db_test!(storage_failures_never_reach_the_client, |db: TestDb| async move {
     let user = rustcms_testing::Factory::create(&rustcms_testing::UserFactory::new(), app.state().db()).await;
     app.make_super_admin(&user).await;
     let admin = app.acting_as(&user).await;
-    let flaky = FLAKY.get().unwrap();
-    flaky.fail_open.store(false, Ordering::SeqCst);
-    flaky.fail_midway.store(false, Ordering::SeqCst);
+    let flaky = app.state().service::<Arc<Flaky>>().unwrap();
     let created = upload(&app, &admin).await;
     created.assert_status(StatusCode::CREATED);
     let id = created.json()["data"]["id"].as_str().unwrap().to_owned();
@@ -290,4 +346,69 @@ db_test!(storage_failures_never_reach_the_client, |db: TestDb| async move {
     assert!(failed, "the body ends in an error, not a clean end");
     assert_eq!(received, png()[..4].to_vec(), "only the bytes that were read");
     flaky.fail_midway.store(false, Ordering::SeqCst);
+});
+
+db_test!(a_replayed_upload_stores_nothing, |db: TestDb| async move {
+    db.migrate::<rustcms_migration::Migrator>().await;
+    let app = TestApp::new(flaky_build, db).await;
+    let user = rustcms_testing::Factory::create(&rustcms_testing::UserFactory::new(), app.state().db()).await;
+    app.make_super_admin(&user).await;
+    let admin = app.acting_as(&user).await;
+    let flaky = app.state().service::<Arc<Flaky>>().unwrap();
+    let first = upload_with(&app, &admin, Some("replay-1")).await;
+    first.assert_status(StatusCode::CREATED);
+    let again = upload_with(&app, &admin, Some("replay-1")).await;
+    again.assert_status(StatusCode::CREATED);
+    assert_eq!(first.json()["data"]["id"], again.json()["data"]["id"]);
+    assert_eq!(flaky.objects.lock().unwrap().len(), 1, "one object in storage");
+});
+
+/// The response bytes as a real client sees them over TCP, until the server
+/// closes the connection.
+async fn raw_get(addr: std::net::SocketAddr, path: &str, cookie: &str) -> Vec<u8> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let request = format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nCookie: rustcms_session={cookie}\r\n\r\n");
+    socket.write_all(request.as_bytes()).await.unwrap();
+    let mut received = Vec::new();
+    let read = tokio::time::timeout(std::time::Duration::from_secs(10), socket.read_to_end(&mut received)).await;
+    assert!(read.is_ok(), "the server closes the connection");
+    received
+}
+
+db_test!(a_broken_stream_closes_the_connection, |db: TestDb| async move {
+    use std::sync::atomic::Ordering;
+    db.migrate::<rustcms_migration::Migrator>().await;
+    let app = TestApp::new(flaky_build, db).await;
+    let user = rustcms_testing::Factory::create(&rustcms_testing::UserFactory::new(), app.state().db()).await;
+    app.make_super_admin(&user).await;
+    let admin = app.acting_as(&user).await;
+    let flaky = app.state().service::<Arc<Flaky>>().unwrap();
+    let created = upload(&app, &admin).await;
+    created.assert_status(StatusCode::CREATED);
+    let id = created.json()["data"]["id"].as_str().unwrap().to_owned();
+    let path = app.admin_api(&format!("media/{id}/file"));
+    let cookie = admin.cookie("rustcms_session").unwrap();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let router = app.router().into_make_service_with_connect_info::<std::net::SocketAddr>();
+    tokio::spawn(async move { axum::serve(listener, router).await });
+
+    for (failure, label) in [(&flaky.fail_midway, "an error mid-stream"), (&flaky.short, "an early end")] {
+        failure.store(true, Ordering::SeqCst);
+        let received = raw_get(addr, &path, &cookie).await;
+        failure.store(false, Ordering::SeqCst);
+        let text = String::from_utf8_lossy(&received);
+        assert!(!text.contains("secret-backend-detail"), "{label}");
+        // Either the connection closes before anything went out (hyper
+        // buffers the headers with the first chunk), or a 200 with fewer
+        // bytes than announced: a truncated download, never a complete one.
+        if received.is_empty() {
+            continue;
+        }
+        assert!(text.starts_with("HTTP/1.1 200"), "{label}: {text}");
+        let body = &received[received.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4..];
+        assert!(body.len() < png().len(), "{label}: {} bytes", body.len());
+    }
 });

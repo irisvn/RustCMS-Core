@@ -14,6 +14,7 @@ ci: lint features test-matrix doc generated test-ui
 # Compiles with the declared minimum Rust version (`rustup toolchain install 1.94`).
 msrv:
     cargo +1.94 check --workspace --all-targets
+    cargo +1.94 check -p rustcms --features redis,s3
 
 lint:
     cargo fmt --all --check
@@ -43,7 +44,7 @@ features:
 # Tests on SQLite (temp files), PostgreSQL and MySQL, with Redis and an S3-compatible bucket (docker compose).
 test-matrix:
     docker compose up -d --wait postgres mysql redis s3
-    @for i in $(seq 1 60); do curl -sf -o /dev/null {{s3_url}} && exit 0; sleep 1; done; echo "the S3 bucket is not ready: {{s3_url}}"; exit 1
+    @for i in $(seq 1 60); do curl -sf --connect-timeout 2 -m 5 -o /dev/null {{s3_url}} && exit 0; sleep 1; done; echo "the S3 bucket is not ready: {{s3_url}}"; exit 1
     RUSTCMS_TEST_PG={{pg_url}} RUSTCMS_TEST_MYSQL={{mysql_url}} RUSTCMS_TEST_REDIS={{redis_url}} RUSTCMS_TEST_S3={{s3_url}} AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test RUSTCMS_TEST_REQUIRE=postgres,mysql,redis,s3 cargo nextest run --workspace --features rustcms/redis,rustcms/s3
 
 test:

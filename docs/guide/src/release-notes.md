@@ -31,7 +31,9 @@ RustCMS is in pre-release. The current published version is
 - **APIs**: `ApiRoutes` with declared access, `Validated<T>`, `Pagination`,
   `Throttle<N>`, `make:api`; JWT access tokens with rotating refresh tokens.
 - **Operations**: several instances with Redis (shared rate limits, periodic
-  jobs mostly on one instance); S3-compatible storage.
+  jobs mostly on one instance); S3-compatible storage tested against a real
+  server, Cloudflare R2 setup, bounded bucket timeouts
+  ([File storage](digging-deeper/storage.md)).
 
 ## 0.1.0-alpha.0
 

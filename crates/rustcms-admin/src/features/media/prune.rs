@@ -7,6 +7,8 @@ pub(super) const ABANDONED_AFTER_MINUTES: i64 = 60;
 
 /// Queued deletions processed per run.
 const DELETIONS_PER_RUN: usize = 100;
+/// Longest pass: no new work is taken after it (each storage call is bounded too).
+const PASS_BUDGET: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// Removes queued objects and abandoned uploads; returns how many objects were deleted.
 ///
@@ -17,12 +19,13 @@ const DELETIONS_PER_RUN: usize = 100;
 /// ahead under the write lock, so no lock is held during storage calls.
 /// After a crash a job runs again (deleting an object twice is harmless).
 pub async fn prune(db: &DatabaseConnection, storage: &dyn Storage) -> AppResult<u64> {
+    let deadline = std::time::Instant::now() + PASS_BUDGET;
     let mut deleted = if db.get_database_backend() == sea_orm::DbBackend::Sqlite {
-        leased_deletions(db, storage).await?
+        leased_deletions(db, storage, deadline).await?
     } else {
-        claimed_deletions(db, storage).await?
+        claimed_deletions(db, storage, deadline).await?
     };
-    deleted += abandoned_uploads(db, storage).await?;
+    deleted += abandoned_uploads(db, storage, deadline).await?;
     // Staged and partial files of interrupted uploads.
     deleted += storage.sweep(std::time::Duration::from_secs(ABANDONED_AFTER_MINUTES as u64 * 60)).await?;
     Ok(deleted)
@@ -65,9 +68,16 @@ fn due(storage: &dyn Storage) -> sea_orm::Select<deletions::Entity> {
         .order_by_asc(deletions::Column::NextAt)
 }
 
-async fn claimed_deletions(db: &DatabaseConnection, storage: &dyn Storage) -> AppResult<u64> {
+async fn claimed_deletions(
+    db: &DatabaseConnection,
+    storage: &dyn Storage,
+    deadline: std::time::Instant,
+) -> AppResult<u64> {
     let mut deleted = 0;
     for _ in 0..DELETIONS_PER_RUN {
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
         let txn = rustcms_core::db::begin_write(db).await?;
         let job = due(storage)
             .limit(1)
@@ -89,9 +99,16 @@ async fn claimed_deletions(db: &DatabaseConnection, storage: &dyn Storage) -> Ap
 /// How long a SQLite claim keeps a job from other runners.
 const CLAIM_MINUTES: i64 = 10;
 
-async fn leased_deletions(db: &DatabaseConnection, storage: &dyn Storage) -> AppResult<u64> {
+async fn leased_deletions(
+    db: &DatabaseConnection,
+    storage: &dyn Storage,
+    deadline: std::time::Instant,
+) -> AppResult<u64> {
     let mut deleted = 0;
     for _ in 0..DELETIONS_PER_RUN {
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
         let txn = rustcms_core::db::begin_write(db).await?;
         let Some(job) = due(storage).limit(1).one(&txn).await? else {
             txn.commit().await?;
@@ -112,7 +129,11 @@ async fn leased_deletions(db: &DatabaseConnection, storage: &dyn Storage) -> App
 }
 
 /// Deletes the objects of uploads that never became media rows.
-async fn abandoned_uploads(db: &DatabaseConnection, storage: &dyn Storage) -> AppResult<u64> {
+async fn abandoned_uploads(
+    db: &DatabaseConnection,
+    storage: &dyn Storage,
+    deadline: std::time::Instant,
+) -> AppResult<u64> {
     let mut deleted = 0;
     let abandoned = uploads::Entity::find()
         .filter(
@@ -124,6 +145,9 @@ async fn abandoned_uploads(db: &DatabaseConnection, storage: &dyn Storage) -> Ap
         .all(db)
         .await?;
     for intent in abandoned {
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
         // Reclaim the intent first: an upload finishing now then finds it gone
         // and fails instead of committing a row whose file is being deleted.
         let txn = rustcms_core::db::begin_write(db).await?;

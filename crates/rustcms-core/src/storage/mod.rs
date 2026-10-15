@@ -135,13 +135,23 @@ pub struct S3Config {
     pub endpoint: Option<String>,
     /// Allow plain HTTP endpoints (a local test server only).
     pub allow_http: bool,
-    /// Longest wait for one request to the bucket, retries included (seconds).
+    /// Longest wait for a control request (exists, delete, the start of a
+    /// download), retries included (seconds).
     pub timeout_secs: u64,
+    /// Longest transfer of one request's data (an upload part, a download), seconds.
+    pub transfer_timeout_secs: u64,
 }
 
 impl Default for S3Config {
     fn default() -> Self {
-        Self { bucket: String::new(), region: None, endpoint: None, allow_http: false, timeout_secs: 30 }
+        Self {
+            bucket: String::new(),
+            region: None,
+            endpoint: None,
+            allow_http: false,
+            timeout_secs: 30,
+            transfer_timeout_secs: 600,
+        }
     }
 }
 
@@ -185,7 +195,7 @@ pub fn connect(config: &StorageConfig) -> Result<Arc<dyn Storage>, StorageError>
     match config.disk.as_str() {
         "local" => Ok(Arc::new(LocalStorage::new(&config.root)?)),
         #[cfg(feature = "s3")]
-        "s3" => Ok(Arc::new(s3::S3Storage::new(&config.s3)?)),
+        "s3" => Ok(Arc::new(s3::S3Storage::new(&config.s3, &config.root)?)),
         other => Err(StorageError::Backend(format!(
             "unknown storage disk `{other}` (`local`, or `s3` with the `s3` feature)"
         ))),
