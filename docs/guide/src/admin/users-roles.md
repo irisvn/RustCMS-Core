@@ -19,6 +19,13 @@ CLI and your own code:
 | Create / edit a role | `roles.create` / `roles.update` (+ `roles.view` to edit) | only permissions you hold; never a role you hold; names unique ignoring case, ≤ 120 characters |
 | Delete a role | `roles.delete` | not system roles; protected roles by super admins; you hold all its permissions |
 
+**The role page** shows the permissions of resources as a matrix: a row per
+resource, a column per ability (list, view, create, update, delete, restore,
+delete for good), the resource's other abilities (actions, `attach_tags`…) in
+its last column, and a box to switch a whole row or column. Everything else
+(users, roles, settings, audit, queue, pages, media) is listed by group. Boxes
+of permissions you do not hold are disabled, and saving keeps them as they are.
+
 **Protected accounts.** Users holding a protected role (system or privileged) or
 a super-admin role in *any* guard are disabled, renamed, re-addressed or deleted
 only by super admins of every guard.
@@ -42,7 +49,7 @@ the rest of the admin API):
 | GET / POST | `/roles` | POST: `{name, permissions}` | `[SystemRole]` / 201 `SystemRole` |
 | GET / DELETE | `/roles/{id}` | | `SystemRole` / 204 |
 | PUT | `/roles/{id}/permissions` | `{permissions, expectedPermissions}` | `SystemRole` |
-| GET | `/permissions` | | `[PermissionInfo]` (with `grantable`) |
+| GET | `/permissions` | | `[PermissionInfo]` (with `grantable`; `resource` and `ability` when it is exactly one resource's `{slug}.{ability}`) |
 
 Replacing roles or permissions sends what the editor started from
 (`expected…`): if someone changed them meanwhile, the request is refused with a

@@ -45,6 +45,7 @@ pub struct Action<E: EntityTrait> {
     pub(crate) color: Option<String>,
     pub(crate) icon: Option<String>,
     pub(crate) required_permission: Option<&'static str>,
+    pub(crate) form: Vec<ActionField>,
 }
 
 impl<E: EntityTrait> Action<E> {
@@ -66,7 +67,18 @@ impl<E: EntityTrait> Action<E> {
             color: None,
             icon: None,
             required_permission: None,
+            form: Vec::new(),
         }
+    }
+
+    /// Asks for `fields` in a dialog before running. The values are checked
+    /// on the server (types, rules, options; a `belongs_to` value must be a
+    /// record the user may view, checked in the action's transaction) and
+    /// reach the handler as `data`, with every field present (`null` when
+    /// left empty). An action without a form refuses any `data`.
+    pub fn form(mut self, fields: Vec<ActionField>) -> Self {
+        self.form = fields;
+        self
     }
 
     /// Refuses the action outright (403, and hides it from the schema) for users
@@ -128,4 +140,118 @@ pub struct ActionOutcome {
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub replayed: bool,
+}
+
+/// A value asked for by an action's form ([`Action::form`]).
+#[derive(Debug, Clone)]
+pub struct ActionField {
+    pub(crate) name: String,
+    pub(crate) kind: crate::wire::FieldKind,
+    pub(crate) input: crate::ui::Input,
+    pub(crate) required: bool,
+    pub(crate) max_length: Option<usize>,
+    pub(crate) default: Option<serde_json::Value>,
+    pub(crate) belongs_to: Option<&'static str>,
+}
+
+impl ActionField {
+    fn new(name: impl Into<String>, kind: crate::wire::FieldKind, input: crate::ui::InputType) -> Self {
+        let name = name.into();
+        Self {
+            input: crate::ui::Input::with_kind(name.clone(), input),
+            name,
+            kind,
+            required: false,
+            max_length: None,
+            default: None,
+            belongs_to: None,
+        }
+    }
+
+    /// Single-line text.
+    pub fn text(name: impl Into<String>) -> Self {
+        Self::new(name, crate::wire::FieldKind::String, crate::ui::InputType::TextInput)
+    }
+
+    /// Multi-line text.
+    pub fn textarea(name: impl Into<String>) -> Self {
+        Self::new(name, crate::wire::FieldKind::String, crate::ui::InputType::Textarea)
+    }
+
+    /// A 32-bit integer (a JSON number).
+    pub fn integer(name: impl Into<String>) -> Self {
+        Self::new(name, crate::wire::FieldKind::I32, crate::ui::InputType::NumberInput)
+    }
+
+    /// On or off.
+    pub fn boolean(name: impl Into<String>) -> Self {
+        Self::new(name, crate::wire::FieldKind::Bool, crate::ui::InputType::Toggle)
+    }
+
+    /// A calendar date (`YYYY-MM-DD`).
+    pub fn date(name: impl Into<String>) -> Self {
+        Self::new(name, crate::wire::FieldKind::Date, crate::ui::InputType::DatePicker)
+    }
+
+    /// One of `options` (`(value, label)`).
+    pub fn select<L: Into<String>>(
+        name: impl Into<String>,
+        options: impl IntoIterator<Item = (&'static str, L)>,
+    ) -> Self {
+        let mut field = Self::new(name, crate::wire::FieldKind::String, crate::ui::InputType::Select);
+        field.input = field.input.options(options);
+        field
+    }
+
+    /// A record of the resource `target` the user may view, chosen from its
+    /// options; the handler gets its key as text (`"12"`, a UUID, …).
+    pub fn belongs_to(name: impl Into<String>, target: &'static str) -> Self {
+        let mut field = Self::new(name, crate::wire::FieldKind::String, crate::ui::InputType::Select);
+        field.belongs_to = Some(target);
+        field
+    }
+
+    /// Must have a value (otherwise `null` is accepted).
+    pub fn required(mut self) -> Self {
+        self.required = true;
+        self
+    }
+
+    /// Longest text, in characters.
+    pub fn max_length(mut self, max: usize) -> Self {
+        self.max_length = Some(max);
+        self
+    }
+
+    /// Value used when the field is left out, in wire format (checked at boot).
+    pub fn default(mut self, value: impl Into<serde_json::Value>) -> Self {
+        self.default = Some(value.into());
+        self
+    }
+
+    /// Label (default: the name in words).
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.input = self.input.label(label);
+        self
+    }
+
+    /// Help text below the input.
+    pub fn help(mut self, text: impl Into<String>) -> Self {
+        self.input = self.input.help(text);
+        self
+    }
+
+    /// Placeholder.
+    pub fn placeholder(mut self, text: impl Into<String>) -> Self {
+        self.input = self.input.placeholder(text);
+        self
+    }
+
+    pub(crate) fn display_label(&self) -> String {
+        self.input.label.clone().unwrap_or_else(|| crate::ui::humanize(&self.name))
+    }
+
+    pub(crate) fn options(&self) -> Vec<serde_json::Value> {
+        self.input.options.iter().map(|o| o.value.clone()).collect()
+    }
 }

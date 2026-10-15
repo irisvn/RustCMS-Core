@@ -3,8 +3,8 @@
 export type * from "./types.gen";
 
 /** Schema and vocabulary versions this bundle understands. */
-export const SCHEMA_VERSION = 1;
-export const VOCABULARY_VERSION = 6;
+export const SCHEMA_VERSION = 2;
+export const VOCABULARY_VERSION = 7;
 
 export interface Me {
   user: { id: string; name: string; email: string };

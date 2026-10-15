@@ -145,11 +145,11 @@
   },
   "group": "general",
   "label": "Chung",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "secrets": {
     "api_key": "unset",
     "smtp_password": "unset"
   },
   "version": "0",
-  "vocabularyVersion": 6
+  "vocabularyVersion": 7
 }

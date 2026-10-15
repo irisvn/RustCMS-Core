@@ -9,9 +9,9 @@ use serde::Serialize;
 use crate::ui::{ColumnType, FilterType, InputType, LayoutType, SelectOption};
 
 /// Version of the schema structure.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 6;
+pub const VOCABULARY_VERSION: u32 = 7;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -312,6 +312,10 @@ pub struct ActionSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// Values asked for before running (in a dialog).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub form: Option<FormSchema>,
 }
 
 /// A table.
@@ -364,19 +368,53 @@ pub struct ResourceSchema {
     pub relations: Vec<RelationSchema>,
 }
 
-/// A has-many relation shown on a record's page.
+/// A relation shown on a record's page.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct RelationSchema {
     /// URL segment.
     pub name: &'static str,
+    /// Has-many or belongs-to-many.
+    pub kind: RelationKind,
     /// Section title.
     pub label: String,
     /// Slug of the related resource.
     pub resource: &'static str,
-    /// Field of the related resource holding this record's key (set by the server).
+    /// Has-many: field of the related resource holding this record's key (set
+    /// by the server). Belongs-to-many: the pivot column (informational).
     pub field: &'static str,
-    /// Whether the user may create related records from here.
+    /// Whether the user may create related records from here (has-many).
     pub create: bool,
+    /// Whether the user may attach targets to this record (belongs-to-many).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub attach: bool,
+    /// Whether the user may detach targets from this record.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub detach: bool,
+    /// Pivot columns the user may read, shown with each link.
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<InputSchema>>", optional))]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub pivot: Vec<InputSchema>,
+    /// Pivot columns set when attaching (with `attach`).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attach_form: Option<FormSchema>,
+    /// Pivot columns the user may change on a link.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pivot_form: Option<FormSchema>,
+}
+
+/// Kind of a [`RelationSchema`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum RelationKind {
+    /// Records of the related resource point to this one.
+    HasMany,
+    /// Linked through a pivot table.
+    BelongsToMany,
 }

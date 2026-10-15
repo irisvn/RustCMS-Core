@@ -26,9 +26,14 @@ saves the choice (422 for a language not offered). The shell's
 | GET / PATCH / DELETE | `/resources/{slug}/records/{key}` | `{data: Envelope}` / `{data: Envelope}` / 204 |
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
-| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `{data: [Envelope], meta}` of the target (list query string) |
-| POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key set by the server |
-| POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing}` |
+| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `LinkPage` `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable pivot columns by target key, belongs-to-many) |
+| POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key set by the server (has-many; belongs-to-many: 405) |
+| POST | `…/relations/{relation}/attach` `{keys, pivot?}` | `LinkOutcome {processed, missing}`; admitted by `attach_{relation}` before the body (403), then 422 (1–100 keys, pivot by field rules), then parent 404/403 |
+| POST | `…/relations/{relation}/detach` `{keys}` | `LinkOutcome`; `detach_{relation}`; links to targets not visible are kept and listed in `missing` |
+| PATCH | `…/relations/{relation}/links/{target}` `{…pivot}` | `LinkOutcome`; `update_pivot_{relation}`; 404 when not linked or not visible |
+| GET | `…/relations/{relation}/options?search=&keys=` | `{data: [LinkOption {value, label, attached}]}`; `attach_{relation}` admitted, then on the parent record |
+| POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing}`; admitted before the body; `data` checked against the action's form (none: refused) |
+| GET | `/resources/{slug}/actions/{action}/fields/{field}/options?search=&keys=` | `{data: [SelectOption]}` of a form's `belongs_to` field (keys as text) |
 | POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (media library enabled) |
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
@@ -69,7 +74,9 @@ the policy allows `view` and `restore` or `force_delete` on it.
 ### Schema
 
 `ResourceSchema` = `{schemaVersion, vocabularyVersion, resource, operation,
-abilities, form, table}`. It contains only what the user may see: inputs for
+abilities, form, table, relations?}` (`schemaVersion` 2: actions may carry a
+`form`; vocabulary 7: relations carry `kind`, `attach`, `detach`, `pivot`,
+`attachForm`, `pivotForm`). It contains only what the user may see: inputs for
 fields they may write (create), readable fields with `disabled` set when not
 writable (edit), and actions they may run. The reference payload is
 [`fixtures/contract/posts.schema.json`](https://github.com/irisvn/rustcms/blob/main/fixtures/contract/posts.schema.json),

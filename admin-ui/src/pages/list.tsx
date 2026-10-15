@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
+import { SchemaFormDialog } from "@/components/schema-form-dialog";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Cell, FilterControl, KNOWN_FILTERS, type FilterParams } from "@/renderers/table";
@@ -66,6 +67,8 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     | { kind: "action"; action: ActionSchema; keys: string[] }
     | null
   >(null);
+  // An action with a form, being filled in for these rows.
+  const [formAction, setFormAction] = useState<{ action: ActionSchema; keys: string[] } | null>(null);
   const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: Text } | null>(null);
   // A write with an unknown outcome (timeout, cut connection) must not be repeated blindly.
   const uncertain = useUncertain(slug);
@@ -186,7 +189,23 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     }
   };
   const startAction = (action: ActionSchema, keys: string[]) =>
-    action.confirm ? setConfirm({ kind: "action", action, keys }) : void runAction(action, keys);
+    action.form
+      ? setFormAction({ action, keys })
+      : action.confirm
+        ? setConfirm({ kind: "action", action, keys })
+        : void runAction(action, keys);
+  /** Runs an action with its form's values; errors go back to the dialog. */
+  const submitForm = async (data: Record<string, unknown>) => {
+    if (!formAction) return;
+    setNotice(null);
+    const shown = new Set(rows.map((r) => r.key));
+    const keys = formAction.keys.filter((k) => shown.has(k));
+    if (stale || keys.length === 0) throw new Error(translate("list.changedMeanwhile"));
+    const outcome = await run.mutateAsync({ action: formAction.action.name, keys, data });
+    const label = formAction.action.label;
+    setNotice({ variant: outcome.processed.length ? "default" : "destructive", text: () => outcomeMessage(label, outcome) });
+    setSelected(new Set());
+  };
 
   return (
     <Page>
@@ -390,6 +409,19 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
           </div>
         )}
       </Card>
+
+      <SchemaFormDialog
+        open={formAction !== null}
+        onClose={() => setFormAction(null)}
+        title={formAction?.action.label ?? ""}
+        form={formAction?.action.form}
+        slug={slug}
+        optionsPath={(field) => `/resources/${encodeURIComponent(slug)}/actions/${encodeURIComponent(formAction?.action.name ?? "")}/fields/${encodeURIComponent(field)}/options`}
+        submitLabel={translate("action.run")}
+        onSubmit={submitForm}
+      >
+        {formAction?.action.confirm && <p className="text-sm text-muted-foreground">{formAction.action.confirm}</p>}
+      </SchemaFormDialog>
 
       <Dialog open={confirm !== null} onClose={() => setConfirm(null)} title={confirm?.kind === "action" ? confirm.action.label : t("list.confirmDelete")}>
         <p className="text-sm text-muted-foreground">

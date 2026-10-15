@@ -86,7 +86,7 @@
     "slug": "posts",
     "titleField": "title"
   },
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "table": {
     "actions": [
       {
@@ -104,6 +104,79 @@
         "bulk": false,
         "label": "Archive",
         "name": "archive"
+      },
+      {
+        "bulk": true,
+        "form": {
+          "columns": 1,
+          "components": [
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Category",
+              "name": "category_id",
+              "nullable": false,
+              "relationship": {
+                "resource": "categories"
+              },
+              "rules": [
+                {
+                  "rule": "required"
+                }
+              ],
+              "type": "select",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "default": "move",
+              "disabled": false,
+              "label": "Mode",
+              "name": "mode",
+              "nullable": true,
+              "options": [
+                {
+                  "label": "Move",
+                  "value": "move"
+                },
+                {
+                  "label": "Copy",
+                  "value": "copy"
+                }
+              ],
+              "rules": [],
+              "type": "select",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Weight",
+              "name": "weight",
+              "nullable": true,
+              "rules": [],
+              "type": "number_input",
+              "valueType": "i32"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Note",
+              "name": "note",
+              "nullable": true,
+              "rules": [
+                {
+                  "rule": "max_length",
+                  "value": 10
+                }
+              ],
+              "type": "text_input",
+              "valueType": "string"
+            }
+          ]
+        },
+        "label": "Move to category…",
+        "name": "move"
       }
     ],
     "columns": [
@@ -169,5 +242,5 @@
     ],
     "searchable": true
   },
-  "vocabularyVersion": 6
+  "vocabularyVersion": 7
 }

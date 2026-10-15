@@ -42,6 +42,13 @@ RustCMS is in pre-release. The current published version is
   templates (escaped, then sanitized) or extension scripts, custom table
   cells, `make:page`; `view!("file.html")` embeds a template and reads it
   again at each request in local development ([Customizing](admin/customizing.md)).
+- **Belongs-to-many relations**: `Relation::belongs_to_many` through a pivot
+  table, with pivot columns; attach, detach and edit links on a record's page,
+  each with its own permission ([Relationships](admin/relationships.md#belongs-to-many-pivot-tables)).
+- **Actions with a form**: `Action::form(vec![ActionField::…])` asks for values
+  in a dialog, checked on the server ([Actions](admin/actions.md#actions-with-a-form)).
+- **Permission matrix**: the role page lays resource permissions out as
+  resource × ability ([Users and roles](admin/users-roles.md)).
 - **Example**: `examples/lms`, a small LMS back office (seats under a lock,
   instructor scopes, a job per enrollment) ([Example](examples/lms.md)).
 - **Databases**: MySQL 8.4 alongside SQLite and PostgreSQL.

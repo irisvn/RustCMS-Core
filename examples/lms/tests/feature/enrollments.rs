@@ -175,3 +175,28 @@ db_test!(enrolling_queues_a_welcome, migrate = Migrator, |db: TestDb| async move
     assert_eq!(rustcms::queue::run_until_idle(app.state(), None, 10).await.unwrap(), 1);
     assert_eq!(jobs().await, 0, "done");
 });
+
+db_test!(the_enroll_action_asks_for_a_learner_and_keeps_the_rules, migrate = Migrator, |db: TestDb| async move {
+    let app = seeded(db).await;
+    let staff = as_user(&app, "staff@example.test").await;
+    let db = app.state().db();
+    let course = CourseFactory::new().capacity(1).create(db).await;
+    let (ann, bob) = (LearnerFactory.create(db).await, LearnerFactory.create(db).await);
+    let run = |learner: serde_json::Value| json!({"keys": [course.id.to_string()], "data": {"learner_id": learner}});
+    let action = app.admin_api("resources/courses/actions/enroll");
+
+    staff.post_json(&action, &run(json!(null))).await.assert_validation_error("learner_id");
+    let done = staff.post_json(&action, &run(json!(ann.id.to_string()))).await;
+    done.assert_status(StatusCode::OK);
+    assert_eq!(done.json()["processed"], json!([course.id.to_string()]));
+    assert_eq!(active(&app, course.id).await, 1);
+    // The same rules as any enrollment: once per learner, within the capacity.
+    staff.post_json(&action, &run(json!(ann.id))).await.assert_validation_error("learner_id");
+    let full = staff.post_json(&action, &run(json!(bob.id))).await;
+    full.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(full.text().contains("has no seats left"), "{}", full.text());
+    assert_eq!(active(&app, course.id).await, 1);
+    // Instructors do not create enrollments: refused before anything is read.
+    let teacher = as_user(&app, "teacher@example.test").await;
+    teacher.post_json(&action, &json!([])).await.assert_status(StatusCode::FORBIDDEN);
+});

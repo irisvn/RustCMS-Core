@@ -206,17 +206,44 @@ pub(super) async fn list_permissions(
         .order_by_asc(permission::Column::Name)
         .all(app.db())
         .await?;
+    let cells = matrix_cells(&ctx);
     Ok(Json(
         permissions
             .into_iter()
-            .map(|p| PermissionInfo {
-                grantable: ctx.principal.can(&p.name),
-                group_label: p.group.as_deref().map(|g| group_label(&ctx, g)),
-                name: p.name,
-                group: p.group,
+            .map(|p| {
+                let (resource, ability) = cells.get(&p.name).cloned().unzip();
+                PermissionInfo {
+                    grantable: ctx.principal.can(&p.name),
+                    group_label: p.group.as_deref().map(|g| group_label(&ctx, g)),
+                    name: p.name,
+                    group: p.group,
+                    resource,
+                    ability,
+                }
             })
             .collect(),
     ))
+}
+
+/// Permissions that are exactly one resource's `{slug}.{ability}` (from what
+/// the resources check, never guessed from names): name → (slug, ability).
+/// A name several resources check, or an explicit admission permission,
+/// stays outside the matrix.
+fn matrix_cells(ctx: &crate::Ctx) -> std::collections::HashMap<String, (String, String)> {
+    let mut uses: std::collections::HashMap<String, Vec<(String, String)>> = std::collections::HashMap::new();
+    for resource in ctx.registry.all() {
+        let slug = resource.slug();
+        for permission in resource.permissions() {
+            let cell = permission.strip_prefix(&format!("{slug}.")).map(|a| (slug.to_owned(), a.to_owned()));
+            uses.entry(permission).or_default().extend(cell.or(Some((String::new(), String::new()))));
+        }
+    }
+    uses.into_iter()
+        .filter_map(|(name, cells)| match cells.as_slice() {
+            [(slug, ability)] if !slug.is_empty() => Some((name, (slug.clone(), ability.clone()))),
+            _ => None,
+        })
+        .collect()
 }
 
 /// A permission group as shown: the plural label of the resource it names,

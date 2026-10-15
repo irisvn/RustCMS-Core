@@ -2,6 +2,9 @@ import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient }
 import { t, useLocale } from "@/i18n";
 import type { ApiClient } from "./client";
 import type {
+  LinkOption,
+  LinkOutcome,
+  LinkPage,
   ActionOutcome,
   Data,
   DataResponse,
@@ -185,14 +188,56 @@ export interface Via {
 }
 
 /** Children of one record (a has-many relation), cached with the child resource's records. */
+const relationPath = (via: Via) => `/resources/${enc(via.parent)}/records/${enc(via.record)}/relations/${enc(via.relation)}`;
+
 export function useRelationRecords(target: string, via: Via, query: URLSearchParams) {
   const api = useApi();
   const qs = query.toString();
   return useQuery({
     queryKey: [...keys.records(target), "relation", via.parent, via.record, via.relation, qs] as const,
-    queryFn: () =>
-      api.get<Page>(`/resources/${enc(via.parent)}/records/${enc(via.record)}/relations/${enc(via.relation)}`, new URLSearchParams(qs)),
+    // Belongs-to-many lists add the readable pivot columns, by target key.
+    queryFn: () => api.get<LinkPage>(relationPath(via), new URLSearchParams(qs)),
     placeholderData: keepPreviousData,
+  });
+}
+
+export type LinkWrite =
+  | { op: "attach"; keys: string[]; pivot?: Data }
+  | { op: "detach"; keys: string[] }
+  | { op: "update"; key: string; pivot: Data };
+
+/**
+ * Writes to a belongs-to-many relation of `via.parent`. Guarded under the
+ * parent resource like its other writes; no idempotency key: attaching or
+ * detaching again converges, and an unknown outcome is resolved by reloading.
+ */
+export function useLinkWrite(target: string, via: Via) {
+  const session = useSession();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (write: LinkWrite) =>
+      guardedWrite(session, via.parent, () =>
+        write.op === "update"
+          ? session.api.request<LinkOutcome>("PATCH", `${relationPath(via)}/links/${enc(write.key)}`, write.pivot)
+          : session.api.request<LinkOutcome>(
+              "POST",
+              `${relationPath(via)}/${write.op}`,
+              write.op === "attach" ? { keys: write.keys, pivot: write.pivot ?? {} } : { keys: write.keys },
+            ),
+      ),
+    onSettled: () =>
+      Promise.all([invalidateAfterWrite(client, via.parent), client.invalidateQueries({ queryKey: keys.records(target) })]),
+  });
+}
+
+/** Records offered for attaching to `via.record` (authorized on it by the server). */
+export function useLinkOptions(via: Via, search: string, enabled: boolean) {
+  const api = useApi();
+  return useQuery({
+    queryKey: ["options", "link", via.parent, via.record, via.relation, search] as const,
+    queryFn: () =>
+      api.get<DataResponse<LinkOption[]>>(`${relationPath(via)}/options`, { search: search || undefined }).then((r) => r.data),
+    enabled,
   });
 }
 
@@ -278,9 +323,10 @@ export function fetchOptions(
   slug: string,
   field: string,
   params: { search?: string; keys?: string[]; record?: string },
+  path?: string,
 ) {
   return api
-    .get<DataResponse<SelectOption[]>>(`/resources/${enc(slug)}/fields/${enc(field)}/options`, {
+    .get<DataResponse<SelectOption[]>>(path ?? `/resources/${enc(slug)}/fields/${enc(field)}/options`, {
       search: params.search,
       keys: params.keys?.length ? params.keys.join(",") : undefined,
       record: params.record,

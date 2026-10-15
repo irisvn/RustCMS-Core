@@ -2,7 +2,8 @@
 
 use rustcms::admin::*;
 
-/// Editors with `posts.update_own` may view and edit their own posts.
+/// Editors with `posts.update_own` may view and edit their own posts, tag
+/// them and move them to another category.
 pub struct PostPolicy;
 
 #[async_trait::async_trait]
@@ -13,6 +14,8 @@ impl Policy for PostPolicy {
         ctx.can(&format!("posts.{ability}"))
             // The list itself (its scope keeps only their posts), then their own records.
             || (ability == "view_any" && own)
-            || (matches!(ability, "view" | "update" | "publish") && owns && own)
+            || (matches!(ability, "view" | "update" | "publish" | "attach_tags" | "detach_tags" | "update_pivot_tags" | "move")
+                && owns
+                && own)
     }
 }

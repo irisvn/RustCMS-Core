@@ -2,4 +2,5 @@
 
 pub mod category_resource;
 pub mod post_resource;
+pub mod tag_resource;
 // rustcms:resource-mods

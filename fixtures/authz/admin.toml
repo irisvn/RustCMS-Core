@@ -512,6 +512,170 @@ actor = "editor"
 status = 404
 body = '{"title": "x"}'
 
+# Belongs-to-many relations (posts ↔ tags; behaviour in tests/links.rs): admitted
+# by `posts.attach_tags` / `detach_tags` / `update_pivot_tags` before the body.
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}/attach"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/attach"
+actor = "guest"
+status = 401
+body = '{"keys": ["x"]}'
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}/attach"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/attach"
+actor = "token"
+status = 403
+body = '{"keys": ["x"]}'
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}/attach"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/attach"
+actor = "member"
+status = 403
+body = '[]'
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}/attach"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/attach"
+actor = "editor"
+status = 403
+body = '{"keys": ["x"]}'
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}/attach"
+path = "/admin/api/resources/posts/records/{theirs}/relations/tags/attach"
+actor = "admin"
+status = 200
+body = '{"keys": ["nope"]}'
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}/detach"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/detach"
+actor = "guest"
+status = 401
+body = '{"keys": ["x"]}'
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}/detach"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/detach"
+actor = "member"
+status = 403
+body = '{}'
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}/detach"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/detach"
+actor = "editor"
+status = 403
+body = '{"keys": ["x"]}'
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}/detach"
+path = "/admin/api/resources/posts/records/{theirs}/relations/tags/detach"
+actor = "admin"
+status = 200
+body = '{"keys": ["nope"]}'
+
+[[case]]
+route = "PATCH /admin/api/resources/{slug}/records/{key}/relations/{relation}/links/{target}"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/links/x"
+actor = "guest"
+status = 401
+body = '{}'
+
+[[case]]
+route = "PATCH /admin/api/resources/{slug}/records/{key}/relations/{relation}/links/{target}"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/links/x"
+actor = "member"
+status = 403
+body = '[]'
+
+[[case]]
+route = "PATCH /admin/api/resources/{slug}/records/{key}/relations/{relation}/links/{target}"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/links/x"
+actor = "editor"
+status = 403
+body = '{}'
+
+[[case]]
+route = "PATCH /admin/api/resources/{slug}/records/{key}/relations/{relation}/links/{target}"
+path = "/admin/api/resources/posts/records/{theirs}/relations/tags/links/nope"
+actor = "admin"
+status = 404
+body = '{}'
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/relations/{relation}/options"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/options"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/relations/{relation}/options"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/options"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/relations/{relation}/options"
+path = "/admin/api/resources/posts/records/{own}/relations/tags/options"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/records/{key}/relations/{relation}/options"
+path = "/admin/api/resources/posts/records/{theirs}/relations/tags/options"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}"
+path = "/admin/api/resources/posts/records/{theirs}/relations/tags"
+actor = "admin"
+status = 405
+body = '{}'
+
+# Options of an action form's `belongs_to` field (posts `move`, admitted by `posts.move`).
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/actions/{action}/fields/{field}/options"
+path = "/admin/api/resources/posts/actions/move/fields/category_id/options"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/actions/{action}/fields/{field}/options"
+path = "/admin/api/resources/posts/actions/move/fields/category_id/options"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/actions/{action}/fields/{field}/options"
+path = "/admin/api/resources/posts/actions/move/fields/category_id/options"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/actions/{action}/fields/{field}/options"
+path = "/admin/api/resources/posts/actions/move/fields/category_id/options"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/actions/{action}/fields/{field}/options"
+path = "/admin/api/resources/posts/actions/move/fields/note/options"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/actions/{action}"
+path = "/admin/api/resources/posts/actions/move"
+actor = "member"
+status = 403
+body = '[]'
+
 [[case]]
 route = "GET /admin/api/audit"
 path = "/admin/api/audit"

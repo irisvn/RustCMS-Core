@@ -3,8 +3,9 @@
 //!
 //! The checks read the course's enrollments, so they run under the course's
 //! row lock: the admin panel takes it before any enrollment write
-//! (`ResourceMeta::lock_parent`), [`enroll`] takes it itself. Two writers can
-//! then never both take the last seat.
+//! (`ResourceMeta::lock_parent`), as does an action on the course (it locks
+//! the courses it runs on); [`enroll`] takes it itself. Two writers can then
+//! never both take the last seat.
 
 use rustcms::{AppResult, ValidationErrors};
 use sea_orm::{
@@ -103,8 +104,27 @@ pub async fn enroll(
 ) -> AppResult<Result<enrollment::Model, Refusal>> {
     let txn = rustcms::db::begin_write(db).await?;
     lock_course(&txn, course_id).await?;
-    if let Err(refusal) = check(&txn, course_id, learner_id, enrollment::ACTIVE, None).await? {
-        txn.rollback().await?;
+    match enroll_in(&txn, course_id, learner_id).await? {
+        Ok(created) => {
+            txn.commit().await?;
+            Ok(Ok(created))
+        }
+        Err(refusal) => {
+            txn.rollback().await?;
+            Ok(Err(refusal))
+        }
+    }
+}
+
+/// Enrolls `learner_id` in `course_id` (active) in `txn`, whose caller holds
+/// the course's lock (an action on the course, or [`enroll`]), queuing the
+/// welcome with it.
+pub async fn enroll_in(
+    txn: &DatabaseTransaction,
+    course_id: i64,
+    learner_id: i64,
+) -> AppResult<Result<enrollment::Model, Refusal>> {
+    if let Err(refusal) = check(txn, course_id, learner_id, enrollment::ACTIVE, None).await? {
         return Ok(Err(refusal));
     }
     let created = enrollment::ActiveModel {
@@ -115,9 +135,8 @@ pub async fn enroll(
         enrolled_at: Set(chrono::Utc::now()),
         ..Default::default()
     }
-    .insert(&txn)
+    .insert(txn)
     .await?;
-    rustcms::queue::dispatch(&txn, &SendWelcome { course_id, learner_id }).await?;
-    txn.commit().await?;
+    rustcms::queue::dispatch(txn, &SendWelcome { course_id, learner_id }).await?;
     Ok(Ok(created))
 }

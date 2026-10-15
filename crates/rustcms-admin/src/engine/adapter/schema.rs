@@ -4,21 +4,76 @@
 use super::*;
 
 impl<R: Resource> ResourceAdapter<R> {
-    /// Relations the user may list, and whether they may create through them.
-    pub(super) async fn relation_schemas(&self, ctx: &Ctx) -> Vec<crate::schema::RelationSchema> {
+    /// Relations the user may list, and what they may do through them on the
+    /// viewed record (`record`, trusted).
+    pub(super) async fn relation_schemas(&self, ctx: &Ctx, record: &Data) -> Vec<crate::schema::RelationSchema> {
+        use crate::links::LinkOp;
+        use crate::schema::{RelationKind, RelationSchema};
         let mut out = Vec::new();
         for relation in &self.relations {
             let Some(target) = ctx.registry.get(relation.target) else { continue };
-            let (readable, creatable) = target.field_access(ctx, relation.field);
-            if !readable || !target.allows(ctx, ability::VIEW_ANY).await {
+            let label = ctx.t_in(R::SLUG, &relation.label.clone().unwrap_or_else(|| humanize(relation.name)));
+            if !target.allows(ctx, ability::VIEW_ANY).await {
                 continue;
             }
-            out.push(crate::schema::RelationSchema {
+            let Some(pivot) = &relation.pivot else {
+                let (readable, creatable) = target.field_access(ctx, relation.field);
+                if !readable {
+                    continue;
+                }
+                out.push(RelationSchema {
+                    name: relation.name,
+                    kind: RelationKind::HasMany,
+                    label,
+                    resource: relation.target,
+                    field: relation.field,
+                    create: creatable && target.allows(ctx, ability::CREATE).await,
+                    attach: false,
+                    detach: false,
+                    pivot: Vec::new(),
+                    attach_form: None,
+                    pivot_form: None,
+                });
+                continue;
+            };
+            let attach = self.policy.allows(ctx, &LinkOp::Attach.ability(relation.name), Some(record)).await;
+            let detach = self.policy.allows(ctx, &LinkOp::Detach.ability(relation.name), Some(record)).await;
+            let update = !relation.pivot_fields.is_empty()
+                && self.policy.allows(ctx, &LinkOp::UpdatePivot.ability(relation.name), Some(record)).await;
+            let inputs = |op: Option<Operation>| -> Vec<ComponentSchema> {
+                relation
+                    .pivot_fields
+                    .iter()
+                    .filter(|f| match op {
+                        None => f.can_read(ctx),
+                        Some(op) => f.can_write(op, ctx),
+                    })
+                    .filter_map(|f| pivot.column(&f.name).map(|c| (f, c)))
+                    .map(|(f, c)| ComponentSchema::Input(pivot_input_schema(ctx, R::SLUG, f, c, op.is_none())))
+                    .collect()
+            };
+            let form = |components: Vec<ComponentSchema>| {
+                (!components.is_empty()).then_some(FormSchema { columns: 1, components })
+            };
+            let readable = inputs(None)
+                .into_iter()
+                .filter_map(|c| match c {
+                    ComponentSchema::Input(input) => Some(input),
+                    ComponentSchema::Layout(_) => None,
+                })
+                .collect();
+            out.push(RelationSchema {
                 name: relation.name,
-                label: ctx.t_in(R::SLUG, &relation.label.clone().unwrap_or_else(|| humanize(relation.name))),
+                kind: RelationKind::BelongsToMany,
+                label,
                 resource: relation.target,
                 field: relation.field,
-                create: creatable && target.allows(ctx, ability::CREATE).await,
+                create: false,
+                attach,
+                detach,
+                pivot: readable,
+                attach_form: if attach { form(inputs(Some(Operation::Create))) } else { None },
+                pivot_form: if update { form(inputs(Some(Operation::Update))) } else { None },
             });
         }
         out
@@ -59,6 +114,15 @@ impl<R: Resource> ResourceAdapter<R> {
         for action in &self.actions {
             out.push(action.label.clone().unwrap_or_else(|| humanize(action.name)));
             out.extend(action.confirm.clone());
+            for field in &action.form {
+                out.push(field.display_label());
+                out.extend(field.input.placeholder.clone());
+                out.extend(field.input.help.clone());
+                out.extend(field.input.options.iter().map(|o| o.label.clone()));
+            }
+        }
+        for relation in self.relations.iter().filter(|r| r.is_many()) {
+            out.extend(relation.pivot_fields.iter().map(|f| f.display_label()));
         }
         for relation in &self.relations {
             out.push(relation.label.clone().unwrap_or_else(|| humanize(relation.name)));
@@ -209,9 +273,10 @@ impl<R: Resource> ResourceAdapter<R> {
             .collect();
         let mut actions = Vec::new();
         for action in &self.actions {
-            // Listed unless an explicit admission permission excludes the user;
-            // availability per record is in each envelope's `abilities`.
-            if action.required_permission.is_none_or(|p| ctx.can(p)) {
+            // Listed unless an explicit admission permission (or the policy's
+            // admission) excludes the user; availability per record is in each
+            // envelope's `abilities`.
+            if action.required_permission.is_none_or(|p| ctx.can(p)) && self.policy.admits(ctx, action.ability).await {
                 actions.push(ActionSchema {
                     name: action.name,
                     label: ctx.t_in(R::SLUG, &action.label.clone().unwrap_or_else(|| humanize(action.name))),
@@ -219,6 +284,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     confirm: action.confirm.as_deref().map(|c| ctx.t_in(R::SLUG, c)),
                     color: action.color.clone(),
                     icon: action.icon.clone(),
+                    form: self.action_form(ctx, action),
                 });
             }
         }
@@ -244,4 +310,50 @@ fn translated_options(
         .iter()
         .map(|o| crate::forms::SelectOption { value: o.value.clone(), label: ctx.t_in(scope, &o.label) })
         .collect()
+}
+
+/// The input of a pivot column (`read_only`: shown with each link).
+fn pivot_input_schema(
+    ctx: &Ctx,
+    slug: &str,
+    field: &Field,
+    column: crate::adapter::pivot::PivotColumn,
+    read_only: bool,
+) -> InputSchema {
+    let kind = match column.kind {
+        FieldKind::I32 | FieldKind::I64 | FieldKind::F64 | FieldKind::Decimal => InputType::NumberInput,
+        FieldKind::Bool => InputType::Toggle,
+        FieldKind::Date => InputType::DatePicker,
+        FieldKind::LocalDateTime | FieldKind::Instant => InputType::DateTimePicker,
+        FieldKind::Json => InputType::Textarea,
+        FieldKind::String | FieldKind::Uuid => InputType::TextInput,
+    };
+    let mut rules = Vec::new();
+    if field.required && !read_only {
+        rules.push(Rule::Required);
+    }
+    if let Some(max) = field.max_length {
+        rules.push(Rule::MaxLength { value: max });
+    }
+    InputSchema {
+        kind,
+        name: field.name.clone(),
+        label: ctx.t_in(slug, &field.display_label()),
+        value_type: column.kind.name(),
+        nullable: column.nullable,
+        // Pivot defaults stay in the database.
+        default: None,
+        disabled: read_only,
+        write_only: !read_only && !field.can_read(ctx),
+        rules,
+        column_span: 1,
+        placeholder: None,
+        help: None,
+        mode: None,
+        options: Vec::new(),
+        relationship: None,
+        widget: None,
+        props: None,
+        media: None,
+    }
 }

@@ -65,6 +65,36 @@ impl Resource for CourseResource {
             .default_sort("title")
     }
 
+    /// "Enroll a learner…": a dialog asks which (a learner the user may see);
+    /// the course is locked by the action, then the seat rules apply.
+    fn actions() -> Vec<Action<course::Entity>> {
+        vec![
+            Action::<course::Entity>::new("enroll", |ctx, txn, courses, data| {
+                Box::pin(async move {
+                    let learner: i64 = data["learner_id"].as_str().and_then(|k| k.parse().ok()).unwrap_or_default();
+                    for course in courses {
+                        if let Err(refusal) = enrollment_service::enroll_in(txn, course.id, learner).await? {
+                            // On the learner input, or the dialog; the whole action is rolled back.
+                            let (field, message) = refusal.reason();
+                            let mut errors = ValidationErrors::new();
+                            if field == "learner_id" {
+                                errors.add(field, ctx.t(message));
+                            } else {
+                                errors.add_form(ctx.t(message));
+                            }
+                            return Err(errors.into());
+                        }
+                    }
+                    Ok(())
+                })
+            })
+            .label("Enroll a learner…")
+            .ability("view")
+            .requires_permission("enrollments.create")
+            .form(vec![ActionField::belongs_to("learner_id", "learners").label("Learner").required()]),
+        ]
+    }
+
     fn relations() -> Vec<Relation> {
         vec![
             Relation::has_many("lessons", "lessons", "course_id"),

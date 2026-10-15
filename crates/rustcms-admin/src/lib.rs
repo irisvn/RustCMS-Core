@@ -25,13 +25,14 @@ pub use engine::{context, idempotency, registry, wire};
 pub use features::{audit, custom, media, queue, rich_text, settings, system};
 pub(crate) use panel::provider;
 pub use panel::spa;
-pub use resources::{action, field, policy, resource};
+pub use resources::{action, field, links, policy, resource};
 pub use settings::{SettingField, SettingKind, SettingsMeta, SettingsPage};
 
-pub use action::{Action, ActionOutcome, BoxFuture};
+pub use action::{Action, ActionField, ActionOutcome, BoxFuture};
 pub use context::Ctx;
 pub use field::{Field, Operation};
-pub use http::{AdminCtx, AdminPanel};
+pub use http::{AdminCtx, AdminPanel, LinkPage};
+pub use links::{LinkOp, LinkOption, LinkOutcome, LinkRequest};
 pub use policy::{PermissionPolicy, Policy};
 pub use provider::AdminProvider;
 pub use registry::{DynResource, Registry};

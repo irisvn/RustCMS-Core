@@ -1,14 +1,18 @@
 //! Generic CRUD engine: one monomorphized [`ResourceAdapter`] per resource,
 //! erased to [`DynResource`] for the HTTP layer.
 
+mod action_form;
 mod audit;
 mod input;
+mod many;
 mod operations;
+pub(crate) mod pivot;
 mod read;
 mod references;
 mod schema;
 mod write;
 
+pub(crate) use pivot::{DbConn, DynPivot, PivotAdapter};
 pub(crate) use read::{escape_like, search_match};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -260,6 +264,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 "resource `{slug}`: action name `{}` is reserved for CRUD abilities",
                 action.name
             );
+            action_form::check_action_form(slug, action.name, &action.form);
         }
 
         Self {

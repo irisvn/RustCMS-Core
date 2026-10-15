@@ -1,0 +1,247 @@
+{
+  "abilities": {
+    "create": true,
+    "delete": false,
+    "history": false,
+    "update": false,
+    "view": true,
+    "viewAny": true
+  },
+  "form": {
+    "columns": 2,
+    "components": [
+      {
+        "columns": 1,
+        "components": [
+          {
+            "columnSpan": 1,
+            "disabled": true,
+            "label": "Title",
+            "name": "title",
+            "nullable": false,
+            "placeholder": "Title",
+            "rules": [
+              {
+                "rule": "max_length",
+                "value": 120
+              }
+            ],
+            "type": "text_input",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "disabled": true,
+            "label": "Price",
+            "name": "price",
+            "nullable": true,
+            "rules": [],
+            "type": "number_input",
+            "valueType": "decimal"
+          }
+        ],
+        "label": "Content",
+        "type": "section"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Category",
+        "name": "category_id",
+        "nullable": true,
+        "relationship": {
+          "resource": "categories"
+        },
+        "rules": [],
+        "type": "select",
+        "valueType": "i32"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Published",
+        "name": "published",
+        "nullable": false,
+        "rules": [],
+        "type": "toggle",
+        "valueType": "bool"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Published at",
+        "name": "published_at",
+        "nullable": true,
+        "rules": [],
+        "type": "date_time_picker",
+        "valueType": "instant"
+      }
+    ]
+  },
+  "operation": "view",
+  "relations": [
+    {
+      "attach": true,
+      "attachForm": {
+        "columns": 1,
+        "components": [
+          {
+            "columnSpan": 1,
+            "disabled": false,
+            "label": "Position",
+            "name": "position",
+            "nullable": false,
+            "rules": [],
+            "type": "number_input",
+            "valueType": "i32"
+          },
+          {
+            "columnSpan": 1,
+            "disabled": false,
+            "label": "Note",
+            "name": "note",
+            "nullable": true,
+            "rules": [
+              {
+                "rule": "max_length",
+                "value": 20
+              }
+            ],
+            "type": "text_input",
+            "valueType": "string",
+            "writeOnly": true
+          }
+        ]
+      },
+      "create": false,
+      "detach": true,
+      "field": "post_id",
+      "kind": "belongsToMany",
+      "label": "Tags",
+      "name": "tags",
+      "pivot": [
+        {
+          "columnSpan": 1,
+          "disabled": true,
+          "label": "Position",
+          "name": "position",
+          "nullable": false,
+          "rules": [],
+          "type": "number_input",
+          "valueType": "i32"
+        }
+      ],
+      "pivotForm": {
+        "columns": 1,
+        "components": [
+          {
+            "columnSpan": 1,
+            "disabled": false,
+            "label": "Position",
+            "name": "position",
+            "nullable": false,
+            "rules": [],
+            "type": "number_input",
+            "valueType": "i32"
+          },
+          {
+            "columnSpan": 1,
+            "disabled": false,
+            "label": "Note",
+            "name": "note",
+            "nullable": true,
+            "rules": [
+              {
+                "rule": "max_length",
+                "value": 20
+              }
+            ],
+            "type": "text_input",
+            "valueType": "string",
+            "writeOnly": true
+          }
+        ]
+      },
+      "resource": "tags"
+    }
+  ],
+  "resource": {
+    "label": "Post",
+    "pluralLabel": "Posts",
+    "slug": "posts",
+    "titleField": "title"
+  },
+  "schemaVersion": 2,
+  "table": {
+    "actions": [
+      {
+        "bulk": false,
+        "label": "Touch",
+        "name": "touch"
+      }
+    ],
+    "columns": [
+      {
+        "label": "Title",
+        "name": "title",
+        "searchable": true,
+        "sortable": true,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Category",
+        "name": "category_id",
+        "relationship": {
+          "resource": "categories"
+        },
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "i32"
+      },
+      {
+        "label": "Published",
+        "name": "published",
+        "searchable": false,
+        "sortable": false,
+        "type": "boolean",
+        "valueType": "bool"
+      },
+      {
+        "label": "Published at",
+        "name": "published_at",
+        "searchable": false,
+        "sortable": false,
+        "type": "date",
+        "valueType": "instant"
+      }
+    ],
+    "defaultSort": "-title",
+    "filters": [
+      {
+        "label": "Published",
+        "name": "published",
+        "type": "ternary",
+        "valueType": "bool"
+      },
+      {
+        "label": "Category",
+        "name": "category_id",
+        "relationship": {
+          "resource": "categories"
+        },
+        "type": "select",
+        "valueType": "i32"
+      }
+    ],
+    "perPageOptions": [
+      10,
+      25,
+      50,
+      100
+    ],
+    "searchable": true
+  },
+  "vocabularyVersion": 7
+}

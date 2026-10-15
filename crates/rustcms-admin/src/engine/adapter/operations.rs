@@ -76,9 +76,17 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             abilities.extend([ability::RESTORE, ability::FORCE_DELETE]);
         }
         abilities.extend(self.actions.iter().map(|a| a.ability));
-        abilities.sort_unstable();
-        abilities.dedup();
         let mut permissions: Vec<String> = abilities.into_iter().map(|a| format!("{}.{a}", R::SLUG)).collect();
+        // Writes to belongs-to-many relations.
+        for relation in self.relations.iter().filter(|r| r.is_many()) {
+            use crate::links::LinkOp;
+            let ops: &[LinkOp] = if relation.pivot_fields.is_empty() {
+                &[LinkOp::Attach, LinkOp::Detach]
+            } else {
+                &[LinkOp::Attach, LinkOp::Detach, LinkOp::UpdatePivot]
+            };
+            permissions.extend(ops.iter().map(|op| format!("{}.{}", R::SLUG, op.ability(relation.name))));
+        }
         // Explicit admission permissions are checked verbatim: declare them too.
         permissions.extend(self.actions.iter().filter_map(|a| a.required_permission).map(str::to_owned));
         permissions.sort_unstable();
@@ -97,6 +105,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             abilities.insert("restore", self.policy.admits(ctx, ability::RESTORE).await);
             abilities.insert("forceDelete", self.policy.admits(ctx, ability::FORCE_DELETE).await);
         }
+        let mut viewed = None;
         if let Some(key) = key {
             let admission = if op == SchemaOperation::Edit { ability::UPDATE } else { ability::VIEW };
             self.admit(ctx, admission).await?;
@@ -104,6 +113,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             for name in [ability::VIEW, ability::UPDATE, ability::DELETE] {
                 abilities.insert(name, self.policy.allows(ctx, name, Some(&record)).await);
             }
+            viewed = Some(record);
         }
         let allowed = match (op, key) {
             (SchemaOperation::Create, _) => abilities["create"],
@@ -125,10 +135,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 components: self.components(ctx, &self.form.components, op),
             },
             table: self.table_schema(ctx).await,
-            relations: if op == SchemaOperation::View && key.is_some() {
-                self.relation_schemas(ctx).await
-            } else {
-                Vec::new()
+            relations: match (&viewed, op) {
+                (Some(record), SchemaOperation::View) => self.relation_schemas(ctx, record).await,
+                _ => Vec::new(),
             },
         })
     }
@@ -225,7 +234,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     }
 
     fn targets(&self) -> Vec<&'static str> {
-        self.fields.iter().filter_map(|f| f.belongs_to).collect()
+        let forms = self.actions.iter().flat_map(|a| a.form.iter().filter_map(|f| f.belongs_to));
+        self.fields.iter().filter_map(|f| f.belongs_to).chain(forms).collect()
     }
 
     async fn admit_list(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<()> {
@@ -499,13 +509,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     }
 
     async fn run_action(&self, ctx: &Ctx, name: &str, keys: &[String], data: Data) -> AppResult<ActionOutcome> {
-        let action = self.actions.iter().find(|a| a.name == name).ok_or(AppError::NotFound)?;
-        // Per-record policy checks are authoritative; an explicit admission
-        // permission, when declared, refuses outright before them.
-        if action.required_permission.is_some_and(|p| !ctx.can(p)) {
-            return Err(AppError::Forbidden);
-        }
-        self.admit(ctx, action.ability).await?;
+        let action = self.admitted_action(ctx, name).await?;
+        // Checked and canonical before the claim: equivalent requests share it.
+        let data = self.action_data(ctx, action, data)?;
         let claim = ctx.idempotency_key.as_deref().map(|key| {
             let unique: BTreeSet<&String> = keys.iter().collect();
             let request = serde_json::json!({ "keys": unique, "data": data });
@@ -522,6 +528,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             outcome.replayed = true;
             return self.disclosed(ctx, outcome).await;
         }
+        // References are checked when the action runs (a replay above reports
+        // the committed run, whatever they became).
+        self.check_action_references(&wctx, txn.as_ref(), action, &data).await?;
         // Lock only records the user may act on, then re-read just those under
         // the lock: a record that became visible meanwhile is never processed
         // unlocked.
@@ -610,6 +619,69 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     async fn lock_keys(&self, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<()> {
         self.lock_rows(txn, keys, Trashed::With).await?;
         Ok(())
+    }
+
+    async fn admit_action(&self, ctx: &Ctx, name: &str) -> AppResult<()> {
+        self.admitted_action(ctx, name).await.map(|_| ())
+    }
+
+    async fn action_options(
+        &self,
+        ctx: &Ctx,
+        name: &str,
+        field: &str,
+        search: Option<&str>,
+        keys: &[String],
+    ) -> AppResult<Vec<SelectOption>> {
+        self.action_field_options(ctx, name, field, search, keys).await
+    }
+
+    async fn lock_visible(&self, ctx: &Ctx, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>> {
+        self.locked_visible(ctx, txn, keys).await
+    }
+
+    async fn admit_link(&self, ctx: &Ctx, relation: &str, op: crate::links::LinkOp) -> AppResult<()> {
+        self.admit_many(ctx, relation, op).await
+    }
+
+    async fn link_targets(
+        &self,
+        ctx: &Ctx,
+        relation: &str,
+        key: &str,
+    ) -> AppResult<(String, crate::resource::Through)> {
+        self.many_through(ctx, relation, key).await
+    }
+
+    async fn link_values(
+        &self,
+        ctx: &Ctx,
+        relation: &str,
+        key: &str,
+        targets: &[String],
+    ) -> AppResult<BTreeMap<String, Data>> {
+        self.many_values(ctx, relation, key, targets).await
+    }
+
+    async fn link(
+        &self,
+        ctx: &Ctx,
+        relation: &str,
+        key: &str,
+        request: crate::links::LinkRequest,
+    ) -> AppResult<crate::links::LinkOutcome> {
+        ResourceAdapter::link(self, ctx, relation, key, request).await
+    }
+
+    async fn link_options(
+        &self,
+        ctx: &Ctx,
+        relation: &str,
+        key: &str,
+        search: Option<&str>,
+        keys: &[String],
+    ) -> AppResult<Vec<crate::links::LinkOption>> {
+        ResourceAdapter::link_options(self, ctx, relation, key, search, keys).await
     }
 
     async fn keys_in_scope(&self, ctx: &Ctx, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>> {

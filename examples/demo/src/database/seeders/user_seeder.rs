@@ -16,6 +16,8 @@ const EDITOR: &[&str] = &[
     "posts.update_own",
     "categories.view_any",
     "categories.view",
+    "tags.view_any",
+    "tags.view",
     "media.view_any",
     "media.view",
     "media.create",

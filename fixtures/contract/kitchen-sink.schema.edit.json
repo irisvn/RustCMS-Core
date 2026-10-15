@@ -320,7 +320,7 @@
     "slug": "gadgets",
     "titleField": "name"
   },
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "table": {
     "actions": [],
     "columns": [
@@ -455,5 +455,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 6
+  "vocabularyVersion": 7
 }

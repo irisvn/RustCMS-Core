@@ -30,7 +30,10 @@ pub const VIEW: &str = "audit.view";
 /// Event families about credentials (personal data: emails typed, addresses).
 const AUTH_FAMILIES: [&str; 3] = ["auth.%", "jwt.%", "token.%"];
 /// Events a record's history shows (what the engine records about records).
-const RECORD_EVENTS: [&str; 6] = ["created", "updated", "trashed", "deleted", "restored", "force_deleted"];
+const RECORD_EVENTS: [&str; 9] =
+    ["created", "updated", "trashed", "deleted", "restored", "force_deleted", "attached", "detached", "pivot_updated"];
+/// Events about a record's belongs-to-many links (meta: relation, targets, pivot).
+const LINK_EVENTS: [&str; 3] = ["attached", "detached", "pivot_updated"];
 const MAX_PER_PAGE: u64 = 100;
 const DEFAULT_PER_PAGE: u64 = 50;
 
@@ -359,21 +362,60 @@ async fn history(
     let (rows, next_cursor) = page(&ctx, select, filters.cursor, filters.per_page).await?;
     let names = names(&ctx, &rows).await?;
     let readable = |field: &str| resource.field_access(&ctx, field).0;
+    // Links: targets shown to those who may list the target, pivot columns
+    // to those who may read them now (whatever was recorded).
+    let mut links = HashMap::new();
+    for relation in resource.relations().iter().filter(|r| r.is_many()) {
+        let targets = match ctx.registry.get(relation.target) {
+            Some(target) => target.allows(&ctx, crate::policy::ability::VIEW_ANY).await,
+            None => false,
+        };
+        let pivot: Vec<String> =
+            relation.pivot_fields.iter().filter(|f| f.can_read(&ctx)).map(|f| f.name.clone()).collect();
+        links.insert(relation.name.to_owned(), (targets, pivot));
+    }
     let data = rows
         .into_iter()
         .map(|row| {
             let mut entry = view(row, &names, false);
             entry.request_id = None;
             entry.changes = entry.changes.map(|changes| readable_changes(changes, &readable));
-            // Only an action's result: relation parents and anything else stay out.
-            entry.meta = entry.meta.and_then(|meta| {
-                let kept: Map<String, Value> = meta.into_iter().filter(|(k, _)| k == "result").collect();
-                (!kept.is_empty()).then_some(kept)
-            });
+            entry.meta = if LINK_EVENTS.contains(&entry.event.as_str()) {
+                entry.meta.and_then(|meta| link_meta(meta, &links))
+            } else {
+                // Only an action's result: relation parents and anything else stay out.
+                entry.meta.and_then(|meta| {
+                    let kept: Map<String, Value> = meta.into_iter().filter(|(k, _)| k == "result").collect();
+                    (!kept.is_empty()).then_some(kept)
+                })
+            };
             entry
         })
         .collect();
     Ok(Json(AuditPage { data, meta: AuditPageMeta { next_cursor } }))
+}
+
+/// A link entry's meta for a reader: the relation and how many targets;
+/// the targets themselves and the pivot columns only as `links` allows (by
+/// relation: may list the target, readable pivot columns). A relation since
+/// removed shows its name and count only.
+fn link_meta(mut meta: Map<String, Value>, links: &HashMap<String, (bool, Vec<String>)>) -> Option<Map<String, Value>> {
+    let relation = meta.get("relation").and_then(Value::as_str)?.to_owned();
+    let targets = meta.remove("targets").and_then(|t| t.as_array().cloned()).unwrap_or_default();
+    let (show_targets, pivot_fields) = links.get(&relation).cloned().unwrap_or_default();
+    let mut out = Map::new();
+    out.insert("relation".into(), Value::String(relation));
+    out.insert("count".into(), Value::from(targets.len()));
+    if show_targets {
+        out.insert("targets".into(), Value::Array(targets));
+    }
+    if let Some(Value::Object(pivot)) = meta.remove("pivot") {
+        let kept: Map<String, Value> = pivot.into_iter().filter(|(k, _)| pivot_fields.contains(k)).collect();
+        if !kept.is_empty() {
+            out.insert("pivot".into(), Value::Object(kept));
+        }
+    }
+    Some(out)
 }
 
 /// `changes` restricted to the fields `readable` allows (an overflow keeps

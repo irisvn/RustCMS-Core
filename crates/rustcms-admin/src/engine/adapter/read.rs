@@ -99,6 +99,9 @@ impl<R: Resource> ResourceAdapter<R> {
                 _ => errors.add_form("invalid parent key"),
             }
         }
+        if let Some(through) = &query.through {
+            condition = condition.add(self.pk.in_subquery(through.0.clone()));
+        }
         if let Some(search) = query.search.as_deref().filter(|s| !s.is_empty()) {
             if search.chars().count() > self.limits.search_len {
                 errors.add("search", format!("may not be longer than {} characters", self.limits.search_len));

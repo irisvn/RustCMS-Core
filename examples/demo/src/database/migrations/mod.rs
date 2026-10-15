@@ -8,6 +8,7 @@ mod m20261013_000001_add_deleted_at_to_posts;
 mod m20261014_000001_add_media_to_posts;
 mod m20261014_000002_add_color_to_categories;
 mod m20261015_000001_add_attributes_to_posts;
+mod m20261022_000001_create_tags;
 // rustcms:migration-mods
 
 pub struct Migrator;
@@ -22,6 +23,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261014_000001_add_media_to_posts::Migration),
             Box::new(m20261014_000002_add_color_to_categories::Migration),
             Box::new(m20261015_000001_add_attributes_to_posts::Migration),
+            Box::new(m20261022_000001_create_tags::Migration),
             // rustcms:migrations
         ];
         migrations.extend(app);

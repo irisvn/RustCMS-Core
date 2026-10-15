@@ -23,11 +23,12 @@ const keyOf = (encoded: string) => {
   return typeof v === "string" ? v : String(v);
 };
 
-function useSelectedOption(slug: string, field: string, record: string | undefined, value: string) {
+function useSelectedOption(slug: string, field: string, record: string | undefined, value: string, path?: string) {
   const api = useApi();
   return useQuery({
-    queryKey: ["options", slug, field, record ?? null, "selected", value],
-    queryFn: () => fetchOptions(api, slug, field, { keys: [keyOf(value)], record }),
+    // The source is part of the key: an action's field may share a resource field's name.
+    queryKey: ["options", slug, field, path ?? null, record ?? null, "selected", value],
+    queryFn: () => fetchOptions(api, slug, field, { keys: [keyOf(value)], record }, path),
     enabled: value !== "",
     staleTime: 60_000,
   });
@@ -57,10 +58,12 @@ export function RelationValue({ slug, field, record, value }: {
  * `value` is the JSON encoding of the related key, "" for none.
  */
 export function RelationSelect({
-  slug, field, record, value, onChange, disabled, invalid, id, placeholder, describedBy, onBlur,
+  slug, field, path, record, value, onChange, disabled, invalid, id, placeholder, describedBy, onBlur,
 }: {
   slug: string;
   field: string;
+  /** Options endpoint, when not the resource field's. */
+  path?: string;
   record?: string;
   value: string;
   onChange: (value: string) => void;
@@ -80,11 +83,11 @@ export function RelationSelect({
   const listId = useId();
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const selected = useSelectedOption(slug, field, record, value);
+  const selected = useSelectedOption(slug, field, record, value, path);
   const expanded = open && !disabled;
   const results = useQuery({
-    queryKey: ["options", slug, field, record ?? null, "search", debounced],
-    queryFn: () => fetchOptions(api, slug, field, { search: debounced || undefined, record }),
+    queryKey: ["options", slug, field, path ?? null, record ?? null, "search", debounced],
+    queryFn: () => fetchOptions(api, slug, field, { search: debounced || undefined, record }, path),
     enabled: expanded,
   });
   // Clear is a keyboard-selectable option too. Never choose stale results while a search is changing.

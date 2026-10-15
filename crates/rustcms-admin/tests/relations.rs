@@ -56,7 +56,7 @@ db_test!(relation_lists_show_the_children_of_one_visible_parent, |db: TestDb| as
     let schema = editor.get(&app.admin_api(&format!("resources/categories/schema?operation=view&key={a}"))).await;
     assert_eq!(
         schema.json()["relations"],
-        json!([{"name": "notes", "label": "Notes", "resource": "notes", "field": "category_id", "create": true}])
+        json!([{"name": "notes", "kind": "hasMany", "label": "Notes", "resource": "notes", "field": "category_id", "create": true}])
     );
 });
 

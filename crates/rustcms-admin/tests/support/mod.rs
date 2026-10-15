@@ -81,6 +81,45 @@ pub mod tag {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+/// Pivot of posts ↔ tags: `position` (default 0), `note` (read with
+/// `posts.read_notes`), `secret` never declared.
+pub mod post_tag {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "post_tags")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub post_id: Uuid,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub tag_slug: String,
+        #[sea_orm(default_value = 0)]
+        pub position: i32,
+        pub note: Option<String>,
+        pub secret: Option<String>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {
+        #[sea_orm(
+            belongs_to = "super::post::Entity",
+            from = "Column::PostId",
+            to = "super::post::Column::Id",
+            on_delete = "Cascade"
+        )]
+        Post,
+        #[sea_orm(
+            belongs_to = "super::tag::Entity",
+            from = "Column::TagSlug",
+            to = "super::tag::Column::Slug",
+            on_delete = "Cascade"
+        )]
+        Tag,
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 pub mod note {
     use sea_orm::entity::prelude::*;
 
@@ -181,8 +220,18 @@ impl Policy for PostPolicy {
         let granted = ctx.can(&format!("posts.{ability}"))
             || (matches!(ability, "update" | "view") && owns && ctx.can("posts.update_own"));
         match (ability, record) {
-            ("publish", Some(r)) => granted && !r["title"].as_str().unwrap_or_default().starts_with("locked"),
+            ("publish" | "attach_tags", Some(r)) => {
+                granted && !r["title"].as_str().unwrap_or_default().starts_with("locked")
+            }
             _ => granted,
+        }
+    }
+
+    /// Link writes and `move` need their permission whatever the post.
+    async fn admits(&self, ctx: &Ctx, ability: &str) -> bool {
+        match ability {
+            "attach_tags" | "detach_tags" | "update_pivot_tags" | "move" => ctx.can(&format!("posts.{ability}")),
+            _ => true,
         }
     }
 }
@@ -238,6 +287,21 @@ impl Resource for PostResource {
         Arc::new(PostPolicy)
     }
 
+    fn relations() -> Vec<rustcms_admin::Relation> {
+        vec![
+            rustcms_admin::Relation::belongs_to_many(
+                "tags",
+                "tags",
+                post_tag::Column::PostId,
+                post_tag::Column::TagSlug,
+            )
+            .pivot(vec![
+                Field::column(post_tag::Column::Position),
+                Field::column(post_tag::Column::Note).readable(|c| c.can("posts.read_notes")).max_length(20),
+            ]),
+        ]
+    }
+
     fn scope(query: Select<post::Entity>, ctx: &Ctx) -> Select<post::Entity> {
         if ctx.can("posts.manage_all") {
             query
@@ -278,6 +342,28 @@ impl Resource for PostResource {
             Action::<post::Entity>::new("archive", |_ctx, _txn, _posts, _data| Box::pin(async move { Ok(()) }))
                 .ability("update")
                 .requires_permission("posts.archive"),
+            // A form: the category (visible to the user), how, a weight and a note.
+            Action::<post::Entity>::new("move", |_ctx, txn, posts, data| {
+                Box::pin(async move {
+                    let category: i32 = data["category_id"].as_str().unwrap_or_default().parse().unwrap_or_default();
+                    let title = format!("{}|{}|{}", data["mode"], data["weight"], data["note"]);
+                    for post in posts {
+                        let mut active = post.into_active_model();
+                        active.category_id = Set(Some(category));
+                        active.title = Set(title.clone());
+                        active.update(txn).await?;
+                    }
+                    Ok(())
+                })
+            })
+            .label("Move to category…")
+            .bulk()
+            .form(vec![
+                rustcms_admin::ActionField::belongs_to("category_id", "categories").label("Category").required(),
+                rustcms_admin::ActionField::select("mode", [("move", "Move"), ("copy", "Copy")]).default("move"),
+                rustcms_admin::ActionField::integer("weight"),
+                rustcms_admin::ActionField::text("note").max_length(10),
+            ]),
         ]
     }
 
@@ -310,6 +396,9 @@ impl Resource for TagResource {
 
     /// With `tags.joined`, joins `categories`, which also has a `slug` column.
     fn scope(query: Select<tag::Entity>, ctx: &Ctx) -> Select<tag::Entity> {
+        // `hidden-*` tags only with `tags.view_hidden`.
+        let query =
+            if ctx.can("tags.view_hidden") { query } else { query.filter(tag::Column::Slug.not_like("hidden-%")) };
         if !ctx.can("tags.joined") {
             return query;
         }
@@ -401,6 +490,7 @@ pub async fn create_tables(conn: &sea_orm::DatabaseConnection) {
         schema.create_table_from_entity(post::Entity),
         schema.create_table_from_entity(tag::Entity),
         schema.create_table_from_entity(note::Entity),
+        schema.create_table_from_entity(post_tag::Entity),
         // Also created by the framework migrations some tests run first.
         schema.create_table_from_entity(rustcms_admin::media::entity::Entity).if_not_exists().to_owned(),
         schema.create_table_from_entity(rustcms_core::models::audit_log::Entity).if_not_exists().to_owned(),

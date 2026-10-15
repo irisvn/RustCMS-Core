@@ -116,4 +116,13 @@ pub struct PermissionInfo {
     pub group_label: Option<String>,
     /// The current user holds it, so may grant or remove it.
     pub grantable: bool,
+    /// The resource whose ability it is (`posts`), when it is exactly one
+    /// resource's `{slug}.{ability}`: a cell of the permission matrix.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource: Option<String>,
+    /// That ability (`update`, `attach_tags`, an action's).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ability: Option<String>,
 }

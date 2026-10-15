@@ -68,6 +68,28 @@ export function RolesPage() {
   );
 }
 
+/** Columns of the matrix, in this order (only those some resource uses). */
+const ABILITIES = ["view_any", "view", "create", "update", "delete", "restore", "force_delete"] as const;
+
+function abilityLabel(t: ReturnType<typeof useT>, ability: string): string {
+  switch (ability) {
+    case "view_any": return t("ability.view_any");
+    case "view": return t("ability.view");
+    case "create": return t("ability.create");
+    case "update": return t("ability.update");
+    case "delete": return t("ability.delete");
+    case "restore": return t("ability.restore");
+    case "force_delete": return t("ability.force_delete");
+    default: return ability;
+  }
+}
+
+/**
+ * Permissions as a resource × ability matrix (the server names each cell),
+ * other abilities of a resource in its last column, and everything else
+ * (system, settings, audit…) by group. Permissions the user does not hold
+ * stay as they are.
+ */
 function PermissionMatrix({
   permissions,
   selected,
@@ -82,35 +104,140 @@ function PermissionMatrix({
   describedBy?: string;
 }) {
   const t = useT();
-  const groups = useMemo(() => groupPermissions(permissions), [permissions]);
+  const { rows, columns, groups } = useMemo(() => {
+    type Row = { label: string; cells: Map<string, PermissionInfo>; other: PermissionInfo[] };
+    const byResource = new Map<string, Row>();
+    const rest: PermissionInfo[] = [];
+    for (const p of permissions) {
+      if (!p.resource || !p.ability) {
+        rest.push(p);
+        continue;
+      }
+      const row: Row = byResource.get(p.resource) ?? { label: p.resource, cells: new Map(), other: [] };
+      if (p.group === p.resource && p.groupLabel) row.label = p.groupLabel;
+      if ((ABILITIES as readonly string[]).includes(p.ability)) row.cells.set(p.ability, p);
+      else row.other.push(p);
+      byResource.set(p.resource, row);
+    }
+    const rows = [...byResource.entries()].sort(([, a], [, b]) => a.label.localeCompare(b.label));
+    const columns = ABILITIES.filter((a) => rows.some(([, r]) => r.cells.has(a)));
+    return { rows, columns, groups: groupPermissions(rest) };
+  }, [permissions]);
+  const set = (list: PermissionInfo[], on: boolean) => {
+    const next = new Set(selected);
+    for (const p of list) {
+      // Only permissions the user holds can be added or removed.
+      if (!p.grantable) continue;
+      if (on) next.add(p.name);
+      else next.delete(p.name);
+    }
+    onChange(next);
+  };
+  const box = (p: PermissionInfo, label: string) => (
+    <Checkbox
+      aria-label={label}
+      aria-describedby={describedBy}
+      title={p.grantable ? undefined : t("roles.notHeld")}
+      checked={selected.has(p.name)}
+      disabled={disabled || !p.grantable}
+      onChange={(e) => set([p], e.target.checked)}
+    />
+  );
+  const all = (list: PermissionInfo[]) => list.length > 0 && list.every((p) => selected.has(p.name));
+  const grantable = (list: PermissionInfo[]) => list.some((p) => p.grantable);
   return (
-    <div className="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {groups.map(([group, list]) => (
-        <fieldset key={group} className="min-w-0 rounded-lg border border-border bg-background p-3"
-          aria-describedby={describedBy}>
-          <legend className="max-w-full break-all px-2 text-sm font-semibold">{list[0]?.groupLabel ?? group}</legend>
-          {list.map((p) => (
-            <label key={p.name}
-              className="flex min-w-0 items-start gap-3 rounded-md px-2 py-2.5 text-sm transition-colors hover:bg-muted/40 has-disabled:cursor-not-allowed has-disabled:opacity-60"
-              title={p.grantable ? undefined : t("roles.notHeld")}>
-              <Checkbox
-                className="mt-0.5 shrink-0"
-                aria-describedby={describedBy}
-                checked={selected.has(p.name)}
-                // Only permissions the user holds can be added or removed.
-                disabled={disabled || !p.grantable}
-                onChange={(e) => {
-                  const next = new Set(selected);
-                  if (e.target.checked) next.add(p.name);
-                  else next.delete(p.name);
-                  onChange(next);
-                }}
-              />
-              <span className="min-w-0 break-all leading-5">{p.name}</span>
-            </label>
+    <div className="flex min-w-0 flex-col gap-6">
+      {rows.length > 0 && (
+        <div className="max-w-full overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-sm" aria-describedby={describedBy}>
+            <caption className="sr-only">{t("roles.matrix")}</caption>
+            <thead className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
+              <tr>
+                <th scope="col" className="sticky left-0 bg-muted p-3 font-medium">{t("roles.matrixResource")}</th>
+                {columns.map((ability) => {
+                  const list = rows.flatMap(([, r]) => (r.cells.get(ability) ? [r.cells.get(ability)!] : []));
+                  return (
+                    <th key={ability} scope="col" className="p-3 text-center font-medium">
+                      <label className="flex flex-col items-center gap-1">
+                        <span>{abilityLabel(t, ability)}</span>
+                        <Checkbox
+                          aria-label={t("roles.matrixColumn", { ability: abilityLabel(t, ability) })}
+                          checked={all(list)}
+                          disabled={disabled || !grantable(list)}
+                          onChange={(e) => set(list, e.target.checked)}
+                        />
+                      </label>
+                    </th>
+                  );
+                })}
+                <th scope="col" className="p-3 font-medium">{t("roles.matrixOther")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(([resource, row]) => {
+                const list = [...row.cells.values(), ...row.other];
+                return (
+                  <tr key={resource} className="border-b border-border last:border-0">
+                    <th scope="row" className="sticky left-0 bg-background p-3 text-left font-medium">
+                      <label className="flex items-center gap-2">
+                        <Checkbox
+                          aria-label={t("roles.matrixRow", { resource: row.label })}
+                          checked={all(list)}
+                          disabled={disabled || !grantable(list)}
+                          onChange={(e) => set(list, e.target.checked)}
+                        />
+                        <span className="break-all">{row.label}</span>
+                      </label>
+                    </th>
+                    {columns.map((ability) => {
+                      const p = row.cells.get(ability);
+                      return (
+                        <td key={ability} className="p-3 text-center">
+                          {p && box(p, t("roles.matrixCell", { resource: row.label, ability: abilityLabel(t, ability) }))}
+                        </td>
+                      );
+                    })}
+                    <td className="p-3">
+                      <div className="flex flex-wrap gap-x-4 gap-y-2">
+                        {row.other.map((p) => (
+                          <label key={p.name} className="flex items-center gap-2 has-disabled:opacity-60">
+                            {box(p, t("roles.matrixCell", { resource: row.label, ability: p.ability ?? p.name }))}
+                            <span className="break-all text-xs">{p.ability}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {groups.length > 0 && (
+        <div className="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {groups.map(([group, list]) => (
+            <fieldset key={group} className="min-w-0 rounded-lg border border-border bg-background p-3"
+              aria-describedby={describedBy}>
+              <legend className="max-w-full break-all px-2 text-sm font-semibold">{list[0]?.groupLabel ?? group}</legend>
+              {list.map((p) => (
+                <label key={p.name}
+                  className="flex min-w-0 items-start gap-3 rounded-md px-2 py-2.5 text-sm transition-colors hover:bg-muted/40 has-disabled:cursor-not-allowed has-disabled:opacity-60"
+                  title={p.grantable ? undefined : t("roles.notHeld")}>
+                  <Checkbox
+                    className="mt-0.5 shrink-0"
+                    aria-describedby={describedBy}
+                    checked={selected.has(p.name)}
+                    disabled={disabled || !p.grantable}
+                    onChange={(e) => set([p], e.target.checked)}
+                  />
+                  <span className="min-w-0 break-all leading-5">{p.name}</span>
+                </label>
+              ))}
+            </fieldset>
           ))}
-        </fieldset>
-      ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@
 
 pub mod action;
 pub mod field;
+pub mod links;
 pub mod policy;
 pub mod query;
 pub mod resource;

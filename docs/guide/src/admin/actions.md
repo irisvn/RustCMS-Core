@@ -28,3 +28,56 @@ reported, not processed, and envelopes tell the client per record. Add
 `.requires_permission("posts.publish")` to refuse the action outright (403, and
 hidden from the schema) for users without that permission.
 
+
+## Actions with a form
+
+An action can ask for values first, in a dialog:
+
+```rust,ignore
+Action::<post::Entity>::new("move", |_ctx, txn, posts, data| {
+    Box::pin(async move {
+        // `data` holds every field of the form: checked, canonical, defaults applied.
+        let category = data["category_id"].as_str().and_then(|k| k.parse::<i32>().ok());
+        for post in posts {
+            let mut post = post.into_active_model();
+            post.category_id = Set(category);
+            post.update(txn).await?;
+        }
+        Ok(())
+    })
+})
+.label("Move to category…")
+.bulk()
+.form(vec![
+    ActionField::belongs_to("category_id", "categories").label("Category").required(),
+    ActionField::select("mode", [("move", "Move"), ("copy", "Copy")]).default("move"),
+    ActionField::integer("weight"),
+    ActionField::text("note").max_length(200),
+])
+```
+
+| Field | Value in `data` |
+|---|---|
+| `text`, `textarea`, `select` | text (`select`: one of the options) |
+| `integer` | a 32-bit integer (JSON number) |
+| `boolean` | `true` / `false` |
+| `date` | `"YYYY-MM-DD"` |
+| `belongs_to(field, target)` | the key of a record of `target` the user may view, as text (`"12"`, a UUID) |
+
+Fields left empty are `null` (`.required()` refuses that), or their
+`.default(…)` (checked at boot). The server checks the form in this order:
+
+1. The user may run the action at all (`requires_permission`, then the
+   policy's [`admits`](authorization.md)): 403 before the body is read.
+2. Each value (422 on the field): unknown fields, types, options, lengths. The
+   values are made canonical (`7` and `"07"` are the same number), so a
+   retry of the same request with the same `Idempotency-Key` is recognized
+   however it was written.
+3. In the action's transaction: each `belongs_to` value is a record the user
+   may view (422 otherwise). A replay of an action that already ran reports
+   that run, even if the record has gone since.
+
+An action without a form refuses any `data` (422). A handler may return
+`ValidationErrors` (on a form field, or for the whole form): the action is
+rolled back and the dialog shows them. The dialog's relationship inputs read
+`GET …/actions/{action}/fields/{field}/options`, under the same admission.

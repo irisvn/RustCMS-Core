@@ -7,6 +7,7 @@ use rustcms::{AppState, async_trait};
 
 pub mod category_seeder;
 pub mod post_seeder;
+pub mod tag_seeder;
 pub mod user_seeder;
 // rustcms:seeder-mods
 
@@ -25,6 +26,7 @@ impl Seeder for DatabaseSeeder {
                 &user_seeder::UserSeeder,
                 &category_seeder::CategorySeeder,
                 &post_seeder::PostSeeder,
+                &tag_seeder::TagSeeder,
                 // rustcms:seeder-calls
             ],
         )

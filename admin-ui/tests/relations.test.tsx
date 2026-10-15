@@ -17,7 +17,7 @@ const parent: ResourceSchema = {
   resource: { ...child.resource, slug: "categories", label: "Category", pluralLabel: "Categories" },
   operation: "view",
   abilities: { view: true, viewAny: true },
-  relations: [{ name: "posts", label: "Posts", resource: "posts", field: "category_id", create: true }],
+  relations: [{ name: "posts", kind: "hasMany", label: "Posts", resource: "posts", field: "category_id", create: true }],
 };
 const row = (key: string, title: string) => ({ key, title, abilities: { view: true }, data: { title, category_id: 1 } });
 const lists: URLSearchParams[] = [];

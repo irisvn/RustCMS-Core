@@ -82,11 +82,17 @@ accept: Array<string>,
  */
 maxSize?: number, };
 
+export type RelationKind = "hasMany" | "belongsToMany";
+
 export type RelationSchema = { 
 /**
  * URL segment.
  */
 name: string, 
+/**
+ * Has-many or belongs-to-many.
+ */
+kind: RelationKind, 
 /**
  * Section title.
  */
@@ -96,13 +102,34 @@ label: string,
  */
 resource: string, 
 /**
- * Field of the related resource holding this record's key (set by the server).
+ * Has-many: field of the related resource holding this record's key (set
+ * by the server). Belongs-to-many: the pivot column (informational).
  */
 field: string, 
 /**
- * Whether the user may create related records from here.
+ * Whether the user may create related records from here (has-many).
  */
-create: boolean, };
+create: boolean, 
+/**
+ * Whether the user may attach targets to this record (belongs-to-many).
+ */
+attach?: boolean, 
+/**
+ * Whether the user may detach targets from this record.
+ */
+detach?: boolean, 
+/**
+ * Pivot columns the user may read, shown with each link.
+ */
+pivot?: Array<InputSchema>, 
+/**
+ * Pivot columns set when attaching (with `attach`).
+ */
+attachForm?: FormSchema, 
+/**
+ * Pivot columns the user may change on a link.
+ */
+pivotForm?: FormSchema, };
 
 export type MediaItem = { 
 /**
@@ -348,7 +375,11 @@ color?: string,
 /**
  * Icon name.
  */
-icon?: string, };
+icon?: string, 
+/**
+ * Values asked for before running (in a dialog).
+ */
+form?: FormSchema, };
 
 export type TableSchema = { 
 /**
@@ -487,6 +518,44 @@ missing: Array<string>,
  * the action did not run again.
  */
 replayed?: boolean, };
+
+export type LinkOutcome = { 
+/**
+ * Targets linked (attach: already or now), unlinked (detach) or updated.
+ */
+processed: Array<string>, 
+/**
+ * Targets not found, or not visible to the user: never touched.
+ */
+missing: Array<string>, };
+
+export type LinkOption = { 
+/**
+ * Target key.
+ */
+value: string, 
+/**
+ * Target title.
+ */
+label: string, 
+/**
+ * Already linked to the record.
+ */
+attached: boolean, };
+
+export type LinkPage = { 
+/**
+ * Pivot columns by target key (belongs-to-many).
+ */
+pivot?: { [key in string]: { [key in string]: JsonValue } }, 
+/**
+ * Records.
+ */
+data: Array<Envelope>, 
+/**
+ * Pagination.
+ */
+meta: PageMeta, };
 
 export type PanelUser = { 
 /**
@@ -629,7 +698,16 @@ groupLabel?: string,
 /**
  * The current user holds it, so may grant or remove it.
  */
-grantable: boolean, };
+grantable: boolean, 
+/**
+ * The resource whose ability it is (`posts`), when it is exactly one
+ * resource's `{slug}.{ability}`: a cell of the permission matrix.
+ */
+resource?: string, 
+/**
+ * That ability (`update`, `attach_tags`, an action's).
+ */
+ability?: string, };
 
 export type SettingsLink = { 
 /**

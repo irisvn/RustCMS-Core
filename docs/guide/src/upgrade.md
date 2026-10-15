@@ -33,6 +33,16 @@
      `history` ability.
    - Resource slugs `job` and `queue` are reserved too (subjects of the
      Queue page's audit entries).
+   - Actions: `data` sent to an action without a form is refused (422), and
+     the request body may only hold `keys` and `data`. Declare what an action
+     needs with `Action::form` ([Actions](admin/actions.md#actions-with-a-form)).
+     Actions are admitted before the body is read: a policy deciding per record
+     should override `Policy::admits` for abilities that need a permission.
+     Actions the policy does not admit are no longer listed in the schema.
+   - `Relation` has new fields and `RelationSchema` a `kind`; `ActionSchema`
+     a `form`; `ListQuery` a hidden `through` field (struct literals need
+     `..Default::default()`). Admin clients see `schemaVersion` 2 and
+     `vocabularyVersion` 7: an older admin SPA turns read-only.
    - Tests that build tables from entities instead of running migrations also
      need the `audit_logs` table ([Testing](basics/testing.md)).
 3. Optional: translate your labels. Add `lang/vi.toml`, register it with

@@ -312,6 +312,7 @@ test("record details are selectable label/value text, not disabled editing contr
     const field = main.locator("dl").filter({ has: page.locator("dt").filter({ hasText: new RegExp(`^${label}$`) }) });
     await expect(field.locator("dd")).toHaveText(value!);
   }
-  await expect(main.locator("input, textarea, select, [role='combobox'], [role='switch']")).toHaveCount(0);
+  // The details (relation sections below have their own search and selection).
+  await expect(main.locator("dl").locator("input, textarea, select, [role='combobox'], [role='switch']")).toHaveCount(0);
   await expect(main.getByRole("link", { name: "Edit", exact: true })).toBeVisible();
 });

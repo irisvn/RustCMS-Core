@@ -249,26 +249,85 @@ pub trait Resource: Send + Sync + 'static {
     }
 }
 
-/// Records of another resource that point to this one (a has-many relation):
-/// listed and created from a record's page.
-#[derive(Debug, Clone)]
+/// Records of another resource related to this one, shown on a record's page:
+/// a has-many relation (the target points here), or a belongs-to-many
+/// relation through a pivot table.
+#[derive(Clone)]
 pub struct Relation {
     pub(crate) name: &'static str,
     pub(crate) target: &'static str,
+    /// Has-many: the target's field holding the parent key. Belongs-to-many:
+    /// the pivot's parent column.
     pub(crate) field: &'static str,
     pub(crate) label: Option<String>,
+    /// Belongs-to-many: the pivot table, and its columns users see or write.
+    pub(crate) pivot: Option<Arc<dyn crate::adapter::DynPivot>>,
+    pub(crate) pivot_fields: Vec<Field>,
+}
+
+impl std::fmt::Debug for Relation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Relation")
+            .field("name", &self.name)
+            .field("target", &self.target)
+            .field("field", &self.field)
+            .field("pivot", &self.pivot.as_ref().map(|p| p.table().to_owned()))
+            .finish_non_exhaustive()
+    }
 }
 
 impl Relation {
     /// `name` (URL segment): the records of `target` whose `field` (a
     /// `belongs_to` this resource) holds the record's key.
     pub fn has_many(name: &'static str, target: &'static str, field: &'static str) -> Self {
-        Self { name, target, field, label: None }
+        Self { name, target, field, label: None, pivot: None, pivot_fields: Vec::new() }
+    }
+
+    /// `name` (URL segment): the records of `target` linked to the record by
+    /// rows of a pivot table, whose column `parent` holds this resource's key
+    /// and `related` the target's. The pivot needs a unique key over both
+    /// columns and foreign keys deleting its rows with either record.
+    ///
+    /// ```ignore
+    /// Relation::belongs_to_many("tags", "tags", post_tag::Column::PostId, post_tag::Column::TagSlug)
+    /// ```
+    ///
+    /// # Panics
+    /// When either column is not supported, or both are the same.
+    pub fn belongs_to_many<C>(name: &'static str, target: &'static str, parent: C, related: C) -> Self
+    where
+        C: sea_orm::ColumnTrait,
+        C::EntityName: EntityTrait<Column = C>,
+        <C::EntityName as EntityTrait>::Model: IntoActiveModel<<C::EntityName as EntityTrait>::ActiveModel> + Sync,
+        <C::EntityName as EntityTrait>::ActiveModel: Send,
+    {
+        let pivot = crate::adapter::PivotAdapter::<C::EntityName>::new(name, parent.as_str(), related.as_str());
+        Self {
+            name,
+            target,
+            field: parent.as_str(),
+            label: None,
+            pivot: Some(Arc::new(pivot)),
+            pivot_fields: Vec::new(),
+        }
+    }
+
+    /// Columns of the pivot shown and edited with each link (belongs-to-many),
+    /// with the usual field rules (`readable`, `creatable`, `updatable`, …).
+    /// Other pivot columns never leave the server.
+    pub fn pivot(mut self, fields: Vec<Field>) -> Self {
+        self.pivot_fields = fields;
+        self
     }
 
     /// Section title (default: the name, humanized).
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
+    }
+
+    /// Whether this is a belongs-to-many relation.
+    pub(crate) fn is_many(&self) -> bool {
+        self.pivot.is_some()
     }
 }

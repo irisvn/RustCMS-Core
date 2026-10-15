@@ -77,7 +77,82 @@ target's own create route) is a separate claim, not a replay. A committed retry
 is answered even if the parent was hidden, trashed or deleted since, like any
 replay.
 
-## Not supported
+## Belongs-to-many (pivot tables)
 
-Many-to-many relations (attaching and detaching through a pivot table) are not
-supported yet. Use a resource for the pivot table, or an action.
+Records linked through a **pivot table** (posts ↔ tags), with optional columns
+on each link (`position`):
+
+```rust,ignore
+// src/models/post_tag.rs: post_id, tag_id (primary key over both), position
+fn relations() -> Vec<Relation> {
+    vec![
+        Relation::belongs_to_many("tags", "tags", post_tag::Column::PostId, post_tag::Column::TagId)
+            .pivot(vec![Field::column(post_tag::Column::Position)])
+            .label("Tags"),
+    ]
+}
+```
+
+```rust,ignore
+// The migration: unique over both keys, rows deleted with either record.
+Table::create().table(PostTags::Table)
+    .col(ColumnDef::new(PostTags::PostId).big_integer().not_null())
+    .col(ColumnDef::new(PostTags::TagId).integer().not_null())
+    .col(ColumnDef::new(PostTags::Position).integer().not_null().default(0))
+    .primary_key(Index::create().col(PostTags::PostId).col(PostTags::TagId))
+    .foreign_key(ForeignKey::create().from(PostTags::Table, PostTags::PostId)
+        .to(Posts::Table, Posts::Id).on_delete(ForeignKeyAction::Cascade))
+    .foreign_key(ForeignKey::create().from(PostTags::Table, PostTags::TagId)
+        .to(Tags::Table, Tags::Id).on_delete(ForeignKeyAction::Cascade))
+```
+
+The record's page lists the linked records (the target's table, scope and
+policy, search and pages) with the readable pivot columns, and offers, as
+allowed:
+
+- **Attach**: choose records of the target (its options: in the user's scope,
+  allowed to view; already linked ones are marked) and the pivot columns set
+  on new links. Attaching a record already linked keeps that link as it is.
+- **Detach**: the selected links. Links to records the user cannot see are
+  never touched.
+- **Edit link**: the pivot columns the user may update.
+
+### Permissions
+
+Writes need an ability of the **parent** record:
+`attach_{relation}`, `detach_{relation}` and `update_pivot_{relation}` (only
+with pivot fields). With the default policy that is `posts.attach_tags`,
+`posts.detach_tags`, `posts.update_pivot_tags`, declared for
+`permission:sync`. A policy of your own receives them like any ability; if it
+decides per record (`allows` with the record), also override
+[`Policy::admits`](authorization.md) for them, so users without the
+permission are refused before the request body is read.
+
+Every write checks, in this order: the ability is admitted (403, whatever the
+body or the record); the body (422: 1 to 100 keys, pivot columns by their
+field rules; undeclared columns are refused); then, in one transaction, the
+parent record (in scope: 404; policy: 403) locked, and the targets the user may
+view locked and checked again. Targets not found, outside the user's scope,
+trashed or not viewable come back in `missing` and are left alone. The answer
+is `{processed, missing}`.
+
+Pivot columns are [fields](resources.md#fields): `readable`, `creatable`,
+`updatable`, `required`, `max_length` apply, values follow the
+[wire format](../reference/wire-format.md); columns not declared never leave
+the server. Pivot columns not declared must be nullable or have a default (the
+panel refuses to start otherwise).
+
+### Rules checked at boot
+
+- The two key columns exist in the pivot with the types of the two keys.
+- One relation per pivot table, and not to the same resource; the target may
+  not declare `lock_parent`. These keep one lock order for every writer:
+  the parent (and its own `lock_parent`), then the targets in key order, then
+  the pivot rows.
+
+Attach and detach send no `Idempotency-Key`: sending one again gives the same
+links. If the answer is lost, the panel pauses writes to the resource until
+the page is reloaded, then shows the links as they are.
+
+Records are linked only from the relation manager for now; a multi-select of
+links in the record's own form is not available yet.

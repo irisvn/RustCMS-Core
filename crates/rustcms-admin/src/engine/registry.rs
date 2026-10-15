@@ -11,7 +11,8 @@ use crate::Data;
 use crate::action::ActionOutcome;
 use crate::adapter::ResourceAdapter;
 use crate::context::Ctx;
-use crate::resource::{Envelope, ListQuery, Page, Relation, Resource, ResourceMeta};
+use crate::links::{LinkOp, LinkOption, LinkOutcome, LinkRequest};
+use crate::resource::{Envelope, ListQuery, Page, Relation, Resource, ResourceMeta, Through};
 use crate::schema::{ResourceInfo, ResourceSchema, SchemaOperation};
 use crate::ui::SelectOption;
 
@@ -96,6 +97,45 @@ pub trait DynResource: Send + Sync {
     async fn lock_keys(&self, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<()>;
     /// Which of `keys` the user may reference from another record.
     async fn keys_in_scope(&self, ctx: &Ctx, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>>;
+    /// Refuses running action `name` before its body is read (403; 404 for no such action).
+    async fn admit_action(&self, ctx: &Ctx, name: &str) -> AppResult<()>;
+    /// Options of the `belongs_to` field `field` of action `name`'s form.
+    async fn action_options(
+        &self,
+        ctx: &Ctx,
+        name: &str,
+        field: &str,
+        search: Option<&str>,
+        keys: &[String],
+    ) -> AppResult<Vec<SelectOption>>;
+    /// The records of `keys` the user may view, locked in key order and
+    /// checked again under the lock (targets of link writes).
+    async fn lock_visible(&self, ctx: &Ctx, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>>;
+    /// Refuses a write to the belongs-to-many relation `relation` the policy
+    /// does not admit (403 before anything is read; 404 for no such relation).
+    async fn admit_link(&self, ctx: &Ctx, relation: &str, op: LinkOp) -> AppResult<()>;
+    /// The canonical key of the visible record `key` and the condition
+    /// selecting the targets of its belongs-to-many relation `relation`.
+    async fn link_targets(&self, ctx: &Ctx, relation: &str, key: &str) -> AppResult<(String, Through)>;
+    /// Readable pivot columns of the links of record `key` (canonical) to `targets`.
+    async fn link_values(
+        &self,
+        ctx: &Ctx,
+        relation: &str,
+        key: &str,
+        targets: &[String],
+    ) -> AppResult<BTreeMap<String, Data>>;
+    /// Attaches, detaches or updates links of record `key`.
+    async fn link(&self, ctx: &Ctx, relation: &str, key: &str, request: LinkRequest) -> AppResult<LinkOutcome>;
+    /// Targets offered for attaching to record `key`.
+    async fn link_options(
+        &self,
+        ctx: &Ctx,
+        relation: &str,
+        key: &str,
+        search: Option<&str>,
+        keys: &[String],
+    ) -> AppResult<Vec<LinkOption>>;
 }
 
 /// All resources of a panel.
@@ -139,6 +179,8 @@ impl Registry {
     /// # Panics
     /// When a target slug is unknown.
     pub fn finish(self) -> Arc<Self> {
+        // Pivot tables already used by a relation (one relation per pivot).
+        let mut pivots = HashMap::new();
         for resource in self.resources.values() {
             for target in resource.targets() {
                 assert!(self.resources.contains_key(target), "unknown belongs_to target `{target}`");
@@ -171,6 +213,10 @@ impl Registry {
                 let target = self.resources.get(relation.target).unwrap_or_else(|| {
                     panic!("resource `{slug}`: relation `{}` targets unknown `{}`", relation.name, relation.target)
                 });
+                if let Some(pivot) = &relation.pivot {
+                    check_pivot(resource.as_ref(), target.as_ref(), relation, pivot.as_ref(), &mut pivots);
+                    continue;
+                }
                 let link = target.field_link(relation.field);
                 assert!(
                     matches!(link, Some((Some(parent), _)) if parent == slug),
@@ -189,5 +235,70 @@ impl Registry {
             }
         }
         Arc::new(self)
+    }
+}
+
+/// Boot checks of a belongs-to-many relation of `parent` (see ADR 0020: one
+/// lock order, parent then targets, so configurations needing another are refused).
+fn check_pivot(
+    parent: &dyn DynResource,
+    target: &dyn DynResource,
+    relation: &Relation,
+    pivot: &dyn crate::adapter::DynPivot,
+    pivots: &mut HashMap<String, String>,
+) {
+    let slug = parent.slug();
+    let name = relation.name;
+    let table = pivot.table();
+    assert!(
+        target.slug() != slug,
+        "resource `{slug}`: relation `{name}`: belongs-to-many to the same resource is not supported"
+    );
+    assert!(
+        target.meta().parent_lock.is_none(),
+        "resource `{slug}`: relation `{name}`: the target `{}` declares `lock_parent`, not supported with belongs-to-many",
+        target.slug()
+    );
+    if let Some(other) = pivots.insert(table.to_owned(), format!("{slug}.{name}")) {
+        panic!(
+            "resource `{slug}`: relation `{name}`: pivot `{table}` is already used by `{other}` (one relation per pivot)"
+        );
+    }
+    let kind = |column: &str| pivot.column(column).map(|c| c.kind.name());
+    assert!(
+        kind(pivot.parent_column()) == Some(parent.key_kind()),
+        "resource `{slug}`: relation `{name}`: `{table}.{}` must have the type of `{slug}`'s key",
+        pivot.parent_column()
+    );
+    assert!(
+        kind(pivot.target_column()) == Some(target.key_kind()),
+        "resource `{slug}`: relation `{name}`: `{table}.{}` must have the type of `{}`'s key",
+        pivot.target_column(),
+        target.slug()
+    );
+    let keys = [pivot.parent_column(), pivot.target_column()];
+    let mut declared = HashSet::new();
+    for field in &relation.pivot_fields {
+        assert!(
+            pivot.column(&field.name).is_some()
+                && !keys.contains(&field.name.as_str())
+                && declared.insert(field.name.as_str()),
+            "resource `{slug}`: relation `{name}`: pivot field `{}` is unknown, a key column or declared twice",
+            field.name
+        );
+        assert!(
+            field.belongs_to.is_none() && field.media.is_none() && !field.rich_text,
+            "resource `{slug}`: relation `{name}`: pivot field `{}` may not be a relationship, media or rich text",
+            field.name
+        );
+    }
+    // Inserts set the two keys and the declared fields a user may write: any
+    // other column must be optional.
+    for column in pivot.column_names() {
+        let info = pivot.column(&column).expect("listed");
+        assert!(
+            keys.contains(&column.as_str()) || info.nullable || info.has_default,
+            "resource `{slug}`: relation `{name}`: pivot column `{table}.{column}` needs to be nullable or have a default"
+        );
     }
 }

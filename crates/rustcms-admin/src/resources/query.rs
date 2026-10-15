@@ -36,6 +36,11 @@ pub struct Filter {
     pub value: serde_json::Value,
 }
 
+/// The keys linked to one record by a pivot table (opaque; see [`ListQuery::through`]).
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub struct Through(pub(crate) sea_orm::sea_query::SelectStatement);
+
 /// Records by deletion state, for resources with soft deletes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -72,6 +77,11 @@ pub struct ListQuery {
     /// may set it.
     #[serde(skip)]
     pub parent: Option<(String, String)>,
+    /// Only the records linked to one record through a pivot (belongs-to-many
+    /// lists). Set by the engine, never read from a request.
+    #[doc(hidden)]
+    #[serde(skip)]
+    pub through: Option<Through>,
     /// Filter values came from a URL query string, so they are all strings and
     /// are interpreted by field type (`5`, `true`, comma-separated `in` lists).
     /// JSON clients keep the strict wire format.

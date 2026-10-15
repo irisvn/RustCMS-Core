@@ -31,3 +31,25 @@ impl FromRequestParts<AppState> for AdminCtx {
         Ok(Self(ctx.with_locale(locale, panel.translator.clone()).with_audit(audit)))
     }
 }
+
+/// The JSON body of a request whose access was checked first (a caller
+/// without access sends nothing the server reads): 413 when too large, 422
+/// when it is not the expected JSON.
+pub(crate) async fn json_body<T: serde::de::DeserializeOwned>(
+    request: axum::extract::Request,
+    state: &AppState,
+) -> Result<T, AppError> {
+    use axum::extract::FromRequest;
+    let body = axum::body::Bytes::from_request(request, state).await.map_err(|e| {
+        if e.status() == axum::http::StatusCode::PAYLOAD_TOO_LARGE {
+            AppError::PayloadTooLarge
+        } else {
+            AppError::BadRequest("the body could not be read".into())
+        }
+    })?;
+    serde_json::from_slice(&body).map_err(|_| {
+        let mut errors = rustcms_core::ValidationErrors::new();
+        errors.add_form("is invalid");
+        errors.into()
+    })
+}

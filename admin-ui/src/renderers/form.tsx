@@ -45,6 +45,11 @@ export interface FormContext {
   onBusy?: (name: string, busy: boolean) => void;
   /** Secret settings: their stored state and what the user chose to do with them. */
   secrets?: SecretControl;
+  /**
+   * Where a relationship select reads its options (default: the resource
+   * field's options). Action forms and relation dialogs have their own.
+   */
+  optionsPath?: (field: string) => string;
 }
 
 export const KNOWN_INPUTS = KNOWN_INPUT_TYPES;
@@ -395,6 +400,7 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
             id={id}
             slug={ctx.slug}
             field={input.name}
+            path={ctx.optionsPath?.(input.name)}
             record={ctx.record}
             value={text}
             onChange={onChange}

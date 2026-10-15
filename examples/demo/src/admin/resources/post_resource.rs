@@ -1,5 +1,6 @@
-//! Posts: soft deletes, an owner scope, a policy, a bulk action, hooks, and a
-//! tabbed form with key/value attributes.
+//! Posts: soft deletes, an owner scope, a policy, bulk actions (one with a
+//! form), hooks, a tabbed form with key/value attributes, and tags (a
+//! belongs-to-many relation with a pivot column).
 
 use std::sync::Arc;
 
@@ -8,7 +9,7 @@ use rustcms::admin::*;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseTransaction, IntoActiveModel, QueryFilter, Select, Set};
 use serde_json::json;
 
-use crate::models::post;
+use crate::models::{post, post_tag};
 use crate::policies::post_policy::PostPolicy;
 
 pub struct PostResource;
@@ -100,6 +101,30 @@ impl Resource for PostResource {
             .label("Publish")
             .bulk()
             .requires_confirmation("Publish the selected posts?"),
+            // Asks for a category (one the user may see) in a dialog.
+            Action::<post::Entity>::new("move", |_ctx, txn, posts, data| {
+                Box::pin(async move {
+                    let category = data["category_id"].as_str().and_then(|k| k.parse::<i32>().ok());
+                    for post in posts {
+                        let mut active = post.into_active_model();
+                        active.category_id = Set(category);
+                        active.update(txn).await?;
+                    }
+                    Ok(())
+                })
+            })
+            .label("Move to category…")
+            .bulk()
+            .form(vec![ActionField::belongs_to("category_id", "categories").label("Category").required()]),
+        ]
+    }
+
+    /// Tags, attached and detached on a post's page; `position` orders them.
+    fn relations() -> Vec<Relation> {
+        vec![
+            Relation::belongs_to_many("tags", "tags", post_tag::Column::PostId, post_tag::Column::TagId)
+                .pivot(vec![Field::column(post_tag::Column::Position)])
+                .label("Tags"),
         ]
     }
 

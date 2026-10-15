@@ -3,7 +3,9 @@
 
 use rustcms::prelude::*;
 
-use crate::admin::resources::{category_resource::CategoryResource, post_resource::PostResource};
+use crate::admin::resources::{
+    category_resource::CategoryResource, post_resource::PostResource, tag_resource::TagResource,
+};
 
 pub fn provider() -> AdminProvider {
     AdminProvider::new()
@@ -11,6 +13,7 @@ pub fn provider() -> AdminProvider {
         .media()
         .resource::<CategoryResource>()
         .resource::<PostResource>()
+        .resource::<TagResource>()
         // rustcms:resources
         .settings::<crate::settings::site_settings::SiteSettings>()
         .page::<crate::admin::pages::post_stats_page::PostStatsPage>()

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::Router;
 
 use axum::http::Method;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use rustcms_core::{AppError, AppResult, AppState};
 use serde::Serialize;
 
@@ -81,7 +81,12 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::DELETE, format!("{resource}/records/{{key}}/force")),
         (Method::GET, format!("{resource}/records/{{key}}/relations/{{relation}}")),
         (Method::POST, format!("{resource}/records/{{key}}/relations/{{relation}}")),
+        (Method::POST, format!("{resource}/records/{{key}}/relations/{{relation}}/attach")),
+        (Method::POST, format!("{resource}/records/{{key}}/relations/{{relation}}/detach")),
+        (Method::PATCH, format!("{resource}/records/{{key}}/relations/{{relation}}/links/{{target}}")),
+        (Method::GET, format!("{resource}/records/{{key}}/relations/{{relation}}/options")),
         (Method::POST, format!("{resource}/actions/{{action}}")),
+        (Method::GET, format!("{resource}/actions/{{action}}/fields/{{field}}/options")),
         (Method::GET, format!("{resource}/fields/{{field}}/options")),
         (Method::POST, format!("{base}/media")),
         (Method::GET, format!("{base}/media/{{id}}/file")),
@@ -106,7 +111,15 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route(&format!("{resource}/records/{{key}}/restore"), post(restore))
         .route(&format!("{resource}/records/{{key}}/force"), delete(force_delete))
         .route(&format!("{resource}/records/{{key}}/relations/{{relation}}"), get(relation_list).post(relation_create))
+        .route(&format!("{resource}/records/{{key}}/relations/{{relation}}/attach"), post(relation_attach))
+        .route(&format!("{resource}/records/{{key}}/relations/{{relation}}/detach"), post(relation_detach))
+        .route(
+            &format!("{resource}/records/{{key}}/relations/{{relation}}/links/{{target}}"),
+            patch(relation_update_pivot),
+        )
+        .route(&format!("{resource}/records/{{key}}/relations/{{relation}}/options"), get(relation_options))
         .route(&format!("{resource}/actions/{{action}}"), post(run_action))
+        .route(&format!("{resource}/actions/{{action}}/fields/{{field}}/options"), get(action_options))
         .route(&format!("{resource}/fields/{{field}}/options"), get(options))
         .route(&format!("{base}/media"), post(crate::media::upload))
         .route(&format!("{base}/media/{{id}}/file"), get(crate::media::file))
@@ -119,6 +132,7 @@ mod resources;
 
 use actions::*;
 pub use extract::AdminCtx;
+pub use relations::LinkPage;
 use relations::*;
 pub(crate) use resources::idempotency_key;
 use resources::*;

@@ -5,8 +5,8 @@ test("admin creates a role and a user who then sees only what the role allows", 
   await page.getByRole("navigation", { name: "Resources" }).getByRole("link", { name: "Roles", exact: true }).click();
   await page.getByRole("link", { name: "New role" }).click();
   await page.getByLabel("Name").fill("reader");
-  await page.getByLabel("posts.view_any").check();
-  await page.getByLabel("posts.view", { exact: true }).check();
+  await page.getByRole("checkbox", { name: "Posts: List" }).check();
+  await page.getByRole("checkbox", { name: "Posts: View" }).check();
   await page.getByRole("button", { name: "Create role" }).click();
   await expect(page.getByRole("heading", { name: "reader" })).toBeVisible();
 

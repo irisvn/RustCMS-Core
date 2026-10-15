@@ -29,7 +29,7 @@ accounts with a public password.
 
 | Path | Holds |
 |---|---|
-| `src/services/enrollment_service.rs` | the seat rules (`check`, `enroll`), used by the panel and the seeders |
+| `src/services/enrollment_service.rs` | the seat rules (`check`, `enroll_in`, `enroll`), used by the panel, the enroll action and the seeders |
 | `src/models/course.rs`, `learner.rs` | query scopes: `course::taught_by`, `learner::taught_by` |
 | `src/policies/` | `permissions.rs` (names), `enrollment_policy.rs` |
 | `src/admin/resources/` | the four resources: fields, forms, tables, scopes, hooks that call the service |
@@ -57,9 +57,13 @@ It counts the course's enrollments, so it runs under the course's row lock:
   `.lock_parent("course_id", "courses")`: every enrollment write locks its
   course first (both courses when it moves), then the hooks call `check`
   ([parent locks](../admin/resources.md#parent-locks));
+- the course's **Enroll a learner…** action (staff: `enrollments.create`)
+  asks for a learner in a dialog; the action locks the course, then calls
+  `enrollment_service::enroll_in(txn, …)` in its transaction. A refusal
+  (already enrolled, no seat) answers 422 in the dialog and nothing is kept;
 - elsewhere, `enrollment_service::enroll` opens its own transaction, locks
-  the course, checks, inserts and queues the welcome. The enrollment seeder
-  uses it, so seeding never overfills a course.
+  the course and calls `enroll_in`. The enrollment seeder uses it, so seeding
+  never overfills a course.
 
 Concurrent requests for the last seat get one 201 and one 422; a course and
 its enrollments changed at the same time never deadlock (the course is

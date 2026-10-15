@@ -32,6 +32,26 @@ All notable changes are documented here. The format follows
 - Examples: LMS theme, course overview page, seats slot, progress cell; demo
   post stats page and visibility slot.
 
+### Added (0.3 — M16; ADR 0020)
+- Belongs-to-many relations: `Relation::belongs_to_many` over a pivot entity
+  with `.pivot(fields)`; routes `…/relations/{relation}/attach`, `/detach`,
+  `PATCH …/links/{target}`, `GET …/options`; abilities `attach_{rel}`,
+  `detach_{rel}`, `update_pivot_{rel}` on the parent; lists add readable pivot
+  columns (`LinkPage.pivot`); audit `attached` / `detached` / `pivot_updated`
+  shown in the history by reader.
+- Action forms: `Action::form(vec![ActionField::…])` (text, textarea, integer,
+  boolean, date, select, `belongs_to`), `ActionSchema.form`, options route
+  `…/actions/{action}/fields/{field}/options`; SPA dialog.
+- Permission matrix on the role page; `PermissionInfo.resource` / `ability`.
+- Examples: demo tags (`post_tags` with `position`) and "Move to category…";
+  LMS "Enroll a learner…" on courses (`enrollment_service::enroll_in`).
+
+### Changed (0.3 — M16)
+- Action requests are admitted before the body is read; `data` without a
+  form is refused; the body holds only `keys` and `data`; actions the policy
+  does not admit are not listed.
+- `SCHEMA_VERSION` 2, `VOCABULARY_VERSION` 7; `RelationSchema.kind`.
+
 ### Added (0.3 — M15e, template files)
 - `rustcms_admin::view!("file.html")` → `PageView::File(TemplateFile)`: the
   template `resources/views/admin/file.html` embedded at build time and, in a
