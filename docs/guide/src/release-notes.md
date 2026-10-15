@@ -47,6 +47,9 @@ RustCMS is in pre-release. The current published version is
   each with its own permission ([Relationships](admin/relationships.md#belongs-to-many-pivot-tables)).
 - **Actions with a form**: `Action::form(vec![ActionField::…])` asks for values
   in a dialog, checked on the server ([Actions](admin/actions.md#actions-with-a-form)).
+- **CSV exports**: `ResourceMeta::exportable()`; the list as shown, readable
+  fields only, protected against spreadsheet formulas; large lists in the
+  background, checked again at download ([Exporting lists](admin/import-export.md)).
 - **Permission matrix**: the role page lays resource permissions out as
   resource × ability ([Users and roles](admin/users-roles.md)).
 - **Example**: `examples/lms`, a small LMS back office (seats under a lock,

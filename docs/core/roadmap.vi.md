@@ -43,15 +43,16 @@ settings, audit log, i18n, media S3/R2, tin tức, nhiều-nhiều, import/expor
 | M15d | Trang Queue trong Admin (System → Queue): tổng quan, danh sách job, retry/forget/cancel, `queue.view`/`queue.manage` | ✅ `111f25a` + fix |
 | M15e | Tuỳ biến Admin: Theme API, trang/slot tuỳ biến (template HTML `resources/views/admin` hoặc script), `registerCell`, `make:page`; thư mục `resources/` | ✅ `68a5366` + fix |
 | M16 | Quan hệ nhiều-nhiều (attach/detach/pivot) + action có form (modal) + ma trận quyền theo resource | ✅ `75aeab8` + fix |
-| M17 | Import / Export CSV (chạy nền qua queue, kiểm quyền mỗi lô, chống CSV injection) | ⏳ |
-| M18 | Excel (XLSX): giới hạn zip bomb, kiểu dữ liệu tường minh | ⏳ |
+| M17 | Import / Export CSV (chạy nền qua queue, kiểm quyền mỗi lô, chống CSV injection) | 🔧 export xong, đang làm import |
+| M18 | Excel (XLSX): giới hạn zip bomb, kiểu dữ liệu tường minh | ⏸ tạm bỏ qua (22/10/2026), làm sau 0.3 nếu cần |
 | M19 | Mail: SMTP qua settings, gửi qua queue | ⏳ |
 | M20 | Quên mật khẩu + mời user (token một lần, revoke trong cùng transaction) | ⏳ |
-| M21 | Media: Range/video, thumbnail (giới hạn decode an toàn) | ⏳ |
+| M21 | Media: Range/video, thumbnail (giới hạn decode an toàn) | ⏸ tạm bỏ qua (22/10/2026), làm sau 0.3 nếu cần |
 | M22 | Dashboard widgets dựng sẵn (đếm/nhóm theo quyền, không cache), dùng cơ chế slot của M15e | ⏳ |
 | M23 | Hoàn thiện `examples/lms`, docs vận hành, tutorial tiếng Việt, tag `v0.3.0` | ⏳ |
 
 ## Sau 0.3 (đã thống nhất hướng)
+- M18 Excel (XLSX) và M21 Media Range/video, thumbnail: anh quyết định tạm bỏ qua ngày 22/10/2026.
 - `admin:eject` (chép mã nguồn SPA vào app) và tài liệu dùng Admin API kiểu headless.
 
 ## Ngoài phạm vi 0.3

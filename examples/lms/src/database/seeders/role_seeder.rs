@@ -48,6 +48,7 @@ pub const STAFF: &[&str] = &[
     "enrollments.create",
     "enrollments.update",
     "enrollments.delete",
+    "enrollments.export",
     UPDATE_PROGRESS,
     "settings.lms.view",
     "settings.lms.update",

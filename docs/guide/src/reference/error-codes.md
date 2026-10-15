@@ -66,6 +66,7 @@ A message that follows none of these templates has the code `custom` and
 | `unknown_operator` | unknown operator `{op}` |
 | `search_too_broad` | `matches too many records to check; refine the search` |
 | `too_many_matches` | `Too many matching records to check individually; narrow the search or filters.` |
+| `too_many_to_export` | `More than {max} records to export; narrow the search or filters.` |
 | `invalid_parent` | `invalid parent key` |
 | `invalid_key` | `invalid key` |
 | `unsupported_key` | `unsupported key type` |
@@ -108,6 +109,8 @@ A message that follows none of these templates has the code `custom` and
 | `not_found` | 404 | |
 | `method_not_allowed` | 405 | |
 | `write_conflict` | 409 | `busy` (another change in progress), `upload_expired`, `receipt_expired`; queue actions: `not_failed`, `not_waiting`, `running` |
+| `export_not_ready` | 409 | `pending` (the background export has not finished) |
+| `export_stale` | 409 | `stale` (access changed since the export was made: export again) |
 | `payload_too_large` | 413 | |
 | `validation_failed` | 422 | |
 | `too_many_requests` | 429 | |

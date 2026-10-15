@@ -165,6 +165,35 @@ export class ApiClient {
     return this.request<T>("DELETE", path);
   }
 
+  /**
+   * A file the server sends (`GET`): its bytes, or the server's error as an
+   * `ApiError` (a JSON body) like any request.
+   */
+  async download(path: string): Promise<Blob> {
+    const generation = this.generation;
+    const doFetch = this.opts.fetch ?? fetch;
+    let response: Response;
+    try {
+      response = await doFetch(this.opts.apiPath + path, {
+        method: "GET",
+        headers: { "Accept-Language": getLocale(), "X-Rustcms-Locale": getLocale() },
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+    } catch {
+      throw clientError(0, "network_error", "error.network");
+    }
+    if (generation !== this.generation) throw sessionReset();
+    const owner = response.headers.get("X-Rustcms-User");
+    if (owner !== null && this.opts.observeIdentity && !this.opts.observeIdentity(owner)) throw sessionReset();
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      if (response.status === 401) this.opts.onUnauthenticated?.();
+      throw new ApiError(response.status, errorBody(response, payload));
+    }
+    return response.blob();
+  }
+
   async request<T>(method: string, path: string, body?: unknown, extra?: Record<string, string>): Promise<T> {
     // Labels in the answer are in the language this tab shows (the cache is keyed by it).
     const headers: Record<string, string> = {

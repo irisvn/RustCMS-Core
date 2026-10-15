@@ -7,7 +7,7 @@ What RustCMS does not do yet, and behaviours to know before relying on it.
 - Choosing belongs-to-many links in the record's own form (use the relation
   manager on its page); belongs-to-many to the same resource, two relations
   over one pivot table, or to a resource declaring `lock_parent`.
-- Import and export, dashboard widgets.
+- Importing CSV files (exports are available), Excel files, dashboard widgets.
 - Mail, password reset and email verification.
 - Settings of kinds other than text, integer (`i32`), boolean, select, key/value,
   date and secret (store larger numbers or decimals as text).

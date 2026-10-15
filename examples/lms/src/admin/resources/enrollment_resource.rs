@@ -30,6 +30,7 @@ impl Resource for EnrollmentResource {
     fn meta() -> ResourceMeta {
         ResourceMeta::new("Enrollment")
             .icon("clipboard-check")
+            .exportable()
             .group("Learning")
             .lock_parent("course_id", "courses")
             .unique(

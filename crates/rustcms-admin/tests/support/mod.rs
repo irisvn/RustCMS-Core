@@ -263,7 +263,10 @@ impl Resource for PostResource {
     const SLUG: &'static str = "posts";
 
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("Post").title("title").key(KeyStrategy::AppGenerated(|| SqlValue::Uuid(Some(Uuid::now_v7()))))
+        ResourceMeta::new("Post")
+            .title("title")
+            .key(KeyStrategy::AppGenerated(|| SqlValue::Uuid(Some(Uuid::now_v7()))))
+            .exportable()
     }
 
     fn fields() -> Vec<Field> {

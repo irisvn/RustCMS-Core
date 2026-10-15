@@ -33,6 +33,10 @@ saves the choice (422 for a language not offered). The shell's
 | PATCH | `…/relations/{relation}/links/{target}` `{…pivot}` | `LinkOutcome`; `update_pivot_{relation}`; 404 when not linked or not visible |
 | GET | `…/relations/{relation}/options?search=&keys=` | `{data: [LinkOption {value, label, attached}]}`; `attach_{relation}` admitted, then on the parent record |
 | POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing}`; admitted before the body; `data` checked against the action's form (none: refused) |
+| GET | `/resources/{slug}/export?{list query}` | `text/csv` file (≤ 1 000 rows, else 422 `too_many_to_export`); `export` + `view_any` admitted first; 404 when not exportable |
+| POST | `/resources/{slug}/exports?{list query}` | 201 `ExportView`; background job (needs storage), ≤ 3 waiting per user (429) |
+| GET | `/exports` | `[ExportView]` of the user (not expired, newest first) |
+| GET | `/exports/{id}/file` | `text/csv`; owner only (else 404), 409 `export_not_ready` / `export_stale` (credentials, permission, fields or any record no longer visible) |
 | GET | `/resources/{slug}/actions/{action}/fields/{field}/options?search=&keys=` | `{data: [SelectOption]}` of a form's `belongs_to` field (keys as text) |
 | POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (media library enabled) |
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |

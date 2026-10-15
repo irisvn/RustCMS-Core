@@ -20,7 +20,7 @@ impl Resource for PostResource {
     const SLUG: &'static str = "posts";
 
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("Post").title("title").icon("file-text").group("Content").soft_deletes()
+        ResourceMeta::new("Post").title("title").icon("file-text").group("Content").soft_deletes().exportable()
     }
 
     fn fields() -> Vec<Field> {

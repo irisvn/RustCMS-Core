@@ -557,6 +557,36 @@ data: Array<Envelope>,
  */
 meta: PageMeta, };
 
+export type ExportView = { 
+/**
+ * Id (UUID).
+ */
+id: string, 
+/**
+ * Resource slug.
+ */
+resource: string, 
+/**
+ * `pending`, `running`, `done` or `failed`.
+ */
+status: string, 
+/**
+ * Rows written (when done).
+ */
+rows: number, 
+/**
+ * Why it failed.
+ */
+error?: string, 
+/**
+ * RFC 3339.
+ */
+createdAt: string, 
+/**
+ * When the file is deleted (RFC 3339).
+ */
+expiresAt: string, };
+
 export type PanelUser = { 
 /**
  * User id (string).

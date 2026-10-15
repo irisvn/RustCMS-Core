@@ -2,6 +2,7 @@
   "abilities": {
     "create": true,
     "delete": false,
+    "export": false,
     "history": false,
     "update": false,
     "view": true,

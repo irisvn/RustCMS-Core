@@ -106,6 +106,18 @@ db_test!(upgrade_adds_jobs, |db: TestDb| async move {
     Migrator::up(db.conn(), None).await.unwrap();
 });
 
+// M16 → M17: background exports get their table, and roll back cleanly.
+db_test!(upgrade_adds_exports, |db: TestDb| async move {
+    Migrator::up(db.conn(), Some(before("create_exports_table"))).await.unwrap();
+    assert!(!has_table(&db, "exports").await);
+    Migrator::up(db.conn(), None).await.unwrap();
+    assert!(has_table(&db, "exports").await);
+    Migrator::down(db.conn(), Some(from("create_exports_table"))).await.unwrap();
+    assert!(!has_table(&db, "exports").await);
+    assert!(has_table(&db, "jobs").await, "earlier tables are kept");
+    Migrator::up(db.conn(), None).await.unwrap();
+});
+
 // M1 → M2: users created before the auth tables keep working; system roles are seeded.
 db_test!(upgrade_from_m1_adds_auth_tables, |db: TestDb| async move {
     Migrator::up(db.conn(), Some(2)).await.unwrap();

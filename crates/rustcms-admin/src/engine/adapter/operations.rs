@@ -75,6 +75,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if self.soft.is_some() {
             abilities.extend([ability::RESTORE, ability::FORCE_DELETE]);
         }
+        if self.meta.exportable {
+            abilities.push(ability::EXPORT);
+        }
         abilities.extend(self.actions.iter().map(|a| a.ability));
         let mut permissions: Vec<String> = abilities.into_iter().map(|a| format!("{}.{a}", R::SLUG)).collect();
         // Writes to belongs-to-many relations.
@@ -102,6 +105,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if self.soft.is_some() {
             abilities.extend([ability::RESTORE, ability::FORCE_DELETE].map(str::to_owned));
         }
+        if self.meta.exportable {
+            abilities.push(ability::EXPORT.to_owned());
+        }
         abilities.extend(self.actions.iter().map(|a| a.ability.to_owned()));
         for relation in self.relations.iter().filter(|r| r.is_many()) {
             use crate::links::LinkOp;
@@ -124,6 +130,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         abilities.insert("create", self.policy.allows(ctx, ability::CREATE, None).await);
         // The record history (`audit.view`; each record is checked when it is opened).
         abilities.insert("history", self.meta.audit && ctx.can(crate::audit::VIEW));
+        if self.meta.exportable {
+            abilities.insert("export", ResourceAdapter::admit_export(self, ctx).await.is_ok());
+        }
         if self.soft.is_some() {
             // Whether the trash can be listed; each record still decides.
             abilities.insert("restore", self.policy.admits(ctx, ability::RESTORE).await);
@@ -296,25 +305,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.admit_list(ctx, query).await?;
         let per_page = query.per_page.unwrap_or(DEFAULT_PER_PAGE).clamp(1, self.limits.per_page);
         let page = query.page.unwrap_or(1).max(1);
-        let mut errors = ValidationErrors::new();
-        let mut select = self.base(ctx, query.trashed).filter(self.filter_condition(ctx, query, &mut errors));
-        // Without `sort`, the table's default sort applies (when this user may use it),
-        // so the order matches what the schema announces.
-        let explicit = query.sort.is_some();
-        let sort = query.sort.clone().or_else(|| self.table_ui.default_sort.clone());
-        if let Some(sort) = sort.as_deref() {
-            let (order, name) = match sort.strip_prefix('-') {
-                Some(name) => (Order::Desc, name),
-                None => (Order::Asc, sort),
-            };
-            if self.field(name).is_some_and(|f| f.sortable && f.can_read(ctx)) {
-                select = select.order_by(self.column(name).column, order);
-            } else if explicit {
-                errors.add("sort", format!("cannot sort by `{name}`"));
-            }
-        }
-        errors.into_result()?;
-        let select = select.order_by(self.pk, Order::Asc);
+        let select = self.list_select(ctx, query)?;
         if !self.policy.view_depends_on_record() && query.trashed == Trashed::Without {
             // The same decision holds for every record: deny once, show nothing.
             if !self.policy.allows(ctx, ability::VIEW, None).await {
@@ -643,6 +634,32 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     async fn lock_keys(&self, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<()> {
         self.lock_rows(txn, keys, Trashed::With).await?;
         Ok(())
+    }
+
+    async fn admit_export(&self, ctx: &Ctx) -> AppResult<()> {
+        ResourceAdapter::admit_export(self, ctx).await
+    }
+
+    fn export_columns(&self, ctx: &Ctx) -> Vec<(String, bool)> {
+        ResourceAdapter::export_columns(self, ctx)
+    }
+
+    async fn canonical_query(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<ListQuery> {
+        ResourceAdapter::canonical_query(self, ctx, query).await
+    }
+
+    async fn export_keys(&self, ctx: &Ctx, query: &ListQuery, max: usize) -> AppResult<Vec<String>> {
+        ResourceAdapter::export_keys(self, ctx, query, max).await
+    }
+
+    async fn export_rows(
+        &self,
+        ctx: &Ctx,
+        query: &ListQuery,
+        keys: &[String],
+        columns: &[String],
+    ) -> AppResult<Vec<(String, Data)>> {
+        ResourceAdapter::export_rows(self, ctx, query, keys, columns).await
     }
 
     async fn admit_action(&self, ctx: &Ctx, name: &str) -> AppResult<()> {

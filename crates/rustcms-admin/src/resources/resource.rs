@@ -62,6 +62,7 @@ pub struct ResourceMeta {
     pub(crate) soft_delete: Option<String>,
     pub(crate) audit: bool,
     pub(crate) parent_lock: Option<(String, &'static str)>,
+    pub(crate) exportable: bool,
 }
 
 impl ResourceMeta {
@@ -78,7 +79,16 @@ impl ResourceMeta {
             soft_delete: None,
             audit: true,
             parent_lock: None,
+            exportable: false,
         }
+    }
+
+    /// Records can be exported as CSV (the list as shown: scope, filters,
+    /// search, sort; readable fields only), with the ability `export`
+    /// (`{slug}.export` by default) on top of listing them.
+    pub fn exportable(mut self) -> Self {
+        self.exportable = true;
+        self
     }
 
     /// Every write to a record of this resource first locks its parent: the

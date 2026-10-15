@@ -637,6 +637,89 @@ actor = "admin"
 status = 405
 body = '{}'
 
+# Exports (posts are exportable; behaviour in tests/exports.rs).
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/export"
+path = "/admin/api/resources/posts/export"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/export"
+path = "/admin/api/resources/posts/export"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/export"
+path = "/admin/api/resources/posts/export"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/export"
+path = "/admin/api/resources/posts/export"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/export"
+path = "/admin/api/resources/notes/export"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/exports"
+path = "/admin/api/resources/posts/exports"
+actor = "guest"
+status = 401
+body = '{}'
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/exports"
+path = "/admin/api/resources/posts/exports"
+actor = "member"
+status = 403
+body = '{}'
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/exports"
+path = "/admin/api/resources/posts/exports"
+actor = "editor"
+status = 403
+body = '{}'
+
+[[case]]
+route = "GET /admin/api/exports"
+path = "/admin/api/exports"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/exports"
+path = "/admin/api/exports"
+actor = "member"
+status = 200
+
+[[case]]
+route = "GET /admin/api/exports/{id}/file"
+path = "/admin/api/exports/0192b7c8-0000-7000-8000-000000000001/file"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/exports/{id}/file"
+path = "/admin/api/exports/0192b7c8-0000-7000-8000-000000000001/file"
+actor = "member"
+status = 404
+
+[[case]]
+route = "GET /admin/api/exports/{id}/file"
+path = "/admin/api/exports/not-a-uuid/file"
+actor = "admin"
+status = 404
+
 # Options of an action form's `belongs_to` field (posts `move`, admitted by `posts.move`).
 
 [[case]]

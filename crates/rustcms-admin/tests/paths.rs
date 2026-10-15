@@ -86,6 +86,10 @@ fn the_admin_route_list_is_unchanged() {
         "POST /admin/api/queue/jobs/{id}/cancel",
         "GET /admin/api/pages/{slug}",
         "GET /admin/api/slots",
+        "GET /admin/api/resources/{slug}/export",
+        "POST /admin/api/resources/{slug}/exports",
+        "GET /admin/api/exports",
+        "GET /admin/api/exports/{id}/file",
     ];
     assert_eq!(listed, expected);
 }

@@ -200,3 +200,22 @@ db_test!(the_enroll_action_asks_for_a_learner_and_keeps_the_rules, migrate = Mig
     let teacher = as_user(&app, "teacher@example.test").await;
     teacher.post_json(&action, &json!([])).await.assert_status(StatusCode::FORBIDDEN);
 });
+
+db_test!(staff_export_enrollments_as_csv, migrate = Migrator, |db: TestDb| async move {
+    let app = seeded(db).await;
+    let staff = as_user(&app, "staff@example.test").await;
+    let db = app.state().db();
+    let course = CourseFactory::new().capacity(5).create(db).await;
+    let learner = LearnerFactory.create(db).await;
+    enroll(&app, &staff, course.id, learner.id).await.assert_status(StatusCode::CREATED);
+    let url = app.admin_api(&format!("resources/enrollments/export?filter[course_id][eq]={}", course.id));
+    let export = staff.get(&url).await;
+    export.assert_status(StatusCode::OK);
+    let text = export.text();
+    let lines: Vec<&str> = text.split("\r\n").filter(|l| !l.is_empty()).collect();
+    assert!(lines[0].starts_with("course_id,learner_id,status"), "{text}");
+    assert_eq!(lines.len(), 2, "{text}");
+    // Instructors do not export enrollments.
+    let teacher = as_user(&app, "teacher@example.test").await;
+    teacher.get(&url).await.assert_status(StatusCode::FORBIDDEN);
+});

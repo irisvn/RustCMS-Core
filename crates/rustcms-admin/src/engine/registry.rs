@@ -102,6 +102,22 @@ pub trait DynResource: Send + Sync {
     async fn lock_keys(&self, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<()>;
     /// Which of `keys` the user may reference from another record.
     async fn keys_in_scope(&self, ctx: &Ctx, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>>;
+    /// Refuses an export the user may not make (403; 404 when not exportable).
+    async fn admit_export(&self, ctx: &Ctx) -> AppResult<()>;
+    /// Fields exported for the user (readable ones, in order) and whether each is text.
+    fn export_columns(&self, ctx: &Ctx) -> Vec<(String, bool)>;
+    /// `query` checked as a list query, in canonical form (typed filters, no page).
+    async fn canonical_query(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<ListQuery>;
+    /// Keys the list `query` shows the user, in order; more than `max`: 422.
+    async fn export_keys(&self, ctx: &Ctx, query: &ListQuery, max: usize) -> AppResult<Vec<String>>;
+    /// Rows of `keys` the user may still see through `query` (key, `columns` only), in order.
+    async fn export_rows(
+        &self,
+        ctx: &Ctx,
+        query: &ListQuery,
+        keys: &[String],
+        columns: &[String],
+    ) -> AppResult<Vec<(String, Data)>>;
     /// Refuses running action `name` before its body is read (403; 404 for no such action).
     async fn admit_action(&self, ctx: &Ctx, name: &str) -> AppResult<()>;
     /// Options of the `belongs_to` field `field` of action `name`'s form.

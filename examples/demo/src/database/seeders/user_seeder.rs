@@ -14,6 +14,7 @@ pub const PASSWORD: &str = "password123";
 const EDITOR: &[&str] = &[
     "posts.create",
     "posts.update_own",
+    "posts.export",
     "categories.view_any",
     "categories.view",
     "tags.view_any",

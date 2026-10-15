@@ -32,6 +32,18 @@ All notable changes are documented here. The format follows
 - Examples: LMS theme, course overview page, seats slot, progress cell; demo
   post stats page and visibility slot.
 
+### Added (0.3 — M17a; ADR 0021)
+- CSV exports: `ResourceMeta::exportable()`, ability `export`; `GET
+  {slug}/export` (≤ 1 000 rows, built before sending), background exports
+  `POST {slug}/exports`, `GET exports`, `GET exports/{id}/file` (job
+  `admin.export` reloading its user per batch; downloads re-check
+  credentials, permission, fields and every record), pruning every 10
+  minutes; `exports` table; audit `exported` (query shape only).
+- `DynResource`: `admit_export`, `export_columns`, `canonical_query`,
+  `export_keys`, `export_rows`; `ApiClient.download` in the SPA; Export
+  button and Exports panel.
+- Examples: demo posts and LMS enrollments exportable.
+
 ### Fixed (0.3 — M16, Codex verify)
 - History of link changes shows pivot values only with the targets (readers
   who may list the target).

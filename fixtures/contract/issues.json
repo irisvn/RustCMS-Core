@@ -247,6 +247,9 @@
   "too_many_roles": [
     "has too many roles"
   ],
+  "too_many_to_export": [
+    "More than {max} records to export; narrow the search or filters."
+  ],
   "trashed_unsupported": [
     "is not supported by this resource"
   ],

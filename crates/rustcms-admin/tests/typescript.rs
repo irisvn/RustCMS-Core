@@ -45,6 +45,7 @@ fn bindings() -> String {
         rustcms_admin::LinkOutcome::decl(&cfg),
         rustcms_admin::LinkOption::decl(&cfg),
         rustcms_admin::LinkPage::decl(&cfg),
+        rustcms_admin::exports::ExportView::decl(&cfg),
         PanelUser::decl(&cfg),
         SystemLinks::decl(&cfg),
         RoleRef::decl(&cfg),

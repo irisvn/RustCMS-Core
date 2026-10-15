@@ -3,6 +3,7 @@
 
 mod action_form;
 mod audit;
+mod export;
 mod input;
 mod many;
 mod operations;
@@ -258,7 +259,8 @@ impl<R: Resource> ResourceAdapter<R> {
                     ability::UPDATE,
                     ability::DELETE,
                     ability::RESTORE,
-                    ability::FORCE_DELETE
+                    ability::FORCE_DELETE,
+                    ability::EXPORT
                 ]
                 .contains(&action.name),
                 "resource `{slug}`: action name `{}` is reserved for CRUD abilities",

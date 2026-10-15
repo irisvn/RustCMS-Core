@@ -226,6 +226,10 @@ impl ServiceProvider for AdminProvider {
             app.bind(crate::media::MediaState { storage, config, uploads });
             app.command(MediaPrune);
         }
+        // Background exports keep their files in the application's storage.
+        if app.service::<std::sync::Arc<dyn rustcms_core::storage::Storage>>().is_some() {
+            app.job::<crate::exports::ExportJob>();
+        }
         app.describe_routes("admin", http::routes(&admin_path));
         app.describe_routes("admin", spa::routes(&admin_path));
         let locales = &app.config().app.locales;
@@ -259,10 +263,13 @@ impl ServiceProvider for AdminProvider {
         app.routes(move |router| {
             spa::router(
                 crate::custom::router(
-                    crate::queue::router(
-                        crate::audit::router(
-                            crate::settings::router(
-                                system::router(http::router(router, &admin_path), &admin_path),
+                    crate::exports::router(
+                        crate::queue::router(
+                            crate::audit::router(
+                                crate::settings::router(
+                                    system::router(http::router(router, &admin_path), &admin_path),
+                                    &admin_path,
+                                ),
                                 &admin_path,
                             ),
                             &admin_path,
@@ -301,6 +308,23 @@ impl ServiceProvider for AdminProvider {
                 }
             });
         }
+        if let Some(storage) = state.service::<std::sync::Arc<dyn rustcms_core::storage::Storage>>() {
+            let app = state.clone();
+            tokio::spawn(async move {
+                let lease = format!("exports-prune:{}", storage.disk());
+                let mut every = tokio::time::interval(EXPORTS_PRUNE_EVERY);
+                loop {
+                    every.tick().await;
+                    let (db, storage) = (app.db().clone(), storage.clone());
+                    rustcms_core::jobs::exclusive(&app, &lease, EXPORTS_PRUNE_EVERY, || async move {
+                        if let Err(err) = crate::exports::prune(&db, storage.as_ref().as_ref()).await {
+                            tracing::warn!(%err, "export pruning failed");
+                        }
+                    })
+                    .await;
+                }
+            });
+        }
         let app = state.clone();
         tokio::spawn(async move {
             let mut every = tokio::time::interval_at(tokio::time::Instant::now() + PRUNE_EVERY, PRUNE_EVERY);
@@ -320,6 +344,9 @@ impl ServiceProvider for AdminProvider {
         Ok(())
     }
 }
+
+/// How often expired exports are deleted.
+const EXPORTS_PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// How often queued media deletions and abandoned uploads are processed.
 const MEDIA_PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(60);

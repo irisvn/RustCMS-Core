@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
 import { SchemaFormDialog } from "@/components/schema-form-dialog";
+import { ExportButton, ExportsPanel } from "@/components/exports";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Cell, FilterControl, KNOWN_FILTERS, type FilterParams } from "@/renderers/table";
@@ -55,6 +56,13 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   const navigate = useNavigate();
   const schema = useSchema(slug, "view");
   const query = useMemo(() => listQuery(search), [search]);
+  // What an export takes: the list's query without its page.
+  const exportQuery = useMemo(() => {
+    const params = new URLSearchParams(query);
+    params.delete("page");
+    params.delete("per_page");
+    return params;
+  }, [query]);
   const records = useRecords(slug, query);
   const del = useDeleteRecord(slug);
   const restore = useRestoreRecord(slug);
@@ -209,11 +217,16 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
 
   return (
     <Page>
-      <PageHeader title={s.resource.pluralLabel} description={t("list.description", { resource: s.resource.pluralLabel.toLocaleLowerCase() })} actions={s.abilities.create && !readOnly && !uncertain && (
-        <Button onClick={() => navigate({ to: "/r/$slug/create", params: { slug } })}>
-          <Plus /> {t("list.new", { resource: s.resource.label.toLocaleLowerCase() })}
-        </Button>
-      )} />
+      <PageHeader title={s.resource.pluralLabel} description={t("list.description", { resource: s.resource.pluralLabel.toLocaleLowerCase() })} actions={
+        <div className="flex flex-wrap items-start gap-2">
+          {s.abilities.export && <ExportButton slug={slug} query={exportQuery} />}
+          {s.abilities.create && !readOnly && !uncertain && (
+            <Button onClick={() => navigate({ to: "/r/$slug/create", params: { slug } })}>
+              <Plus /> {t("list.new", { resource: s.resource.label.toLocaleLowerCase() })}
+            </Button>
+          )}
+        </div>
+      } />
       <VersionBanner schema={s} />
       {notice && <Alert variant={notice.variant}>{show(notice.text)}</Alert>}
       <PausedBanner scope={slug} />
@@ -409,6 +422,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
           </div>
         )}
       </Card>
+      {s.abilities.export && <ExportsPanel slug={slug} />}
 
       <SchemaFormDialog
         open={formAction !== null}

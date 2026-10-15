@@ -1,6 +1,7 @@
 {
   "abilities": {
     "create": true,
+    "export": true,
     "history": true,
     "viewAny": true
   },

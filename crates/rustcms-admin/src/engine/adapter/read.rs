@@ -177,6 +177,30 @@ impl<R: Resource> ResourceAdapter<R> {
         condition
     }
 
+    /// The rows a list query selects, in the list's order (sort or the table's
+    /// default, then the key): scope, trash state, filters and search checked.
+    pub(super) fn list_select(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<sea_orm::Select<Entity<R>>> {
+        let mut errors = ValidationErrors::new();
+        let mut select = self.base(ctx, query.trashed).filter(self.filter_condition(ctx, query, &mut errors));
+        // Without `sort`, the table's default sort applies (when this user may use it),
+        // so the order matches what the schema announces.
+        let explicit = query.sort.is_some();
+        let sort = query.sort.clone().or_else(|| self.table_ui.default_sort.clone());
+        if let Some(sort) = sort.as_deref() {
+            let (order, name) = match sort.strip_prefix('-') {
+                Some(name) => (Order::Desc, name),
+                None => (Order::Asc, sort),
+            };
+            if self.field(name).is_some_and(|f| f.sortable && f.can_read(ctx)) {
+                select = select.order_by(self.column(name).column, order);
+            } else if explicit {
+                errors.add("sort", format!("cannot sort by `{name}`"));
+            }
+        }
+        errors.into_result()?;
+        Ok(select.order_by(self.pk, Order::Asc))
+    }
+
     /// Keys of up to `batches` × `batch` rows of `select`, read in batches from
     /// one snapshot (concurrent edits cannot shift rows between batches), which
     /// is released before returning: policies and label lookups then run

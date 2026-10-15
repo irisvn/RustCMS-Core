@@ -38,7 +38,7 @@ pub fn clean_name(name: &str) -> String {
 
 /// `Content-Disposition` for a stored file: inline for images, attachment otherwise,
 /// with an ASCII fallback and the UTF-8 name (RFC 6266 / 5987).
-pub(super) fn disposition(name: &str, inline: bool) -> HeaderValue {
+pub(crate) fn disposition(name: &str, inline: bool) -> HeaderValue {
     let ascii: String = name
         .chars()
         .map(|c| if (c.is_ascii_graphic() || c == ' ') && c != '"' && c != '\\' { c } else { '_' })

@@ -101,6 +101,7 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     ("unknown_operator", "unknown operator `{op}`"),
     ("search_too_broad", "matches too many records to check; refine the search"),
     ("too_many_matches", "Too many matching records to check individually; narrow the search or filters."),
+    ("too_many_to_export", "More than {max} records to export; narrow the search or filters."),
     ("invalid_parent", "invalid parent key"),
     ("invalid_key", "invalid key"),
     ("unsupported_key", "unsupported key type"),

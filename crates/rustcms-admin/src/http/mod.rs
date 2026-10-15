@@ -97,6 +97,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
     .chain(crate::audit::routes(admin_path))
     .chain(crate::queue::routes(admin_path))
     .chain(crate::custom::routes(admin_path))
+    .chain(crate::exports::routes(admin_path))
     .collect()
 }
 
@@ -134,8 +135,8 @@ use actions::*;
 pub use extract::AdminCtx;
 pub use relations::LinkPage;
 use relations::*;
-pub(crate) use resources::idempotency_key;
 use resources::*;
+pub(crate) use resources::{idempotency_key, list_query};
 
 fn resource(ctx: &Ctx, slug: &str) -> AppResult<Arc<dyn DynResource>> {
     ctx.registry.get(slug).cloned().ok_or(AppError::NotFound)

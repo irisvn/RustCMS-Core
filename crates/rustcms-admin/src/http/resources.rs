@@ -58,7 +58,7 @@ pub(super) async fn schema(
 }
 
 /// `page`, `per_page`, `sort`, `search`, `trashed`, `filter[field][op]=value`.
-pub(super) fn list_query(pairs: Vec<(String, String)>) -> AppResult<ListQuery> {
+pub(crate) fn list_query(pairs: Vec<(String, String)>) -> AppResult<ListQuery> {
     let mut query = ListQuery { from_query_string: true, ..Default::default() };
     let number = |name: &str, value: &str| {
         value
