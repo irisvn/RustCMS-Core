@@ -112,7 +112,7 @@ fn draw(custom: &CustomPanel, ctx: &Ctx, name: &str, view: PageView, data: Value
         return Err(AppError::internal(format!("{name}: data larger than {MAX_DATA_BYTES} bytes")));
     }
     Ok(match view {
-        PageView::Template(_) => {
+        PageView::Template(_) | PageView::File(_) => {
             let html = custom.templates.render(name, ctx, &custom.base, &data)?;
             CustomContent::Html { html: custom.sanitizer.clean(&html) }
         }

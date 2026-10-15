@@ -2,6 +2,7 @@
 //! always on, no way to mark a value safe, no includes, bounded work. The
 //! output is then cleaned by [`super::html::Sanitizer`].
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use minijinja::{AutoEscape, Environment, UndefinedBehavior, Value};
@@ -19,20 +20,42 @@ pub(crate) const MAX_HTML_BYTES: usize = 512 * 1024;
 /// Every template of the panel, compiled at boot.
 pub(crate) struct Templates {
     env: Environment<'static>,
+    /// Template files read again at each render (local development).
+    files: HashMap<String, &'static str>,
+    reload: bool,
+}
+
+/// An environment with the panel's rules: escaping always on, nothing marks
+/// a value safe, bounded work.
+fn environment() -> Environment<'static> {
+    let mut env = Environment::new();
+    env.set_auto_escape_callback(|_| AutoEscape::Html);
+    env.set_undefined_behavior(UndefinedBehavior::Strict);
+    env.set_fuel(Some(FUEL));
+    env.set_recursion_limit(RECURSION);
+    // Nothing may bypass escaping.
+    for filter in ["safe", "tojson", "escape", "e"] {
+        env.remove_filter(filter);
+    }
+    env
+}
+
+/// One template per page or slot, escaping always on.
+fn check(name: &str, source: &str) -> Result<(), String> {
+    match Lexer::new(source).tags().into_iter().find(|tag| BANNED_TAGS.contains(tag)) {
+        Some(tag) => Err(format!("template `{name}`: `{{% {tag} … %}}` is not supported")),
+        None => Ok(()),
+    }
 }
 
 impl Templates {
     pub(crate) fn new() -> Self {
-        let mut env = Environment::new();
-        env.set_auto_escape_callback(|_| AutoEscape::Html);
-        env.set_undefined_behavior(UndefinedBehavior::Strict);
-        env.set_fuel(Some(FUEL));
-        env.set_recursion_limit(RECURSION);
-        // Nothing may bypass escaping.
-        for filter in ["safe", "tojson", "escape", "e"] {
-            env.remove_filter(filter);
-        }
-        Self { env }
+        Self { env: environment(), files: HashMap::new(), reload: false }
+    }
+
+    /// Whether files registered with [`Self::watch`] are read again at each render.
+    pub(crate) fn reload_files(&mut self, reload: bool) {
+        self.reload = reload;
     }
 
     /// Compiles `source` under `name`.
@@ -41,13 +64,18 @@ impl Templates {
     /// On a syntax error, or a template that includes, imports or extends
     /// another (one template per page or slot), or turns escaping off.
     pub(crate) fn add(&mut self, name: &str, source: &'static str) {
-        // One template per page or slot, escaping always on.
-        for tag in Lexer::new(source).tags() {
-            assert!(!BANNED_TAGS.contains(&tag), "template `{name}`: `{{% {tag} … %}}` is not supported");
+        if let Err(err) = check(name, source) {
+            panic!("{err}");
         }
         if let Err(err) = self.env.add_template_owned(name.to_owned(), source) {
             panic!("template `{name}`: {err:#}");
         }
+    }
+
+    /// `name` was embedded from the file at `path`: in local development it
+    /// is read from there at each render (checked as at boot).
+    pub(crate) fn watch(&mut self, name: &str, path: &'static str) {
+        self.files.insert(name.to_owned(), path);
     }
 
     /// The literal strings passed to `t("…")` in every template (for `lang:missing`).
@@ -57,7 +85,34 @@ impl Templates {
 
     /// Renders `name` for `ctx` with `data`.
     pub(crate) fn render(&self, name: &str, ctx: &Ctx, base: &str, data: &serde_json::Value) -> AppResult<String> {
-        let template = self.env.get_template(name).map_err(AppError::internal)?;
+        // Local development: the file as it is now, checked as at boot.
+        if self.reload
+            && let Some(path) = self.files.get(name)
+        {
+            match std::fs::read_to_string(path) {
+                Ok(source) => {
+                    check(name, &source).map_err(AppError::internal)?;
+                    let mut env = environment();
+                    env.add_template_owned(name.to_owned(), source)
+                        .map_err(|err| AppError::internal(format!("template `{name}`: {err:#}")))?;
+                    return Self::render_in(&env, name, ctx, base, data);
+                }
+                Err(err) => {
+                    tracing::warn!(template = name, path, error = %err, "template file unreadable; using the embedded copy")
+                }
+            }
+        }
+        Self::render_in(&self.env, name, ctx, base, data)
+    }
+
+    fn render_in(
+        env: &Environment<'_>,
+        name: &str,
+        ctx: &Ctx,
+        base: &str,
+        data: &serde_json::Value,
+    ) -> AppResult<String> {
+        let template = env.get_template(name).map_err(AppError::internal)?;
         let translator = ctx.translator.clone();
         let locale = ctx.locale.clone();
         let t = Value::from_function(move |text: String| translator.get(&locale, None, &text).to_owned());

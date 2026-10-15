@@ -300,7 +300,7 @@ mod tests {
             page.contains("const SLUG: &'static str = \"seat-overview\";")
                 && page.contains("declare_permission(\"seat_overview.view\")")
         );
-        assert!(page.contains("/resources/views/admin/seat_overview.html"));
+        assert!(page.contains("rustcms::admin::view!(\"seat_overview.html\")"));
         assert!(read(&dir, "resources/views/admin/seat_overview.html").contains("{{ t(\"Seat overview\") }}"));
         assert!(
             read(&dir, "src/providers/admin_panel_provider.rs")

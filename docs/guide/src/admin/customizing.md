@@ -71,8 +71,7 @@ impl PanelPage for CourseOverviewPage {
     }
 
     fn view() -> PageView {
-        PageView::Template(include_str!(concat!(env!("CARGO_MANIFEST_DIR"),
-            "/resources/views/admin/course_overview.html")))
+        rustcms::admin::view!("course_overview.html")    // resources/views/admin/course_overview.html
     }
 
     async fn data(ctx: &Ctx) -> AppResult<Value> {
@@ -132,6 +131,15 @@ impl PanelPage for CourseOverviewPage {
   your own with `extension_style`.
 - The page is rendered for each request, in the user's language: nothing is
   cached but the compiled template.
+- **Editing templates:** `view!("file.html")` embeds
+  `resources/views/admin/file.html` in the binary, so a release build never
+  reads the file. In a debug build with `APP_ENV=local` (`cargo run -- serve`
+  on your machine), the file is read again at each request: save it and
+  reload the page, no rebuild. A file read this way is checked as at boot; an
+  error answers 500 and is logged (fix the file and reload). If the file is
+  missing, the embedded copy is used. `lang:missing` reads the copy embedded
+  at build time. `PageView::Template("…")` takes the text directly and is
+  never read again.
 
 ### Script pages
 
@@ -177,7 +185,7 @@ impl PanelSlot for CourseSeatsSlot {
     const NAME: &'static str = "course-seats";
     fn placement() -> Placement { Placement::RecordAside("courses") }
     fn meta() -> SlotMeta { SlotMeta::new().label("Seats").permission("courses.view") }
-    fn view() -> PageView { PageView::Template(include_str!(…)) }
+    fn view() -> PageView { rustcms::admin::view!("course_seats.html") }
     async fn data(ctx: &Ctx, record: &Envelope) -> AppResult<Value> { … }
 }
 // .slot::<CourseSeatsSlot>()

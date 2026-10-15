@@ -1,0 +1,6 @@
+# Tests that time leases and heartbeats run alone: on a loaded machine (the
+# whole matrix at once), a stalled disk can delay a heartbeat past its timeout
+# and the worker rightly gives the job up.
+[[profile.default.overrides]]
+filter = 'test(heartbeats_keep_a_long_run_owned)'
+threads-required = 'num-cpus'

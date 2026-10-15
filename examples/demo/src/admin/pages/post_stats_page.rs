@@ -15,7 +15,7 @@ impl PanelPage for PostStatsPage {
     }
 
     fn view() -> PageView {
-        PageView::Template(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/views/admin/post_stats.html")))
+        rustcms::admin::view!("post_stats.html")
     }
 
     /// Posts as the user may list them (editors: their own).

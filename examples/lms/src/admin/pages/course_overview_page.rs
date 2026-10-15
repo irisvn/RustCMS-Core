@@ -19,10 +19,7 @@ impl PanelPage for CourseOverviewPage {
     }
 
     fn view() -> PageView {
-        PageView::Template(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/resources/views/admin/course_overview.html"
-        )))
+        rustcms::admin::view!("course_overview.html")
     }
 
     /// The courses as the user may list them (instructors: theirs), with the

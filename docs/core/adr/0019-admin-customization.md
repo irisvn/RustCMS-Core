@@ -46,6 +46,12 @@ deny-by-default authorization and field read rules everywhere.
   before `data`.
 - **Cells**: `ColumnSchema.cell` / `props`; vocabulary 6.
 - Files in `resources/` (`views/admin`, `admin/{js,css}`), `make:page`.
+- **Template files** (`view!`): embedded at build time; a debug build with
+  `APP_ENV=local` reads the file again at each render, through the same
+  checks, environment and sanitizer (an error is a 500, not a panic). The
+  condition is both the build profile (decided in the application crate by
+  the macro) and the environment, so a release binary never reads source
+  files, whatever its configuration.
 
 ## Consequences
 

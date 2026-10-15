@@ -19,10 +19,7 @@ impl PanelSlot for PostSummarySlot {
     }
 
     fn view() -> PageView {
-        PageView::Template(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/resources/views/admin/post_summary.html"
-        )))
+        rustcms::admin::view!("post_summary.html")
     }
 
     async fn data(_: &Ctx, record: &Envelope) -> AppResult<Value> {

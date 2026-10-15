@@ -7,7 +7,7 @@ mod support;
 use axum::http::StatusCode;
 use rustcms_admin::{
     AdminProvider, ColorScheme, Ctx, Field, KeyStrategy, PageView, PanelPage, PanelPageMeta, PanelSlot, Placement,
-    Resource, ResourceMeta, SlotMeta, Theme,
+    Resource, ResourceMeta, SlotMeta, TemplateFile, Theme,
 };
 use rustcms_auth::{ADMIN_GUARD, Actor, AuthProvider, AuthState, RbacService};
 use rustcms_core::AppResult;
@@ -378,6 +378,88 @@ db_test!(the_theme_is_served_as_checked_assets, |db: TestDb| async move {
     assert_eq!(image.headers["content-type"], "image/png");
     assert_eq!(image.headers["x-content-type-options"], "nosniff");
     assert_eq!(image.body.as_ref(), PNG);
+});
+
+/// Drawn from a template file: embedded, and read again in local development.
+struct DevPage;
+
+fn dev_template() -> &'static str {
+    static PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    PATH.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!("rustcms-views-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("dev.html").to_string_lossy().into_owned()
+    })
+}
+
+#[async_trait::async_trait]
+impl PanelPage for DevPage {
+    const SLUG: &'static str = "dev";
+
+    fn meta() -> PanelPageMeta {
+        PanelPageMeta::new("Dev").permission("categories.view_any")
+    }
+
+    fn view() -> PageView {
+        PageView::File(TemplateFile::__new("<p>embedded</p>", dev_template(), true))
+    }
+
+    async fn data(_: &Ctx) -> AppResult<Value> {
+        Ok(json!({"n": 3}))
+    }
+}
+
+/// Tests (and backends) using the template file take turns.
+static DEV_FILE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+fn build_dev(mut config: rustcms_core::Config, env: rustcms_core::Environment) -> rustcms_core::AppBuilder {
+    config.app.env = env;
+    let mut app = rustcms_core::AppBuilder::new(config);
+    app.provider(AuthProvider::new());
+    app.provider(AdminProvider::new().page::<DevPage>());
+    app
+}
+
+db_test!(template_files_are_read_again_in_local_development, |db: TestDb| async move {
+    let _file = DEV_FILE.lock().await;
+    db.migrate::<rustcms_migration::Migrator>().await;
+    let app = TestApp::new(|c| build_dev(c, rustcms_core::Environment::Local), db).await;
+    let db = app.state().db();
+    let admin = UserFactory::new().create(db).await;
+    let super_admin = rustcms_auth::entities::role::super_admin_id(db, ADMIN_GUARD).await.unwrap().unwrap();
+    let auth = app.state().service::<AuthState>().unwrap();
+    RbacService::new(db, &auth.resolver).assign_role(Actor::System, admin.id, super_admin).await.unwrap();
+    let client = app.acting_as(&admin).await;
+    let html = |page: rustcms_testing::TestResponse| page.json()["content"]["html"].clone();
+    let path = dev_template();
+    std::fs::write(path, "<p>first</p>").unwrap();
+    assert_eq!(html(client.get(&app.admin_api("pages/dev")).await), json!("<p>first</p>"));
+    // Edited: shown on the next request, rules as at boot.
+    std::fs::write(path, "<p>second {{ data.n }}<script>x</script></p>").unwrap();
+    assert_eq!(html(client.get(&app.admin_api("pages/dev")).await), json!("<p>second 3</p>"));
+    std::fs::write(path, "{%autoescape false%}{{ data.n }}{% endautoescape %}").unwrap();
+    client.get(&app.admin_api("pages/dev")).await.assert_status(StatusCode::INTERNAL_SERVER_ERROR);
+    std::fs::write(path, "{{ unclosed").unwrap();
+    client.get(&app.admin_api("pages/dev")).await.assert_status(StatusCode::INTERNAL_SERVER_ERROR);
+    // Gone: the embedded copy.
+    std::fs::remove_file(path).unwrap();
+    assert_eq!(html(client.get(&app.admin_api("pages/dev")).await), json!("<p>embedded</p>"));
+});
+
+db_test!(template_files_stay_embedded_outside_local_development, |db: TestDb| async move {
+    let _file = DEV_FILE.lock().await;
+    db.migrate::<rustcms_migration::Migrator>().await;
+    let app = TestApp::new(|c| build_dev(c, rustcms_core::Environment::Testing), db).await;
+    let db = app.state().db();
+    let admin = UserFactory::new().create(db).await;
+    let super_admin = rustcms_auth::entities::role::super_admin_id(db, ADMIN_GUARD).await.unwrap().unwrap();
+    let auth = app.state().service::<AuthState>().unwrap();
+    RbacService::new(db, &auth.resolver).assign_role(Actor::System, admin.id, super_admin).await.unwrap();
+    let client = app.acting_as(&admin).await;
+    std::fs::write(dev_template(), "<p>edited</p>").unwrap();
+    let page = client.get(&app.admin_api("pages/dev")).await;
+    assert_eq!(page.json()["content"]["html"], json!("<p>embedded</p>"));
+    std::fs::remove_file(dev_template()).unwrap();
 });
 
 fn all_resources() -> AdminProvider {

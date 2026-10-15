@@ -22,10 +22,7 @@ impl PanelSlot for CourseSeatsSlot {
     }
 
     fn view() -> PageView {
-        PageView::Template(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/resources/views/admin/course_seats.html"
-        )))
+        rustcms::admin::view!("course_seats.html")
     }
 
     /// The course is one the user may view (the panel checked): its counts are theirs to see.

@@ -19,9 +19,9 @@ impl PanelPage for {{ name }} {
     fn view() -> PageView {
         PageView::Script("{{ script }}")
     }
-{% else %}    /// resources/views/admin/{{ module }}.html
+{% else %}    /// resources/views/admin/{{ module }}.html (read again at each request in local development).
     fn view() -> PageView {
-        PageView::Template(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/views/admin/{{ module }}.html")))
+        rustcms::admin::view!("{{ module }}.html")
     }
 {% endif %}
     /// What the {% if script %}script gets as `ctx.data`{% else %}template gets as `data`{% endif %}. Read records with

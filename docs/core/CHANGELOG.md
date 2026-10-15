@@ -32,6 +32,13 @@ All notable changes are documented here. The format follows
 - Examples: LMS theme, course overview page, seats slot, progress cell; demo
   post stats page and visibility slot.
 
+### Added (0.3 — M15e, template files)
+- `rustcms_admin::view!("file.html")` → `PageView::File(TemplateFile)`: the
+  template `resources/views/admin/file.html` embedded at build time and, in a
+  debug build with `APP_ENV=local`, read again at each render (checked as at
+  boot; an error answers 500; a missing file falls back to the embedded
+  copy). Release builds never read it. Stubs and examples use it.
+
 ### Fixed (0.3 — M15e, Codex verify)
 - Template statements are found by a lexer: `{%autoescape%}` and other
   spacings no longer pass the boot check (also `include`, `import`, `from`,

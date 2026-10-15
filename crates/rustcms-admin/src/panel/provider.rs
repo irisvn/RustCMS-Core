@@ -202,6 +202,7 @@ impl ServiceProvider for AdminProvider {
             self.pages.clone(),
             self.slots.clone(),
             &registry,
+            app.config().app.env == rustcms_core::Environment::Local,
         ));
         for permission in custom.declared_permissions() {
             auth.permissions.declare(ADMIN_GUARD, &permission, Some("pages"));

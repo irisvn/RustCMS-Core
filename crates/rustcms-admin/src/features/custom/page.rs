@@ -14,12 +14,49 @@ use crate::resource::Envelope;
 /// How a page or slot is drawn.
 #[derive(Debug, Clone, Copy)]
 pub enum PageView {
-    /// A server template (minijinja, HTML escaping always on), usually
-    /// `include_str!` of a file in `resources/views/admin/`.
+    /// A server template (minijinja, HTML escaping always on) given as text.
     Template(&'static str),
+    /// A template file of `resources/views/admin/`, from [`view!`](crate::view):
+    /// embedded in the binary, and read again from disk at each render in
+    /// local development (debug build with `APP_ENV=local`).
+    File(TemplateFile),
     /// An extension script that registered `vendor/name` with
     /// `window.rustcms.registerPage` (or `registerSlot`).
     Script(&'static str),
+}
+
+/// A template file embedded by [`view!`](crate::view).
+#[derive(Debug, Clone, Copy)]
+pub struct TemplateFile {
+    pub(crate) source: &'static str,
+    pub(crate) path: &'static str,
+    pub(crate) debug: bool,
+}
+
+impl TemplateFile {
+    /// Used by [`view!`](crate::view): the embedded `source`, its `path` on
+    /// the build machine, and whether the application is a debug build.
+    #[doc(hidden)]
+    pub const fn __new(source: &'static str, path: &'static str, debug: bool) -> Self {
+        Self { source, path, debug }
+    }
+}
+
+/// The template `resources/views/admin/{file}` of the calling crate, as a
+/// [`PageView`]: `view!("course_overview.html")`.
+///
+/// The file is embedded at build time (release binaries never read it). In
+/// a debug build running with `APP_ENV=local`, it is read again at each
+/// render, so edits show on reload without rebuilding.
+#[macro_export]
+macro_rules! view {
+    ($file:literal) => {
+        $crate::PageView::File($crate::TemplateFile::__new(
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/views/admin/", $file)),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/resources/views/admin/", $file),
+            cfg!(debug_assertions),
+        ))
+    };
 }
 
 /// What the navigation shows and who may open a page.
