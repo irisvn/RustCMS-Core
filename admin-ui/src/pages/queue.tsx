@@ -1,17 +1,18 @@
 // System → Queue (`queue.view`): jobs by status; retry, forget and cancel
 // with `queue.manage` (the server checks both on every action).
 import { type FormEvent, useState } from "react";
-import { type JobAction, type QueueFilters, useJobAction, useQueueJobs, useQueueOverview } from "@/api/queue";
+import { useUncertain } from "@/api/context";
+import { type JobAction, QUEUE, type QueueFilters, useJobAction, useQueueJobs, useQueueOverview } from "@/api/queue";
 import type { QueueJob } from "@/api/types";
 import { Page, PageHeader } from "@/components/layout";
-import { ErrorState, Loading } from "@/components/states";
+import { ErrorState, Loading, PausedBanner } from "@/components/states";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
-import { formatDateTime, useT } from "@/i18n";
+import { type Text, formatDateTime, t as translate, useT } from "@/i18n";
 import { failure, useMounted } from "@/pages/system/shared";
 
 const STATUSES = ["pending", "scheduled", "running", "stalled", "failed"] as const;
@@ -43,7 +44,10 @@ export function QueuePage() {
   const action = useJobAction();
   const mounted = useMounted();
   const [pending, setPending] = useState<{ job: QueueJob; action: JobAction } | null>(null);
-  const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: string } | null>(null);
+  // Texts are read when shown: a language change applies to notices on screen.
+  const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: Text } | null>(null);
+  // A write with an unknown outcome pauses the scope until it is resolved (banner below).
+  const uncertain = useUncertain(QUEUE);
   const apply = (e: FormEvent) => {
     e.preventDefault();
     setFilters({ status: draft.status || undefined, queue: draft.queue || undefined, kind: draft.kind || undefined });
@@ -52,9 +56,10 @@ export function QueuePage() {
     setNotice(null);
     try {
       await action.mutateAsync({ id: job.id, action: act });
-      if (mounted.current) setNotice({ variant: "default", text: t(`queue.done.${act}`) });
+      if (mounted.current) setNotice({ variant: "default", text: () => translate(`queue.done.${act}`) });
     } catch (e) {
-      if (mounted.current) setNotice({ variant: "destructive", text: failure(e).form ?? t("state.errorText") });
+      const f = failure(e);
+      if (mounted.current) setNotice({ variant: "destructive", text: () => f.form ?? translate("state.errorText") });
     }
   };
   if (overview.isLoading) return <Loading />;
@@ -107,7 +112,8 @@ export function QueuePage() {
           </form>
         </CardContent>
       </Card>
-      {notice && <Alert variant={notice.variant} role="status">{notice.text}</Alert>}
+      <PausedBanner scope={QUEUE} />
+      {notice && <Alert variant={notice.variant} role="status">{typeof notice.text === "function" ? notice.text() : notice.text}</Alert>}
       {jobs.isLoading ? <Loading /> : jobs.error && !jobs.data ? <ErrorState error={jobs.error} /> : (
         <Card className="min-w-0 overflow-x-auto">
           <table className="w-full text-sm" aria-label={t("queue.jobs")}>
@@ -147,7 +153,7 @@ export function QueuePage() {
                       <div className="flex flex-wrap justify-end gap-2">
                         {actionsOf(job.status).map((act) => (
                           <Button key={act} size="sm" variant={act === "retry" ? "outline" : "destructive"}
-                            disabled={action.isPending} onClick={() => setPending({ job, action: act })}>
+                            disabled={action.isPending || uncertain} onClick={() => setPending({ job, action: act })}>
                             {t(`queue.action.${act}`)}
                           </Button>
                         ))}

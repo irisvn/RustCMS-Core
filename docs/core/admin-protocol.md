@@ -38,7 +38,7 @@ saves the choice (422 for a language not offered). The shell's
 | GET | `/resources/{slug}/records/{key}/history?cursor=&per_page=` | `AuditPage` of the record (`audit.view` + record `view`) |
 | GET | `/queue` | `QueueOverview` (`queue.view`) |
 | GET | `/queue/jobs?status=&queue=&kind=&cursor=&per_page=` | `QueueJobPage`, keyset `(created_at, id)` desc, exact-instant cursor (`queue.view`) |
-| POST | `/queue/jobs/{id}/{retry,forget,cancel}` | 204; 409 `write_conflict` reasons `not_failed`, `not_waiting`, `running`; 404 missing or malformed id; 403 without `queue.view` + `queue.manage` (checked before the id, again under the RBAC lock) |
+| POST | `/queue/jobs/{id}/{retry,forget,cancel}` | 204; 409 `write_conflict`: `not_failed` (retry/forget of any non-failed job), `running` / `not_waiting` (cancel); 404 missing or malformed id; 403 without `queue.view` + `queue.manage` (checked before the id is parsed, at admission and again under the RBAC lock) |
 
 Options are available to users who may use the field. When a record-level
 policy hides more than 1,000 candidates before 50 visible ones are found, the

@@ -162,7 +162,7 @@ export const vi: Record<keyof typeof en, string> = {
   "queue.confirm.retry": "Chạy lại tác vụ này?",
   "queue.confirm.forget": "Xoá tác vụ thất bại này?",
   "queue.confirm.cancel": "Huỷ tác vụ này?",
-  "queue.explain.retry": "Số lần thử được đặt lại; tác vụ giữ nguyên id nên phần việc đã làm một lần sẽ không lặp lại.",
+  "queue.explain.retry": "Số lần thử được đặt lại và tác vụ chạy lại: những tác dụng không được bảo vệ bằng receipt (queue::once) hay idempotency key dựng từ id của nó có thể lặp lại.",
   "queue.explain.forget": "Tác vụ và lỗi của nó bị xoá vĩnh viễn.",
   "queue.explain.cancel": "Tác vụ sẽ không chạy; những gì các lần trước đã làm vẫn giữ nguyên.",
   "queue.done.retry": "Tác vụ sẽ được chạy lại.",

@@ -379,15 +379,19 @@ async fn act(
     event: &'static str,
     action: impl AsyncFnOnce(&sea_orm::DatabaseTransaction, uuid::Uuid, &Clock) -> AppResult<Result<(), Refusal>>,
 ) -> AppResult<axum::http::StatusCode> {
-    // Admission before the id is even parsed: no probing without access.
+    // Admission before the id is even parsed, and again with the grants as
+    // they are now (under the RBAC lock): no probing without access.
     if !(ctx.can(VIEW) && ctx.can(MANAGE)) {
         return Err(AppError::Forbidden);
     }
-    let id = uuid::Uuid::parse_str(raw_id).map_err(|_| AppError::NotFound)?;
     let (txn, current) = rustcms_auth::rbac::begin_as(state.db(), &ctx.principal).await?;
     if !(current.can(VIEW) && current.can(MANAGE)) {
         return Err(AppError::Forbidden);
     }
+    let Ok(id) = uuid::Uuid::parse_str(raw_id) else {
+        txn.rollback().await?;
+        return Err(AppError::NotFound);
+    };
     let clock = clock(state)?;
     // Read before the write, for the audit entry (the write's own condition decides).
     let before = job::Entity::find_by_id(id).one(&txn).await?;

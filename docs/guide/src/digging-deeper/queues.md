@@ -177,7 +177,9 @@ Statuses are the workers' own (application time, and the lease counts until
 
 - **Retry** runs a failed job again: attempts start over, it is available now.
   It keeps its id, so `once` receipts and idempotency keys built from
-  `ctx.id` still recognise work an earlier attempt finished.
+  `ctx.id` still recognise work an earlier attempt finished; effects guarded
+  by neither run again (and receipts older than
+  `queue.failed_retention_days` are gone).
 - **Forget** deletes a failed job and its error.
 - **Cancel** deletes a job waiting to run, in one statement with the
   workers' claim condition: if a worker took it first, the cancel answers
@@ -185,12 +187,16 @@ Statuses are the workers' own (application time, and the lease counts until
 - Each action re-reads the user's permissions under the RBAC lock, needs both
   permissions, and is recorded in the audit log (`queue.retried`,
   `queue.forgotten`, `queue.cancelled`, subject `job`, with its kind and
-  queue). A job in the wrong state answers 409 (`not_failed`,
-  `not_waiting`); one that is gone, 404.
+  queue). A job in the wrong state answers 409: `not_failed` for retry and
+  forget of any job that has not failed (running ones too), `running` or
+  `not_waiting` for cancel; a job that is gone, or a malformed id, 404 (after
+  the permission checks). While an action's outcome is unknown (the
+  connection dropped), the page pauses further actions until it is resolved.
 - The page shows kind, queue, status, attempts, times, the dispatching user
   (named for those who may list users) and the safe error message. It never
   shows payloads or worker tokens.
-- Counts are per queue, read in SQL; the list pages through jobs newest first.
+- Counts are per queue, in one SQL query (a job changing status meanwhile is
+  counted once); the list pages through jobs newest first.
 
 The same statuses and actions are available in Rust, for your own tools:
 `rustcms::queue::manage::{counts, retry, forget, cancel}` with a

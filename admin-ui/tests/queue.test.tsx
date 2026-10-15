@@ -34,6 +34,7 @@ const overview = (canManage: boolean): QueueOverview => ({
 let queries: URLSearchParams[] = [];
 let posted: string[] = [];
 let manage = true;
+let retried = false;
 const server = setupServer(
   http.get("*/admin/api/auth/me", () => HttpResponse.json({ user: { id: "1" }, guard: "admin", permissions: [], superAdmin: true })),
   http.get("*/admin/api/auth/csrf", () => HttpResponse.json({ csrfToken: "t", userId: "1" })),
@@ -49,7 +50,10 @@ const server = setupServer(
   http.get("*/admin/api/queue", () => HttpResponse.json(overview(manage))),
   http.get("*/admin/api/queue/jobs", ({ request }) => {
     queries.push(new URL(request.url).searchParams);
-    return HttpResponse.json({ data: [job("f1"), job("p1", { status: "pending", attempts: 0, failedAt: undefined, lastError: undefined })], meta: {} });
+    const failed = retried
+      ? job("f1", { status: "pending", attempts: 0, failedAt: undefined, lastError: undefined })
+      : job("f1");
+    return HttpResponse.json({ data: [failed, job("p1", { status: "pending", attempts: 0, failedAt: undefined, lastError: undefined })], meta: {} });
   }),
   http.post("*/admin/api/queue/jobs/:id/:action", ({ params }) => {
     posted.push(`${params.id as string}/${params.action as string}`);
@@ -59,6 +63,7 @@ const server = setupServer(
         { status: 409 },
       );
     }
+    if (params.action === "retry") retried = true;
     return new HttpResponse(null, { status: 204 });
   }),
 );
@@ -69,6 +74,7 @@ afterEach(() => {
   queries = [];
   posted = [];
   manage = true;
+  retried = false;
 });
 
 function mount(path: string) {
@@ -101,6 +107,9 @@ it("shows counts and jobs, and acts after a confirmation", async () => {
   await userEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
   expect(await screen.findByText("The job will run again.")).toBeInTheDocument();
   expect(posted).toEqual(["f1/retry"]);
+  // The list is read again: the job waits to run and offers a cancel now.
+  expect(await within(table).findAllByRole("button", { name: "Cancel job" })).toHaveLength(2);
+  expect(within(table).queryByRole("button", { name: "Retry" })).toBeNull();
 
   // A refusal is explained in the user's language.
   await userEvent.click(within(rows[2]!).getByRole("button", { name: "Cancel job" }));

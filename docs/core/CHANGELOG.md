@@ -25,6 +25,14 @@ All notable changes are documented here. The format follows
 - `SystemLinks.queue`; resource slugs `job` and `queue` reserved; icon
   `layers`.
 
+### Fixed (0.3 — M15d, Codex verify)
+- Queue counts come from one query (no job counted twice while it changes
+  status); retry and forget of a running job answer `not_failed`; the id is
+  parsed only after the permissions are re-read under the RBAC lock.
+- Queue page: a write with an unknown outcome pauses the actions (paused
+  banner); notices follow a language change; the retry confirmation says
+  which effects may repeat.
+
 ### Changed (0.3 — M15d)
 - `queue:retry` also clears a stale reservation of the jobs it retries.
 

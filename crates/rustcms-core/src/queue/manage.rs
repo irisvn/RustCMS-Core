@@ -4,7 +4,7 @@
 
 use chrono::{DateTime, Utc};
 use sea_orm::sea_query::{Condition, Expr, ExprTrait};
-use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde::Serialize;
 
 use crate::AppResult;
@@ -129,24 +129,29 @@ impl QueueCounts {
     }
 }
 
-/// Counts per queue (queues with jobs only), by name.
+/// Counts per queue (queues with jobs only), by name: one query, so a job
+/// changing status meanwhile is counted once.
 pub async fn counts(db: &impl ConnectionTrait, clock: &Clock) -> AppResult<Vec<(String, QueueCounts)>> {
-    let mut out: std::collections::BTreeMap<String, QueueCounts> = Default::default();
+    use sea_orm::sea_query::CaseStatement;
+    let mut select = job::Entity::find().select_only().column(job::Column::Queue);
     for status in JobStatus::ALL {
-        let rows: Vec<(String, i64)> = job::Entity::find()
-            .select_only()
-            .column(job::Column::Queue)
-            .column_as(Expr::col(job::Column::Id).count(), "n")
-            .filter(status.condition(clock))
-            .group_by(job::Column::Queue)
-            .into_tuple()
-            .all(db)
-            .await?;
-        for (queue, n) in rows {
-            out.entry(queue).or_default().add(status, u64::try_from(n).unwrap_or(0));
-        }
+        // COUNT ignores the NULL of rows in other statuses.
+        let only = CaseStatement::new().case(status.condition(clock), Expr::val(1));
+        select = select.column_as(Expr::expr(only).count(), status.as_str());
     }
-    Ok(out.into_iter().collect())
+    let rows: Vec<(String, i64, i64, i64, i64, i64)> =
+        select.group_by(job::Column::Queue).order_by_asc(job::Column::Queue).into_tuple().all(db).await?;
+    Ok(rows
+        .into_iter()
+        .map(|(queue, pending, scheduled, running, stalled, failed)| {
+            let n = |v: i64| u64::try_from(v).unwrap_or(0);
+            let mut counts = QueueCounts::default();
+            for (status, value) in JobStatus::ALL.into_iter().zip([pending, scheduled, running, stalled, failed]) {
+                counts.add(status, n(value));
+            }
+            (queue, counts)
+        })
+        .collect())
 }
 
 /// Why an action does not apply to a job.
@@ -168,8 +173,9 @@ async fn refusal(db: &impl ConnectionTrait, id: uuid::Uuid, clock: &Clock, faile
         return Ok(Refusal::Missing);
     };
     Ok(match JobStatus::of(&row, clock) {
-        JobStatus::Running => Refusal::Running,
+        // Retry and forget: anything not failed, running included.
         _ if failed_wanted => Refusal::NotFailed,
+        JobStatus::Running => Refusal::Running,
         _ => Refusal::NotWaiting,
     })
 }

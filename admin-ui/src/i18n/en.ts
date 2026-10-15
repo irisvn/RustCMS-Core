@@ -163,7 +163,7 @@ export const en = {
   "queue.confirm.retry": "Run this job again?",
   "queue.confirm.forget": "Delete this failed job?",
   "queue.confirm.cancel": "Cancel this job?",
-  "queue.explain.retry": "Attempts start over; the job keeps its id, so work it already did once is not repeated.",
+  "queue.explain.retry": "Attempts start over and the job runs again: effects not guarded by its receipts (queue::once) or by idempotency keys built from its id may happen again.",
   "queue.explain.forget": "The job and its error are deleted for good.",
   "queue.explain.cancel": "It will not run; what earlier attempts did stays.",
   "queue.done.retry": "The job will run again.",

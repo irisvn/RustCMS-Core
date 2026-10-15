@@ -10,7 +10,7 @@ use rustcms_auth::{ADMIN_GUARD, Actor, AuthState, RbacService};
 use rustcms_core::models::{audit_log, job, job_receipt, user};
 use rustcms_core::queue::{Job, JobCtx};
 use rustcms_testing::{Factory, TestApp, TestDb, TestResponse, UserFactory, db_test};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -24,7 +24,11 @@ struct Ping {
 impl Job for Ping {
     const KIND: &'static str = "test.ping";
 
-    async fn handle(self, _: JobCtx) -> anyhow::Result<()> {
+    /// Leaves a receipt `ran:<id>`: proof it ran.
+    async fn handle(self, ctx: JobCtx) -> anyhow::Result<()> {
+        let txn = rustcms_core::db::begin_write(ctx.state.db()).await?;
+        rustcms_core::queue::once(&txn, &format!("ran:{}", ctx.id)).await?;
+        txn.commit().await?;
         Ok(())
     }
 }
@@ -250,7 +254,8 @@ db_test!(actions_follow_the_workers_conditions, |db: TestDb| async move {
     assert_eq!(reason(&operator.post_json(&act(&app, failed, "retry"), &json!({})).await), json!("not_failed"));
     assert_eq!(rustcms_core::queue::run_until_idle(app.state(), None, 10).await.unwrap(), 1);
     assert!(job::Entity::find_by_id(failed).one(db).await.unwrap().is_none(), "ran and done");
-    assert_eq!(job_receipt::Entity::find().count(db).await.unwrap(), 1, "receipts stay");
+    let receipt = job_receipt::Entity::find_by_id(format!("{failed}:effect")).one(db).await.unwrap();
+    assert!(receipt.is_some(), "receipts stay");
 
     // Forget: failed jobs only.
     let gone = Row { failed_at: Some(now), ..Row::new() }.insert(&app).await;
@@ -267,6 +272,10 @@ db_test!(actions_follow_the_workers_conditions, |db: TestDb| async move {
     let failed_again = Row { failed_at: Some(now), ..Row::new() }.insert(&app).await;
     for id in [running, skewed] {
         assert_eq!(reason(&operator.post_json(&act(&app, id, "cancel"), &json!({})).await), json!("running"));
+        // Retry and forget take failed jobs only, running ones included.
+        for action in ["retry", "forget"] {
+            assert_eq!(reason(&operator.post_json(&act(&app, id, action), &json!({})).await), json!("not_failed"));
+        }
     }
     assert_eq!(reason(&operator.post_json(&act(&app, failed_again, "cancel"), &json!({})).await), json!("not_waiting"));
     for id in [waiting, stalled, scheduled] {
@@ -301,6 +310,31 @@ db_test!(actions_follow_the_workers_conditions, |db: TestDb| async move {
         .collect();
     let count = |event: &str| events.iter().filter(|e| *e == event).count();
     assert_eq!((count("queue.retried"), count("queue.forgotten"), count("queue.cancelled")), (1, 1, 3));
+});
+
+db_test!(a_cancel_racing_a_worker_never_both_runs_and_cancels, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    let operator = app.acting_as(&users.operator).await;
+    operator.fetch_csrf().await;
+    let db = app.state().db();
+    for round in 0..12 {
+        let id = Row::new().insert(&app).await;
+        let url = act(&app, id, "cancel");
+        let empty = json!({});
+        let (ran, cancelled) =
+            tokio::join!(rustcms_core::queue::run_until_idle(app.state(), None, 1), operator.post_json(&url, &empty));
+        ran.unwrap();
+        let receipt = job_receipt::Entity::find_by_id(format!("ran:{id}")).one(db).await.unwrap();
+        match cancelled.status {
+            // Cancelled first: it never ran.
+            StatusCode::NO_CONTENT => assert!(receipt.is_none(), "round {round}: cancelled and ran"),
+            // Claimed first: it ran (still running, or done and gone).
+            StatusCode::CONFLICT | StatusCode::NOT_FOUND => {
+                assert!(receipt.is_some(), "round {round}: refused but never ran: {}", cancelled.text())
+            }
+            other => panic!("round {round}: {other} {}", cancelled.text()),
+        }
+    }
 });
 
 db_test!(jobs_page_through_ties, |db: TestDb| async move {
