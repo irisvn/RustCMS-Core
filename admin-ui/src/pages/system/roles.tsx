@@ -143,7 +143,12 @@ function PermissionMatrix({
       onChange={(e) => set([p], e.target.checked)}
     />
   );
-  const all = (list: PermissionInfo[]) => list.length > 0 && list.every((p) => selected.has(p.name));
+  // A whole row or column reads (and switches) what the user may grant; the
+  // others keep their own state.
+  const all = (list: PermissionInfo[]) => {
+    const own = list.filter((p) => p.grantable);
+    return own.length > 0 && own.every((p) => selected.has(p.name));
+  };
   const grantable = (list: PermissionInfo[]) => list.some((p) => p.grantable);
   return (
     <div className="flex min-w-0 flex-col gap-6">

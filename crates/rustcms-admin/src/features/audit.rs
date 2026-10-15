@@ -397,7 +397,7 @@ async fn history(
 
 /// A link entry's meta for a reader: the relation and how many targets;
 /// the targets themselves and the pivot columns only as `links` allows (by
-/// relation: may list the target, readable pivot columns). A relation since
+/// relation: may list the target; then the pivot columns readable now). A relation since
 /// removed shows its name and count only.
 fn link_meta(mut meta: Map<String, Value>, links: &HashMap<String, (bool, Vec<String>)>) -> Option<Map<String, Value>> {
     let relation = meta.get("relation").and_then(Value::as_str)?.to_owned();
@@ -409,7 +409,8 @@ fn link_meta(mut meta: Map<String, Value>, links: &HashMap<String, (bool, Vec<St
     if show_targets {
         out.insert("targets".into(), Value::Array(targets));
     }
-    if let Some(Value::Object(pivot)) = meta.remove("pivot") {
+    // Pivot values describe the links: only for readers who may see the targets.
+    if let Some(Value::Object(pivot)) = meta.remove("pivot").filter(|_| show_targets) {
         let kept: Map<String, Value> = pivot.into_iter().filter(|(k, _)| pivot_fields.contains(k)).collect();
         if !kept.is_empty() {
             out.insert("pivot".into(), Value::Object(kept));

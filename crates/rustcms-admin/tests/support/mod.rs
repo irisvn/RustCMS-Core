@@ -120,6 +120,25 @@ pub mod post_tag {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+/// A pivot of tags ↔ posts the other way round (boot checks only; no table).
+pub mod tag_post {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "tag_posts")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub tag_slug: String,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub post_id: Uuid,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 pub mod note {
     use sea_orm::entity::prelude::*;
 

@@ -3,7 +3,7 @@
 // belongs-to-many: attach, detach and the pivot columns of each link.
 import { Link } from "@tanstack/react-router";
 import { Link2, Pencil, Plus, Unlink } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLinkOptions, useLinkWrite, useRelationRecords, useSchema } from "@/api/queries";
 import type { ComponentSchema, LinkOutcome, RelationSchema } from "@/api/types";
 import { SchemaFormDialog } from "@/components/schema-form-dialog";
@@ -150,6 +150,14 @@ function ManySection({ parent, record, relation }: SectionProps) {
   const columns = schema.data?.table.columns ?? [];
   const pivot = relation.pivot ?? [];
   const rows = records.data?.data ?? [];
+  // Rows of an earlier query still shown while the next one loads: no writes on them.
+  const settled = !records.isPlaceholderData && !records.isFetching;
+  // A selection belongs to the rows shown: another search, page or refresh starts over.
+  const shownKeys = rows.map((r) => r.key).join(",");
+  useEffect(() => {
+    setSelected(new Set());
+    setDetaching(false);
+  }, [shownKeys, page, search]);
   const meta = records.data?.meta;
   const titleId = `relation-${relation.name}`;
 
@@ -166,8 +174,11 @@ function ManySection({ parent, record, relation }: SectionProps) {
   };
   const detach = async () => {
     setDetaching(false);
+    // Only links still shown.
+    const keys = rows.map((r) => r.key).filter((k) => selected.has(k));
+    if (!settled || keys.length === 0) return;
     try {
-      report(await write.mutateAsync({ op: "detach", keys: [...selected] }), "relation.unlinked");
+      report(await write.mutateAsync({ op: "detach", keys }), "relation.unlinked");
       setSelected(new Set());
     } catch (e) {
       setNotice({ variant: "destructive", text: e instanceof Error ? e.message : t("relation.failed") });
@@ -186,7 +197,7 @@ function ManySection({ parent, record, relation }: SectionProps) {
             }} />
           )}
           {relation.detach && selected.size > 0 && (
-            <Button size="sm" variant="outline" disabled={write.isPending} onClick={() => setDetaching(true)}>
+            <Button size="sm" variant="outline" disabled={write.isPending || !settled} onClick={() => setDetaching(true)}>
               <Unlink /> {t("relation.detachSelected")}
             </Button>
           )}
@@ -279,6 +290,7 @@ function ManySection({ parent, record, relation }: SectionProps) {
         form={relation.attachForm}
         slug={relation.resource}
         submitLabel={t("relation.attach")}
+        mode="create"
         ready={chosen.size > 0}
         onSubmit={async (data) => report(await write.mutateAsync({ op: "attach", keys: [...chosen], pivot: data }), "relation.linked")}
       >
@@ -318,6 +330,7 @@ function ManySection({ parent, record, relation }: SectionProps) {
         slug={relation.resource}
         data={editing ? records.data?.pivot?.[editing] : undefined}
         submitLabel={t("record.saveChanges")}
+        mode="edit"
         onSubmit={async (data) => {
           if (editing) report(await write.mutateAsync({ op: "update", key: editing, pivot: data }), "relation.updated");
         }}

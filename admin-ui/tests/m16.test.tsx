@@ -114,6 +114,16 @@ it("shows linked records with their pivot columns, attaches and detaches", async
   expect(writes[1]).toEqual({ method: "POST", path: "detach", body: { keys: ["rust"] } });
 });
 
+it("leaves untouched pivot columns to the database when attaching", async () => {
+  mount(`/r/posts/records/${POST}`);
+  await userEvent.click(await screen.findByRole("button", { name: /Attach/ }));
+  const dialog = await screen.findByRole("dialog", { name: "Attach to Tags" });
+  await userEvent.click(await within(dialog).findByRole("checkbox", { name: /SQL/ }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Attach" }));
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(writes[0]).toEqual({ method: "POST", path: "attach", body: { keys: ["sql"], pivot: {} } });
+});
+
 it("edits a link's pivot columns", async () => {
   mount(`/r/posts/records/${POST}`);
   await userEvent.click(await screen.findByRole("button", { name: "Edit link: RUST" }));
@@ -190,4 +200,36 @@ it("lays resource permissions out as a matrix and keeps what the user cannot cha
   await userEvent.click(screen.getByRole("checkbox", { name: "Every permission of Posts" }));
   expect(screen.getByRole("checkbox", { name: "Posts: attach_tags" })).toBeChecked();
   expect(screen.getByRole("checkbox", { name: "Posts: Update" })).not.toBeChecked();
+  // The row reads as switched on (what may be granted is), and switches off again.
+  const row = screen.getByRole("checkbox", { name: "Every permission of Posts" });
+  expect(row).toBeChecked();
+  await userEvent.click(row);
+  expect(screen.getByRole("checkbox", { name: "Posts: View" })).not.toBeChecked();
+});
+
+it("saving a role keeps permissions the user cannot change, with what it started from", async () => {
+  const puts: unknown[] = [];
+  const role = { id: "4", name: "editor", isSystem: false, isPrivileged: false, permissions: ["posts.update"], users: 1, abilities: { update: true, delete: true, assign: true } };
+  server.use(
+    http.get("*/admin/api/system/permissions", () =>
+      HttpResponse.json([
+        { name: "posts.view", group: "posts", groupLabel: "Posts", grantable: true, resource: "posts", ability: "view" },
+        { name: "posts.update", group: "posts", groupLabel: "Posts", grantable: false, resource: "posts", ability: "update" },
+      ]),
+    ),
+    http.get("*/admin/api/system/roles/4", () => HttpResponse.json(role)),
+    http.get("*/admin/api/system/roles", () => HttpResponse.json([role])),
+    http.put("*/admin/api/system/roles/4/permissions", async ({ request }) => {
+      puts.push(await request.json());
+      return HttpResponse.json({ ...role, permissions: ["posts.update", "posts.view"] });
+    }),
+  );
+  mount("/system/roles/4");
+  const update = await screen.findByRole("checkbox", { name: "Posts: Update" });
+  expect(update).toBeChecked();
+  expect(update).toBeDisabled();
+  await userEvent.click(screen.getByRole("checkbox", { name: "Every permission of Posts" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save permissions" }));
+  await waitFor(() => expect(puts).toHaveLength(1));
+  expect(puts[0]).toEqual({ permissions: ["posts.update", "posts.view"], expectedPermissions: ["posts.update"] });
 });

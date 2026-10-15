@@ -32,7 +32,8 @@ and add readable pivot columns by target key. Writes:
   written), then pivot rows read and inserted or deleted by both keys;
 - one lock order: parent ancestors → parent → targets → pivot rows. Boot
   refuses what would need another (self relations, one pivot used by two
-  relations, a target with `lock_parent`). Every pivot write of a parent holds
+  relations, a target with `lock_parent`, and any cycle in the graph of
+  belongs-to-many parent → target and `lock_parent` parent → child edges). Every pivot write of a parent holds
   its lock, so links are read then inserted (no `ON DUPLICATE`, no gap locks
   on MySQL); foreign-key failures map to a form error;
 - attach of an existing link keeps it (convergent), detach touches only
@@ -40,8 +41,9 @@ and add readable pivot columns by target key. Writes:
   the resource until reload (SPA `guardedWrite` under the parent slug);
 - audit on the parent: `attached` / `detached` / `pivot_updated` with
   `{relation, targets, pivot}` (pivot values redacted by declaration). The
-  history shows targets only to readers who may list the target, pivot values
-  they may read now, else `{relation, count}`.
+  history shows targets and pivot values (those readable now) only to readers
+  who may list the target, else `{relation, count}`; pivot updates that change
+  nothing are not written nor recorded.
 
 **Action forms.** `Action::form(vec![ActionField::…])` (text, textarea,
 integer, boolean, date, select, `belongs_to(field, target)`). Order:
@@ -53,9 +55,10 @@ replay). Actions without a form refuse `data`. `ActionSchema.form` and a
 dedicated options route; `SCHEMA_VERSION` 2 so older SPAs never run a form
 they do not understand.
 
-**Permission matrix.** `PermissionInfo.resource` / `ability` come from what
-resources check (`DynResource::permissions`), set only when a permission is
-exactly one resource's `{slug}.{ability}`. The SPA draws the matrix; writes
+**Permission matrix.** `PermissionInfo.resource` / `ability` come from how
+resources use each permission (`DynResource::permission_uses`: abilities and
+explicit admission permissions), set only when a permission has exactly one
+use, an ability, named `{slug}.{ability}`. The SPA draws the matrix; writes
 are unchanged (`RbacService::set_role_permissions_if`, expected permissions,
 symmetric difference grantable).
 

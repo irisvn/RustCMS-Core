@@ -94,6 +94,30 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         permissions
     }
 
+    fn permission_uses(&self) -> Vec<(String, Option<String>)> {
+        let mut abilities: Vec<String> =
+            [ability::VIEW_ANY, ability::VIEW, ability::CREATE, ability::UPDATE, ability::DELETE]
+                .map(str::to_owned)
+                .into();
+        if self.soft.is_some() {
+            abilities.extend([ability::RESTORE, ability::FORCE_DELETE].map(str::to_owned));
+        }
+        abilities.extend(self.actions.iter().map(|a| a.ability.to_owned()));
+        for relation in self.relations.iter().filter(|r| r.is_many()) {
+            use crate::links::LinkOp;
+            abilities.extend([LinkOp::Attach, LinkOp::Detach].map(|op| op.ability(relation.name)));
+            if !relation.pivot_fields.is_empty() {
+                abilities.push(LinkOp::UpdatePivot.ability(relation.name));
+            }
+        }
+        abilities.sort_unstable();
+        abilities.dedup();
+        let mut uses: Vec<(String, Option<String>)> =
+            abilities.into_iter().map(|a| (format!("{}.{a}", R::SLUG), Some(a))).collect();
+        uses.extend(self.actions.iter().filter_map(|a| a.required_permission).map(|p| (p.to_owned(), None)));
+        uses
+    }
+
     async fn schema(&self, ctx: &Ctx, op: SchemaOperation, key: Option<&str>) -> AppResult<ResourceSchema> {
         let mut abilities = BTreeMap::new();
         abilities.insert("viewAny", self.policy.allows(ctx, ability::VIEW_ANY, None).await);

@@ -225,22 +225,22 @@ pub(super) async fn list_permissions(
     ))
 }
 
-/// Permissions that are exactly one resource's `{slug}.{ability}` (from what
-/// the resources check, never guessed from names): name → (slug, ability).
-/// A name several resources check, or an explicit admission permission,
-/// stays outside the matrix.
+/// Permissions that are exactly one resource's `{slug}.{ability}` (from how
+/// the resources use them, never guessed from names): name → (slug, ability).
+/// A name used by several resources or abilities, or as an explicit
+/// admission permission, stays outside the matrix.
 fn matrix_cells(ctx: &crate::Ctx) -> std::collections::HashMap<String, (String, String)> {
-    let mut uses: std::collections::HashMap<String, Vec<(String, String)>> = std::collections::HashMap::new();
+    let mut uses: std::collections::HashMap<String, Vec<(String, Option<String>)>> = std::collections::HashMap::new();
     for resource in ctx.registry.all() {
-        let slug = resource.slug();
-        for permission in resource.permissions() {
-            let cell = permission.strip_prefix(&format!("{slug}.")).map(|a| (slug.to_owned(), a.to_owned()));
-            uses.entry(permission).or_default().extend(cell.or(Some((String::new(), String::new()))));
+        for (permission, ability) in resource.permission_uses() {
+            uses.entry(permission).or_default().push((resource.slug().to_owned(), ability));
         }
     }
     uses.into_iter()
         .filter_map(|(name, cells)| match cells.as_slice() {
-            [(slug, ability)] if !slug.is_empty() => Some((name, (slug.clone(), ability.clone()))),
+            [(slug, Some(ability))] if name == format!("{slug}.{ability}") => {
+                Some((name, (slug.clone(), ability.clone())))
+            }
             _ => None,
         })
         .collect()

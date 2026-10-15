@@ -32,6 +32,21 @@ All notable changes are documented here. The format follows
 - Examples: LMS theme, course overview page, seats slot, progress cell; demo
   post stats page and visibility slot.
 
+### Fixed (0.3 — M16, Codex verify)
+- History of link changes shows pivot values only with the targets (readers
+  who may list the target).
+- Boot refuses lock order cycles (belongs-to-many parent → target and
+  `lock_parent` parent → child); declared `.required()` pivot fields without a
+  default are allowed (attaching needs them; 403 when not writable).
+- Pivot updates that change nothing write and record nothing.
+- Permission matrix from `DynResource::permission_uses` (admission permissions
+  of actions stay outside the matrix).
+- SPA: attach sends only filled-in pivot columns, link edits only changed
+  ones; detach acts on the rows shown (selection cleared on another query,
+  no writes on placeholder rows); row and column toggles follow grantable
+  permissions.
+- Demo: `PostPolicy::admits` refuses link writes and `move` before the body.
+
 ### Added (0.3 — M16; ADR 0020)
 - Belongs-to-many relations: `Relation::belongs_to_many` over a pivot entity
   with `.pivot(fields)`; routes `…/relations/{relation}/attach`, `/detach`,

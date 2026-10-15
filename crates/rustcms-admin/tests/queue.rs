@@ -592,14 +592,35 @@ db_test!(heartbeats_keep_a_long_run_owned, |db: TestDb| async move {
     let app = app(db).await;
     let conn = app.state().db().clone();
     // Longer than its 10 s lease.
-    let id = queue::enqueue(&conn, &Long { ms: 12_000 }).await.unwrap();
+    let id = queue::enqueue(&conn, &Long { ms: 11_000 }).await.unwrap();
     let state = app.state().clone();
     let worker = tokio::spawn(async move { queue::run_until_idle(&state, None, 1).await.unwrap() });
-    tokio::time::sleep(Duration::from_millis(11_500)).await;
+    let lease = || async { job::Entity::find_by_id(id).one(&conn).await.unwrap().and_then(|j| j.reserved_until) };
+    // Claimed: its first lease ends at `first`.
+    let mut first = None;
+    for _ in 0..100 {
+        first = lease().await;
+        if first.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let first = first.expect("claimed");
+    // A heartbeat extends the lease before it runs out (whatever the machine's
+    // load: what is checked is the renewal, not a moment in time).
+    let renewed = loop {
+        match lease().await {
+            Some(until) if until > first => break until,
+            _ if chrono::Utc::now() > first => panic!("the lease ran out without a heartbeat"),
+            _ => tokio::time::sleep(Duration::from_millis(100)).await,
+        }
+    };
+    assert!(renewed > first);
+    // Meanwhile no other worker takes it.
     assert_eq!(queue::run_until_idle(app.state(), None, 1).await.unwrap(), 0, "still owned");
     worker.await.unwrap();
     assert!(job::Entity::find_by_id(id).one(&conn).await.unwrap().is_none());
-    assert_eq!(effects(&app, "long").await, 1);
+    assert_eq!(effects(&app, "long").await, 1, "ran once");
 });
 
 db_test!(a_locked_first_job_is_skipped, |db: TestDb| async move {

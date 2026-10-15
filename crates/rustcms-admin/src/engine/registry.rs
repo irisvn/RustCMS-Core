@@ -56,6 +56,11 @@ pub trait DynResource: Send + Sync {
     async fn allows(&self, ctx: &Ctx, ability: &str) -> bool;
     /// Permissions checked by the default policy (`{slug}.{ability}`), for `permission:sync`.
     fn permissions(&self) -> Vec<String>;
+    /// How this resource uses each of [`Self::permissions`]: `Some(ability)`
+    /// for `{slug}.{ability}` checked by the default policy, `None` for an
+    /// explicit admission permission (`Action::requires_permission`). A name
+    /// may appear more than once.
+    fn permission_uses(&self) -> Vec<(String, Option<String>)>;
     /// Form and table for the current user; `key` selects a record for `edit`/`view`.
     async fn schema(&self, ctx: &Ctx, op: SchemaOperation, key: Option<&str>) -> AppResult<ResourceSchema>;
     /// `(key, title)` of visible records, by `keys` or matching `search` (at most 50).
@@ -234,7 +239,55 @@ impl Registry {
                 );
             }
         }
+        self.check_lock_order();
         Arc::new(self)
+    }
+}
+
+impl Registry {
+    /// One lock order for every writer (ADR 0018, 0020): a parent before its
+    /// `lock_parent` children, a belongs-to-many parent before its targets.
+    /// A cycle among these would let two writes wait on each other.
+    ///
+    /// # Panics
+    /// On a cycle.
+    fn check_lock_order(&self) {
+        let mut edges: HashMap<&str, Vec<&str>> = HashMap::new();
+        for resource in self.resources.values() {
+            if let Some((_, parent)) = &resource.meta().parent_lock {
+                edges.entry(*parent).or_default().push(resource.slug());
+            }
+            for relation in resource.relations().iter().filter(|r| r.is_many()) {
+                edges.entry(resource.slug()).or_default().push(relation.target);
+            }
+        }
+        // Depth-first search; `on_path` holds the current path.
+        fn visit<'a>(
+            node: &'a str,
+            edges: &HashMap<&'a str, Vec<&'a str>>,
+            done: &mut HashSet<&'a str>,
+            on_path: &mut Vec<&'a str>,
+        ) {
+            if done.contains(node) {
+                return;
+            }
+            if let Some(at) = on_path.iter().position(|n| *n == node) {
+                let cycle = on_path[at..].join(" → ");
+                panic!("lock order cycle: {cycle} → {node} (belongs-to-many targets and `lock_parent` parents)");
+            }
+            on_path.push(node);
+            for next in edges.get(node).into_iter().flatten() {
+                visit(next, edges, done, on_path);
+            }
+            on_path.pop();
+            done.insert(node);
+        }
+        let mut done = HashSet::new();
+        let mut slugs: Vec<&str> = edges.keys().copied().collect();
+        slugs.sort_unstable();
+        for slug in slugs {
+            visit(slug, &edges, &mut done, &mut Vec::new());
+        }
     }
 }
 
@@ -292,13 +345,16 @@ fn check_pivot(
             field.name
         );
     }
-    // Inserts set the two keys and the declared fields a user may write: any
-    // other column must be optional.
+    // Inserts set the two keys and the declared fields: any other column must
+    // be optional; a mandatory one is declared `.required()` (attaching then
+    // needs it, see the engine).
     for column in pivot.column_names() {
         let info = pivot.column(&column).expect("listed");
+        let required = relation.pivot_fields.iter().any(|f| f.name == column && f.required);
         assert!(
-            keys.contains(&column.as_str()) || info.nullable || info.has_default,
-            "resource `{slug}`: relation `{name}`: pivot column `{table}.{column}` needs to be nullable or have a default"
+            keys.contains(&column.as_str()) || info.nullable || info.has_default || required,
+            "resource `{slug}`: relation `{name}`: pivot column `{table}.{column}` needs to be nullable, have a \
+             default or be a `.required()` pivot field"
         );
     }
 }

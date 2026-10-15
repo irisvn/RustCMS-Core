@@ -1,7 +1,7 @@
 // A form from the server's schema in a dialog: action forms and the pivot
 // columns of a link. The server checks every value again; its 422s land on
 // the fields they name.
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { ApiError } from "@/api/client";
 import type { FormSchema } from "@/api/types";
@@ -31,6 +31,12 @@ export function SchemaFormDialog(props: {
   children?: ReactNode;
   /** Whether the payload may be sent (e.g. something is chosen). */
   ready?: boolean;
+  /**
+   * `action`: every input is sent (the server fills in defaults the same way).
+   * `create` / `edit` (pivot columns of a link): only inputs the user changed,
+   * so database defaults and values changed by others meanwhile are kept.
+   */
+  mode?: "action" | "create" | "edit";
 }) {
   // Mounted only while open: each opening starts from fresh values.
   return (
@@ -40,19 +46,24 @@ export function SchemaFormDialog(props: {
   );
 }
 
-function Body({ onClose, form, slug, optionsPath, data, submitLabel, onSubmit, children, ready = true }: Parameters<typeof SchemaFormDialog>[0]) {
+function Body({ onClose, form, slug, optionsPath, data, submitLabel, onSubmit, children, ready = true, mode = "action" }: Parameters<typeof SchemaFormDialog>[0]) {
   const t = useT();
   const components = useMemo(() => form?.components ?? [], [form]);
   const inputs = useMemo(() => inputsOf(components), [components]);
-  const resolver = useMemo(() => editResolver(inputs, false, () => true), [inputs]);
+  const partial = mode !== "action";
+  // Checked as submitted: all inputs of an action, the changed ones of a link.
+  const dirty = useRef<(name: string) => boolean>(() => true);
+  const resolver = useMemo(() => editResolver(inputs, partial, (name) => dirty.current(name)), [inputs, partial]);
   const values = useForm<FormValues>({ defaultValues: defaultValues(inputs, data), resolver });
+  dirty.current = (name) => values.getFieldState(name).isDirty;
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const submit = values.handleSubmit(async (current) => {
     setNotice(null);
     setBusy(true);
     try {
-      await onSubmit(payloadOf(inputs, current));
+      const changed = partial ? Object.fromEntries(inputs.map((i) => [i.name, values.getFieldState(i.name).isDirty])) : undefined;
+      await onSubmit(payloadOf(inputs, current, changed));
       onClose();
     } catch (e) {
       if (e instanceof ApiError && e.status === 422) {

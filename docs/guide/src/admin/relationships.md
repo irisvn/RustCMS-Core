@@ -139,16 +139,27 @@ is `{processed, missing}`.
 Pivot columns are [fields](resources.md#fields): `readable`, `creatable`,
 `updatable`, `required`, `max_length` apply, values follow the
 [wire format](../reference/wire-format.md); columns not declared never leave
-the server. Pivot columns not declared must be nullable or have a default (the
-panel refuses to start otherwise).
+the server. Pivot columns not declared must be nullable or have a default; a
+mandatory one is a `.required()` pivot field (the panel refuses to start
+otherwise), and users who may not write it cannot attach (403). Attaching sends
+only the pivot columns the user filled in (the others keep their database
+defaults); editing a link sends only what changed, and a change to the values
+already stored writes and records nothing.
 
 ### Rules checked at boot
 
 - The two key columns exist in the pivot with the types of the two keys.
 - One relation per pivot table, and not to the same resource; the target may
-  not declare `lock_parent`. These keep one lock order for every writer:
-  the parent (and its own `lock_parent`), then the targets in key order, then
-  the pivot rows.
+  not declare `lock_parent`; and no cycle among resources, counting both
+  belongs-to-many (parent before target) and `lock_parent` (parent before
+  child): posts → tags with tags → posts is refused. These keep one lock order
+  for every writer: the parent (and its own `lock_parent`), then the targets in
+  key order, then the pivot rows.
+
+The record's history lists link changes (`attached`, `detached`,
+`pivot_updated`): which records and the pivot values only to readers who may
+list the target (pivot values they may read now), otherwise the relation and
+how many.
 
 Attach and detach send no `Idempotency-Key`: sending one again gives the same
 links. If the answer is lost, the panel pauses writes to the resource until

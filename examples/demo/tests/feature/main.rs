@@ -7,4 +7,5 @@ mod support;
 mod api;
 mod content;
 mod health;
+mod tags;
 // rustcms:tests

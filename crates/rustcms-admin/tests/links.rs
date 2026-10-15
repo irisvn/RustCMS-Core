@@ -284,37 +284,48 @@ db_test!(schema_and_options_follow_the_user, |db: TestDb| async move {
 
 db_test!(concurrent_link_writes_stay_consistent, |db: TestDb| async move {
     let (app, users) = setup(db).await;
-    tags(&app, &["rust", "sql"]).await;
     let linker = user_with(&app, "Linker", &LINKER).await;
     let one = app.acting_as(&linker).await;
     let two = app.acting_as(&linker).await;
-    let post = post_of(&one, &app, "Mine").await;
-    // The same link twice at once: one row.
-    let body = json!({"keys": ["rust", "sql"]});
-    let attach = rel(&app, &post, "/attach");
-    let (a, b) = tokio::join!(one.post_json(&attach, &body), two.post_json(&attach, &body));
-    for response in [&a, &b] {
-        assert!(
-            [StatusCode::OK, StatusCode::CONFLICT].contains(&response.status),
-            "{} {}",
-            response.status,
-            response.text()
-        );
-    }
-    assert_eq!(links(&app, &post).await.len(), 2);
-    // Attaching while the target is deleted: linked then removed with it, or missing.
-    one.post_json(&rel(&app, &post, "/detach"), &json!({"keys": ["sql"]})).await.assert_status(StatusCode::OK);
     let admin = app.acting_as(&users.admin).await;
-    let (sql, tag_url) = (json!({"keys": ["sql"]}), app.admin_api("resources/tags/records/sql"));
-    let (attach, delete) = tokio::join!(one.post_json(&attach, &sql), admin.send(Method::DELETE, &tag_url, None));
-    assert!([StatusCode::OK, StatusCode::CONFLICT].contains(&attach.status), "{}", attach.text());
-    assert!([StatusCode::NO_CONTENT, StatusCode::CONFLICT].contains(&delete.status), "{}", delete.text());
-    let gone = tag::Entity::find_by_id("sql".to_owned()).one(app.state().db()).await.unwrap().is_none();
-    let linked = links(&app, &post).await.iter().any(|(t, _, _)| t == "sql");
-    assert!(!(gone && linked), "no link to a deleted tag");
-    // Deleting the post removes its links.
-    admin.send(Method::DELETE, &app.admin_api(&format!("resources/posts/records/{post}")), None).await;
-    assert!(links(&app, &post).await.is_empty());
+    // PostgreSQL and MySQL wait for each other's locks (one lock order: never a
+    // deadlock, so never a 409); SQLite serializes writers and may answer busy.
+    let waits = app.state().db().get_database_backend() != sea_orm::DbBackend::Sqlite;
+    let ok = |response: &TestResponse, expected: &[StatusCode]| {
+        let allowed = expected.contains(&response.status) || (!waits && response.status == StatusCode::CONFLICT);
+        assert!(allowed, "{} {}", response.status, response.text());
+    };
+    for round in 0..4 {
+        let (rust, sql) = (format!("rust-{round}"), format!("sql-{round}"));
+        tags(&app, &[&rust, &sql]).await;
+        let post = post_of(&one, &app, &format!("Mine {round}")).await;
+        let attach = rel(&app, &post, "/attach");
+        // The same links twice at once: one row each.
+        let body = json!({"keys": [rust, sql]});
+        let (a, b) = tokio::join!(one.post_json(&attach, &body), two.post_json(&attach, &body));
+        ok(&a, &[StatusCode::OK]);
+        ok(&b, &[StatusCode::OK]);
+        assert!(links(&app, &post).await.len() <= 2);
+        // Attaching while the target is deleted: linked then removed with it, or missing.
+        one.post_json(&rel(&app, &post, "/detach"), &json!({"keys": [sql]})).await.assert_status(StatusCode::OK);
+        let tag_url = app.admin_api(&format!("resources/tags/records/{sql}"));
+        let only_sql = json!({"keys": [sql]});
+        let (attached, deleted) =
+            tokio::join!(one.post_json(&attach, &only_sql), admin.send(Method::DELETE, &tag_url, None));
+        ok(&attached, &[StatusCode::OK]);
+        ok(&deleted, &[StatusCode::NO_CONTENT]);
+        let gone = tag::Entity::find_by_id(sql.clone()).one(app.state().db()).await.unwrap().is_none();
+        let linked = links(&app, &post).await.iter().any(|(t, _, _)| *t == sql);
+        assert!(!(gone && linked), "no link to a deleted tag");
+        // Attaching while the post is deleted: done first, or the post is gone (404).
+        let post_url = app.admin_api(&format!("resources/posts/records/{post}"));
+        let only_rust = json!({"keys": [rust]});
+        let (attached, deleted) =
+            tokio::join!(two.post_json(&attach, &only_rust), admin.send(Method::DELETE, &post_url, None));
+        ok(&attached, &[StatusCode::OK, StatusCode::NOT_FOUND]);
+        ok(&deleted, &[StatusCode::NO_CONTENT]);
+        assert!(links(&app, &post).await.is_empty(), "links go with the post");
+    }
 });
 
 db_test!(history_shows_links_as_the_reader_may_see_them, |db: TestDb| async move {
@@ -340,7 +351,7 @@ db_test!(history_shows_links_as_the_reader_may_see_them, |db: TestDb| async move
     // A reader who may not list tags sees the relation and a count.
     let history = reader.get(&app.admin_api(&format!("resources/posts/records/{post}/history"))).await;
     let entry = history.json()["data"].as_array().unwrap().iter().find(|e| e["event"] == json!("attached")).cloned();
-    assert_eq!(entry.unwrap()["meta"], json!({"relation": "tags", "count": 1, "pivot": {"position": 2}}));
+    assert_eq!(entry.unwrap()["meta"], json!({"relation": "tags", "count": 1}), "no targets, no pivot values");
     let admin_view = admin.get(&app.admin_api(&format!("resources/posts/records/{post}/history"))).await;
     let entry = admin_view.json()["data"].as_array().unwrap().iter().find(|e| e["event"] == json!("attached")).cloned();
     assert_eq!(
@@ -413,6 +424,34 @@ fn misdeclared_pivots_stop_the_boot() {
         }
     }
     let boot = |registry: fn() -> Registry| std::panic::catch_unwind(move || registry().finish()).is_err();
+    /// Tags linking back to posts (another pivot): posts → tags → posts.
+    struct TagsBack;
+    impl Resource for TagsBack {
+        type Entity = tag::Entity;
+        const SLUG: &'static str = "tags";
+        fn meta() -> ResourceMeta {
+            ResourceMeta::new("Tag").title("label")
+        }
+        fn fields() -> Vec<Field> {
+            vec![Field::column(tag::Column::Label)]
+        }
+        fn relations() -> Vec<rustcms_admin::Relation> {
+            vec![rustcms_admin::Relation::belongs_to_many(
+                "posts",
+                "posts",
+                support::tag_post::Column::TagSlug,
+                support::tag_post::Column::PostId,
+            )]
+        }
+    }
+    let cycle = || {
+        Registry::new()
+            .register::<TagsBack>()
+            .register::<support::PostResource>()
+            .register::<support::CategoryResource>()
+            .register::<support::NoteResource>()
+    };
+    assert!(boot(cycle), "a lock order cycle");
     fn base() -> Registry {
         Registry::new().register::<support::TagResource>()
     }
@@ -450,6 +489,8 @@ db_test!(permissions_name_their_matrix_cell, |db: TestDb| async move {
     assert_eq!(cell("posts.attach_tags"), (json!("posts"), json!("attach_tags")));
     assert_eq!(cell("posts.update_pivot_tags"), (json!("posts"), json!("update_pivot_tags")));
     assert_eq!(cell("posts.move"), (json!("posts"), json!("move")));
+    // An explicit admission permission (`archive` checks `update` per record).
+    assert_eq!(cell("posts.archive"), (Value::Null, Value::Null));
     // Not a resource's ability: outside the matrix.
     assert_eq!(cell("settings.general.view"), (Value::Null, Value::Null));
     assert_eq!(cell("roles.view_any"), (Value::Null, Value::Null));

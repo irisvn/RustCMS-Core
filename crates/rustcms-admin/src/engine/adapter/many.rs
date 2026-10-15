@@ -111,7 +111,15 @@ impl<R: Resource> ResourceAdapter<R> {
             check_input(name, &rule, value, &mut errors);
         }
         if op == Operation::Create {
-            for field in relation.pivot_fields.iter().filter(|f| f.required && f.can_write(op, ctx)) {
+            for field in relation.pivot_fields.iter().filter(|f| f.required) {
+                // A mandatory column the user may not write: no link they could make.
+                let mandatory = pivot.column(&field.name).is_some_and(|c| !c.nullable && !c.has_default);
+                if !field.can_write(op, ctx) {
+                    if mandatory {
+                        return Err(AppError::Forbidden);
+                    }
+                    continue;
+                }
                 if !input.contains_key(&field.name) {
                     errors.add(field.name.as_str(), "is required");
                 }
@@ -229,11 +237,29 @@ impl<R: Resource> ResourceAdapter<R> {
                     Self::abort(txn, wctx).await?;
                     return Err(AppError::NotFound);
                 };
-                let value = Self::target_value(pivot.as_ref(), &target_key)?;
-                pivot.update(&txn, parent_value.clone(), value, &values).await?;
-                let targets = [target_key];
-                let meta = LinkMeta { relation: name, targets: &targets, pivot: Self::pivot_audit(relation, &values) };
-                self.audit_link(&wctx, &txn, "pivot_updated", &parent_key, meta).await?;
+                // Only what differs from the stored link (canonical values): nothing to
+                // change, nothing written or recorded.
+                let stored = &linked[&target_key];
+                let changed: Data = values
+                    .iter()
+                    .filter(|(name, value)| {
+                        let canonical = pivot
+                            .column(name)
+                            .and_then(|c| c.kind.decode(value).ok())
+                            .and_then(|v| v.first().map(encode))
+                            .unwrap_or_else(|| (*value).clone());
+                        stored.get(*name) != Some(&canonical)
+                    })
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect();
+                if !changed.is_empty() {
+                    let value = Self::target_value(pivot.as_ref(), &target_key)?;
+                    pivot.update(&txn, parent_value.clone(), value, &changed).await?;
+                    let targets = [target_key];
+                    let meta =
+                        LinkMeta { relation: name, targets: &targets, pivot: Self::pivot_audit(relation, &changed) };
+                    self.audit_link(&wctx, &txn, "pivot_updated", &parent_key, meta).await?;
+                }
             }
         }
         Self::commit(txn, wctx).await?;
