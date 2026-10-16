@@ -487,6 +487,71 @@ impl<'a> RbacService<'a> {
         Ok(user)
     }
 
+    /// Invites a user (`users.create` and `users.invite`; roles as
+    /// [`Self::create_user_with_roles`]): created pending, with no usable
+    /// password, and the invitation mail queued in the same transaction (its
+    /// job makes the link). They sign in once they set a password from it.
+    pub async fn invite_user(
+        &self,
+        actor: Actor<'_>,
+        name: &str,
+        email: &str,
+        guard: &str,
+        role_ids: &[i64],
+    ) -> AppResult<user::Model> {
+        let (txn, fresh) = self.begin(actor).await?;
+        let actor = fresh.actor();
+        require(actor, "users.invite")?;
+        let new =
+            NewUser { name, email, password_hash: crate::recovery::INVITED_PASSWORD.into(), super_admin_guard: None };
+        let created = create_user_in(&txn, actor, new).await?;
+        let now = chrono::Utc::now();
+        let mut model: user::ActiveModel = created.into();
+        model.invitation_pending = Set(true);
+        model.invited_at = Set(Some(now));
+        model.invited_by = Set(actor_id(actor));
+        let user = model.update(&txn).await?;
+        let mut changes = json!({ "name": [null, user.name], "email": [null, user.email] });
+        if !role_ids.is_empty() {
+            apply_roles(&txn, actor, user.id, guard, role_ids).await?;
+            changes["roles"] = json!([null, held_roles(&txn, user.id, guard).await?]);
+        }
+        dispatch_invitation(&txn, &user, actor).await?;
+        let entry = AuditEntry::new("user.invited", "user").key(user.id).changes(changes).meta(GuardMeta { guard });
+        self.audit(&txn, actor, entry).await?;
+        self.commit(txn).await?;
+        Ok(user)
+    }
+
+    /// Sends a pending user's invitation again (`users.invite` and
+    /// `users.view`, checked under the RBAC lock): a new link, the old one dead
+    /// once it is made. 409 once accepted, or for a disabled user.
+    pub async fn resend_invitation(&self, actor: Actor<'_>, user_id: i64) -> AppResult<()> {
+        let (txn, fresh) = self.begin(actor).await?;
+        let actor = fresh.actor();
+        require(actor, "users.invite")?;
+        require(actor, "users.view")?;
+        let target = lock_user(&txn, user_id).await?;
+        if !target.invitation_pending {
+            return Err(AppError::Conflict {
+                code: "invitation_accepted",
+                reason: "accepted",
+                message: "This invitation was already accepted.",
+            });
+        }
+        if !target.is_active {
+            return Err(AppError::Conflict {
+                code: "user_inactive",
+                reason: "inactive",
+                message: "This user is disabled: enable them first.",
+            });
+        }
+        dispatch_invitation(&txn, &target, actor).await?;
+        self.audit(&txn, actor, AuditEntry::new("user.invitation_resent", "user").key(user_id)).await?;
+        self.commit(txn).await?;
+        Ok(())
+    }
+
     /// Replaces the roles a user holds in `guard` with `role_ids`. Every role added
     /// or removed is checked like [`Self::assign_role`] / [`Self::revoke_role`].
     pub async fn set_user_roles(&self, actor: Actor<'_>, user_id: i64, guard: &str, role_ids: &[i64]) -> AppResult<()> {
@@ -676,7 +741,11 @@ impl<'a> RbacService<'a> {
         let target = lock_user(&txn, user_id).await?;
         let mut model: user::ActiveModel = target.into();
         model.password = Set(password_hash);
+        // A pending invitation is over: the user signs in with this password
+        // (its link dies with the tokens; its job finds the version changed).
+        model.invitation_pending = Set(false);
         model.update(&txn).await?;
+        crate::recovery::end_tokens(&txn, user_id).await?;
         crate::credentials::revoke_all(&txn, user_id, true).await?;
         self.audit(&txn, actor, AuditEntry::new("user.password_reset", "user").key(user_id)).await?;
         self.commit(txn).await?;
@@ -802,4 +871,25 @@ impl Fresh {
     fn actor(&self) -> Actor<'_> {
         self.0.as_ref().map_or(Actor::System, Actor::User)
     }
+}
+
+/// The user id of `actor` (none for the system).
+fn actor_id(actor: Actor<'_>) -> Option<i64> {
+    match actor {
+        Actor::User(p) => p.id.parse().ok(),
+        Actor::System => None,
+    }
+}
+
+/// Queues the invitation mail of `user` in `txn` (a new request: it replaces
+/// the link of any earlier one when its job runs).
+async fn dispatch_invitation(txn: &DatabaseTransaction, user: &user::Model, actor: Actor<'_>) -> AppResult<()> {
+    let job = crate::recovery::InvitationJob {
+        user_id: user.id,
+        auth_version: user.auth_version,
+        request_id: uuid::Uuid::now_v7(),
+        requested_at: chrono::Utc::now(),
+    };
+    rustcms_core::queue::dispatch_with(txn, &job, None, actor_id(actor)).await?;
+    Ok(())
 }

@@ -8,7 +8,7 @@ What RustCMS does not do yet, and behaviours to know before relying on it.
   manager on its page); belongs-to-many to the same resource, two relations
   over one pivot table, or to a resource declaring `lock_parent`.
 - Excel files, dashboard widgets.
-- Password reset and email verification (mail itself: see [Mail](../digging-deeper/mail.md)).
+- Email verification flows (invitations mark the address verified).
 - Mail rate limits shared between instances (`max_per_minute` counts per process); DKIM signing; attachments.
 - Settings of kinds other than text, integer (`i32`), boolean, select, key/value,
   date and secret (store larger numbers or decimals as text).

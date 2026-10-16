@@ -23,6 +23,21 @@ pub fn provider() -> AuthProvider {
         .permission(ADMIN_GUARD, "posts.delete", "posts")
 }
 
+/// [`build`] with mail (memory driver) and password resets on.
+pub fn build_with_mail(config: Config) -> AppBuilder {
+    let config = config
+        .with("auth.password_reset", true)
+        .and_then(|c| c.with("auth.reset_cooldown_secs", 0))
+        .and_then(|c| c.with("auth.reset_requests_per_email", 20))
+        .and_then(|c| c.with("auth.reset_requests_per_ip", 20))
+        .and_then(|c| c.with("mail.source", "config"))
+        .and_then(|c| c.with("mail.smtp.from_address", "no-reply@example.test"))
+        .unwrap();
+    let mut app = build(config);
+    app.provider(rustcms_core::mail::MailProvider);
+    app
+}
+
 pub fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
     app.provider(provider());

@@ -69,6 +69,8 @@ fn the_admin_route_list_is_unchanged() {
         "PUT /admin/api/system/users/{id}/roles",
         "PUT /admin/api/system/users/{id}/active",
         "PUT /admin/api/system/users/{id}/password",
+        "POST /admin/api/system/users/invitations",
+        "POST /admin/api/system/users/{id}/invitation",
         "GET /admin/api/system/roles",
         "POST /admin/api/system/roles",
         "GET /admin/api/system/roles/{id}",

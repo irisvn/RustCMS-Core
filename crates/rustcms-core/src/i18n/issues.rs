@@ -53,6 +53,7 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     ("not_option", "is not one of the options"),
     ("unreadable_secret", "cannot be decrypted; replace or clear it"),
     ("given_twice", "may only be given once"),
+    ("token_invalid", "is invalid or has expired"),
     // Lengths and counts.
     ("max_length", "may not be longer than {max} characters"),
     ("max_bytes", "may not be longer than {max} bytes"),

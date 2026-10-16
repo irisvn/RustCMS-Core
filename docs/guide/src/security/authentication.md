@@ -35,7 +35,10 @@ handler's extractors, so after the body was read: prefer route access.
   stores only their HMAC-SHA256 keyed with `APP_KEY`: rotating the key
   (`key:generate --force`) signs every admin out (API tokens are kept).
 - The cookie has no `Max-Age`: it lasts until the browser closes, and expiry is
-  enforced by the server. It is sent only when its value changes (sign-in,
+  enforced by the server. **Remember me** (the sign-in page's box, `remember`
+  in `POST auth/login`, shown while `remember_days` > 0) gives the cookie a
+  `Max-Age` of `remember_days` (30) from sign-in and the session that idle
+  lifetime; every revocation below still ends it at once. It is sent only when its value changes (sign-in,
   re-issue, sign-out), so a slow response can never restore a replaced cookie.
 - The session id is regenerated at sign-in and whenever credentials change.
 - Sessions expire after `session_lifetime_minutes` of inactivity; `serve` deletes
@@ -58,6 +61,45 @@ handler's extractors, so after the body was read: prefer route access.
   changed, is signed out immediately.
 - If another request ends the session while one is in flight, the in-flight
   response is kept and the session stays ended (it is never re-created).
+
+## Password resets and invitations
+
+**Forgot password?** With `auth.password_reset = true` (boot fails without a
+mail driver), the sign-in page links to `<admin>/forgot-password`:
+
+1. `POST auth/forgot-password` `{email}` always answers **202 `{}`** — for an
+   account, an unknown address, a disabled or invited one — after the same
+   single insert (a queued job), so neither the answer nor its timing tells
+   which. Throttled per IP (`reset_requests_per_ip`, 5/min), per address
+   (`reset_requests_per_email`, 3/min) and in total.
+2. The job (`auth.password_reset`) finds the account, makes the token **under
+   the user's row lock** and mails the link at once: the token never sits in
+   the queue. A request older than 15 minutes sends nothing; a newer request
+   replaces the link of an older one; a second request within
+   `reset_cooldown_secs` (60) sends nothing (a retry of the same request does).
+3. The link is `<APP_URL><admin>/reset-password#token=<id>.<secret>`: the
+   secret is in the **fragment**, which browsers never send to the server nor
+   put in a `Referer`; the page reads it, removes it from the address bar, and
+   is served with `Referrer-Policy: no-referrer`.
+4. `POST auth/reset-password` `{token, password, password_confirmation}`: the
+   password rules first, then the token (one answer, `token: is invalid or has
+   expired`, whatever is wrong). Under the user's lock then the token's,
+   everything is checked again — the secret, its purpose, expiry
+   (`password_reset_minutes`, 60), the same email and credential version, the
+   account enabled — and the new password, the end of every token of the user
+   and the revocation of their sessions (and API tokens with
+   `revoke_tokens_on_password_change`) commit together. 204: sign in with it.
+
+Only an HMAC of the secret is stored (keyed from `APP_KEY`: rotating the key
+kills every link). At most one link lives per user and purpose; any credential
+change (password, email, disabled, signed out everywhere) kills it. `serve`
+deletes expired tokens hourly.
+
+**Invitations** (see [Users](../admin/users-roles.md)) use the same machinery:
+`<admin>/invitation#token=…`, `POST auth/invitation` `{token, password,
+password_confirmation, name?}`, valid `invitation_days` (7). An invited
+user cannot sign in until they accept (no password matches theirs), and does
+not count as the "last active super admin".
 
 ### CSRF
 

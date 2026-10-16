@@ -19,6 +19,7 @@ A message that follows none of these templates has the code `custom` and
 | `confirmation` | `does not match` |
 | `empty` | `is empty` |
 | `given_twice` | `may only be given once` |
+| `token_invalid` | `is invalid or has expired` (a reset or invitation link) |
 | `max_length` | `may not be longer than {max} characters` |
 | `max_bytes` | `may not be longer than {max} bytes` |
 | `min_length` | `must be at least {min} characters` |
@@ -112,6 +113,7 @@ A message that follows none of these templates has the code `custom` and
 | `forbidden`, `csrf_mismatch` | 403 | |
 | `not_found` | 404 | |
 | `method_not_allowed` | 405 | |
+| `invitation_accepted`, `user_inactive`, `mail_disabled` | 409 | `accepted`, `inactive`, `disabled` (invitations) |
 | `write_conflict` | 409 | `busy` (another change in progress), `upload_expired`, `receipt_expired`; queue actions: `not_failed`, `not_waiting`, `running` |
 | `export_not_ready` | 409 | `pending` (the background export has not finished) |
 | `export_stale` | 409 | `stale` (access changed since the export was made: export again) |

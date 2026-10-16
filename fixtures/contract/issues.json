@@ -235,6 +235,9 @@
   "timestamp": [
     "must be an RFC 3339 timestamp"
   ],
+  "token_invalid": [
+    "is invalid or has expired"
+  ],
   "token_name": [
     "must be 1 to 255 characters"
   ],

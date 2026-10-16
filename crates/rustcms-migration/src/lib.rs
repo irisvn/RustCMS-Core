@@ -32,6 +32,8 @@ mod m20261019_000014_create_jobs_tables;
 mod m20261023_000015_create_exports_table;
 mod m20261023_000016_create_imports_table;
 mod m20261024_000017_add_import_receipts;
+mod m20261025_000018_add_invitations_to_users;
+mod m20261025_000019_create_user_tokens_table;
 pub mod schema;
 
 /// Framework migrations, in order.
@@ -54,6 +56,8 @@ pub fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         Box::new(m20261023_000015_create_exports_table::Migration),
         Box::new(m20261023_000016_create_imports_table::Migration),
         Box::new(m20261024_000017_add_import_receipts::Migration),
+        Box::new(m20261025_000018_add_invitations_to_users::Migration),
+        Box::new(m20261025_000019_create_user_tokens_table::Migration),
     ]
 }
 

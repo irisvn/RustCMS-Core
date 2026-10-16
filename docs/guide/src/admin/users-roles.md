@@ -11,6 +11,8 @@ CLI and your own code:
 |---|---|---|
 | List / view users | `users.view_any` / `users.view` | your own profile is always visible |
 | Create a user | `users.create` | with roles: `roles.assign` too; all or nothing |
+| Invite a user | `users.create` + `users.invite` | needs mail; they choose their password from the mail (valid `invitation_days`); pending until then |
+| Send an invitation again | `users.invite` + `users.view` | while pending and enabled; the old link stops working |
 | Rename a user | `users.update` | you may rename yourself |
 | Change an email | someone else's: super admin of every guard; yours: your current password | the address becomes unverified and the account's other sessions and tokens end (yours continues) |
 | Disable / enable, delete | `users.update` / `users.delete` | not yourself; the last active super admin stays |
@@ -25,6 +27,12 @@ delete for good), the resource's other abilities (actions, `attach_tags`…) in
 its last column, and a box to switch a whole row or column. Everything else
 (users, roles, settings, audit, queue, pages, media) is listed by group. Boxes
 of permissions you do not hold are disabled, and saving keeps them as they are.
+
+**Invitations.** On **New user**, *Send an invitation instead of setting a
+password* creates the user pending (badge *Invited*) and mails them a link;
+the user page offers *Send the invitation again* until they accept. Setting
+their password as an administrator ends the invitation. To cancel one, disable
+or delete the user.
 
 **Protected accounts.** Users holding a protected role (system or privileged) or
 a super-admin role in *any* guard are disabled, renamed, re-addressed or deleted

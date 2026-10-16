@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useState } from "react";
 import { ApiError } from "@/api/client";
 import { usePanel } from "@/api/queries";
-import { USERS, useCreateUser, useDeleteUser, useResetPassword, useRoles, useSetActive, useSetUserRoles, useUpdateProfile, useUser, useUsers } from "@/api/system";
+import { USERS, useCreateUser, useDeleteUser, useInviteUser, useResendInvitation, useResetPassword, useRoles, useSetActive, useSetUserRoles, useUpdateProfile, useUser, useUsers } from "@/api/system";
 import type { SystemRole } from "@/api/types";
 import { Page, PageHeader } from "@/components/layout";
 import { ErrorState, Loading, PausedBanner } from "@/components/states";
@@ -101,9 +101,9 @@ export function UsersPage() {
                       ))}
                     </div>
                   </td>
-                  <td className="px-5 py-4">{u.isActive ?
-                    <Badge className="border border-border bg-background">{t("users.active")}</Badge> :
-                    <Badge>{t("users.disabled")}</Badge>}</td>
+                  <td className="px-5 py-4">{!u.isActive ? <Badge>{t("users.disabled")}</Badge> : u.invitationPending ?
+                    <Badge className="border border-border bg-background">{t("users.pending")}</Badge> :
+                    <Badge className="border border-border bg-background">{t("users.active")}</Badge>}</td>
                 </tr>
               ))}
               {rows.length === 0 && (
@@ -177,6 +177,10 @@ export function UserCreatePage() {
   const navigate = useNavigate();
   const mounted = useMounted();
   const create = useCreateUser();
+  const invite = useInviteUser();
+  const panel = usePanel();
+  const canInvite = panel.data?.system?.inviteUsers === true;
+  const [inviting, setInviting] = useState(false);
   const roles = useRoles();
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [roleIds, setRoleIds] = useState<string[]>([]);
@@ -190,7 +194,9 @@ export function UserCreatePage() {
     setErrors({ fields: {}, form: null, stale: false });
     setCreated(null);
     try {
-      const user = await create.mutateAsync({ ...form, roleIds });
+      const user = inviting
+        ? await invite.mutateAsync({ name: form.name, email: form.email, roleIds })
+        : await create.mutateAsync({ ...form, roleIds });
       // Left the page meanwhile: do not take over wherever the user is now.
       if (!mounted.current) return;
       if (user) {
@@ -198,6 +204,7 @@ export function UserCreatePage() {
       } else {
         // Created, but this user may not view users: stay here, ready for the next one.
         setCreated(form.email);
+        setInviting(false);
         setForm({ name: "", email: "", password: "" });
         setRoleIds([]);
       }
@@ -230,12 +237,24 @@ export function UserCreatePage() {
                 disabled={create.isPending} aria-invalid={!!errors.fields.email}
                 aria-describedby={errors.fields.email ? "email-error" : undefined} />
             </Field>
-            <Field id="password" label={t("field.password")} errors={errors.fields.password}>
-              <Input id="password" type="password" autoComplete="new-password" value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                disabled={create.isPending} aria-invalid={!!errors.fields.password}
-                aria-describedby={errors.fields.password ? "password-error" : undefined} />
-            </Field>
+            {canInvite && (
+              <label className="flex items-start gap-3 rounded-md border border-border p-3 text-sm">
+                <input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={inviting}
+                  onChange={(e) => setInviting(e.target.checked)} disabled={create.isPending || invite.isPending} />
+                <span className="flex flex-col gap-1">
+                  {t("users.inviteInstead")}
+                  <span className="text-xs text-muted-foreground">{t("users.inviteHelp")}</span>
+                </span>
+              </label>
+            )}
+            {!inviting && (
+              <Field id="password" label={t("field.password")} errors={errors.fields.password}>
+                <Input id="password" type="password" autoComplete="new-password" value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  disabled={create.isPending} aria-invalid={!!errors.fields.password}
+                  aria-describedby={errors.fields.password ? "password-error" : undefined} />
+              </Field>
+            )}
             {roles.data && roles.data.some((r) => r.abilities.assign) && (
               <div className="flex flex-col gap-2 border-t border-border pt-5">
                 <RolePicker roles={roles.data} selected={roleIds} onChange={setRoleIds}
@@ -248,8 +267,8 @@ export function UserCreatePage() {
           </CardContent>
         </Card>
         <div className="flex flex-wrap gap-3">
-          <Button type="submit" disabled={create.isPending}>
-            {create.isPending ? t("users.creating") : t("users.create")}
+          <Button type="submit" disabled={create.isPending || invite.isPending}>
+            {create.isPending || invite.isPending ? t("users.creating") : inviting ? t("users.invite") : t("users.create")}
           </Button>
           <Link to="/system/users"
             className="inline-flex h-10 items-center justify-center rounded-md border border-border px-4 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -272,6 +291,7 @@ export function UserPage({ id }: { id: string }) {
   const setRoles = useSetUserRoles(id);
   const setActive = useSetActive(id);
   const reset = useResetPassword(id);
+  const resend = useResendInvitation(id);
   const remove = useDeleteUser();
   const [draft, setDraft] = useState<{ name: string; email: string } | null>(null);
   const [profileBase, setProfileBase] = useState<{ name: string; email: string }>({ name: "", email: "" });
@@ -454,6 +474,23 @@ export function UserPage({ id }: { id: string }) {
                   </Button>
                 </div>
               </CardContent>
+            </Card>
+          )}
+
+          {u.invitationPending && (
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("users.invitation")}</CardTitle>
+                <p className="text-sm text-muted-foreground">{t("users.invitationText")}</p>
+              </CardHeader>
+              {u.abilities.resendInvitation && (
+                <CardContent>
+                  <Button type="button" variant="outline" disabled={resend.isPending}
+                    onClick={() => void run(() => resend.mutateAsync(undefined), later("users.invitationSent"))}>
+                    {t("users.resendInvitation")}
+                  </Button>
+                </CardContent>
+              )}
             </Card>
           )}
 

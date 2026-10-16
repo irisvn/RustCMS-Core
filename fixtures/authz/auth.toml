@@ -90,6 +90,49 @@ actor = "member"
 body = '{"locale": "vi"}'
 status = 200
 
+# Password resets and invitations (the same answer whether an account exists).
+[[case]]
+route = "POST /admin/api/auth/forgot-password"
+actor = "guest"
+body = '{"email": "member@example.test"}'
+status = 202
+
+[[case]]
+route = "POST /admin/api/auth/forgot-password"
+actor = "guest"
+body = '{"email": "nobody@example.test"}'
+status = 202
+
+[[case]]
+route = "POST /admin/api/auth/forgot-password"
+actor = "foreign"
+body = '{"email": "member@example.test"}'
+status = 403
+
+[[case]]
+route = "POST /admin/api/auth/reset-password"
+actor = "guest"
+body = '{"token": "0199d3a4-1b2c-7d3e-8f00-000000000000.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "password": "a long new password", "password_confirmation": "a long new password"}'
+status = 422
+
+[[case]]
+route = "POST /admin/api/auth/reset-password"
+actor = "foreign"
+body = '{"token": "0199d3a4-1b2c-7d3e-8f00-000000000000.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "password": "a long new password", "password_confirmation": "a long new password"}'
+status = 403
+
+[[case]]
+route = "POST /admin/api/auth/invitation"
+actor = "guest"
+body = '{"token": "0199d3a4-1b2c-7d3e-8f00-000000000000.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "password": "a long new password", "password_confirmation": "a long new password"}'
+status = 422
+
+[[case]]
+route = "POST /admin/api/auth/invitation"
+actor = "foreign"
+body = '{"token": "0199d3a4-1b2c-7d3e-8f00-000000000000.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "password": "a long new password", "password_confirmation": "a long new password"}'
+status = 403
+
 [[case]]
 route = "POST /api/v1/auth/token"
 actor = "guest"

@@ -16,6 +16,10 @@
    - `AppError::Conflict` has a new `reason` field.
    - `SettingsAbilities` has a new `test` field; `SettingsPage::validate_in`
      (with the application) runs `validate` by default.
+   - `rustcms::models::user::Model` has `invitation_pending`, `invited_at`,
+     `invited_by` (migrations `…000018`, `…000019`): struct literals need them
+     (`..Default::default()` on `ActiveModel`s is unaffected). `rustcms-auth`
+     now enables the core `mail` feature.
    - Mail: register `rustcms::mail::MailProvider` (and
      `AdminProvider::mail_settings()` for the page); in production with
      `driver = "smtp"` and `source = "settings"`, set `[mail] allowed_hosts`.

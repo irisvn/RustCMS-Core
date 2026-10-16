@@ -3,7 +3,7 @@ import { readConfig, safeHref, safeRedirect } from "@/lib/config";
 describe("runtime config", () => {
   it("reads the meta tag and normalizes the base path", () => {
     document.head.innerHTML = `<meta name="rustcms-admin" content='{"basePath":"/back-office/"}'>`;
-    expect(readConfig()).toEqual({ basePath: "/back-office", apiPath: "/back-office/api", theme: { colorScheme: "system" } });
+    expect(readConfig()).toEqual({ basePath: "/back-office", apiPath: "/back-office/api", theme: { colorScheme: "system" }, signIn: { passwordReset: false, remember: false } });
     document.head.innerHTML = `<meta name="rustcms-admin" content="not json">`;
     expect(readConfig().basePath).toBe("/admin");
     document.head.innerHTML = "";

@@ -51,6 +51,9 @@ impl Passwords {
     /// Whether `password` matches `hash`. `None` (unknown user) burns the same time and returns `false`.
     pub async fn verify(&self, password: String, hash: Option<String>) -> bool {
         let Ok(permit) = self.permits.clone().acquire_owned().await else { return false };
+        // Not a password hash (an invited user's `!invited`): as for an unknown
+        // user, the same work and `false`.
+        let hash = hash.filter(|h| argon2::PasswordHash::new(h).is_ok());
         let known = hash.is_some();
         let hash = hash.unwrap_or_else(|| self.dummy.as_ref().clone());
         let matches = tokio::task::spawn_blocking(move || {

@@ -40,6 +40,8 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::PUT, format!("{base}/users/{{id}}/roles")),
         (Method::PUT, format!("{base}/users/{{id}}/active")),
         (Method::PUT, format!("{base}/users/{{id}}/password")),
+        (Method::POST, format!("{base}/users/invitations")),
+        (Method::POST, format!("{base}/users/{{id}}/invitation")),
         (Method::GET, format!("{base}/roles")),
         (Method::POST, format!("{base}/roles")),
         (Method::GET, format!("{base}/roles/{{id}}")),
@@ -57,6 +59,8 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route(&format!("{base}/users/{{id}}/roles"), put(set_roles))
         .route(&format!("{base}/users/{{id}}/active"), put(set_active))
         .route(&format!("{base}/users/{{id}}/password"), put(reset_password))
+        .route(&format!("{base}/users/invitations"), axum::routing::post(invite_user))
+        .route(&format!("{base}/users/{{id}}/invitation"), axum::routing::post(resend_invitation))
         .route(&format!("{base}/roles"), get(list_roles).post(create_role))
         .route(&format!("{base}/roles/{{id}}"), get(show_role).delete(delete_role))
         .route(&format!("{base}/roles/{{id}}/permissions"), put(set_permissions))

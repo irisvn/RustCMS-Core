@@ -17,7 +17,7 @@ redis = ["rustcms-core/redis", "dep:redis"]
 
 [dependencies]
 redis = { workspace = true, optional = true }
-rustcms-core.workspace = true
+rustcms-core = { workspace = true, features = ["mail"] }
 anyhow.workspace = true
 argon2.workspace = true
 async-trait.workspace = true
@@ -37,6 +37,7 @@ subtle.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 futures = "0.3"
@@ -45,7 +46,7 @@ rustcms-core = { workspace = true, features = ["sqlite", "postgres", "mysql"] }
 rustcms-migration = { path = "../rustcms-migration" }
 # Path only (no version): not published, so the published crate does not depend on
 # rustcms-testing (which depends on rustcms-auth). Tests are excluded from the package.
-rustcms-testing = { path = "../rustcms-testing" }
+rustcms-testing = { path = "../rustcms-testing", features = ["mail"] }
 serde = { workspace = true }
 toml.workspace = true
 

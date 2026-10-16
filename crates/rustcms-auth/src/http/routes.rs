@@ -44,6 +44,9 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::POST, format!("{admin}/password")),
         (Method::POST, format!("{admin}/logout-others")),
         (Method::POST, format!("{admin}/locale")),
+        (Method::POST, format!("{admin}/forgot-password")),
+        (Method::POST, format!("{admin}/reset-password")),
+        (Method::POST, format!("{admin}/invitation")),
         (Method::POST, "/api/v1/auth/token".into()),
         (Method::DELETE, "/api/v1/auth/token".into()),
         (Method::GET, "/api/v1/auth/me".into()),
@@ -64,6 +67,9 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route(&format!("{admin}/password"), post(change_password))
         .route(&format!("{admin}/logout-others"), post(logout_others))
         .route(&format!("{admin}/locale"), post(set_locale))
+        .route(&format!("{admin}/forgot-password"), post(forgot_password))
+        .route(&format!("{admin}/reset-password"), post(reset_password))
+        .route(&format!("{admin}/invitation"), post(accept_invitation))
         .route("/api/v1/auth/token", post(issue_token))
         .route("/api/v1/auth/token", delete(revoke_token))
         .route("/api/v1/auth/me", get(me))
@@ -175,6 +181,9 @@ async fn set_locale(
 struct Credentials {
     email: String,
     password: String,
+    /// "Remember me" (with `[auth] remember_days` > 0).
+    #[serde(default)]
+    remember: bool,
 }
 
 /// Checks credentials with throttling per account+IP and per IP. The attempt is
@@ -205,7 +214,8 @@ async fn attempt(
 
     let user = user::Entity::find().filter(user::Column::Email.eq(&email)).one(app.db()).await?;
     let matches = auth.passwords.verify(password, user.as_ref().map(|u| u.password.clone())).await;
-    match user.filter(|u| matches && u.is_active) {
+    // Invited users sign in only once they set a password from the invitation.
+    match user.filter(|u| matches && u.is_active && !u.invitation_pending) {
         Some(user) => {
             // Refunds are best effort: a failed one only leaves less budget.
             auth.limiter.clear(&account_key).await.ok();
@@ -248,7 +258,7 @@ async fn login(
 ) -> AppResult<(Extension<crate::audit::AfterSession>, Json<Me>)> {
     let auth = auth_state(&app)?;
     let user = attempt(&app, &auth, ip, &input.email, input.password, &request, ADMIN_GUARD).await?;
-    session.login(user.id, user.auth_version);
+    session.login_remembered(user.id, user.auth_version, input.remember && auth.config.remember_days > 0);
     let principal = auth.resolver.principal(app.db(), ADMIN_GUARD, &user, None).await?;
     // Recorded once the session is stored (the guard does it after this handler).
     let actor = AuditActor::signed_in(user.id, ADMIN_GUARD, Some(rustcms_core::Credential::Session));
@@ -519,4 +529,139 @@ async fn logout_jwt(
     refresh_limits(&app, &auth, ip, &input.refresh_token).await?;
     jwt_session::logout(&auth, app.db(), &input.refresh_token, &request).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// The rules of a new password (as for a change): `password` and
+/// `password_confirmation` fields.
+fn check_new_password(auth: &AuthState, password: &str, confirmation: &str) -> AppResult<()> {
+    let mut errors = ValidationErrors::new();
+    if password.chars().count() < auth.config.password_min_length {
+        errors.add("password", format!("must be at least {} characters", auth.config.password_min_length));
+    }
+    if password.len() > MAX_PASSWORD_LEN {
+        errors.add("password", format!("may not be longer than {MAX_PASSWORD_LEN} characters"));
+    }
+    if confirmation.len() > MAX_PASSWORD_LEN || password != confirmation {
+        errors.add("password_confirmation", "does not match");
+    }
+    errors.into_result()?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ForgotPassword {
+    email: String,
+}
+
+/// Resets in flight per minute, in total (bounds the queue).
+const RESET_REQUESTS_PER_MINUTE: u32 = 300;
+
+/// `POST {admin}/api/auth/forgot-password` `{email}`: always 202 `{}`, the
+/// same whether an account exists or not (the work is done by a job: one
+/// insert for every request, so the answer takes the same time). Throttled
+/// per IP, per email and in total.
+async fn forgot_password(
+    State(app): State<AppState>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
+    Json(input): Json<ForgotPassword>,
+) -> AppResult<(StatusCode, Json<Value>)> {
+    let auth = auth_state(&app)?;
+    if !auth.config.password_reset {
+        return Err(AppError::NotFound);
+    }
+    let email = input.email.trim().to_lowercase();
+    if email.len() > MAX_EMAIL_LEN || !rustcms_core::mail::valid_address(&email) {
+        return Err(ValidationErrors::field("email", "must be a valid email address").into());
+    }
+    auth.limiter
+        .reserve(&[
+            (&format!("reset-ip:{ip}"), auth.config.reset_requests_per_ip),
+            (&format!("reset-email:{}", crate::secret::sha256_hex(&email)), auth.config.reset_requests_per_email),
+            ("reset:*", RESET_REQUESTS_PER_MINUTE),
+        ])
+        .await?;
+    let job = crate::recovery::PasswordResetJob {
+        email,
+        locale: request_locale(&app, &headers, None).to_owned(),
+        request_id: uuid::Uuid::now_v7(),
+        requested_at: chrono::Utc::now(),
+    };
+    // Not queued (the database refused): the same answer, nothing told.
+    if let Err(err) = rustcms_core::queue::enqueue(app.db(), &job).await {
+        tracing::error!(%err, "password reset request not queued");
+    }
+    Ok((StatusCode::ACCEPTED, Json(json!({}))))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UseToken {
+    token: String,
+    password: String,
+    password_confirmation: String,
+    /// The invited user's name (invitations).
+    #[serde(default)]
+    name: Option<String>,
+}
+
+/// Uses tokens a minute per IP, and per token (once its secret matched).
+const TOKEN_USES_PER_IP: u32 = 10;
+const TOKEN_USES_PER_TOKEN: u32 = 5;
+/// Longest name of an accepted invitation.
+const MAX_NAME_LEN: usize = 255;
+
+async fn use_token(
+    app: &AppState,
+    ip: IpAddr,
+    request: RequestMeta,
+    purpose: crate::recovery::Purpose,
+    input: UseToken,
+) -> AppResult<StatusCode> {
+    let auth = auth_state(app)?;
+    if purpose == crate::recovery::Purpose::PasswordReset && !auth.config.password_reset {
+        return Err(AppError::NotFound);
+    }
+    auth.limiter
+        .reserve(&[(&format!("token-ip:{ip}"), TOKEN_USES_PER_IP), ("token:*", RESET_REQUESTS_PER_MINUTE)])
+        .await?;
+    check_new_password(&auth, &input.password, &input.password_confirmation)?;
+    if input.name.as_ref().is_some_and(|n| n.chars().count() > MAX_NAME_LEN || n.chars().any(char::is_control)) {
+        return Err(ValidationErrors::field("name", format!("may not be longer than {MAX_NAME_LEN} characters")).into());
+    }
+    let key = &app.config().app.key;
+    let checked = crate::recovery::check(app.db(), key, purpose, &input.token).await?;
+    // Charged only once the secret matched: guessing cannot use up a real token's budget.
+    auth.limiter.reserve(&[(&format!("token-use:{}", checked.id), TOKEN_USES_PER_TOKEN)]).await?;
+    let hash = auth.passwords.hash(input.password).await?;
+    let accept =
+        crate::recovery::Accept { name: input.name, revoke_api_tokens: auth.config.revoke_tokens_on_password_change };
+    // Every session and token of the user ends with it (their credential version moves).
+    crate::recovery::consume(app.db(), key, purpose, &input.token, &checked, hash, accept, request).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `POST {admin}/api/auth/reset-password` `{token, password, password_confirmation}`:
+/// 204 (sign in with the new password), or 422 on the password or the token.
+async fn reset_password(
+    State(app): State<AppState>,
+    ClientIp(ip): ClientIp,
+    request: RequestMeta,
+    Json(input): Json<UseToken>,
+) -> AppResult<StatusCode> {
+    if input.name.is_some() {
+        return Err(ValidationErrors::field("name", "is not allowed").into());
+    }
+    use_token(&app, ip, request, crate::recovery::Purpose::PasswordReset, input).await
+}
+
+/// `POST {admin}/api/auth/invitation` `{token, password, password_confirmation, name?}`.
+async fn accept_invitation(
+    State(app): State<AppState>,
+    ClientIp(ip): ClientIp,
+    request: RequestMeta,
+    Json(input): Json<UseToken>,
+) -> AppResult<StatusCode> {
+    use_token(&app, ip, request, crate::recovery::Purpose::Invitation, input).await
 }

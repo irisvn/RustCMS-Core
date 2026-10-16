@@ -65,6 +65,19 @@ export function useCreateUser() {
   );
 }
 
+export function useInviteUser() {
+  const api = useApi();
+  return useSystemWrite(USERS, (input: { name: string; email: string; roleIds: string[] }) =>
+    // No body (204) when the inviter may not view users.
+    api.post<SystemUser | undefined>("/system/users/invitations", input),
+  );
+}
+
+export function useResendInvitation(id: string) {
+  const api = useApi();
+  return useSystemWrite(USERS, () => api.post<SystemUser | undefined>(`/system/users/${enc(id)}/invitation`, {}));
+}
+
 export function useUpdateProfile(id: string) {
   const api = useApi();
   const session = useSession();

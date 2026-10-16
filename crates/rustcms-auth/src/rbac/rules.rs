@@ -147,6 +147,8 @@ pub(super) async fn ensure_super_admin_remains<C: ConnectionTrait>(db: &C, guard
     let active = user::Entity::find()
         .filter(user::Column::Id.is_in(holders))
         .filter(user::Column::IsActive.eq(true))
+        // An invitation not yet accepted cannot sign in: it does not count.
+        .filter(user::Column::InvitationPending.eq(false))
         .count(db)
         .await?;
     if active == 0 {

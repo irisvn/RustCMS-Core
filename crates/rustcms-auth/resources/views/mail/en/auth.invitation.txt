@@ -1,0 +1,5 @@
+Hello {{ data.name }},
+
+You are invited to {{ app_name }}. Open this link to choose your password (it works for {{ data.valid_for }} days, once):
+
+{{ data.link }}

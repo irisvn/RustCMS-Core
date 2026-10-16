@@ -9,7 +9,7 @@ use axum::http::{Method, StatusCode};
 use rustcms_migration::Migrator;
 use rustcms_testing::{TestApp, TestClient, TestDb, db_test};
 use serde::Deserialize;
-use support::{Seed, setup};
+use support::Seed;
 
 #[derive(Deserialize)]
 struct Oracle {
@@ -54,7 +54,8 @@ fn oracle_covers_every_auth_route() {
 }
 
 db_test!(oracle_matches_the_application, migrate = Migrator, |db: TestDb| async move {
-    let (app, seed) = setup(db).await;
+    // Password resets on (their routes answer 404 otherwise).
+    let (app, seed) = support::setup_with(support::build_with_mail, db, &[]).await;
     let mut failures = Vec::new();
     for case in oracle().case {
         let (method, path) = case.route.split_once(' ').expect("`METHOD /path`");

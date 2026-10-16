@@ -10,6 +10,7 @@ framework's test suite.
 | Password change                | kept (new id)    | ended          | all revoked (`revoke_tokens_on_password_change`) | all ended (always) |
 | User disabled (`RbacService::set_user_active`) | ended | ended   | all revoked                    | all ended                       |
 | Email changed or password reset by an admin | ended | ended     | all revoked                    | all ended                       |
+| Password reset by link / invitation accepted | — | ended | all revoked (`revoke_tokens_on_password_change`) | all ended |
 | User deleted                   | ended            | ended          | deleted                        | deleted                         |
 | One token revoked              | —                | —              | that token                     | kept                            |
 | JWT logout (`POST /api/v1/auth/jwt/logout`) | — | —            | kept                           | that sign-in                    |

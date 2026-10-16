@@ -76,9 +76,40 @@ db_test!(upgrade_adds_audit_logs, |db: TestDb| async move {
     assert!(rustcms_core::models::audit_log::Entity::find().all(db.conn()).await.unwrap().is_empty());
     Migrator::down(db.conn(), Some(from("create_audit_logs_table"))).await.unwrap();
     assert!(!has_table(&db, "audit_logs").await);
-    assert!(find_user(&db, "ada@example.test").await.is_active, "rollback keeps users");
+    assert!(still_active(&db, "ada@example.test").await, "rollback keeps users");
     Migrator::up(db.conn(), None).await.unwrap();
     assert!(has_table(&db, "audit_logs").await);
+});
+
+/// Whether the user is active, read without the columns of later migrations.
+async fn still_active(db: &TestDb, email: &str) -> bool {
+    use sea_orm::{ColumnTrait, QueryFilter, QuerySelect};
+    user::Entity::find()
+        .select_only()
+        .column(user::Column::IsActive)
+        .filter(user::Column::Email.eq(email))
+        .into_tuple::<bool>()
+        .one(db.conn())
+        .await
+        .unwrap()
+        .unwrap()
+}
+
+// M19 → M20: existing users are not invited, sign in as before; re-runnable and reversible.
+db_test!(upgrade_adds_invitations, |db: TestDb| async move {
+    Migrator::up(db.conn(), Some(before("add_invitations_to_users"))).await.unwrap();
+    insert_user(&db, "ada@example.test").await;
+    Migrator::up(db.conn(), None).await.unwrap();
+    let found = find_user(&db, "ada@example.test").await;
+    assert!(!found.invitation_pending && found.invited_at.is_none() && found.invited_by.is_none());
+    assert_eq!(found.password, "hash", "credentials untouched");
+    assert!(has_table(&db, "user_tokens").await);
+    Migrator::down(db.conn(), Some(from("add_invitations_to_users"))).await.unwrap();
+    assert!(!has_table(&db, "user_tokens").await);
+    assert!(!SchemaManager::new(db.conn()).has_column("users", "invitation_pending").await.unwrap());
+    assert!(still_active(&db, "ada@example.test").await);
+    Migrator::up(db.conn(), None).await.unwrap();
+    assert!(!find_user(&db, "ada@example.test").await.invitation_pending);
 });
 
 // M13 → M14: the settings table appears empty, and rolls back cleanly.

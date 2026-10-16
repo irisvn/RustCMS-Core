@@ -46,7 +46,7 @@ settings, audit log, i18n, media S3/R2, tin tức, nhiều-nhiều, import/expor
 | M17 | Import / Export CSV (chạy nền qua queue, kiểm quyền mỗi lô, chống CSV injection) | ✅ `9ea0531` + M17b `f1aaa6f` + fix |
 | M18 | Excel (XLSX): giới hạn zip bomb, kiểu dữ liệu tường minh | ⏸ tạm bỏ qua (22/10/2026), làm sau 0.3 nếu cần |
 | M19 | Mail: SMTP qua settings, gửi qua queue | ✅ |
-| M20 | Quên mật khẩu + mời user (token một lần, revoke trong cùng transaction) | ⏳ |
+| M20 | Quên mật khẩu + mời user + ghi nhớ đăng nhập (token một lần, revoke trong cùng transaction) | ✅ |
 | M21 | Media: Range/video, thumbnail (giới hạn decode an toàn) | ⏸ tạm bỏ qua (22/10/2026), làm sau 0.3 nếu cần |
 | M22 | Dashboard widgets dựng sẵn (đếm/nhóm theo quyền, không cache), dùng cơ chế slot của M15e | ⏳ |
 | M23 | Hoàn thiện `examples/lms`, docs vận hành, tutorial tiếng Việt, tag `v0.3.0` | ⏳ |

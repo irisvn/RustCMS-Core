@@ -724,6 +724,10 @@ roles: boolean,
  */
 createUsers: boolean, 
 /**
+ * May invite users (`users.create` and `users.invite`).
+ */
+inviteUsers: boolean, 
+/**
  * May create roles (`roles.create`).
  */
 createRoles: boolean, 
@@ -763,6 +767,14 @@ email: string,
  * May sign in.
  */
 isActive: boolean, 
+/**
+ * Invited, the invitation not yet accepted.
+ */
+invitationPending: boolean, 
+/**
+ * When they were invited (RFC 3339).
+ */
+invitedAt?: string, 
 /**
  * Roles held in the admin guard.
  */

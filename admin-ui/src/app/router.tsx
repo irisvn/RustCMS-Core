@@ -13,6 +13,7 @@ import { serverLocale } from "@/i18n/preference";
 import { NotFoundPage } from "@/components/states";
 import { ListPage, type ListSearch } from "@/pages/list";
 import { LoginPage } from "@/pages/login";
+import { ForgotPasswordPage, TokenPasswordPage } from "@/pages/recovery";
 import { FormPage, ViewPage } from "@/pages/record";
 import { Dashboard, Shell } from "@/pages/shell";
 import { AccountPage } from "@/pages/account";
@@ -37,12 +38,25 @@ const root = createRootRouteWithContext<RouterContext>()({
 const login = createRoute({
   getParentRoute: () => root,
   path: "/login",
-  validateSearch: (search: Record<string, unknown>): { redirect?: string } =>
-    typeof search.redirect === "string" ? { redirect: search.redirect } : {},
+  validateSearch: (search: Record<string, unknown>): { redirect?: string; done?: string } => ({
+    ...(typeof search.redirect === "string" ? { redirect: search.redirect } : {}),
+    ...(search.done === "reset" || search.done === "invitation" ? { done: search.done } : {}),
+  }),
   component: function Login() {
-    const { redirect: target } = login.useSearch();
-    return <LoginPage redirect={target} />;
+    const { redirect: target, done } = login.useSearch();
+    return <LoginPage redirect={target} done={done} />;
   },
+});
+const forgotPassword = createRoute({ getParentRoute: () => root, path: "/forgot-password", component: ForgotPasswordPage });
+const resetPassword = createRoute({
+  getParentRoute: () => root,
+  path: "/reset-password",
+  component: () => <TokenPasswordPage purpose="reset" />,
+});
+const invitation = createRoute({
+  getParentRoute: () => root,
+  path: "/invitation",
+  component: () => <TokenPasswordPage purpose="invitation" />,
 });
 
 /** Everything behind sign-in. A 401 from `/auth/me` sends to the login page. */
@@ -167,6 +181,9 @@ const account = createRoute({ getParentRoute: () => app, path: "/account", compo
 
 const routeTree = root.addChildren([
   login,
+  forgotPassword,
+  resetPassword,
+  invitation,
   app.addChildren([
     index,
     list,

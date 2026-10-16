@@ -32,6 +32,33 @@ All notable changes are documented here. The format follows
 - Examples: LMS theme, course overview page, seats slot, progress cell; demo
   post stats page and visibility slot.
 
+### Added (0.3 — M20; ADR 0023)
+- Password resets: `[auth] password_reset` (+ `_minutes`, `reset_requests_per_*`,
+  `reset_cooldown_secs`), `POST auth/forgot-password` (always 202),
+  `POST auth/reset-password`; job `auth.password_reset` makes the token under
+  the user lock and mails it; `user_tokens` table (HMAC of the secret, one per
+  user and purpose, request id/time); link secret in the URL fragment, pages
+  served `Referrer-Policy: no-referrer`, SPA fetches with
+  `referrerPolicy: same-origin`.
+- Invitations: `users.invite`, `RbacService::invite_user` /
+  `resend_invitation`, `POST system/users/invitations`,
+  `POST system/users/{id}/invitation`, `POST auth/invitation`, job
+  `auth.invitation`; `users.invitation_pending` / `invited_at` / `invited_by`;
+  `SystemUser.invitationPending`, `invitedAt`, ability `resendInvitation`;
+  `SystemLinks.inviteUsers`.
+- Remember me: `[auth] remember_days` (30), `remember` on login,
+  `Session::login_remembered`.
+- SPA: forgot / reset / invitation pages, remember box, invite option,
+  pending badge, resend button; runtime config `signIn`.
+- Issue template `token_invalid`; mail templates `auth.password_reset`,
+  `auth.invitation` (en, vi).
+
+### Changed (0.3 — M20)
+- A password that is not an Argon2 hash verifies like an unknown user (same
+  work, `false`); invited (pending) users cannot sign in; the last-super-admin
+  rule counts accepted accounts only; an administrator setting a pending
+  user's password ends the invitation.
+
 ### Added (0.3 — M19; ADR 0022)
 - Mail (`rustcms_core::mail`, feature `mail`, default in `rustcms`):
   `MailProvider`, `[mail]` (drivers `disabled`/`smtp`/`log`/`memory`, source

@@ -19,6 +19,7 @@ pub const BUILT_IN_PERMISSIONS: &[(&str, &str)] = &[
     ("users", "users.create"),
     ("users", "users.update"),
     ("users", "users.delete"),
+    ("users", "users.invite"),
     ("roles", "roles.view_any"),
     ("roles", "roles.view"),
     ("roles", "roles.create"),
@@ -103,6 +104,16 @@ impl ServiceProvider for AuthProvider {
         app.describe_routes("auth", [(any.clone(), base.clone()), (any, format!("{base}/{{*rest}}"))]);
         app.routes(move |router| routes::router(router, &admin_path));
         app.middleware(|router, state| router.layer(from_fn_with_state(state, guard::authenticate)));
+        // Password resets and invitations: their jobs and mails.
+        app.job::<crate::recovery::PasswordResetJob>().job::<crate::recovery::InvitationJob>();
+        for template in [
+            rustcms_core::mail_template!("auth.password_reset", "en", html),
+            rustcms_core::mail_template!("auth.password_reset", "vi", html),
+            rustcms_core::mail_template!("auth.invitation", "en", html),
+            rustcms_core::mail_template!("auth.invitation", "vi", html),
+        ] {
+            app.mail_template(template);
+        }
         app.command(MakeUser)
             .command(RoleAssign)
             .command(TokenCreate)
@@ -114,6 +125,16 @@ impl ServiceProvider for AuthProvider {
     async fn boot(&self, state: &AppState) -> anyhow::Result<()> {
         // A bad `[audit]` section stops the boot, not the first pruning.
         rustcms_core::audit::AuditConfig::of(state.config())?;
+        if let Some(auth) = state.service::<AuthState>()
+            && auth.config.password_reset
+        {
+            let mails = rustcms_core::mail::mailer(state)
+                .is_some_and(|m| m.config().driver != rustcms_core::mail::Driver::Disabled);
+            anyhow::ensure!(
+                mails,
+                "auth.password_reset needs mail: register rustcms::mail::MailProvider with a [mail] driver"
+            );
+        }
         #[cfg(feature = "redis")]
         if let (Some(auth), Some(redis)) = (state.service::<AuthState>(), state.service::<rustcms_core::redis::Redis>())
         {
@@ -139,6 +160,11 @@ impl ServiceProvider for AuthProvider {
                         Ok(n) if n > 0 => tracing::info!(pruned = n, "ended JWT sign-ins deleted"),
                         Ok(_) => {}
                         Err(err) => tracing::warn!(%err, "JWT pruning failed"),
+                    }
+                    match crate::recovery::prune(&db).await {
+                        Ok(n) if n > 0 => tracing::info!(pruned = n, "expired reset and invitation tokens deleted"),
+                        Ok(_) => {}
+                        Err(err) => tracing::warn!(%err, "token pruning failed"),
                     }
                     match crate::console::commands::prune_audit(&app_for_job, std::time::Duration::from_secs(60)).await
                     {

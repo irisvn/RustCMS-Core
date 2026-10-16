@@ -1,0 +1,5 @@
+Chào {{ data.name }},
+
+Bạn được mời tham gia {{ app_name }}. Mở liên kết sau để đặt mật khẩu (dùng được một lần, trong {{ data.valid_for }} ngày):
+
+{{ data.link }}

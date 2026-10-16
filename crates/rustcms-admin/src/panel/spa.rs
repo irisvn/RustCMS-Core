@@ -105,6 +105,10 @@ pub(crate) struct ThemeConfig {
 pub(crate) struct Locales {
     pub(crate) default: String,
     pub(crate) all: Vec<String>,
+    /// The sign-in page offers "Forgot password?" (`[auth] password_reset`).
+    pub(crate) password_reset: bool,
+    /// The sign-in page offers "Remember me" (`[auth] remember_days` > 0).
+    pub(crate) remember: bool,
 }
 
 pub(crate) fn router(
@@ -145,6 +149,12 @@ async fn page(method: Method, rest: String, index: Arc<str>, extensions: Arc<Vec
     }
     match rest.strip_prefix("assets/") {
         Some(path) => asset(path),
+        // Pages whose URL carries a token (in the fragment): no `Referer` at all.
+        None if matches!(rest.as_str(), "reset-password" | "invitation") => {
+            let mut response = html(&index);
+            response.headers_mut().insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+            response
+        }
         None => html(&index),
     }
 }
@@ -208,6 +218,9 @@ fn render_index(
     let styles: Vec<String> = extensions.iter().filter(|e| e.style).map(|e| format!("assets/ext/{}", e.file)).collect();
     // Before sign-in the panel picks among these from the browser's languages.
     let mut config = serde_json::json!({ "basePath": base, "locale": locales.default, "locales": locales.all });
+    if locales.password_reset || locales.remember {
+        config["signIn"] = serde_json::json!({ "passwordReset": locales.password_reset, "remember": locales.remember });
+    }
     if !scripts.is_empty() || !styles.is_empty() {
         config["extensions"] = serde_json::json!({ "scripts": scripts, "styles": styles });
     }
@@ -237,7 +250,7 @@ mod tests {
     use super::*;
 
     fn en() -> Locales {
-        Locales { default: "en".into(), all: vec!["en".into(), "vi".into()] }
+        Locales { default: "en".into(), all: vec!["en".into(), "vi".into()], password_reset: false, remember: false }
     }
 
     #[test]

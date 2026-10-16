@@ -38,6 +38,9 @@ struct Data {
     user_id: Option<i64>,
     auth_version: i64,
     csrf: Option<String>,
+    /// "Remember me": lives `remember_days`, its cookie across browser restarts.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    remember: bool,
 }
 
 #[derive(Debug, Default)]
@@ -107,8 +110,14 @@ impl Session {
 
     /// Signs `user_id` in: new session id and CSRF token.
     pub fn login(&self, user_id: i64, auth_version: i64) {
+        self.login_remembered(user_id, auth_version, false);
+    }
+
+    /// Signs `user_id` in; with `remember`, for `[auth] remember_days` (idle)
+    /// and with a cookie kept across browser restarts.
+    pub fn login_remembered(&self, user_id: i64, auth_version: i64, remember: bool) {
         let mut state = self.state();
-        state.data = Data { user_id: Some(user_id), auth_version, csrf: Some(random_string(40)) };
+        state.data = Data { user_id: Some(user_id), auth_version, csrf: Some(random_string(40)), remember };
         state.changed = true;
         state.regenerate = true;
         state.restamp = false;
@@ -232,7 +241,7 @@ pub(crate) async fn persist(
         state.changed = false;
         state.regenerate = false;
         state.restamp = false;
-        return Ok(Some(set_cookie(auth, &token)));
+        return Ok(Some(set_cookie(auth, &token, data.remember)));
     }
     if let Some(id) = stored_id
         && token.is_some()
@@ -316,7 +325,7 @@ pub async fn create_for_user<C: ConnectionTrait>(
     auth_version: i64,
 ) -> AppResult<(String, String)> {
     let csrf = random_string(40);
-    let data = Data { user_id: Some(user_id), auth_version, csrf: Some(csrf.clone()) };
+    let data = Data { user_id: Some(user_id), auth_version, csrf: Some(csrf.clone()), remember: false };
     let token = insert(auth, db, &data, Utc::now() + lifetime(auth), None).await?;
     Ok((token, csrf))
 }
@@ -351,7 +360,9 @@ fn encode(data: &Data) -> String {
 
 /// Anonymous sessions (only a CSRF token) live shorter than signed-in ones.
 fn lifetime_of(auth: &AuthState, data: &Data) -> Duration {
-    if data.user_id.is_some() {
+    if data.user_id.is_some() && data.remember && auth.config.remember_days > 0 {
+        remembered(auth)
+    } else if data.user_id.is_some() {
         lifetime(auth)
     } else {
         Duration::minutes(i64::try_from(auth.config.anonymous_session_lifetime_minutes).unwrap_or(15))
@@ -362,11 +373,20 @@ fn lifetime(auth: &AuthState) -> Duration {
     Duration::minutes(i64::try_from(auth.config.session_lifetime_minutes).unwrap_or(i64::MAX / 120_000))
 }
 
-/// The session cookie. It lives until the browser closes: expiry (idle for
-/// signed-in sessions, fixed for anonymous ones) is enforced by the server, so
-/// the cookie is only sent when its value changes.
-fn set_cookie(auth: &AuthState, value: &str) -> HeaderValue {
-    cookie_header(auth, value, "")
+fn remembered(auth: &AuthState) -> Duration {
+    Duration::days(i64::try_from(auth.config.remember_days).unwrap_or(30).min(400))
+}
+
+/// The session cookie. It lives until the browser closes (a remembered one:
+/// `remember_days` from sign-in): expiry (idle for signed-in sessions, fixed
+/// for anonymous ones) is enforced by the server, so the cookie is only sent
+/// when its value changes.
+fn set_cookie(auth: &AuthState, value: &str, remember: bool) -> HeaderValue {
+    if remember && auth.config.remember_days > 0 {
+        cookie_header(auth, value, &format!("; Max-Age={}", remembered(auth).num_seconds()))
+    } else {
+        cookie_header(auth, value, "")
+    }
 }
 
 /// Removes the session cookie.

@@ -16,6 +16,7 @@ pub mod guards;
 pub mod http;
 mod provider;
 pub mod rbac;
+pub mod recovery;
 pub mod state;
 pub mod support;
 

@@ -32,6 +32,11 @@ pub(super) fn system_user(actor: &ActorView<'_>, user: user::Model, roles: Vec<r
         ("assignRoles", !is_self && p.can("roles.assign") && (p.can("users.view") || p.can("users.view_any"))),
         ("activate", !is_self && p.can("users.update") && manageable),
         ("resetPassword", !is_self && p.can("users.update") && actor.covers),
+        // Send the invitation again (while pending and enabled).
+        (
+            "resendInvitation",
+            !is_self && p.can("users.invite") && p.can("users.view") && user.invitation_pending && user.is_active,
+        ),
     ]);
     let roles = roles.into_iter().filter(|r| r.guard_name == ADMIN_GUARD);
     SystemUser {
@@ -39,6 +44,8 @@ pub(super) fn system_user(actor: &ActorView<'_>, user: user::Model, roles: Vec<r
         name: user.name,
         email: user.email,
         is_active: user.is_active,
+        invitation_pending: user.invitation_pending,
+        invited_at: user.invited_at.map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
         roles: roles.map(|r| RoleRef { id: r.id.to_string(), name: r.name }).collect(),
         super_admin,
         is_self,
@@ -333,4 +340,71 @@ pub(super) async fn reset_password(
         .reset_password(Actor::User(&ctx.principal), id, hash)
         .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct InvitationInput {
+    name: String,
+    email: String,
+    #[serde(default)]
+    role_ids: Vec<String>,
+}
+
+/// Invitations an administrator sends per minute.
+const INVITATIONS_PER_MINUTE: u32 = 20;
+/// Invitations sent again per minute.
+const RESENDS_PER_MINUTE: u32 = 5;
+
+/// Refuses invitations while mail cannot be sent (they would only fail later).
+fn mail_on(app: &AppState) -> AppResult<()> {
+    let on = rustcms_core::mail::mailer(app).is_some_and(|m| m.config().driver != rustcms_core::mail::Driver::Disabled);
+    if on {
+        Ok(())
+    } else {
+        Err(AppError::Conflict {
+            code: "mail_disabled",
+            reason: "disabled",
+            message: "Mail is disabled: invitations cannot be sent.",
+        })
+    }
+}
+
+/// `POST system/users/invitations` `{name, email, roleIds}`: a pending user
+/// and their invitation mail (`users.create` and `users.invite`, checked
+/// before the body is read).
+pub(super) async fn invite_user(
+    State(app): State<AppState>,
+    AdminCtx(ctx): AdminCtx,
+    request: axum::extract::Request,
+) -> AppResult<Response> {
+    require(&ctx.principal, "users.create")?;
+    require(&ctx.principal, "users.invite")?;
+    let auth = auth(&app)?;
+    let input: InvitationInput = crate::http::json_body(request, &app).await?;
+    let role_ids = ids_of("roleIds", &input.role_ids)?;
+    mail_on(&app)?;
+    auth.limiter.reserve(&[(&format!("admin-invite:{}", ctx.principal.id), INVITATIONS_PER_MINUTE)]).await?;
+    let rbac = RbacService::new(app.db(), &auth.resolver).audited(ctx.audit_context.clone());
+    let user = rbac.invite_user(Actor::User(&ctx.principal), &input.name, &input.email, ADMIN_GUARD, &role_ids).await?;
+    changed_user(&app, &ctx.principal, user.id, StatusCode::CREATED).await
+}
+
+/// `POST system/users/{id}/invitation`: sends a pending user's invitation
+/// again (a new link; the old one dies when it is made).
+pub(super) async fn resend_invitation(
+    State(app): State<AppState>,
+    AdminCtx(ctx): AdminCtx,
+    Path(id): Path<String>,
+) -> AppResult<Response> {
+    // Before the id is looked at: who may not invite learns nothing about ids.
+    require(&ctx.principal, "users.invite")?;
+    require(&ctx.principal, "users.view")?;
+    let id = id_of(&id)?;
+    mail_on(&app)?;
+    let auth = auth(&app)?;
+    auth.limiter.reserve(&[(&format!("admin-resend:{}", ctx.principal.id), RESENDS_PER_MINUTE)]).await?;
+    let rbac = RbacService::new(app.db(), &auth.resolver).audited(ctx.audit_context.clone());
+    rbac.resend_invitation(Actor::User(&ctx.principal), id).await?;
+    changed_user(&app, &ctx.principal, id, StatusCode::OK).await
 }

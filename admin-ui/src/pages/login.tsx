@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { ArrowRight, PanelsTopLeft } from "lucide-react";
 import { ApiError } from "@/api/client";
@@ -14,12 +14,14 @@ import { useT } from "@/i18n";
 /** The product name (not translated). */
 const PRODUCT = "rustcms";
 
-export function LoginPage({ redirect }: { redirect?: string }) {
+export function LoginPage({ redirect, done }: { redirect?: string; done?: string }) {
   const t = useT();
   const session = useSession();
   const navigate = useNavigate();
+  const offers = session.config.signIn ?? { passwordReset: false, remember: false };
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   // The failure itself: its messages are read in the current language.
   const [failed, setFailed] = useState<unknown>(null);
   const errors: Record<string, string[]> = failed instanceof ApiError && failed.status === 422 ? failed.fieldErrors : {};
@@ -34,7 +36,7 @@ export function LoginPage({ redirect }: { redirect?: string }) {
     setPending(true);
     try {
       // The CSRF token of the (anonymous) session; login rotates both.
-      await session.api.post<Me>("/auth/login", { email, password });
+      await session.api.post<Me>("/auth/login", offers.remember ? { email, password, remember } : { email, password });
       session.signedIn();
       await session.api.csrfToken();
       await navigate({ to: session.afterLogin(redirect), replace: true });
@@ -56,6 +58,8 @@ export function LoginPage({ redirect }: { redirect?: string }) {
         <CardContent className="p-6 pt-6">
           <form className="flex flex-col gap-4" onSubmit={(e) => void submit(e)} noValidate>
             {message && <Alert variant="destructive">{message}</Alert>}
+            {!message && done === "reset" && <Alert>{t("recovery.resetDone")}</Alert>}
+            {!message && done === "invitation" && <Alert>{t("recovery.invitationDone")}</Alert>}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="email">{t("field.email")}</Label>
               <Input
@@ -84,6 +88,20 @@ export function LoginPage({ redirect }: { redirect?: string }) {
               />
               {errors.password && <p id="password-error" role="alert" className="text-xs text-destructive">{errors.password.join(" ")}</p>}
             </div>
+            {(offers.remember || offers.passwordReset) && (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                {offers.remember ? (
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" className="size-4 accent-primary" checked={remember}
+                      onChange={(e) => setRemember(e.target.checked)} />
+                    {t("login.remember")}
+                  </label>
+                ) : <span />}
+                {offers.passwordReset && (
+                  <Link to="/forgot-password" className="text-primary underline-offset-4 hover:underline">{t("login.forgot")}</Link>
+                )}
+              </div>
+            )}
             <Button type="submit" disabled={pending}>
               {pending ? t("login.pending") : <>{t("login.submit")} <ArrowRight className="ml-auto" /></>}
             </Button>

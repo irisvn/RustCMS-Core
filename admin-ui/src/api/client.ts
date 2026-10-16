@@ -178,6 +178,9 @@ export class ApiClient {
         method: "GET",
         headers: { "Accept-Language": getLocale(), "X-Rustcms-Locale": getLocale() },
         credentials: "same-origin",
+        // A request's own policy: on the token pages (`Referrer-Policy: no-referrer`)
+        // a same-origin POST would otherwise carry `Origin: null` and be refused.
+        referrerPolicy: "same-origin",
         cache: "no-store",
       });
     } catch {
@@ -233,6 +236,9 @@ export class ApiClient {
         headers,
         body: body === undefined ? undefined : multipart ? (body as FormData) : file ? (body as Blob) : JSON.stringify(body),
         credentials: "same-origin",
+        // A request's own policy: on the token pages (`Referrer-Policy: no-referrer`)
+        // a same-origin POST would otherwise carry `Origin: null` and be refused.
+        referrerPolicy: "same-origin",
         cache: "no-store",
       });
     } catch {

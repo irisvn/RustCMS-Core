@@ -13,6 +13,8 @@ export interface PanelConfig {
   locales?: string[];
   /** The theme: logo and favicon (relative to `basePath`), color scheme. */
   theme?: { logo?: string; favicon?: string; colorScheme: "system" | "light" | "dark" };
+  /** What the sign-in page offers. */
+  signIn?: { passwordReset: boolean; remember: boolean };
 }
 
 export function readConfig(doc: Document = document): PanelConfig {
@@ -22,6 +24,7 @@ export function readConfig(doc: Document = document): PanelConfig {
   let locale: string | undefined;
   let locales: string[] | undefined;
   const theme: NonNullable<PanelConfig["theme"]> = { colorScheme: "system" };
+  const signIn = { passwordReset: false, remember: false };
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as Partial<PanelConfig>;
@@ -35,6 +38,10 @@ export function readConfig(doc: Document = document): PanelConfig {
       if (ext) extensions = { scripts: own(ext.scripts, "js"), styles: own(ext.styles, "css") };
       if (typeof parsed.locale === "string") locale = parsed.locale;
       if (Array.isArray(parsed.locales)) locales = parsed.locales.filter((l): l is string => typeof l === "string");
+      if (parsed.signIn && typeof parsed.signIn === "object") {
+        signIn.passwordReset = parsed.signIn.passwordReset === true;
+        signIn.remember = parsed.signIn.remember === true;
+      }
       const look = parsed.theme as Partial<NonNullable<PanelConfig["theme"]>> | undefined;
       const image = (path: unknown) =>
         typeof path === "string" && /^assets\/ext\/(logo|favicon)\.[0-9a-f]{8}\.(png|webp|ico)$/.test(path) ? path : undefined;
@@ -49,7 +56,7 @@ export function readConfig(doc: Document = document): PanelConfig {
   }
   basePath = "/" + basePath.replace(/^\/+|\/+$/g, "");
   if (basePath === "/") basePath = "";
-  return { basePath, apiPath: `${basePath}/api`, extensions, locale, locales, theme };
+  return { basePath, apiPath: `${basePath}/api`, extensions, locale, locales, theme, signIn };
 }
 
 /**

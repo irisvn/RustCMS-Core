@@ -35,6 +35,21 @@ pub struct AuthConfig {
     pub permission_cache_ttl_secs: u64,
     /// JWT access and refresh tokens of the API guard (`[auth.jwt]`).
     pub jwt: JwtConfig,
+    /// "Forgot password?": reset links by mail (needs a mail driver).
+    pub password_reset: bool,
+    /// How long a reset link works, in minutes.
+    pub password_reset_minutes: u64,
+    /// How long an invitation link works, in days.
+    pub invitation_days: u64,
+    /// Reset requests per IP per minute.
+    pub reset_requests_per_ip: u32,
+    /// Reset requests per email per minute.
+    pub reset_requests_per_email: u32,
+    /// A new reset mail for the same user is sent at most this often (seconds).
+    pub reset_cooldown_secs: u64,
+    /// "Remember me" keeps a session this many days, across browser restarts
+    /// (0: no such option; sessions end when the browser closes).
+    pub remember_days: u64,
 }
 
 /// `[auth.jwt]`: JWT access tokens with rotating refresh tokens.
@@ -91,6 +106,13 @@ impl Default for AuthConfig {
             attempts_per_ip: 30,
             permission_cache_ttl_secs: 30,
             jwt: JwtConfig::default(),
+            password_reset: false,
+            password_reset_minutes: 60,
+            invitation_days: 7,
+            reset_requests_per_ip: 5,
+            reset_requests_per_email: 3,
+            reset_cooldown_secs: 60,
+            remember_days: 30,
         }
     }
 }

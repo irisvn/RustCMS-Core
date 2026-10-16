@@ -13,6 +13,8 @@ pub struct SystemLinks {
     pub roles: bool,
     /// May create users (`users.create`).
     pub create_users: bool,
+    /// May invite users (`users.create` and `users.invite`).
+    pub invite_users: bool,
     /// May create roles (`roles.create`).
     pub create_roles: bool,
     /// The audit log (`audit.view_all`).
@@ -27,6 +29,7 @@ impl SystemLinks {
             users: principal.can("users.view_any"),
             roles: principal.can("roles.view_any"),
             create_users: principal.can("users.create"),
+            invite_users: principal.can("users.create") && principal.can("users.invite"),
             create_roles: principal.can("roles.create"),
             audit: principal.can(crate::audit::VIEW_ALL),
             queue: principal.can(crate::queue::VIEW),
@@ -57,6 +60,12 @@ pub struct SystemUser {
     pub email: String,
     /// May sign in.
     pub is_active: bool,
+    /// Invited, the invitation not yet accepted.
+    pub invitation_pending: bool,
+    /// When they were invited (RFC 3339).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invited_at: Option<String>,
     /// Roles held in the admin guard.
     pub roles: Vec<RoleRef>,
     /// Holds the admin `super_admin` role.

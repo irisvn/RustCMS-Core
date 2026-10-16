@@ -275,7 +275,12 @@ impl ServiceProvider for AdminProvider {
         }
         extensions.extend(self.extensions.iter().cloned());
         let extensions = std::sync::Arc::new(extensions);
-        let locales = spa::Locales { default: app.config().app.locale.clone(), all: app.config().app.locales.clone() };
+        let locales = spa::Locales {
+            default: app.config().app.locale.clone(),
+            all: app.config().app.locales.clone(),
+            password_reset: auth.config.password_reset,
+            remember: auth.config.remember_days > 0,
+        };
         app.routes(move |router| {
             spa::router(
                 crate::custom::router(

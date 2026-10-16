@@ -47,6 +47,8 @@ saves the choice (422 for a language not offered). The shell's
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../guide/src/admin/users-roles.md) |
 | GET / PUT | `/settings/{group}` | `SettingsResponse`; PUT `{version, data}` (see below) |
+| POST | `/system/users/invitations` | `{name, email, roleIds}` → 201 `SystemUser` (or 204); `users.create` + `users.invite` before the body; 409 `mail_disabled` |
+| POST | `/system/users/{id}/invitation` | 200 `SystemUser` (or 204); `users.invite` + `users.view` before the id; 409 `invitation_accepted` / `user_inactive` |
 | POST | `/settings/mail/test` | `{to}` → `{ok, code?}` (feature `mail`; `settings.mail.update` before the body; 5/min/user) |
 | GET | `/audit?…` | `AuditPage` (`audit.view_all`; auth families with `audit.view_auth`) |
 | GET | `/resources/{slug}/records/{key}/history?cursor=&per_page=` | `AuditPage` of the record (`audit.view` + record `view`) |

@@ -1397,6 +1397,32 @@ status = 422
 body = '{"password": "short"}'
 
 [[case]]
+route = "POST /admin/api/system/users/invitations"
+path = "/admin/api/system/users/invitations"
+actor = "member"
+status = 403
+body = '[]'
+
+[[case]]
+route = "POST /admin/api/system/users/invitations"
+path = "/admin/api/system/users/invitations"
+actor = "admin"
+status = 201
+body = '{"name": "Invited", "email": "invited@example.test"}'
+
+[[case]]
+route = "POST /admin/api/system/users/{id}/invitation"
+path = "/admin/api/system/users/999999/invitation"
+actor = "manager"
+status = 403
+
+[[case]]
+route = "POST /admin/api/system/users/{id}/invitation"
+path = "/admin/api/system/users/999999/invitation"
+actor = "admin"
+status = 404
+
+[[case]]
 route = "GET /admin/api/system/roles"
 path = "/admin/api/system/roles"
 actor = "member"
