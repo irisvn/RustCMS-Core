@@ -49,7 +49,7 @@ fetch() {
 case "$(uname -s)" in
     Darwin) os=apple-darwin ;;
     Linux) os=unknown-linux-musl ;;
-    *) fail "unsupported system $(uname -s): on Windows use install.ps1" ;;
+    *) fail "unsupported system $(uname -s): RustCMS supports macOS and Linux (on Windows, use WSL)" ;;
 esac
 case "$(uname -m)" in
     arm64|aarch64) arch=aarch64 ;;

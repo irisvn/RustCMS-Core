@@ -6,8 +6,9 @@
   application is a Rust project: Cargo builds it together with RustCMS.
 - **A C compiler**, for the few dependencies with C code (SQLite, TLS):
   - macOS: Xcode Command Line Tools (`xcode-select --install`);
-  - Linux: `build-essential` on Debian/Ubuntu, `gcc` or `clang` elsewhere;
-  - Windows: Visual Studio Build Tools with "Desktop development with C++".
+  - Linux: `build-essential` on Debian/Ubuntu, `gcc` or `clang` elsewhere.
+- **macOS or Linux.** Windows is not supported: use WSL (Ubuntu), where the
+  Linux build works.
 - **Network access to GitHub** for the first build: applications depend on
   [RustCMS-Core](https://github.com/irisvn/RustCMS-Core) through a Git tag.
 - A database: SQLite works out of the box; PostgreSQL or MySQL 8.4 for
@@ -15,24 +16,15 @@
 
 ## Installing the `rustcms` command
 
-macOS and Linux:
-
 ```sh
 curl -fsSL https://irisvn.github.io/RustCMS/install.sh | sh
 ```
 
-Windows (PowerShell):
-
-```powershell
-irm https://irisvn.github.io/RustCMS/install.ps1 | iex
-```
-
 The script picks the build for your system from the
 [releases](https://github.com/irisvn/RustCMS/releases), checks it against the
-release's `SHA256SUMS`, and installs it in `~/.rustcms/bin`
-(`%USERPROFILE%\.rustcms\bin` on Windows, added to your user `PATH`). On
-macOS and Linux it prints the line to add to your shell profile, or adds it
-with `sh -s -- --modify-path`. Run it again to update.
+release's `SHA256SUMS`, and installs it in `~/.rustcms/bin`. It prints the
+line to add to your shell profile, or adds it with `sh -s -- --modify-path`.
+Run it again to update.
 
 - A given version: `RUSTCMS_VERSION=v0.4.0` (release candidates are only
   installed this way). Another directory: `RUSTCMS_INSTALL=/opt/rustcms`.
@@ -41,12 +33,11 @@ with `sh -s -- --modify-path`. Run it again to update.
   `rustcms` on your `PATH` yourself.
 - The checksum detects a corrupted download; it does not prove who published
   the release. Releases are not code-signed yet: an archive downloaded with a
-  browser may be blocked by macOS (`xattr -d com.apple.quarantine rustcms`)
-  or flagged by Windows SmartScreen. The install scripts are not affected.
+  browser may be blocked by macOS (`xattr -d com.apple.quarantine rustcms`).
+  The install script is not affected.
 - Built for macOS (Apple silicon and Intel, 11 or newer), Linux (x86_64 and
-  arm64, any distribution: the binary is static) and Windows (x86_64; Arm via
-  emulation).
-- Without the scripts, Cargo can build it from source:
+  arm64, any distribution: the binary is static).
+- Without the script, Cargo can build it from source:
   `cargo install --git https://github.com/irisvn/RustCMS-Core --tag v0.4.0 rustcms-cli`.
 
 ## Creating an application

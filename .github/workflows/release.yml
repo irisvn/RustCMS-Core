@@ -71,11 +71,7 @@ jobs:
           - { target: x86_64-apple-darwin, os: macos-15-intel }
           - { target: x86_64-unknown-linux-musl, os: ubuntu-24.04, musl: true }
           - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm, musl: true }
-          - { target: x86_64-pc-windows-msvc, os: windows-latest }
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        shell: bash
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -93,15 +89,9 @@ jobs:
           out=target/${{ matrix.target }}/release
           mkdir -p "$RUNNER_TEMP/pkg" "$RUNNER_TEMP/mirror/$tag"
           cp LICENSE-MIT LICENSE-APACHE "$RUNNER_TEMP/pkg/"
-          if [ "${{ runner.os }}" = Windows ]; then
-            cp "$out/rustcms.exe" "$RUNNER_TEMP/pkg/"
-            asset="rustcms-$tag-${{ matrix.target }}.zip"
-            (cd "$RUNNER_TEMP/pkg" && 7z a -tzip -bso0 "$RUNNER_TEMP/mirror/$tag/$asset" rustcms.exe LICENSE-MIT LICENSE-APACHE)
-          else
-            cp "$out/rustcms" "$RUNNER_TEMP/pkg/"
-            asset="rustcms-$tag-${{ matrix.target }}.tar.gz"
-            tar -czf "$RUNNER_TEMP/mirror/$tag/$asset" -C "$RUNNER_TEMP/pkg" rustcms LICENSE-MIT LICENSE-APACHE
-          fi
+          cp "$out/rustcms" "$RUNNER_TEMP/pkg/"
+          asset="rustcms-$tag-${{ matrix.target }}.tar.gz"
+          tar -czf "$RUNNER_TEMP/mirror/$tag/$asset" -C "$RUNNER_TEMP/pkg" rustcms LICENSE-MIT LICENSE-APACHE
           # Linux binaries are static (musl): they run on any distribution.
           if [ "${{ runner.os }}" = Linux ]; then
             file "$out/rustcms"
@@ -110,20 +100,11 @@ jobs:
           (cd "$RUNNER_TEMP/mirror/$tag" && { sha256sum "$asset" 2>/dev/null || shasum -a 256 "$asset"; } > SHA256SUMS)
           echo "$tag" > "$RUNNER_TEMP/mirror/latest.txt"
           echo "ASSET=$RUNNER_TEMP/mirror/$tag/$asset" >> "$GITHUB_ENV"
-      - name: Install (unix)
-        if: runner.os != 'Windows'
+      - name: Install with the install script
         run: |
           RUSTCMS_DOWNLOAD_BASE="file://$RUNNER_TEMP/mirror" RUSTCMS_LATEST_URL="file://$RUNNER_TEMP/mirror/latest.txt" \
             RUSTCMS_INSTALL="$RUNNER_TEMP/rustcms" sh dist/install.sh
           echo "$RUNNER_TEMP/rustcms/bin" >> "$GITHUB_PATH"
-      - name: Install (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $env:RUSTCMS_DOWNLOAD_BASE = "$env:RUNNER_TEMP\mirror"
-          $env:RUSTCMS_INSTALL = "$env:RUNNER_TEMP\rustcms"
-          ./dist/install.ps1
-          Add-Content -Path $env:GITHUB_PATH -Value "$env:RUNNER_TEMP\rustcms\bin"
       - name: An application from the tag builds and passes its tests
         run: |
           rustcms --version
@@ -152,9 +133,9 @@ jobs:
           set -eu
           a="$RUNNER_TEMP/assets"; mkdir -p "$a"
           find "$RUNNER_TEMP/artifacts" -path '*/asset-*/*' -type f -exec cp {} "$a/" \;
-          count=$(ls "$a" | wc -l); [ "$count" = 5 ] || { echo "expected 5 assets, got $count"; exit 1; }
+          count=$(ls "$a" | wc -l); [ "$count" = 4 ] || { echo "expected 4 assets, got $count"; exit 1; }
           (cd "$a" && sha256sum rustcms-* > SHA256SUMS)
-          targets=$(ls "$a" | sed -n "s/^rustcms-$TAG-\(.*\)\.\(tar\.gz\|zip\)$/\1/p" | sort | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().split()))')
+          targets=$(ls "$a" | sed -n "s/^rustcms-$TAG-\(.*\)\.tar\.gz$/\1/p" | sort | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().split()))')
           printf '{"tag":"%s","core_repository":"%s","core_commit":"%s","targets":%s}\n' \
             "$TAG" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_SHA" "$targets" > "$a/manifest.json"
           python3 - "$TAG" > "$RUNNER_TEMP/notes.md" <<'PY'
@@ -188,7 +169,9 @@ jobs:
           cd "$RUNNER_TEMP/dist"
           # Release candidates only bootstrap an empty repository.
           if [ "$PRERELEASE" = 0 ] || [ -z "$(git ls-files)" ]; then
-            cp "$GITHUB_WORKSPACE"/dist/README.md "$GITHUB_WORKSPACE"/dist/install.sh "$GITHUB_WORKSPACE"/dist/install.ps1 .
+            # Exactly dist/ and the licenses: files removed from dist/ go away too.
+            git rm -rq --ignore-unmatch .
+            cp "$GITHUB_WORKSPACE"/dist/README.md "$GITHUB_WORKSPACE"/dist/install.sh .
             cp "$GITHUB_WORKSPACE"/LICENSE-MIT "$GITHUB_WORKSPACE"/LICENSE-APACHE .
             git add -A
             git diff --cached --quiet || git commit -q -m "RustCMS $TAG"
@@ -210,7 +193,7 @@ jobs:
           mkdir "$RUNNER_TEMP/check" && cd "$RUNNER_TEMP/check"
           gh release download "$TAG" -R "$DIST_REPO" --pattern '*'
           sha256sum -c SHA256SUMS
-          [ "$(ls | wc -l)" = 7 ]
+          [ "$(ls | wc -l)" = 6 ]
           if [ "$PRERELEASE" = 1 ]; then
             gh release edit "$TAG" -R "$DIST_REPO" --draft=false --prerelease --latest=false
           else
@@ -232,7 +215,7 @@ jobs:
           if [ "$PRERELEASE" = 0 ]; then
             find . -mindepth 1 -maxdepth 1 ! -name .git ! -name v -exec rm -rf {} +
             cp -R "$RUNNER_TEMP/book/." .
-            cp "$GITHUB_WORKSPACE"/dist/install.sh "$GITHUB_WORKSPACE"/dist/install.ps1 .
+            cp "$GITHUB_WORKSPACE"/dist/install.sh .
             echo "$TAG" > latest.txt
           fi
           touch .nojekyll
@@ -247,7 +230,7 @@ jobs:
           check "$base/v/${TAG#v}/index.html"
           check "https://github.com/$DIST_REPO/releases/download/$TAG/SHA256SUMS"
           if [ "$PRERELEASE" = 0 ]; then
-            check "$base/install.sh"; check "$base/install.ps1"
+            check "$base/install.sh"
             for i in $(seq 1 30); do [ "$(curl -fsSL "$base/latest.txt" | tr -d '\n')" = "$TAG" ] && exit 0; sleep 10; done
             echo "latest.txt is not $TAG"; exit 1
           fi

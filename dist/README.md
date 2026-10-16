@@ -2,29 +2,20 @@
 
 Build admin panels and headless CMS backends in Rust. This repository holds the
 `rustcms` command (see [Releases](https://github.com/irisvn/RustCMS/releases)),
-its install scripts and the [guide](https://irisvn.github.io/RustCMS/). The
+its install script and the [guide](https://irisvn.github.io/RustCMS/). The
 framework's source is [irisvn/RustCMS-Core](https://github.com/irisvn/RustCMS-Core).
 
 ## Install
 
 Requires [Rust](https://rustup.rs) (stable, 1.94 or newer) and a C compiler:
 Xcode Command Line Tools on macOS (`xcode-select --install`), `build-essential`
-(or equivalent) on Linux, Visual Studio Build Tools ("Desktop development with
-C++") on Windows.
-
-macOS and Linux:
+(or equivalent) on Linux. macOS and Linux are supported; on Windows, use WSL.
 
 ```sh
 curl -fsSL https://irisvn.github.io/RustCMS/install.sh | sh
 ```
 
-Windows (PowerShell):
-
-```powershell
-irm https://irisvn.github.io/RustCMS/install.ps1 | iex
-```
-
-The scripts download the release for your system and check it against the
+The script downloads the release for your system and checks it against the
 release's `SHA256SUMS`. You can also download an archive from
 [Releases](https://github.com/irisvn/RustCMS/releases) yourself, or read the
 script before running it (`curl -fsSLO …/install.sh`, then `sh install.sh`).
