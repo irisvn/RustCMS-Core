@@ -44,18 +44,21 @@ pub fn run(version: Option<&str>) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Version and target a command prints: `rustcms 0.4.0 (aarch64-apple-darwin)`.
-fn reported(exe: &Path) -> anyhow::Result<(semver::Version, String)> {
+/// Version and target a command prints: `rustcms 0.4.0 (aarch64-apple-darwin)`;
+/// up to 0.3.1 only `rustcms 0.3.1` (no target).
+fn reported(exe: &Path) -> anyhow::Result<(semver::Version, Option<String>)> {
     let output = Command::new(exe).arg("--version").output()?;
     let text = String::from_utf8_lossy(&output.stdout);
     anyhow::ensure!(output.status.success(), "`{} --version` failed", exe.display());
     parse_reported(text.trim())
 }
 
-fn parse_reported(line: &str) -> anyhow::Result<(semver::Version, String)> {
-    let parsed = line.strip_prefix("rustcms ").and_then(|rest| {
-        let (version, target) = rest.split_once(" (")?;
-        Some((semver::Version::parse(version).ok()?, target.strip_suffix(')')?.to_owned()))
+fn parse_reported(line: &str) -> anyhow::Result<(semver::Version, Option<String>)> {
+    let parsed = line.strip_prefix("rustcms ").and_then(|rest| match rest.split_once(" (") {
+        Some((version, target)) => {
+            Some((semver::Version::parse(version).ok()?, Some(target.strip_suffix(')')?.to_owned())))
+        }
+        None => Some((semver::Version::parse(rest).ok()?, None)),
     });
     parsed.with_context(|| format!("unexpected `--version` output: {line}"))
 }
@@ -99,7 +102,9 @@ fn install(source: &Source, tag: &str, exe: &Path) -> anyhow::Result<()> {
     }
     set_executable(&new)?;
     let (version, target) = reported(&new).context("the downloaded rustcms does not run")?;
-    if version != release::parse_tag(tag)? || target != release::TARGET {
+    // Releases up to 0.3.1 do not print their target: the archive named it.
+    if version != release::parse_tag(tag)? || target.as_deref().is_some_and(|t| t != release::TARGET) {
+        let target = target.as_deref().unwrap_or("?");
         bail!("the downloaded rustcms is {version} ({target}), not {tag} ({}): nothing was changed", release::TARGET);
     }
     std::fs::rename(&new, exe).with_context(|| format!("cannot replace {}", exe.display()))?;
@@ -202,9 +207,11 @@ mod tests {
     fn the_reported_version_and_target_are_exact() {
         let (version, target) = parse_reported("rustcms 0.4.0-rc.1 (aarch64-apple-darwin)").unwrap();
         assert_eq!(version, semver::Version::parse("0.4.0-rc.1").unwrap());
-        assert_eq!(target, "aarch64-apple-darwin");
+        assert_eq!(target.as_deref(), Some("aarch64-apple-darwin"));
         assert_ne!(parse_reported("rustcms 0.4.10 (x)").unwrap().0, release::parse_tag("v0.4.1").unwrap());
-        for bad in ["rustcms 0.4.0", "other 0.4.0 (x)", "rustcms abc (x)", ""] {
+        // 0.3.1 and before: no target.
+        assert_eq!(parse_reported("rustcms 0.3.1").unwrap(), (semver::Version::new(0, 3, 1), None));
+        for bad in ["other 0.4.0 (x)", "rustcms abc (x)", "rustcms 0.4.0 (x", ""] {
             assert!(parse_reported(bad).is_err(), "{bad}");
         }
     }

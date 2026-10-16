@@ -6,6 +6,10 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- `rustcms self-update --version v0.3.1` (going back to a release that prints
+  no target in `--version`) was refused; such a command is checked by version.
+
 ## [0.3.2] — 2026-10-16
 
 ### Added
