@@ -30,20 +30,32 @@ access may have changed.
   `export_stale`. Files expire after 24 h; pruning deletes rows and objects,
   and fails exports whose job never finished.
 - **Audit**: `exported` with the row count and the query's shape only.
-- **Runs**: each run writes its own object (derived from the export and the
-  attempt) and publishes it with its key list in one conditional update;
-  losers delete theirs; pruning deletes every attempt's object. Fields are
+- **Runs**: each run writes its own object (a fresh key, recorded in
+  `export_objects` before the upload, so a run cancelled at shutdown and
+  still copying never shares a path with the next) and publishes it with
+  its key list in one conditional update; losers delete theirs; pruning
+  deletes every recorded object and the published one. Fields are
   re-checked at each batch; byte budgets (10 MiB at once, 50 MiB in the
   background); `Idempotency-Key` on creation; per-user limits counted under
   a named lock; failure reasons are codes.
 - **Imports**: `importable` / `import_key` (a field with its own declared
   unique constraint). Upload admitted before the body, parsed within limits,
-  stored; preview = static checks only; run once (conditional status
-  update + dispatch in one transaction). The job reloads the user per batch
-  and writes each row through `DynResource::create` / `update` with an
-  idempotency key per row (the claim lives in the write's own transaction;
-  `update` gained claims for this), so a re-run never writes a row twice.
-  Reports keep row, field and the message's code, never values.
+  stored (`Idempotency-Key`: the same file answers with the same import);
+  at most four files parsed at once (429 beyond), cells bounded, header
+  included; preview = static checks only; run once (conditional status
+  update + dispatch in one transaction; the import is then kept 24 h from
+  the start). The job reloads the user per batch and writes each row through
+  `DynResource::create` / `update` (`Ctx::import_row`): the row's transaction
+  holds the RBAC lock (`begin_as`: the user as they are then, `import`
+  admitted again), checks the import is still running and unexpired (held,
+  so pruning waits), and commits a receipt `import_rows(import, row,
+  outcome, key)` with the write. A later run skips rows with a receipt and
+  counts them as recorded (never turning a created row into an update), and
+  spends none of the user's idempotency quota. Abandonment is judged from
+  the start time; an expired import is never written. Reports keep row,
+  field and codes whose parameters are numbers; any other message (a hook's,
+  one quoting a value) becomes `is invalid`. A quoted empty cell (`""`) of a
+  text field is the empty text, an empty cell `null`, as exports write them.
 
 ## Consequences
 

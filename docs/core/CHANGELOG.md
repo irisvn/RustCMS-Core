@@ -36,10 +36,24 @@ All notable changes are documented here. The format follows
 - CSV imports: `ResourceMeta::importable()` / `import_key(field)`, ability
   `import`; routes `POST {slug}/imports`, `GET imports/{id}`, `POST
   imports/{id}/preview`, `POST imports/{id}/run`; job `admin.import` (user
-  reloaded per batch, a row per transaction with an idempotency receipt);
-  `imports` table; audit `imported`; templates `not_found`,
-  `several_matches`, `not_imported`.
-- `update` accepts an idempotency key (used by imports).
+  reloaded per batch, a row per transaction holding the RBAC lock, with a
+  receipt in `import_rows`); `imports` table; audit `imported`; templates
+  `not_found`, `several_matches`, `not_imported`.
+- `update` accepts an idempotency key.
+
+### Fixed (0.3 — M17b Codex verify)
+- Import re-runs skip rows by a receipt committed with the write (a created
+  row was updated again, and every row spent the user's 1,000-key
+  idempotency quota); each row's write holds the RBAC lock and re-admits the
+  user; an expired or failed import is never written; abandonment is judged
+  from `imports.started_at`, not the upload time.
+- Reports keep only codes with numeric parameters (no hook text or quoted
+  values); `""` stays the empty text; uploads honour `Idempotency-Key`, are
+  parsed four at a time and bound header cells.
+- Export runs use a fresh object key recorded in `export_objects` before the
+  upload; pruning deletes those and the published object (M17a objects
+  leaked). Migration `m20261024_000017_add_import_receipts`.
+- SPA: an import whose run answer was lost is followed instead of stranded.
 - SPA import page (`/r/{slug}/import`); LMS learners (by email) and demo tags
   (by name) importable. `csv` crate 1.3.1.
 

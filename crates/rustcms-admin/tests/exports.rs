@@ -202,3 +202,33 @@ impl FindAll for rustcms_admin::exports::entity::Entity {
         rustcms_admin::exports::entity::Entity::find().all(db).await.unwrap()
     }
 }
+
+db_test!(pruning_deletes_every_object_of_an_export, |db: TestDb| async move {
+    let (app, _) = setup(db).await;
+    let (exporter, _) = user_with(&app, "Exporter", &EXPORTER).await;
+    let client = app.acting_as(&exporter).await;
+    post(&client, &app, "First").await;
+    let created = client.post_json(&app.admin_api("resources/posts/exports"), &json!({})).await;
+    let id: uuid::Uuid = created.json()["id"].as_str().unwrap().parse().unwrap();
+    work(&app).await;
+    use rustcms_admin::exports::{entity, object};
+    use rustcms_core::storage::{Storage, StorageKey};
+    use sea_orm::EntityTrait;
+    let db = app.state().db();
+    let row = entity::Entity::find_by_id(id).one(db).await.unwrap().unwrap();
+    let published = StorageKey::parse(row.storage_key.as_deref().unwrap()).unwrap();
+    let recorded = object::Entity::find().all(db).await.unwrap();
+    assert_eq!(recorded.len(), 1, "the run recorded its object before uploading it");
+    assert_eq!(recorded[0].storage_key, published.as_str());
+    let storage = app.state().service::<std::sync::Arc<dyn Storage>>().unwrap();
+    assert!(storage.open(&published).await.is_ok());
+    let past = chrono::Utc::now() - chrono::Duration::minutes(1);
+    entity::Entity::update_many()
+        .col_expr(entity::Column::ExpiresAt, sea_orm::sea_query::Expr::value(past))
+        .exec(db)
+        .await
+        .unwrap();
+    assert_eq!(rustcms_admin::exports::prune(db, storage.as_ref().as_ref()).await.unwrap(), 1);
+    assert!(storage.open(&published).await.is_err());
+    assert!(object::Entity::find().all(db).await.unwrap().is_empty());
+});

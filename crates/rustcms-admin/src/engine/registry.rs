@@ -109,7 +109,7 @@ pub trait DynResource: Send + Sync {
     /// The import key field, if any.
     fn import_key(&self) -> Option<&str>;
     /// The value of a CSV cell for field `name` (empty: null).
-    fn import_value(&self, name: &str, text: &str) -> serde_json::Value;
+    fn import_value(&self, name: &str, text: &str, quoted: bool) -> serde_json::Value;
     /// A row checked as create (or update) input, before any hook.
     fn check_import_row(&self, ctx: &Ctx, op: crate::Operation, data: Data) -> AppResult<Data>;
     /// Keys (at most two) of visible records whose import key equals `value`.

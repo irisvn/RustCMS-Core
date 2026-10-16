@@ -31,6 +31,17 @@ pub struct Ctx {
     pub translator: Arc<Translator>,
     /// Who acts, from where: the audit log's actor and request.
     pub audit_context: AuditContext,
+    /// A row of an import being written (see [`ImportRow`]; set by imports only).
+    pub import_row: Option<ImportRow>,
+}
+
+/// A create or update writing row `row` of import `import`: its transaction
+/// holds the RBAC lock and authorizes the user as they are then, and commits
+/// the row's receipt (a later run of the import skips the row).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImportRow {
+    pub(crate) import: uuid::Uuid,
+    pub(crate) row: i32,
 }
 
 impl Ctx {
@@ -48,6 +59,7 @@ impl Ctx {
             locale: "en".into(),
             translator: Arc::default(),
             audit_context,
+            import_row: None,
         }
     }
 
@@ -122,6 +134,12 @@ impl Ctx {
     /// with the same key and request replays the first result instead of running again.
     pub fn with_idempotency_key(mut self, key: Option<String>) -> Self {
         self.idempotency_key = key;
+        self
+    }
+
+    /// The same context, writing row `row` of an import.
+    pub(crate) fn with_import_row(mut self, row: ImportRow) -> Self {
+        self.import_row = Some(row);
         self
     }
 

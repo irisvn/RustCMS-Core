@@ -52,6 +52,20 @@ impl<R: Resource> ResourceAdapter<R> {
     /// Opens a write transaction and a context whose [`Ctx::conn`] is that
     /// transaction, for policies and hooks.
     pub(super) async fn begin(&self, ctx: &Ctx) -> AppResult<(Arc<sea_orm::DatabaseTransaction>, Ctx)> {
+        if ctx.import_row.is_some() {
+            // A row of an import (a job, long after the request): the user
+            // as they are now, held so until commit (no role change, no
+            // revocation meanwhile); then the import is allowed again.
+            let (txn, current) = rustcms_auth::rbac::begin_as(&ctx.db, &ctx.principal).await?;
+            let txn = Arc::new(txn);
+            let mut wctx = ctx.within(txn.clone());
+            wctx.principal = current;
+            if let Err(err) = self.admit_import(&wctx).await {
+                Self::abort(txn, wctx).await?;
+                return Err(err);
+            }
+            return Ok((txn, wctx));
+        }
         // A busy database (SQLite) or a lock wait timing out: nothing written.
         let txn = rustcms_core::db::begin_write(&ctx.db).await.map_err(crate::idempotency::conflict)?;
         if ctx.idempotency_key.is_some() {

@@ -13,6 +13,7 @@
 
 mod csv;
 pub mod entity;
+pub mod object;
 
 use std::sync::Arc;
 
@@ -22,7 +23,7 @@ use axum::extract::{Path, Query, Request, State};
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use chrono::{Datelike, Utc};
+use chrono::Utc;
 use rustcms_auth::{ADMIN_GUARD, AuthState};
 use rustcms_core::audit::{self, AuditEntry};
 use rustcms_core::models::user;
@@ -56,7 +57,7 @@ const PENDING_PER_USER: u64 = 3;
 const KEEP: chrono::Duration = chrono::Duration::hours(24);
 /// Rows read (and the user checked again) at a time by the job.
 const BATCH: usize = 500;
-/// Runs of the job (attempt keys are derived from 1 to this).
+/// Runs of the job.
 const ATTEMPTS: u32 = 3;
 
 /// How a column's values are written.
@@ -132,18 +133,6 @@ fn resource(ctx: &Ctx, slug: &str) -> AppResult<Arc<dyn DynResource>> {
 
 fn storage(app: &AppState) -> Option<Arc<dyn Storage>> {
     app.service::<Arc<dyn Storage>>().map(|s| s.as_ref().clone())
-}
-
-/// The object a run `attempt` of export `row` writes: derived from both, so
-/// a late run never overwrites another's file, and pruning finds them all.
-fn attempt_key(row: &entity::Model, attempt: u32) -> AppResult<StorageKey> {
-    use sha2::Digest;
-    let digest = sha2::Sha256::digest(format!("export:{}:{attempt}", row.id));
-    let mut bytes = [0u8; 16];
-    bytes.copy_from_slice(&digest[..16]);
-    let id = uuid::Uuid::from_bytes(bytes);
-    let at = row.created_at;
-    Ok(StorageKey::parse(&format!("{:04}/{:02}/{id}.csv", at.year(), at.month()))?)
 }
 
 /// The header line of `columns`.
@@ -501,7 +490,9 @@ async fn build(job: &JobCtx, row: &entity::Model) -> Result<(), Result<Refused, 
         .await
         .map_err(|e| Err(e.into()))?;
 
-    let staged = Staged(storage.staging_dir().join(format!("export-{}-{}.csv", row.id, job.attempt)));
+    // Every run its own file and object (a run cancelled at shutdown may
+    // still be copying when the job runs again).
+    let staged = Staged(storage.staging_dir().join(format!("export-{}-{}.csv", row.id, uuid::Uuid::now_v7())));
     let mut file = tokio::fs::File::create(&staged.0).await.map_err(internal)?;
     let mut bytes = 0usize;
     let text = header_line(&columns);
@@ -526,7 +517,17 @@ async fn build(job: &JobCtx, row: &entity::Model) -> Result<(), Result<Refused, 
     }
     file.flush().await.map_err(internal)?;
     drop(file);
-    let key = attempt_key(row, job.attempt).map_err(Err)?;
+    let key = StorageKey::generate("csv").map_err(|e| Err(e.into()))?;
+    // Recorded before the upload: pruning deletes it whatever happens next.
+    object::ActiveModel {
+        storage_key: Set(key.as_str().to_owned()),
+        export_id: Set(row.id),
+        disk: Set(storage.disk().to_owned()),
+        created_at: Set(Utc::now()),
+    }
+    .insert(app.db())
+    .await
+    .map_err(|e| Err(e.into()))?;
     storage.put_file(&key, &staged.0, "text/csv; charset=utf-8").await.map_err(|e| Err(e.into()))?;
     // File and records published together, by the first run to finish.
     let published = entity::Entity::update_many()
@@ -543,6 +544,7 @@ async fn build(job: &JobCtx, row: &entity::Model) -> Result<(), Result<Refused, 
     if published.rows_affected == 0 {
         // Another run finished first (or the export failed meanwhile): this file is not used.
         storage.delete(&key).await.map_err(|e| Err(e.into()))?;
+        object::Entity::delete_by_id(key.as_str().to_owned()).exec(app.db()).await.map_err(|e| Err(e.into()))?;
     }
     Ok(())
 }
@@ -563,11 +565,20 @@ pub async fn prune(db: &sea_orm::DatabaseConnection, storage: &dyn Storage) -> A
     let expired = entity::Entity::find().filter(entity::Column::ExpiresAt.lte(now)).limit(500).all(db).await?;
     let mut deleted = 0;
     for row in expired {
-        if row.disk.as_deref() == Some(storage.disk()) {
-            for attempt in 1..=ATTEMPTS {
-                storage.delete(&attempt_key(&row, attempt)?).await?;
-            }
+        // The published object and every run's (recorded before its upload).
+        let objects = object::Entity::find().filter(object::Column::ExportId.eq(row.id)).all(db).await?;
+        let mut keys: Vec<String> =
+            objects.iter().filter(|o| o.disk == storage.disk()).map(|o| o.storage_key.clone()).collect();
+        if row.disk.as_deref() == Some(storage.disk())
+            && let Some(key) = &row.storage_key
+            && !keys.contains(key)
+        {
+            keys.push(key.clone());
         }
+        for key in keys {
+            storage.delete(&StorageKey::parse(&key)?).await?;
+        }
+        object::Entity::delete_many().filter(object::Column::ExportId.eq(row.id)).exec(db).await?;
         entity::Entity::delete_by_id(row.id).exec(db).await?;
         deleted += 1;
     }

@@ -77,3 +77,28 @@ it("uploads, checks and imports a file, then shows the outcome", async () => {
   expect(bodies.find((b) => b.path === "run")!.body).toEqual({ mapping: { Title: "title" } });
   expect(await screen.findByText("Done: 1 created, 0 updated, 1 failed.")).toBeInTheDocument();
 });
+
+it("follows an import that started although its answer was lost", async () => {
+  server.use(
+    http.post("*/admin/api/imports/i1/run", () =>
+      HttpResponse.json({ code: "import_started", reason: "started", message: "This import has already started." }, { status: 409 }),
+    ),
+    http.post("*/admin/api/imports/i1/preview", () => HttpResponse.json({ rows: 2, valid: 2, keyed: 0, report: [] })),
+    http.get("*/admin/api/imports/i1", () => HttpResponse.json({ ...view, status: "running", created: 1 })),
+  );
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
+  const router = createAppRouter({ queryClient, session }, createMemoryHistory({ initialEntries: ["/r/posts/import"] }));
+  render(
+    <SessionContext.Provider value={session}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </SessionContext.Provider>,
+  );
+  await userEvent.upload(await screen.findByLabelText("CSV file"), new File(["Title\r\nA\r\nB\r\n"], "p.csv", { type: "text/csv" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Check" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Import" }));
+  expect(await screen.findByText(/Importing… 1 of 2 rows/)).toBeInTheDocument();
+  expect(screen.queryByText("This import has already started.")).not.toBeInTheDocument();
+});

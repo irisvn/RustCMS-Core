@@ -208,6 +208,12 @@ pub(crate) async fn complete<C: ConnectionTrait>(txn: &C, claim: &Claim, result:
     Ok(())
 }
 
+/// Forgets the receipt of `claim` (the request it answered was undone).
+pub(crate) async fn release<C: ConnectionTrait>(db: &C, claim: &Claim) -> AppResult<()> {
+    entity::Entity::delete_by_id(claim.id.clone()).exec(db).await?;
+    Ok(())
+}
+
 /// The committed result for `claim`, if any (outside a claim: e.g. before
 /// storing an upload). The same key with another request is a 422.
 pub(crate) async fn existing<C: ConnectionTrait>(db: &C, claim: &Claim) -> AppResult<Option<Value>> {

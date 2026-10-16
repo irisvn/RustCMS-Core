@@ -85,6 +85,8 @@ with an import key). Imports need the storage provider.
    body, `text/csv`): admitted before the file is read; UTF-8 (a BOM is
    skipped), at most 5 MiB, 10,000 rows, 100 columns, 10,000 characters per
    cell, a header of distinct names; at most three imports waiting per user.
+   With an `Idempotency-Key` header, sending the same file again (the answer
+   was lost) answers with the same import.
    The answer lists the columns, the fields the user may set (the import key
    marked) and a suggested mapping (column = field name or label, any case).
 2. **Check** (`POST imports/{id}/preview` `{mapping}`): every row converted and
@@ -94,16 +96,21 @@ with an import key). Imports need the storage provider.
 3. **Import** (`POST imports/{id}/run` `{mapping}`): once (a second run
    answers 409 `import_started`); the mapping is fixed then. A job writes each
    row in a transaction of its own through the usual create or update path
-   (field rules, hooks, policy, scope, unique constraints, audit), with an
-   idempotency receipt per row: if the job runs again after a crash, rows
-   already written are not written twice.
+   (field rules, hooks, policy, scope, unique constraints, audit). Each
+   row's transaction checks the user's permissions as they are then (a role
+   change waits for it) and records that the row was written: if the job
+   runs again after a crash, rows already written are skipped, and counted
+   as before. An import is kept 24 hours from the time it started; nothing is
+   written after that.
 4. **Outcome** (`GET imports/{id}`): created, updated, failed, and the problems
    of the rows that failed (row, field, a message in the user's language;
-   never the values of the file). Imports are deleted after 24 hours.
+   never the values of the file, nor a hook's own message: those show as
+   "is invalid"). Imports are deleted after 24 hours.
 
 Cells are read by the field's type like query strings (`7`, `true`,
 `2026-10-22`); an empty cell is `null` (an empty text for optional text fields
-that may not be null). With an import key, a row whose key cell is filled
+that may not be null), and a quoted empty cell `""` of a text field the empty
+text, as exports write them. With an import key, a row whose key cell is filled
 updates the record of the user's scope with that value (the key itself is not
 written), creates one when there is none, and fails when several match; a row
 without a key value is created. A trashed record with the same key is not

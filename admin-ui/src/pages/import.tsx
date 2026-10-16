@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { Upload } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { useImport, usePreviewImport, useRunImport, useUploadImport } from "@/api/imports";
+import { useApi } from "@/api/context";
 import { useSchema } from "@/api/queries";
 import type { ImportPreview, ImportView, RowIssue } from "@/api/types";
 import { Page, PageHeader } from "@/components/layout";
@@ -54,6 +55,7 @@ function Report({ issues, labels }: { issues: RowIssue[]; labels: Record<string,
 
 export function ImportPage({ slug }: { slug: string }) {
   const t = useT();
+  const api = useApi();
   const schema = useSchema(slug, "view");
   const upload = useUploadImport(slug);
   const previewImport = usePreviewImport();
@@ -100,6 +102,17 @@ export function ImportPage({ slug }: { slug: string }) {
       setUploaded(await runImport.mutateAsync({ id: uploaded.id, mapping }));
       setStarted(true);
     } catch (e) {
+      // Started anyway (the answer lost, another tab): follow it.
+      try {
+        const current = await api.get<ImportView>(`/imports/${encodeURIComponent(uploaded.id)}`);
+        if (current.status !== "uploaded") {
+          setUploaded(current);
+          setStarted(true);
+          return;
+        }
+      } catch {
+        // The first error is the one shown.
+      }
       setFailure(errorText(e, "import.failed"));
     }
   };

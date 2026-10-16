@@ -55,11 +55,16 @@ impl<R: Resource> ResourceAdapter<R> {
             .collect()
     }
 
-    /// The value of a cell for field `name`: an empty cell is `null` (for an
-    /// optional text field that may not be null, an empty text); otherwise
-    /// the text read by the field's type, as query strings are (`7`, `true`).
-    pub(super) fn import_value(&self, name: &str, text: &str) -> serde_json::Value {
+    /// The value of a cell for field `name`, as exports write them: an empty
+    /// cell is `null` (for an optional text field that may not be null, an
+    /// empty text), a quoted empty cell (`""`) of a text field the empty
+    /// text; otherwise the text read by the field's type, as query strings
+    /// are (`7`, `true`).
+    pub(super) fn import_value(&self, name: &str, text: &str, quoted: bool) -> serde_json::Value {
         let Some(column) = self.columns.get(name) else { return serde_json::Value::String(text.to_owned()) };
+        if text.is_empty() && quoted && column.kind == FieldKind::String {
+            return serde_json::Value::String(String::new());
+        }
         if text.is_empty() {
             let required = self.field(name).is_some_and(|f| f.required);
             return if column.kind == FieldKind::String && !column.nullable && !required {

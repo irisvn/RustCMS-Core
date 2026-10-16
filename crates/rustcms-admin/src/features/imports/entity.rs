@@ -40,6 +40,8 @@ pub struct Model {
     pub error: Option<String>,
     /// When it was uploaded.
     pub created_at: DateTimeUtc,
+    /// When it started running.
+    pub started_at: Option<DateTimeUtc>,
     /// When the row and the file are deleted.
     pub expires_at: DateTimeUtc,
 }
