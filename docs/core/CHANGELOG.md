@@ -8,7 +8,7 @@ All notable changes are documented here. The format follows
 
 ### Added
 - Distribution (ADR 0025): a tag publishes the `rustcms` command for macOS
-  and Linux (Windows: WSL), the guide and the install script (`install.sh`)
+  on Apple silicon and Linux (x86_64, arm64; Windows: WSL; Intel Macs: `cargo install`), the guide and the install script (`install.sh`)
   to irisvn/RustCMS (`.github/workflows/release.yml`), after
   each binary installed itself and built and tested a new application on its
   platform. `just release-bump` / `release-check` keep every version in step.

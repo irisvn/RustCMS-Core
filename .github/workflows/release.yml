@@ -90,7 +90,6 @@ jobs:
       matrix:
         include:
           - { target: aarch64-apple-darwin, os: macos-14 }
-          - { target: x86_64-apple-darwin, os: macos-15-intel }
           - { target: x86_64-unknown-linux-musl, os: ubuntu-24.04, musl: true }
           - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm, musl: true }
     runs-on: ${{ matrix.os }}
@@ -155,7 +154,7 @@ jobs:
           set -eu
           a="$RUNNER_TEMP/assets"; mkdir -p "$a"
           find "$RUNNER_TEMP/artifacts" -path '*/asset-*/*' -type f -exec cp {} "$a/" \;
-          count=$(ls "$a" | wc -l); [ "$count" = 4 ] || { echo "expected 4 assets, got $count"; exit 1; }
+          count=$(ls "$a" | wc -l); [ "$count" = 3 ] || { echo "expected 3 assets, got $count"; exit 1; }
           (cd "$a" && sha256sum rustcms-* > SHA256SUMS)
           targets=$(ls "$a" | sed -n "s/^rustcms-$TAG-\(.*\)\.tar\.gz$/\1/p" | sort | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().split()))')
           printf '{"tag":"%s","core_repository":"%s","core_commit":"%s","targets":%s}\n' \
@@ -215,7 +214,7 @@ jobs:
           mkdir "$RUNNER_TEMP/check" && cd "$RUNNER_TEMP/check"
           gh release download "$TAG" -R "$DIST_REPO" --pattern '*'
           sha256sum -c SHA256SUMS
-          [ "$(ls | wc -l)" = 6 ]
+          [ "$(ls | wc -l)" = 5 ]
           if [ "$PRERELEASE" = 1 ]; then
             gh release edit "$TAG" -R "$DIST_REPO" --draft=false --prerelease --latest=false
           else

@@ -35,11 +35,12 @@ Cargo must reach Core's source. crates.io is not used yet.
   Only then: a draft release, every asset uploaded and checked against
   `SHA256SUMS`, published; Pages updated and the served files checked. A
   release candidate never changes `latest`, the root guide or the scripts.
-- Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin` (macOS 11+),
-  `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl` (static). A
-  target that fails its checks is not published. Windows is not supported
-  (the maintainer's choice; WSL runs the Linux build): it built and passed in
-  the M24a spike, so adding it back is a matrix entry and an install script.
+- Targets: `aarch64-apple-darwin` (macOS 11+), `x86_64-unknown-linux-musl`,
+  `aarch64-unknown-linux-musl` (static). A target that fails its checks is
+  not published. Not shipped (the maintainer's choice): Windows (WSL runs the
+  Linux build) and Intel macOS (its runner took 18 minutes; `cargo install
+  --git … rustcms-cli` builds it). Both built and passed in the M24a spike:
+  adding one back is a matrix entry (and an install script for Windows).
 - The install script accepts HTTPS only, check the checksum before opening the
   archive, take only the executable, install next to the destination then
   rename (an existing install survives a failure), and record `install.json`

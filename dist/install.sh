@@ -57,7 +57,10 @@ case "$(uname -m)" in
     *) fail "unsupported processor $(uname -m)" ;;
 esac
 # An x86_64 shell under Rosetta on Apple silicon: install the native binary.
-if [ "$os" = apple-darwin ] && [ "$arch" = x86_64 ] && [ "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" = 1 ]; then
+# Intel Macs get no release build: Cargo builds the command from source.
+if [ "$os" = apple-darwin ] && [ "$arch" = x86_64 ]; then
+    [ "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" = 1 ] \
+        || fail "no release build for Intel Macs: cargo install --git https://github.com/irisvn/RustCMS-Core --tag <version> rustcms-cli"
     arch=aarch64
 fi
 target="$arch-$os"

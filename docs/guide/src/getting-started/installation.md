@@ -35,8 +35,9 @@ Run it again to update.
   the release. Releases are not code-signed yet: an archive downloaded with a
   browser may be blocked by macOS (`xattr -d com.apple.quarantine rustcms`).
   The install script is not affected.
-- Built for macOS (Apple silicon and Intel, 11 or newer), Linux (x86_64 and
-  arm64, any distribution: the binary is static).
+- Built for macOS on Apple silicon (11 or newer) and Linux (x86_64 and arm64,
+  any distribution: the binary is static). On an Intel Mac, build it from
+  source with Cargo (below).
 - Without the script, Cargo can build it from source:
   `cargo install --git https://github.com/irisvn/RustCMS-Core --tag v0.4.0 rustcms-cli`.
 
