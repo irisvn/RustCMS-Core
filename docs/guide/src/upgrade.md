@@ -29,6 +29,12 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.3.1 to 0.3.2
+
+Only the command changed (new `doctor`, `upgrade`, `self-update`, `docs`).
+Install it again with the install script (0.3.1 has no `self-update`), then
+`rustcms upgrade` in each application.
+
 ## Applications made before 0.3.1
 
 They depend on `rustcms = "0.3.0"` (not on crates.io) or on a local `path`.

@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-10-16
+
 ### Added
 - `rustcms doctor`: Rust and Cargo against the minimum version, a C compiler
   that really builds, git and the RustCMS-Core tag, curl, the latest release,
