@@ -139,12 +139,12 @@ impl<M: MigratorTrait> Console<M> {
                 app.serve(listen).await
             }
             Command::Migrate => {
-                let db = connect(&config).await?;
+                let db = connect_migrations(&config).await?;
                 crate::db::check(&db, true).await?;
                 Ok(M::up(&db, None).await?)
             }
             Command::MigrateRollback { step } => {
-                let db = connect(&config).await?;
+                let db = connect_migrations(&config).await?;
                 crate::db::check(&db, true).await?;
                 Ok(M::down(&db, Some(step)).await?)
             }
@@ -158,7 +158,7 @@ impl<M: MigratorTrait> Console<M> {
             }
             Command::MigrateRefresh { force } => {
                 guard_production(production, force)?;
-                let db = connect(&config).await?;
+                let db = connect_migrations(&config).await?;
                 // Every table is recreated: the database itself must be right.
                 crate::db::check(&db, false).await?;
                 Ok(M::refresh(&db).await?)
@@ -227,6 +227,10 @@ impl<M: MigratorTrait> Console<M> {
 
 async fn connect(config: &Config) -> anyhow::Result<sea_orm::DatabaseConnection> {
     crate::db::connect(&config.database).await.context("cannot connect to the database")
+}
+
+async fn connect_migrations(config: &Config) -> anyhow::Result<sea_orm::DatabaseConnection> {
+    crate::db::connect_for_migrations(&config.database).await.context("cannot connect to the database")
 }
 
 fn guard_production(production: bool, force: bool) -> anyhow::Result<()> {

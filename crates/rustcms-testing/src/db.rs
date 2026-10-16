@@ -250,9 +250,20 @@ impl TestDb {
         Some(Self { conn, url, backend: Backend::Mysql, admin_url: Some(admin_url), name, owner: true })
     }
 
-    /// Runs every migration of `M` on this database.
+    /// Runs every migration of `M` on this database (on one connection, as
+    /// `migrate` does: see `rustcms_core::db::connect_for_migrations`).
     pub async fn migrate<M: MigratorTrait>(&self) {
-        M::up(&self.conn, None).await.expect("migrate test database");
+        let conn = connect_with(&self.url, 1).await;
+        M::up(&conn, None).await.expect("migrate test database");
+        conn.close().await.ok();
+    }
+
+    /// This database through one connection, as `migrate` opens it: tests that
+    /// run migrations and read the schema between steps.
+    pub async fn single_connection(self) -> Self {
+        let conn = connect_with(&self.url, 1).await;
+        self.conn.clone().close().await.ok();
+        Self { conn, ..self }
     }
 
     /// The same database through a pool of its own, as a second application
@@ -305,7 +316,11 @@ impl TestDb {
 }
 
 async fn connect(url: &str) -> DatabaseConnection {
-    let config = DatabaseConfig { url: url.to_owned(), max_connections: 5, log_statements: false };
+    connect_with(url, 5).await
+}
+
+async fn connect_with(url: &str, max_connections: u32) -> DatabaseConnection {
+    let config = DatabaseConfig { url: url.to_owned(), max_connections, log_statements: false };
     rustcms_core::db::connect(&config).await.expect("connect to test database")
 }
 

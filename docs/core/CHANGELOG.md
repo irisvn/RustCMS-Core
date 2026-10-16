@@ -19,6 +19,11 @@ All notable changes are documented here. The format follows
 - Local storage on Linux: every upload, import and export failed with
   `Bad file descriptor` (the parent directory was synced through an `O_PATH`
   handle); it is now opened for reading.
+- Migrations run on one connection (`migrate`, `migrate:rollback`,
+  `migrate:refresh`, as `migrate:fresh` already did): on SQLite under Linux a
+  pooled connection could still see the schema from before a step, so a
+  column dropped and added again was skipped. `TestDb::migrate` does the
+  same; `TestDb::single_connection` for tests that change the schema.
 - Security: ammonia 4.2.3 (RUSTSEC-2021-0157, -0158) and rustls 0.23.46
   (RUSTSEC-2026-0346 to -0349); `cargo deny` skips the licenses of the
   unpublished example apps.

@@ -33,6 +33,7 @@ async fn find_user(db: &TestDb, email: &str) -> user::Model {
 }
 
 db_test!(upgrade_keeps_existing_users, |db: TestDb| async move {
+    let db = db.single_connection().await;
     // Version N: only the users table.
     Migrator::up(db.conn(), Some(1)).await.unwrap();
     assert!(has_table(&db, "users").await);
@@ -52,6 +53,7 @@ db_test!(upgrade_keeps_existing_users, |db: TestDb| async move {
 
 // 0.2 → 0.3: users keep working and follow the browser's language until they choose.
 db_test!(upgrade_from_0_2_adds_user_locale, |db: TestDb| async move {
+    let db = db.single_connection().await;
     Migrator::up(db.conn(), Some(before("add_locale_to_users"))).await.unwrap();
     insert_user(&db, "ada@example.test").await;
     Migrator::up(db.conn(), None).await.unwrap();
@@ -68,6 +70,7 @@ db_test!(upgrade_from_0_2_adds_user_locale, |db: TestDb| async move {
 
 // M12 → M13: the audit log table appears empty, and rolls back cleanly.
 db_test!(upgrade_adds_audit_logs, |db: TestDb| async move {
+    let db = db.single_connection().await;
     Migrator::up(db.conn(), Some(before("create_audit_logs_table"))).await.unwrap();
     assert!(!has_table(&db, "audit_logs").await);
     insert_user(&db, "ada@example.test").await;
@@ -97,6 +100,7 @@ async fn still_active(db: &TestDb, email: &str) -> bool {
 
 // M19 → M20: existing users are not invited, sign in as before; re-runnable and reversible.
 db_test!(upgrade_adds_invitations, |db: TestDb| async move {
+    let db = db.single_connection().await;
     Migrator::up(db.conn(), Some(before("add_invitations_to_users"))).await.unwrap();
     insert_user(&db, "ada@example.test").await;
     Migrator::up(db.conn(), None).await.unwrap();
@@ -114,6 +118,7 @@ db_test!(upgrade_adds_invitations, |db: TestDb| async move {
 
 // M13 → M14: the settings table appears empty, and rolls back cleanly.
 db_test!(upgrade_adds_settings, |db: TestDb| async move {
+    let db = db.single_connection().await;
     Migrator::up(db.conn(), Some(before("create_settings_table"))).await.unwrap();
     assert!(!has_table(&db, "settings").await);
     Migrator::up(db.conn(), None).await.unwrap();
@@ -127,6 +132,7 @@ db_test!(upgrade_adds_settings, |db: TestDb| async move {
 
 // M14 → M15: the queue's tables appear empty, and roll back cleanly.
 db_test!(upgrade_adds_jobs, |db: TestDb| async move {
+    let db = db.single_connection().await;
     Migrator::up(db.conn(), Some(before("create_jobs_tables"))).await.unwrap();
     assert!(!has_table(&db, "jobs").await);
     Migrator::up(db.conn(), None).await.unwrap();
@@ -139,6 +145,7 @@ db_test!(upgrade_adds_jobs, |db: TestDb| async move {
 
 // M16 → M17: background exports get their table, and roll back cleanly.
 db_test!(upgrade_adds_exports, |db: TestDb| async move {
+    let db = db.single_connection().await;
     Migrator::up(db.conn(), Some(before("create_exports_table"))).await.unwrap();
     assert!(!has_table(&db, "exports").await);
     Migrator::up(db.conn(), None).await.unwrap();
@@ -151,6 +158,7 @@ db_test!(upgrade_adds_exports, |db: TestDb| async move {
 
 // M1 → M2: users created before the auth tables keep working; system roles are seeded.
 db_test!(upgrade_from_m1_adds_auth_tables, |db: TestDb| async move {
+    let db = db.single_connection().await;
     Migrator::up(db.conn(), Some(2)).await.unwrap();
     insert_user(&db, "m1@example.test").await;
     Migrator::up(db.conn(), None).await.unwrap();
@@ -180,6 +188,7 @@ db_test!(upgrade_from_m1_adds_auth_tables, |db: TestDb| async move {
 });
 
 db_test!(down_then_up_is_clean, |db: TestDb| async move {
+    let db = db.single_connection().await;
     Migrator::up(db.conn(), None).await.unwrap();
     UserFactory::new().create(db.conn()).await;
     Migrator::down(db.conn(), None).await.unwrap();
@@ -231,6 +240,7 @@ db_test!(foreign_keys_are_enforced, |db: TestDb| async move {
 // run again on a partly changed schema. Every framework migration copes, here
 // in the worst case (everything done, nothing recorded).
 db_test!(framework_migrations_run_again_after_a_partial_failure, migrate = Migrator, |db: TestDb| async move {
+    let db = db.single_connection().await;
     let manager = SchemaManager::new(db.conn());
     for migration in rustcms_migration::migrations() {
         migration.up(&manager).await.unwrap_or_else(|e| panic!("{} cannot run again: {e}", migration.name()));
@@ -252,6 +262,7 @@ db_test!(framework_migrations_run_again_after_a_partial_failure, migrate = Migra
 
 // The same for rollbacks: a `down` interrupted half-way runs again.
 db_test!(framework_rollbacks_run_again_after_a_partial_failure, migrate = Migrator, |db: TestDb| async move {
+    let db = db.single_connection().await;
     let manager = SchemaManager::new(db.conn());
     for migration in rustcms_migration::migrations().into_iter().rev() {
         for attempt in 1..=2 {
@@ -317,6 +328,7 @@ mod failing {
 }
 
 db_test!(failed_migration_rolls_back_and_can_be_retried, |db: TestDb| async move {
+    let db = db.single_connection().await;
     failing::FAIL.set(true);
     assert!(failing::Migrator::up(db.conn(), None).await.is_err());
     // MySQL commits each DDL statement: the table stays, and the retry must cope.
@@ -339,6 +351,7 @@ db_test!(failed_migration_rolls_back_and_can_be_retried, |db: TestDb| async move
 // the parent sorts first, so it is dropped while the child still references it).
 // The configured pool has two connections: the command must not use them.
 db_test!(fresh_drops_tables_with_foreign_keys, |db: TestDb| async move {
+    let db = db.single_connection().await;
     let config =
         rustcms_core::config::DatabaseConfig { url: db.url().to_owned(), max_connections: 2, log_statements: false };
     let conn = rustcms_core::db::connect(&config).await.unwrap();
@@ -363,6 +376,7 @@ db_test!(fresh_drops_tables_with_foreign_keys, |db: TestDb| async move {
 // 0.2 → 0.3 with real credentials: an account of 0.2 (an Argon2 password)
 // signs in as before after the upgrade, and is not an invitation.
 db_test!(upgrade_from_0_2_keeps_credentials, |db: TestDb| async move {
+    let db = db.single_connection().await;
     Migrator::up(db.conn(), Some(before("add_locale_to_users"))).await.unwrap();
     let passwords = rustcms_auth::password::Passwords::with_permits(1);
     let hash = passwords.hash("an old password".into()).await.unwrap();
@@ -379,6 +393,7 @@ db_test!(upgrade_from_0_2_keeps_credentials, |db: TestDb| async move {
 // A run of the invitations migration cut after some DDL (MySQL commits each
 // statement) completes on the next run.
 db_test!(a_partly_applied_invitation_migration_completes, |db: TestDb| async move {
+    let db = db.single_connection().await;
     use sea_orm_migration::prelude::Alias;
     Migrator::up(db.conn(), Some(before("add_invitations_to_users") + 1)).await.unwrap();
     let manager = SchemaManager::new(db.conn());

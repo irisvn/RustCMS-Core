@@ -40,13 +40,21 @@ pub async fn connect(config: &DatabaseConfig) -> Result<DatabaseConnection, DbEr
     Database::connect(options).await
 }
 
+/// One connection for running migrations. With a pool, SQLite connections
+/// other than the one that changed the schema may still see the old one
+/// (a column reported present after it was dropped, and skipped when added
+/// again), so every step of a migration runs on the same connection.
+pub async fn connect_for_migrations(config: &DatabaseConfig) -> Result<DatabaseConnection, DbErr> {
+    connect(&DatabaseConfig { max_connections: 1, ..config.clone() }).await
+}
+
 /// Drops every table and runs all migrations (`migrate:fresh`).
 ///
 /// SQLite checks foreign keys on `DROP TABLE`: dropping every table in any
 /// order needs them off. The pragma is per connection, so everything runs on
 /// one connection (a pool could run the drops elsewhere).
 pub async fn migrate_fresh<M: sea_orm_migration::MigratorTrait>(config: &DatabaseConfig) -> Result<(), DbErr> {
-    let db = connect(&DatabaseConfig { max_connections: 1, ..config.clone() }).await?;
+    let db = connect_for_migrations(config).await?;
     check(&db, false).await.map_err(|e| DbErr::Custom(e.to_string()))?;
     let sqlite = db.get_database_backend() == DbBackend::Sqlite;
     if sqlite {
