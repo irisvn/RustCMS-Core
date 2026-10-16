@@ -6,6 +6,11 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Guide: *Database schema* reference (users, roles, permissions and their
+  assignments, sessions, tokens, JWT, one-time links, every other framework
+  table), linked from *Roles & permissions*.
+
 ### Fixed
 - `rustcms self-update --version v0.3.1` (going back to a release that prints
   no target in `--version`) was refused; such a command is checked by version.

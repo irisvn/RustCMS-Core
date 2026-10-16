@@ -5,8 +5,9 @@ decide it per record in the admin panel, and [route access](../basics/routing.md
 per API route.
 
 Spatie-style tables, scoped by guard: `permissions`, `roles`,
-`role_has_permissions`, `model_has_roles`, `model_has_permissions`. A user may
-hold roles in both guards; they never mix.
+`role_has_permissions`, `model_has_roles`, `model_has_permissions` (columns,
+keys and how they relate: [Database schema](../reference/database-schema.md)).
+A user may hold roles in both guards; they never mix.
 
 - **Deny by default.** Missing permission → 403.
 - **Super admin.** The system role `super_admin` (seeded per guard by the

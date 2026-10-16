@@ -77,6 +77,7 @@
 # Reference
 
 - [CLI](reference/cli.md)
+- [Database schema](reference/database-schema.md)
 - [Admin API](reference/admin-api.md)
 - [Error codes](reference/error-codes.md)
 - [Wire format](reference/wire-format.md)
