@@ -36,7 +36,12 @@ fn run_with(project: &Project, options: &Options, cargo: &dyn Fn() -> Command) -
         return Ok(ExitCode::SUCCESS);
     }
     let lock_path = lockfile(&project.root, cargo)?;
-    let lock_before = std::fs::read(&lock_path).ok();
+    // Only a missing lockfile is "none": anything else stops before a change.
+    let lock_before = match std::fs::read(&lock_path) {
+        Ok(lock) => Some(lock),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => return Err(err).with_context(|| format!("cannot read {}", lock_path.display())),
+    };
     std::fs::write(&manifest_path, &after)?;
     if let Err(err) = update_lockfile(&project.root, cargo) {
         std::fs::write(&manifest_path, &before)?;
@@ -62,9 +67,6 @@ pub fn upgraded(manifest: &str, tag: &str, force: bool) -> anyhow::Result<Option
     let target = release::parse_tag(tag)?;
     let mut doc: DocumentMut = manifest.parse().context("Cargo.toml is not valid TOML")?;
     let current = current_version(&doc)?;
-    if current == Some(target.clone()) {
-        return Ok(None);
-    }
     if let Some(current) = &current
         && *current > target
         && !force
@@ -93,8 +95,11 @@ pub fn upgraded(manifest: &str, tag: &str, force: bool) -> anyhow::Result<Option
         .and_then(|m| m.get_mut("rustcms"))
         .and_then(Item::as_table_like_mut)
         .context("Cargo.toml has no [package.metadata.rustcms]")?;
-    metadata.insert("version", toml_edit::value(target.to_string()));
-    Ok(Some(doc.to_string()))
+    set(metadata, "version", target.to_string().into());
+    // Every edit is checked and made first: an application already on the
+    // tag but not fully (its tests' dependency, the pins) is completed too.
+    let after = doc.to_string();
+    Ok((after != manifest).then_some(after))
 }
 
 /// The RustCMS version the application is on: its tag, else its metadata.
@@ -118,7 +123,11 @@ fn point_at_tag(dep: &mut Item, krate: &str, tag: &str) -> anyhow::Result<()> {
         let mut table = toml_edit::InlineTable::new();
         table.insert("git", release::CORE_REPOSITORY.into());
         table.insert("tag", tag.into());
-        *dep = Item::Value(Value::InlineTable(table));
+        let mut value = Value::InlineTable(table);
+        if let Some(old) = dep.as_value() {
+            *value.decor_mut() = old.decor().clone();
+        }
+        *dep = Item::Value(value);
         return Ok(());
     }
     let table = dep.as_table_like_mut().with_context(|| format!("`{krate}` is not a dependency table"))?;
@@ -139,19 +148,35 @@ fn point_at_tag(dep: &mut Item, krate: &str, tag: &str) -> anyhow::Result<()> {
     for key in ["version", "branch", "rev", "registry"] {
         table.remove(key);
     }
-    table.insert("git", toml_edit::value(release::CORE_REPOSITORY));
-    table.insert("tag", toml_edit::value(tag));
+    set(table, "git", release::CORE_REPOSITORY.into());
+    set(table, "tag", tag.into());
     Ok(())
+}
+
+/// `key = value`, keeping the comments and spacing around an existing value.
+fn set(table: &mut dyn toml_edit::TableLike, key: &str, value: Value) {
+    match table.get_mut(key).and_then(Item::as_value_mut) {
+        Some(old) => {
+            let decor = old.decor().clone();
+            *old = value;
+            *old.decor_mut() = decor;
+        }
+        None => {
+            table.insert(key, Item::Value(value));
+        }
+    }
 }
 
 /// The version requirement of a dependency (a string or a table's `version`).
 fn pin(dep: &mut Item, requirement: &str) {
-    if dep.is_str() {
-        *dep = toml_edit::value(requirement);
+    if let Some(old) = dep.as_value_mut().filter(|v| v.is_str()) {
+        let decor = old.decor().clone();
+        *old = requirement.into();
+        *old.decor_mut() = decor;
     } else if let Some(table) = dep.as_table_like_mut()
         && table.contains_key("version")
     {
-        table.insert("version", toml_edit::value(requirement));
+        set(table, "version", requirement.into());
     }
 }
 
@@ -241,6 +266,28 @@ rustcms-testing = {testing}
         assert_eq!(doc["package"]["metadata"]["rustcms"]["version"].as_str(), Some("9.0.0"));
         assert!(after.contains("# The framework."), "comments kept");
         assert_eq!(upgraded(&after, "v9.0.0", false).unwrap(), None, "already there");
+    }
+
+    #[test]
+    fn trailing_comments_stay() {
+        let before = app(&git("v0.3.1"), r#""0.3.0" # tests"#)
+            .replace("version = \"0.3.1\"\n\n[dependencies]", "version = \"0.3.1\" # app version\n\n[dependencies]");
+        let after = upgraded(&before, "v9.0.0", false).unwrap().unwrap();
+        assert!(after.contains("# tests"), "{after}");
+        assert!(after.contains("\"9.0.0\" # app version"), "{after}");
+    }
+
+    #[test]
+    fn an_application_half_upgraded_is_completed() {
+        // On the tag already, but not its tests' dependency nor the pins.
+        let before = app(&git("v9.0.0"), &format!(r#"{{ git = "{CORE}", tag = "v0.3.1" }}"#));
+        let after = upgraded(&before, "v9.0.0", false).unwrap().expect("completed");
+        let doc: toml::Table = after.parse().unwrap();
+        assert_eq!(doc["dev-dependencies"]["rustcms-testing"]["tag"].as_str(), Some("v9.0.0"));
+        assert_eq!(doc["package"]["metadata"]["rustcms"]["version"].as_str(), Some("9.0.0"));
+        // And a dependency it cannot upgrade is refused even on the right tag.
+        let path = app(&git("v9.0.0"), r#"{ path = "../RustCMS/crates/rustcms-testing" }"#);
+        assert!(upgraded(&path, "v9.0.0", false).is_err());
     }
 
     #[test]

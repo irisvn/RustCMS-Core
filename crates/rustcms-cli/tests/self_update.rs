@@ -28,10 +28,15 @@ fn target() -> String {
 
 /// A release `NEW` whose "command" is a script printing that version.
 fn mirror(dir: &Path, corrupt: bool) {
+    mirror_reporting(dir, corrupt, "9.9.9");
+}
+
+/// The same, its command printing `reports` as its version.
+fn mirror_reporting(dir: &Path, corrupt: bool, reports: &str) {
     let pkg = dir.join("pkg");
     std::fs::create_dir_all(&pkg).unwrap();
     let script = pkg.join("rustcms");
-    std::fs::write(&script, "#!/bin/sh\necho \"rustcms 9.9.9 (test)\"\n").unwrap();
+    std::fs::write(&script, format!("#!/bin/sh\necho \"rustcms {reports} ({})\"\n", target())).unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let release = dir.join("mirror").join(NEW);
     std::fs::create_dir_all(&release).unwrap();
@@ -76,7 +81,6 @@ fn updates_to_the_latest_release() {
     assert!(version(&bin).contains("9.9.9"));
     let record = std::fs::read_to_string(dir.path().join("root/install.json")).unwrap();
     assert!(record.contains(NEW), "{record}");
-    assert!(!dir.path().join("root/update.lock").exists(), "lock released");
     let leftovers: Vec<_> = std::fs::read_dir(dir.path().join("root/bin")).unwrap().collect();
     assert_eq!(leftovers.len(), 1, "only the command is left in bin/");
 }
@@ -102,4 +106,17 @@ fn a_command_installed_another_way_is_left_alone() {
     let out = self_update(&bin, dir.path());
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("not installed by the install script"));
+}
+
+#[test]
+fn a_command_reporting_another_version_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = installed(&dir.path().join("root"));
+    let before = version(&bin);
+    // 9.9.90 contains "9.9.9": only an exact version is accepted.
+    mirror_reporting(dir.path(), false, "9.9.90");
+    let out = self_update(&bin, dir.path());
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("nothing was changed"));
+    assert_eq!(version(&bin), before);
 }

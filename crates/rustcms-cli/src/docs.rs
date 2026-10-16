@@ -31,7 +31,16 @@ fn section(out: &mut String, command: &Command, skip: &[&str]) {
         // Hidden arguments are for contributors (e.g. `new --rustcms-path`).
         let args: Vec<_> = sub
             .get_arguments()
-            .filter(|a| !a.is_hide_set() && !matches!(a.get_id().as_str(), "help" | "version"))
+            .filter(|a| {
+                !a.is_hide_set()
+                    && !matches!(
+                        a.get_action(),
+                        clap::ArgAction::Help
+                            | clap::ArgAction::HelpShort
+                            | clap::ArgAction::HelpLong
+                            | clap::ArgAction::Version
+                    )
+            })
             .collect();
         if args.is_empty() {
             continue;

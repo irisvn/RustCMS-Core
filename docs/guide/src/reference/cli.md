@@ -152,6 +152,10 @@ Move the application to this command's RustCMS version (Cargo.toml and Cargo.loc
 
 Replace this command with the latest release (installed by install.sh)
 
+| Argument | Description |
+|---|---|
+| `--version` | A given release instead of the latest, e.g. `v0.4.0` (may be older) |
+
 ### `docs`
 
 Open the guide of this version in a browser

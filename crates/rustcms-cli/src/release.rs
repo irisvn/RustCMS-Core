@@ -60,7 +60,19 @@ impl Source {
 
     /// The latest stable release.
     pub fn latest(&self) -> anyhow::Result<String> {
-        let body = self.fetch_text(&self.latest_url).context("cannot read the latest release")?;
+        self.latest_within(&["--retry", "3", "--connect-timeout", "10", "--max-time", "300"])
+    }
+
+    /// The same, giving up after a few seconds (`doctor`).
+    pub fn latest_quick(&self) -> anyhow::Result<String> {
+        self.latest_within(&["--connect-timeout", "5", "--max-time", "10"])
+    }
+
+    fn latest_within(&self, limits: &[&str]) -> anyhow::Result<String> {
+        let dir = tempfile::tempdir()?;
+        let out = dir.path().join("latest.txt");
+        self.fetch_with(&self.latest_url, &out, limits).context("cannot read the latest release")?;
+        let body = std::fs::read_to_string(out)?;
         let tag = body.trim().to_owned();
         parse_tag(&tag)?;
         Ok(tag)
@@ -71,17 +83,15 @@ impl Source {
         self.fetch(&format!("{}/{tag}/{name}", self.download_base), out)
     }
 
-    fn fetch_text(&self, url: &str) -> anyhow::Result<String> {
-        let dir = tempfile::tempdir()?;
-        let out = dir.path().join("body");
-        self.fetch(url, &out)?;
-        Ok(std::fs::read_to_string(out)?)
+    fn fetch(&self, url: &str, out: &Path) -> anyhow::Result<()> {
+        self.fetch_with(url, out, &["--retry", "3", "--connect-timeout", "10", "--max-time", "300"])
     }
 
-    fn fetch(&self, url: &str, out: &Path) -> anyhow::Result<()> {
+    fn fetch_with(&self, url: &str, out: &Path, limits: &[&str]) -> anyhow::Result<()> {
         let output = Command::new("curl")
             .args(["--proto", self.protocols, "--proto-redir", self.protocols, "--tlsv1.2", "-fsSL"])
-            .args(["--retry", "3", "--connect-timeout", "10", "--max-time", "300", "-o"])
+            .args(limits)
+            .arg("-o")
             .arg(out)
             .arg(url)
             .output()

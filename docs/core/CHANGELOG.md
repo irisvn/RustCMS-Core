@@ -23,6 +23,10 @@ All notable changes are documented here. The format follows
 ### Changed
 - The application is found by parsing `Cargo.toml` (`[package.metadata.rustcms]`),
   not by searching its text.
+- `make:command` refuses the names of the command's own commands; `rustcms --
+  <command>` always reaches the application.
+- CI runs every test of the command (unit, `self-update`, generated app) on
+  Linux and macOS.
 
 ## [0.3.1] — 2026-10-16
 

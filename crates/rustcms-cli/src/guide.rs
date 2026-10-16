@@ -67,14 +67,26 @@ fn cache_dir() -> anyhow::Result<PathBuf> {
     }
 }
 
-/// Writes the guide into `dir` once: into a sibling first, marked complete,
-/// then renamed, so a reader never sees half a guide.
+/// Writes the guide into `dir` once. Writers take turns (a lock next to it);
+/// the first complete guide wins and is never removed; a reader only uses a
+/// directory marked complete.
 fn extract(dir: &Path, files: &[(PathBuf, &[u8])]) -> anyhow::Result<()> {
     if dir.join(".complete").is_file() {
         return Ok(());
     }
     let parent = dir.parent().context("no parent")?;
     std::fs::create_dir_all(parent)?;
+    let name = dir.file_name().context("no name")?.to_string_lossy().into_owned();
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(parent.join(format!(".{name}.lock")))?;
+    lock.lock()?;
+    // Another writer finished while this one waited.
+    if dir.join(".complete").is_file() {
+        return Ok(());
+    }
     let staging = tempfile::Builder::new().prefix(".docs-").tempdir_in(parent)?;
     for (path, contents) in files {
         // Paths come from the embedded book: relative, no `..`.
@@ -86,15 +98,11 @@ fn extract(dir: &Path, files: &[(PathBuf, &[u8])]) -> anyhow::Result<()> {
         std::fs::write(&out, contents)?;
     }
     std::fs::write(staging.path().join(".complete"), release::VERSION)?;
-    let staged = staging.keep();
+    // Under the lock, an existing directory is an interrupted extraction.
     if dir.exists() {
-        // An interrupted earlier extraction, or another one that just finished.
-        std::fs::remove_dir_all(dir).ok();
+        std::fs::remove_dir_all(dir)?;
     }
-    if std::fs::rename(&staged, dir).is_err() {
-        std::fs::remove_dir_all(&staged).ok();
-        anyhow::ensure!(dir.join(".complete").is_file(), "cannot write the guide to {}", dir.display());
-    }
+    std::fs::rename(staging.keep(), dir).with_context(|| format!("cannot write the guide to {}", dir.display()))?;
     Ok(())
 }
 
@@ -117,8 +125,27 @@ mod tests {
         std::fs::write(dir.join("index.html"), "half").unwrap();
         extract(&dir, &files).unwrap();
         assert_eq!(std::fs::read(dir.join("index.html")).unwrap(), b"<h1>x</h1>");
-        let leftovers = std::fs::read_dir(dir.parent().unwrap()).unwrap().count();
-        assert_eq!(leftovers, 1, "no staging directory left");
+        let staging = std::fs::read_dir(dir.parent().unwrap())
+            .unwrap()
+            .filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().starts_with(".docs-"))
+            .count();
+        assert_eq!(staging, 0, "no staging directory left");
+    }
+
+    #[test]
+    fn concurrent_readers_get_one_complete_guide() {
+        let cache = tempfile::tempdir().unwrap();
+        let dir = cache.path().join("rustcms/docs/1.0.0");
+        let files: Vec<(PathBuf, &'static [u8])> = (0..50)
+            .map(|i| (PathBuf::from(format!("p{i}.html")), b"page".as_slice()))
+            .chain([(PathBuf::from("index.html"), b"<h1>x</h1>".as_slice())])
+            .collect();
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                scope.spawn(|| extract(&dir, &files).unwrap());
+            }
+        });
+        assert!(dir.join(".complete").is_file() && dir.join("p49.html").is_file());
     }
 
     #[test]

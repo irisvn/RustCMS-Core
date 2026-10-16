@@ -153,6 +153,11 @@ pub fn make_command(project: &Project, command: &str) -> anyhow::Result<ExitCode
     if !valid {
         bail!("command names are lowercase words joined by `:`, `-` or `_`, e.g. `lms:report`: {command}");
     }
+    // The `rustcms` command's own commands would shadow it (`rustcms -- <name>` still reaches it).
+    use clap::CommandFactory;
+    if crate::Cli::command().get_subcommands().any(|c| c.get_name() == command) {
+        bail!("`{command}` is a command of `rustcms` itself: pick another name");
+    }
     let module = command.replace([':', '-'], "_");
     if crate::naming::is_keyword(&module) {
         bail!("`{command}` would make the module `{module}`, a Rust keyword: pick another name");
@@ -321,6 +326,9 @@ mod tests {
         assert!(make_page(&upper, "CalendarPage", true).is_err(), "the vendor comes from the package name");
 
         make_command(&project, "lms:report").unwrap();
+        for own in ["doctor", "upgrade", "self-update", "docs", "new"] {
+            assert!(make_command(&project, own).is_err(), "{own} is a rustcms command");
+        }
         assert!(read(&dir, "src/console/lms_report.rs").contains("Command::new(\"lms:report\")"));
         assert!(
             read(&dir, "src/providers/app_service_provider.rs")

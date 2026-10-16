@@ -77,7 +77,9 @@ sign-in and every change are only accepted from that origin (opening
 other origins in `auth.admin_origins`).
 
 Inside an application, `rustcms <command>` runs your application's binary
-(`cargo run -- <command>`), so your own commands are available too. Once
+(`cargo run -- <command>`), so your own commands are available too. The
+command's own names (`new`, `make:*`, `doctor`, `upgrade`, `self-update`,
+`docs`) come first; `rustcms -- <command>` always reaches the application. Once
 built, the binary takes the same commands: `./blog migrate`, `./blog serve`.
 
 ## Your first resource
