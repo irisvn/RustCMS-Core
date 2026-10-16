@@ -3,7 +3,7 @@
 // sent to the server by the browser, nor in a `Referer`); it is read once and
 // removed from the address bar.
 import { Link, useNavigate } from "@tanstack/react-router";
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { PanelsTopLeft } from "lucide-react";
 import { ApiError } from "@/api/client";
 import { useSession } from "@/api/context";
@@ -123,6 +123,12 @@ export function TokenPasswordPage({ purpose }: { purpose: "reset" | "invitation"
   const [confirmation, setConfirmation] = useState("");
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState<unknown>(null);
+  // The answer was lost: the password may already be set (the link is then used up).
+  const [unsure, setUnsure] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => () => {
+    mounted.current = false;
+  }, []);
   const errors = errorsOf(failed);
   const message = useMessage(failed);
   const invitation = purpose === "invitation";
@@ -134,15 +140,32 @@ export function TokenPasswordPage({ purpose }: { purpose: "reset" | "invitation"
       const body: Record<string, string> = { token: token ?? "", password, password_confirmation: confirmation };
       if (invitation && name.trim()) body.name = name.trim();
       await session.api.post(invitation ? "/auth/invitation" : "/auth/reset-password", body);
+      // Left meanwhile: do not take over wherever the user is now.
+      if (!mounted.current) return;
       await navigate({ to: "/login", search: { done: invitation ? "invitation" : "reset" }, replace: true });
     } catch (err) {
-      setFailed(err);
+      if (!mounted.current) return;
+      if (err instanceof ApiError && err.maybeApplied) setUnsure(true);
+      else setFailed(err);
     } finally {
-      setPending(false);
+      if (mounted.current) setPending(false);
     }
   };
   const title = invitation ? t("recovery.invitationTitle") : t("recovery.resetTitle");
   const subtitle = invitation ? t("recovery.invitationSubtitle") : t("recovery.resetSubtitle");
+  if (unsure) {
+    return (
+      <Frame title={title} subtitle={subtitle}>
+        <div className="flex flex-col gap-4">
+          <Alert variant="warning">{t("recovery.unsure")}</Alert>
+          <Link to="/login" className="text-sm text-primary underline-offset-4 hover:underline">{t("recovery.backToLogin")}</Link>
+          {!invitation && (
+            <Link to="/forgot-password" className="text-sm text-muted-foreground underline-offset-4 hover:underline">{t("recovery.askAgain")}</Link>
+          )}
+        </div>
+      </Frame>
+    );
+  }
   if (!token || errors.token) {
     return (
       <Frame title={title} subtitle={subtitle}>

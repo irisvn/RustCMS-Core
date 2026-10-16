@@ -57,6 +57,8 @@ const PENDING_PER_USER: u64 = 3;
 const KEEP: chrono::Duration = chrono::Duration::hours(24);
 /// Rows read (and the user checked again) at a time by the job.
 const BATCH: usize = 500;
+/// How long after expiry an export is pruned.
+const PRUNE_GRACE: chrono::Duration = chrono::Duration::hours(1);
 /// Runs of the job.
 const ATTEMPTS: u32 = 3;
 
@@ -403,6 +405,11 @@ impl Job for ExportJob {
         if row.status == "done" || row.status == "failed" {
             return Ok(());
         }
+        // Delayed past its expiry: never started (pruning may be removing it).
+        if row.expires_at <= Utc::now() {
+            fail(&db, row.id, "unfinished").await?;
+            return Ok(());
+        }
         match build(&job, &row).await {
             Ok(()) => Ok(()),
             Err(Ok(Refused(code))) => {
@@ -562,7 +569,10 @@ pub async fn prune(db: &sea_orm::DatabaseConnection, storage: &dyn Storage) -> A
         .filter(entity::Column::CreatedAt.lt(now - chrono::Duration::hours(6)))
         .exec(db)
         .await?;
-    let expired = entity::Entity::find().filter(entity::Column::ExpiresAt.lte(now)).limit(500).all(db).await?;
+    // An hour after expiry: longer than a run of the job (a late upload has
+    // finished, or was stopped), so every object it wrote is recorded.
+    let expired =
+        entity::Entity::find().filter(entity::Column::ExpiresAt.lte(now - PRUNE_GRACE)).limit(500).all(db).await?;
     let mut deleted = 0;
     for row in expired {
         // The published object and every run's (recorded before its upload).

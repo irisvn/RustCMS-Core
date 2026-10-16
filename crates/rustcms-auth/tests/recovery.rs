@@ -55,6 +55,11 @@ async fn signs_in(app: &TestApp, email: &str, password: &str) -> bool {
     client.post_json(&app.admin_api("auth/login"), &body).await.status == StatusCode::OK
 }
 
+/// Tokens a secret could still match (marks of credential changes excluded).
+async fn live_tokens(app: &TestApp) -> u64 {
+    user_token::Entity::find().filter(user_token::Column::TokenHash.ne("")).count(app.state().db()).await.unwrap()
+}
+
 async fn jobs(app: &TestApp) -> u64 {
     rustcms_core::models::job::Entity::find().count(app.state().db()).await.unwrap()
 }
@@ -76,7 +81,7 @@ db_test!(a_reset_link_sets_a_new_password_once, migrate = Migrator, |db: TestDb|
     // Every session of the user ended with it; the link works once.
     signed_in.get(&app.admin_api("auth/me")).await.assert_status(StatusCode::UNAUTHORIZED);
     reset(&app, &token, "yet another passphrase").await.assert_validation_error("token");
-    assert_eq!(user_token::Entity::find().count(app.state().db()).await.unwrap(), 0);
+    assert_eq!(live_tokens(&app).await, 0, "only the marks of the change remain");
     let audited = rustcms_core::models::audit_log::Entity::find()
         .filter(rustcms_core::models::audit_log::Column::Event.eq("auth.password_reset"))
         .count(app.state().db())
@@ -212,7 +217,7 @@ db_test!(a_pending_super_admin_does_not_count, migrate = Migrator, |db: TestDb| 
     let hash = auth(&app).passwords.hash(NEW_PASSWORD.into()).await.unwrap();
     rbac.reset_password(Actor::System, invited.id, hash).await.unwrap();
     assert!(!reload(&app, &invited).await.invitation_pending);
-    assert_eq!(user_token::Entity::find().count(db).await.unwrap(), 0);
+    assert_eq!(live_tokens(&app).await, 0);
     assert!(signs_in(&app, "boss@example.test", NEW_PASSWORD).await);
 });
 
@@ -237,4 +242,40 @@ db_test!(resets_are_off_unless_configured, migrate = Migrator, |db: TestDb| asyn
     let (app, seed) = support::setup(db).await;
     forgot(&app, &seed.member.email).await.assert_status(StatusCode::NOT_FOUND);
     reset(&app, "x", NEW_PASSWORD).await.assert_status(StatusCode::NOT_FOUND);
+});
+
+db_test!(an_older_request_never_comes_back_after_a_reset, migrate = Migrator, |db: TestDb| async move {
+    let (app, seed) = setup(db).await;
+    // Request A is made (its mail "fails": the job is kept for a retry).
+    let older = rustcms_auth::recovery::PasswordResetJob {
+        email: seed.member.email.clone(),
+        locale: "en".into(),
+        request_id: uuid::Uuid::now_v7(),
+        requested_at: chrono::Utc::now() - chrono::Duration::minutes(2),
+    };
+    // Request B, newer, is answered and used.
+    forgot(&app, &seed.member.email).await.assert_status(StatusCode::ACCEPTED);
+    work(&app).await;
+    let token = token_in(&app, "reset-password");
+    reset(&app, &token, NEW_PASSWORD).await.assert_status(StatusCode::NO_CONTENT);
+    // A's retry runs after B's reset: superseded, nothing sent.
+    rustcms_core::queue::enqueue(app.state().db(), &older).await.unwrap();
+    work(&app).await;
+    assert!(app.take_mails().is_empty(), "no link for a request older than the reset");
+    assert_eq!(live_tokens(&app).await, 0);
+    // An administrator's password change supersedes earlier requests too.
+    let earlier = rustcms_auth::recovery::PasswordResetJob {
+        request_id: uuid::Uuid::now_v7(),
+        requested_at: chrono::Utc::now(),
+        ..older
+    };
+    let state = auth(&app);
+    let hash = state.passwords.hash("set by an administrator".into()).await.unwrap();
+    RbacService::new(app.state().db(), &state.resolver)
+        .reset_password(Actor::System, seed.member.id, hash)
+        .await
+        .unwrap();
+    rustcms_core::queue::enqueue(app.state().db(), &earlier).await.unwrap();
+    work(&app).await;
+    assert!(app.take_mails().is_empty());
 });

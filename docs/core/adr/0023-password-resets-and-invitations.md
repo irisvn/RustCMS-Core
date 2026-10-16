@@ -48,6 +48,14 @@ with the revocations of ADR 0005.
   the invitation (tokens deleted, `auth_version` moves).
 - **Remember me**: `remember` on sign-in sets session data `remember`; such a
   session's idle lifetime and cookie `Max-Age` are `remember_days`.
+- **Supersession survives use**: using a token, or an administrator setting
+  the password, replaces the user's tokens by a mark per purpose dated now
+  (no secret matches it, kept 30 days; `invitation_days` ≤ 30): a request
+  older than the change (a retried reset, a delayed invitation job) is
+  superseded and sends nothing.
+- **Unknown outcomes**: when the answer to a use is lost, the page says the
+  new password may already work and offers sign-in or a new link (the token
+  is spent either way).
 - **Retention**: expired tokens pruned hourly; reset payloads (an email) stay
   in `jobs` until done or until failed jobs are pruned
   (`failed_retention_days`).

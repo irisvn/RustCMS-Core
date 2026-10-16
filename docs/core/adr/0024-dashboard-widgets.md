@@ -25,7 +25,9 @@ apply as on the list, on three databases, at bounded cost.
   ranges on SQLite (text dates: lexical comparisons are wrong at bucket
   edges) → candidate keys within `MAX_LIST_SCAN`, each loaded and checked
   (`listable`), dates read back from the wire value; beyond → `too_many`.
-- Buckets in UTC (day, ISO week, month), computed in Rust, contiguous.
+- Buckets in UTC (day, ISO week, month), computed in Rust, contiguous. For
+  `Date` fields every bound moves to the next midnight, in both counting
+  paths (a compared stat's "last 30 days" includes today).
 - Recent records through `DynResource::list` (envelopes: field rules and
   labels); the list's scan limit is recognized by its issue code
   (`too_many_matches`).

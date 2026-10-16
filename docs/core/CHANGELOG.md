@@ -32,6 +32,21 @@ All notable changes are documented here. The format follows
 - Examples: LMS theme, course overview page, seats slot, progress cell; demo
   post stats page and visibility slot.
 
+### Fixed (0.3 — Codex review of M17b–M22)
+- Import rows check `create` for the user as they are under the RBAC lock
+  (a withdrawn `create` with `update` kept created records); `write_conflict`
+  retries the import job instead of failing the row; the uploaded file is
+  stored before the import and its idempotency receipt are committed.
+- Using a reset or invitation link, or an administrator setting the
+  password, leaves marks that supersede older requests (a retried older
+  reset issued a new link after the reset); `auth.invitation_days` ≤ 30.
+- Dashboard: date-only fields count whole UTC days the same way in SQL and
+  in scans; widgets refresh after writes.
+- Exports never start past their expiry; pruning waits an hour after it, so
+  a late upload's object is always recorded and deleted.
+- SPA: a lost answer to a reset or invitation says the password may already
+  work (no retry offered); completions act only while their page is open.
+
 ### Added (0.3 — M22; ADR 0024)
 - Dashboard widgets: `AdminProvider::dashboard(Dashboard)`, `Widget::stat`
   (`compare_last_days`), `Widget::chart` (`Bucket::Day/Week/Month`, `last`),

@@ -56,7 +56,7 @@ Uploads and the media library: see [File storage](../digging-deeper/storage.md).
 | `auth.remember_days`                 | `30`               | "Remember me" keeps a session this long (0: no such box) |
 | `auth.password_reset`                | `false`            | "Forgot password?" (needs mail)         |
 | `auth.password_reset_minutes`        | `60`               | how long a reset link works             |
-| `auth.invitation_days`               | `7`                | how long an invitation link works       |
+| `auth.invitation_days`               | `7`                | how long an invitation link works (1–30) |
 | `auth.reset_requests_per_ip`         | `5`                | reset requests per IP per minute        |
 | `auth.reset_requests_per_email`      | `3`                | reset requests per address per minute   |
 | `auth.reset_cooldown_secs`           | `60`               | at most one reset mail per user this often |

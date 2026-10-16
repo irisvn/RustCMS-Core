@@ -196,6 +196,7 @@ export const vi: Record<keyof typeof en, string> = {
   "recovery.saving": "Đang lưu…",
   "recovery.linkInvalid": "Liên kết không hợp lệ hoặc đã hết hạn.",
   "recovery.invitationInvalid": "Lời mời không hợp lệ hoặc đã hết hạn: hãy xin lời mời mới.",
+  "recovery.unsure": "Chưa xác nhận được thay đổi: có thể mật khẩu mới đã dùng được. Hãy thử đăng nhập bằng mật khẩu mới; nếu không được, hãy xin liên kết mới.",
   "recovery.askAgain": "Xin liên kết mới",
   "recovery.resetDone": "Đã đổi mật khẩu: hãy đăng nhập bằng mật khẩu mới.",
   "recovery.invitationDone": "Tài khoản đã sẵn sàng: hãy đăng nhập bằng mật khẩu mới.",

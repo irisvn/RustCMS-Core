@@ -38,6 +38,11 @@ const KEY_PURPOSE: &str = "rustcms/user-tokens/v1";
 const SECRET_LEN: usize = 43;
 /// Longest token accepted (uuid, dot, secret).
 const MAX_TOKEN_LEN: usize = 80;
+/// How long the mark left by a credential change is kept: longer than any
+/// request may wait (`invitation_days` is at most 30).
+const TOMBSTONE_DAYS: i64 = 30;
+/// Most days an invitation link may live.
+pub const MAX_INVITATION_DAYS: u64 = 30;
 
 /// What a token is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,7 +281,7 @@ pub(crate) async fn consume(
         }
     }
     let user = model.update(&txn).await?;
-    token::Entity::delete_many().filter(token::Column::UserId.eq(user.id)).exec(&txn).await?;
+    end_tokens(&txn, &user).await?;
     let version = crate::credentials::revoke_all(&txn, user.id, accept.revoke_api_tokens).await?;
     let event = match purpose {
         Purpose::PasswordReset => "auth.password_reset",
@@ -288,10 +293,31 @@ pub(crate) async fn consume(
     Ok(user::Model { auth_version: version, ..user })
 }
 
-/// Ends the tokens of `user_id` (in the caller's transaction: a password set
-/// by an administrator, a deleted invitation).
-pub async fn end_tokens<C: sea_orm::ConnectionTrait>(conn: &C, user_id: i64) -> AppResult<()> {
-    token::Entity::delete_many().filter(token::Column::UserId.eq(user_id)).exec(conn).await?;
+/// Ends the tokens of `user` (in the caller's transaction: a token used, a
+/// password set by an administrator), leaving per purpose a mark dated now
+/// that no secret matches: a request made before it (a retried older reset,
+/// a delayed invitation job) counts as superseded and sends nothing.
+pub async fn end_tokens<C: sea_orm::ConnectionTrait>(conn: &C, user: &user::Model) -> AppResult<()> {
+    token::Entity::delete_many().filter(token::Column::UserId.eq(user.id)).exec(conn).await?;
+    let now = Utc::now();
+    for purpose in [Purpose::PasswordReset, Purpose::Invitation] {
+        token::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            user_id: Set(user.id),
+            purpose: Set(purpose.as_str().to_owned()),
+            email: Set(user.email.clone()),
+            auth_version: Set(user.auth_version),
+            // Not a hash: nothing verifies against it.
+            token_hash: Set(String::new()),
+            request_id: Set(uuid::Uuid::nil()),
+            requested_at: Set(now),
+            issued_at: Set(now),
+            expires_at: Set(now + Duration::days(TOMBSTONE_DAYS)),
+            sent_at: Set(Some(now)),
+        }
+        .insert(conn)
+        .await?;
+    }
     Ok(())
 }
 

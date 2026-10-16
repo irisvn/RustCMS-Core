@@ -97,7 +97,9 @@ deletes expired tokens hourly.
 
 **Invitations** (see [Users](../admin/users-roles.md)) use the same machinery:
 `<admin>/invitation#token=…`, `POST auth/invitation` `{token, password,
-password_confirmation, name?}`, valid `invitation_days` (7). An invited
+password_confirmation, name?}`, valid `invitation_days` (7, at most 30).
+Once a link is used, or an administrator sets the password, any older request
+still waiting in the queue sends nothing. An invited
 user cannot sign in until they accept (no password matches theirs), and does
 not count as the "last active super admin".
 

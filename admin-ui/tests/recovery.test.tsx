@@ -83,3 +83,15 @@ it("hides both when not configured", async () => {
   expect(screen.queryByLabelText("Remember me")).toBeNull();
   expect(screen.queryByRole("link", { name: "Forgot password?" })).toBeNull();
 });
+
+it("after a lost answer, says the password may already work instead of offering a retry", async () => {
+  server.use(http.post("*/admin/api/auth/reset-password", () => HttpResponse.error()));
+  const token = "0199d3a4-1b2c-7d3e-8f00-000000000000.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+  window.history.replaceState(null, "", `/reset-password#token=${token}`);
+  mount("/reset-password");
+  await userEvent.type(await screen.findByLabelText("New password"), "a brand new passphrase");
+  await userEvent.type(screen.getByLabelText("Confirm the password"), "a brand new passphrase");
+  await userEvent.click(screen.getByRole("button", { name: "Save the password" }));
+  expect(await screen.findByText(/your new password may already work/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Save the password" })).toBeNull();
+});

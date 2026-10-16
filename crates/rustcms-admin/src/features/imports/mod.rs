@@ -370,14 +370,29 @@ async fn upload(
     let key = StorageKey::generate("csv")?;
     let staged = Staged(storage.staging_dir().join(format!("import-{}.csv", uuid::Uuid::now_v7())));
     tokio::fs::write(&staged.0, &body).await.map_err(AppError::internal)?;
+    // The file first, durable: the import (and its receipt) exists only once
+    // the file does. A crash between the two leaves an object no import names.
+    storage.put_file(&key, &staged.0, "text/csv").await?;
+    let unused = async || {
+        if let Err(err) = storage.delete(&key).await {
+            tracing::warn!(%err, "uploaded import file not deleted");
+        }
+    };
     let now = Utc::now();
-    let txn = rustcms_core::db::begin_write(&ctx.db).await?;
+    let txn = match rustcms_core::db::begin_write(&ctx.db).await {
+        Ok(txn) => txn,
+        Err(err) => {
+            unused().await;
+            return Err(err.into());
+        }
+    };
     // One user's imports are counted and added one at a time.
     rustcms_core::db::xact_lock(&txn, &rustcms_core::db::lock_slot("idem", &format!("imports:{user_id}"))).await?;
     if let Some(claim) = &claim
         && !crate::idempotency::acquire(&txn, claim).await?
     {
         txn.rollback().await?;
+        unused().await;
         let receipt = crate::idempotency::receipt(&ctx.db, claim).await?;
         let id = receipt["id"].as_str().and_then(|id| uuid::Uuid::parse_str(id).ok());
         let (row, _) =
@@ -386,9 +401,9 @@ async fn upload(
     }
     if pending(&txn, user_id).await? >= PENDING_PER_USER {
         txn.rollback().await?;
+        unused().await;
         return Err(AppError::TooManyRequests { retry_after: 60 });
     }
-    // The row first: a crash after it leaves the object to pruning.
     let row = entity::ActiveModel {
         id: Set(uuid::Uuid::now_v7()),
         user_id: Set(user_id),
@@ -411,19 +426,23 @@ async fn upload(
         expires_at: Set(now + KEEP),
     }
     .insert(&txn)
-    .await?;
-    if let Some(claim) = &claim {
-        crate::idempotency::complete(&txn, claim, &json!({"id": row.id.to_string()})).await?;
-    }
-    txn.commit().await?;
-    if let Err(err) = storage.put_file(&key, &staged.0, "text/csv").await {
-        // As if never sent: a retry with the same key uploads again.
-        entity::Entity::delete_by_id(row.id).exec(&ctx.db).await?;
+    .await;
+    let committed = async {
+        let row = row?;
         if let Some(claim) = &claim {
-            crate::idempotency::release(&ctx.db, claim).await?;
+            crate::idempotency::complete(&txn, claim, &json!({"id": row.id.to_string()})).await?;
         }
-        return Err(err.into());
+        txn.commit().await?;
+        AppResult::Ok(row)
     }
+    .await;
+    let row = match committed {
+        Ok(row) => row,
+        Err(err) => {
+            unused().await;
+            return Err(err);
+        }
+    };
     Ok((StatusCode::CREATED, Json(view(&row, resource.import_fields(&ctx)))))
 }
 
@@ -802,7 +821,11 @@ async fn write(job: &JobCtx, row: &entity::Model) -> Result<(), Result<Stopped, 
                 }
                 Err(AppError::Conflict { code: "import_stopped", .. }) => return Err(Ok(Stopped("unfinished"))),
                 // Busy or unavailable: the whole job is retried (written rows are skipped).
-                Err(err @ (AppError::Internal(_) | AppError::TooManyRequests { .. })) => return Err(Err(err)),
+                Err(
+                    err @ (AppError::Internal(_)
+                    | AppError::TooManyRequests { .. }
+                    | AppError::Conflict { code: "write_conflict", .. }),
+                ) => return Err(Err(err)),
                 Err(err) => {
                     // Refused: the user's access ended meanwhile (stop), or this row's record.
                     if matches!(err, AppError::Forbidden) {

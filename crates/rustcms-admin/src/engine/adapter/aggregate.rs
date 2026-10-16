@@ -35,6 +35,12 @@ fn instant_of(value: &serde_json::Value) -> Option<DateTime<Utc>> {
     NaiveDate::parse_from_str(text, "%Y-%m-%d").ok().and_then(|d| d.and_hms_opt(0, 0, 0)).map(|d| d.and_utc())
 }
 
+/// `at` if it is a midnight (UTC), else the midnight after it.
+fn next_midnight(at: DateTime<Utc>) -> DateTime<Utc> {
+    let midnight = at.date_naive().and_hms_opt(0, 0, 0).map_or(at, |d| d.and_utc());
+    if midnight == at { at } else { midnight + chrono::Duration::days(1) }
+}
+
 /// Whether `kind` holds a date (`Instant`, `Date`, `LocalDateTime`).
 pub(crate) fn is_date(kind: FieldKind) -> bool {
     matches!(kind, FieldKind::Instant | FieldKind::Date | FieldKind::LocalDateTime)
@@ -104,6 +110,16 @@ impl<R: Resource> ResourceAdapter<R> {
         ranges: &[(DateTime<Utc>, DateTime<Utc>)],
     ) -> AppResult<Counted> {
         self.admit_list(ctx, query).await?;
+        // A date field holds whole days: every bound moves to the next midnight
+        // (UTC), so both counting paths agree and "the last 30 days" includes today.
+        let day_ranges: Vec<(DateTime<Utc>, DateTime<Utc>)>;
+        let ranges = match date.and_then(|d| self.columns.get(d)) {
+            Some(column) if column.kind == FieldKind::Date => {
+                day_ranges = ranges.iter().map(|(s, e)| (next_midnight(*s), next_midnight(*e))).collect();
+                day_ranges.as_slice()
+            }
+            _ => ranges,
+        };
         let select = self.list_select(ctx, query)?;
         let once = !self.policy.view_depends_on_record() && query.trashed == Trashed::Without;
         if once && !self.policy.allows(ctx, ability::VIEW, None).await {
@@ -163,5 +179,12 @@ mod tests {
         assert_eq!(at("2026-10-25").as_deref(), Some("2026-10-25T00:00:00+00:00"));
         assert_eq!(at("nope"), None);
         assert_eq!(instant_of(&serde_json::json!(5)), None);
+    }
+
+    #[test]
+    fn day_bounds_move_to_the_next_midnight() {
+        let at = |s: &str| DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc);
+        assert_eq!(next_midnight(at("2026-10-16T15:00:00Z")), at("2026-10-17T00:00:00Z"));
+        assert_eq!(next_midnight(at("2026-10-16T00:00:00Z")), at("2026-10-16T00:00:00Z"));
     }
 }

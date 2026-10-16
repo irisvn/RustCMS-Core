@@ -273,3 +273,32 @@ db_test!(imports_abandoned_by_start_time_not_upload_time, |db: TestDb| async mov
     assert_eq!(row.status, "done");
     assert_eq!(notes(&app).await, ["A"]);
 });
+
+db_test!(an_import_creates_nothing_once_create_is_withdrawn, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    let (importer, role) = user_with(&app, "Importer", &IMPORTER).await;
+    let client = app.acting_as(&importer).await;
+    let admin = app.acting_as(&users.admin).await;
+    admin
+        .post_json(&app.admin_api("resources/notes/records"), &json!({"title": "Known"}))
+        .await
+        .assert_status(StatusCode::CREATED);
+    let id =
+        upload(&client, &app, "notes", "title\r\nKnown\r\nNew one\r\n").await.json()["id"].as_str().unwrap().to_owned();
+    client
+        .post_json(&app.admin_api(&format!("imports/{id}/run")), &json!({"mapping": {"title": "title"}}))
+        .await
+        .assert_status(StatusCode::OK);
+    // Import and keyed updates stay allowed; creating does not.
+    let auth = app.state().service::<AuthState>().unwrap();
+    let permissions: Vec<String> =
+        ["notes.view_any", "notes.view", "notes.update", "notes.import"].iter().map(|p| (*p).to_owned()).collect();
+    RbacService::new(app.state().db(), &auth.resolver)
+        .set_role_permissions(Actor::System, role, &permissions)
+        .await
+        .unwrap();
+    work(&app).await;
+    assert_eq!(notes(&app).await, ["Known"], "the unknown row is not created");
+    let shown = client.get(&app.admin_api(&format!("imports/{id}"))).await.json();
+    assert_eq!((shown["updated"].clone(), shown["failed"].clone()), (json!(1), json!(1)), "{shown}");
+});

@@ -56,7 +56,8 @@ counts the list's own query (its scope's joins and `DISTINCT` hold). When it
 decides per record — and for dated counts on SQLite, whose dates are text —
 each candidate is read back and checked, at most 10,000; beyond, the widget
 says *too many records* instead of a wrong number: narrow it with a filter.
-Trashed records are never counted.
+Trashed records are never counted. Over a date-only field, periods are whole
+UTC days: "the last 30 days" are today and the 29 days before.
 
 Widgets are checked at boot: a name used twice, an unknown resource, a filter
 that is not declared, a date that is not a date field, a column or sort that

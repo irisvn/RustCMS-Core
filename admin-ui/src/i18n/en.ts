@@ -197,6 +197,7 @@ export const en = {
   "recovery.saving": "Saving…",
   "recovery.linkInvalid": "This link is invalid or has expired.",
   "recovery.invitationInvalid": "This invitation is invalid or has expired: ask for a new one.",
+  "recovery.unsure": "We could not confirm the change: your new password may already work. Try signing in with it; if it does not, ask for a new link.",
   "recovery.askAgain": "Ask for a new link",
   "recovery.resetDone": "Your password was changed: sign in with it.",
   "recovery.invitationDone": "Your account is ready: sign in with your new password.",

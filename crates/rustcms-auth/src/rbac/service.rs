@@ -744,8 +744,8 @@ impl<'a> RbacService<'a> {
         // A pending invitation is over: the user signs in with this password
         // (its link dies with the tokens; its job finds the version changed).
         model.invitation_pending = Set(false);
-        model.update(&txn).await?;
-        crate::recovery::end_tokens(&txn, user_id).await?;
+        let target = model.update(&txn).await?;
+        crate::recovery::end_tokens(&txn, &target).await?;
         crate::credentials::revoke_all(&txn, user_id, true).await?;
         self.audit(&txn, actor, AuditEntry::new("user.password_reset", "user").key(user_id)).await?;
         self.commit(txn).await?;

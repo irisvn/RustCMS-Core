@@ -394,6 +394,11 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             let key = receipt["key"].as_str().ok_or_else(|| AppError::internal("create receipt without a key"))?;
             return Ok(self.committed_key_envelope(ctx, key.to_owned()).await);
         }
+        // An import row: CREATE allowed to the user as they are now (under the RBAC lock).
+        if ctx.import_row.is_some() && !self.policy.allows(&wctx, ability::CREATE, None).await {
+            Self::abort(txn, wctx).await?;
+            return Err(AppError::Forbidden);
+        }
         let mut input = input;
         let bound = ctx.bound.as_ref().map(|(_, field, parent)| (field.clone(), self.fk_value(field, parent)));
         if let Some((field, value)) = &bound {

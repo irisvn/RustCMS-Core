@@ -87,6 +87,11 @@ impl ServiceProvider for AuthProvider {
             app.config().section("auth").unwrap_or_else(|e| panic!("invalid [auth] configuration: {e}"));
         config.admin_path = normalize_admin_path(&config.admin_path).unwrap_or_else(|e| panic!("{e}"));
         config.jwt.validate().unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            (1..=crate::recovery::MAX_INVITATION_DAYS).contains(&config.invitation_days),
+            "auth.invitation_days must be between 1 and {}",
+            crate::recovery::MAX_INVITATION_DAYS
+        );
         let gate = self.gate.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take().unwrap_or_default();
         let state = AuthState::new(config.clone(), &app.config().app.url, &app.config().app.key, gate);
         for (group, name) in BUILT_IN_PERMISSIONS {

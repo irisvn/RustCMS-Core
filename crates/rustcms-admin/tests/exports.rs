@@ -222,7 +222,8 @@ db_test!(pruning_deletes_every_object_of_an_export, |db: TestDb| async move {
     assert_eq!(recorded[0].storage_key, published.as_str());
     let storage = app.state().service::<std::sync::Arc<dyn Storage>>().unwrap();
     assert!(storage.open(&published).await.is_ok());
-    let past = chrono::Utc::now() - chrono::Duration::minutes(1);
+    // Past its expiry and the pruning grace.
+    let past = chrono::Utc::now() - chrono::Duration::hours(2);
     entity::Entity::update_many()
         .col_expr(entity::Column::ExpiresAt, sea_orm::sea_query::Expr::value(past))
         .exec(db)

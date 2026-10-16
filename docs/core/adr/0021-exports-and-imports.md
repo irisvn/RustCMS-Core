@@ -40,7 +40,9 @@ access may have changed.
   a named lock; failure reasons are codes.
 - **Imports**: `importable` / `import_key` (a field with its own declared
   unique constraint). Upload admitted before the body, parsed within limits,
-  stored (`Idempotency-Key`: the same file answers with the same import);
+  stored before its row and receipt are committed (`Idempotency-Key`: the
+  same file answers with the same import; a refused or failed commit deletes
+  the object);
   at most four files parsed at once (429 beyond), cells bounded, header
   included; preview = static checks only; run once (conditional status
   update + dispatch in one transaction; the import is then kept 24 h from
@@ -49,7 +51,9 @@ access may have changed.
   holds the RBAC lock (`begin_as`: the user as they are then, `import`
   admitted again), checks the import is still running and unexpired (held,
   so pruning waits), and commits a receipt `import_rows(import, row,
-  outcome, key)` with the write. A later run skips rows with a receipt and
+  outcome, key)` with the write, after checking `create` (or the record's
+  `update`) for the user as they are then; `write_conflict` (lock waits,
+  deadlocks, a busy database) retries the job, never fails the row. A later run skips rows with a receipt and
   counts them as recorded (never turning a created row into an update), and
   spends none of the user's idempotency quota. Abandonment is judged from
   the start time; an expired import is never written. Reports keep row,
