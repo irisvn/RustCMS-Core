@@ -22,6 +22,10 @@ pub const INSTRUCTOR: &[&str] = &[
     "enrollments.view_any",
     "enrollments.view",
     UPDATE_PROGRESS,
+    "dashboard.learners",
+    "dashboard.new_enrollments",
+    "dashboard.enrollments_per_week",
+    "dashboard.new_courses",
 ];
 
 /// Staff: every course, its instructor, learners and enrollments.
@@ -53,6 +57,10 @@ pub const STAFF: &[&str] = &[
     UPDATE_PROGRESS,
     "settings.lms.view",
     "settings.lms.update",
+    "dashboard.learners",
+    "dashboard.new_enrollments",
+    "dashboard.enrollments_per_week",
+    "dashboard.new_courses",
 ];
 
 pub struct RoleSeeder;

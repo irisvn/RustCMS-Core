@@ -33,6 +33,7 @@ pub struct AdminProvider {
     pages: Vec<std::sync::Arc<dyn crate::custom::DynPage>>,
     slots: Vec<std::sync::Arc<dyn crate::custom::DynSlot>>,
     theme: Option<crate::custom::Theme>,
+    dashboard: crate::dashboard::Dashboard,
 }
 
 /// Locales the panel's interface is written in (`admin-ui/src/i18n`).
@@ -54,6 +55,7 @@ impl Default for AdminProvider {
             pages: Vec::new(),
             slots: Vec::new(),
             theme: None,
+            dashboard: crate::dashboard::Dashboard::default(),
         }
     }
 }
@@ -123,6 +125,15 @@ impl AdminProvider {
     /// On a misconfigured page (see [`crate::SettingsPage`]) or a group added twice.
     pub fn settings<T: crate::SettingsPage>(mut self) -> Self {
         self.settings.register::<T>();
+        self
+    }
+
+    /// The dashboard's widgets (see [`crate::dashboard`]).
+    ///
+    /// # Panics
+    /// At boot, on an invalid widget.
+    pub fn dashboard(mut self, dashboard: crate::dashboard::Dashboard) -> Self {
+        self.dashboard = dashboard;
         self
     }
 
@@ -198,6 +209,10 @@ impl ServiceProvider for AdminProvider {
         for permission in crate::queue::permissions() {
             auth.permissions.declare(ADMIN_GUARD, permission, Some("queue"));
         }
+        self.dashboard.check(&registry);
+        for permission in self.dashboard.permissions() {
+            auth.permissions.declare(ADMIN_GUARD, &permission, Some("dashboard"));
+        }
         for page in self.settings.all() {
             for permission in crate::settings::permissions(page.group()) {
                 auth.permissions.declare(ADMIN_GUARD, &permission, Some("settings"));
@@ -254,7 +269,8 @@ impl ServiceProvider for AdminProvider {
         }
         let translator = std::sync::Arc::new(self.translator.clone());
         let settings = std::sync::Arc::new(self.settings.clone());
-        app.bind(AdminPanel { brand: self.brand.clone(), registry, translator, settings, custom });
+        let dashboard = std::sync::Arc::new(self.dashboard.clone());
+        app.bind(AdminPanel { brand: self.brand.clone(), registry, translator, settings, custom, dashboard });
         // The theme's stylesheet loads first, so extension styles may refine it.
         let mut extensions = Vec::new();
         let mut theme = spa::ThemeConfig::default();
@@ -481,6 +497,7 @@ fn missing_translations(panel: &AdminPanel, locale: &str, permission_groups: &[S
         .collect();
     missing.extend(panel.settings.display_strings().into_iter().filter(|s| !translated(None, s)));
     missing.extend(panel.custom.display_strings().into_iter().filter(|s| !translated(None, s)));
+    missing.extend(panel.dashboard.display_strings().into_iter().filter(|s| !translated(None, s)));
     // Permission groups that are not resources are shown in words (`users` → "Users").
     for group in permission_groups {
         let source = crate::system::roles::group_source(group);

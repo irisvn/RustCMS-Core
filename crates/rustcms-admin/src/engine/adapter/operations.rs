@@ -679,6 +679,28 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         ResourceAdapter::admit_import(self, ctx).await
     }
 
+    fn widget_problem(&self, query: &ListQuery, date: Option<&str>, columns: &[String]) -> Option<String> {
+        ResourceAdapter::widget_problem(self, query, date, columns)
+    }
+
+    fn reads_all(&self, ctx: &Ctx, names: &[&str]) -> bool {
+        ResourceAdapter::reads_all(self, ctx, names)
+    }
+
+    fn field_label(&self, ctx: &Ctx, name: &str) -> String {
+        self.field(name).map_or_else(|| name.to_owned(), |f| ctx.t_in(R::SLUG, &f.display_label()))
+    }
+
+    async fn counted(
+        &self,
+        ctx: &Ctx,
+        query: &ListQuery,
+        date: Option<&str>,
+        ranges: &[(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)],
+    ) -> AppResult<crate::registry::Counted> {
+        ResourceAdapter::counted(self, ctx, query, date, ranges).await
+    }
+
     fn import_fields(&self, ctx: &Ctx) -> Vec<crate::ImportField> {
         ResourceAdapter::import_fields(self, ctx)
     }

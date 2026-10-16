@@ -113,6 +113,37 @@ pub const VI: &str = r#"
 "Publish" = "Xuất bản"
 "#;
 
+/// The test dashboard: posts (a per-record policy, a scope), notes (soft deletes).
+pub fn dashboard() -> rustcms_admin::dashboard::Dashboard {
+    use rustcms_admin::dashboard::{Bucket, Dashboard, Widget};
+    use rustcms_admin::resource::FilterOp;
+    Dashboard::new()
+        .widget(Widget::stat("posts_total", "posts").label("Posts"))
+        .widget(
+            Widget::stat("published_posts", "posts")
+                .filter("published", FilterOp::Eq, serde_json::json!(true))
+                .compare_last_days(30, "published_at"),
+        )
+        .widget(Widget::chart("posts_per_day", "posts", "published_at").per(Bucket::Day).last(7).span(2))
+        .widget(Widget::recent("latest_posts", "posts").columns(&["published_at"]).sort("title").limit(5))
+        .widget(Widget::stat("notes_total", "notes"))
+}
+
+/// Boots an app with `dashboard` instead (panics on a bad widget).
+pub fn check_dashboard(dashboard: rustcms_admin::dashboard::Dashboard) {
+    let config = rustcms_testing::test_config("sqlite::memory:");
+    let mut app = AppBuilder::new(config);
+    app.provider(AuthProvider::new());
+    app.provider(
+        AdminProvider::new()
+            .resource::<CategoryResource>()
+            .resource::<PostResource>()
+            .resource::<TagResource>()
+            .resource::<NoteResource>()
+            .dashboard(dashboard),
+    );
+}
+
 pub fn build(config: Config) -> AppBuilder {
     // Each app stores its uploads in its own temporary directory, with small limits.
     let root = std::env::temp_dir().join(format!("rustcms-media-{}", uuid::Uuid::now_v7()));
@@ -136,6 +167,7 @@ pub fn build(config: Config) -> AppBuilder {
             .resource::<NoteResource>()
             .settings::<GeneralSettings>()
             .mail_settings()
+            .dashboard(dashboard())
             .translations("vi", VI),
     );
     app

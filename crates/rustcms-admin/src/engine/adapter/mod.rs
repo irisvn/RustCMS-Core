@@ -2,6 +2,7 @@
 //! erased to [`DynResource`] for the HTTP layer.
 
 mod action_form;
+pub(crate) mod aggregate;
 mod audit;
 mod export;
 mod import;

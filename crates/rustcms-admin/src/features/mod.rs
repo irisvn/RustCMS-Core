@@ -3,6 +3,7 @@
 
 pub mod audit;
 pub mod custom;
+pub mod dashboard;
 pub mod exports;
 pub mod imports;
 pub mod media;

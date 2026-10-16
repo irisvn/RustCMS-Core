@@ -9,7 +9,7 @@ use axum::http::{Method, StatusCode};
 use rustcms_testing::{TestApp, TestClient, TestDb, db_test};
 use serde::Deserialize;
 use serde_json::json;
-use support::app::{Users, setup};
+use support::app::Users;
 
 #[derive(Deserialize)]
 struct Oracle {
@@ -82,7 +82,9 @@ fn oracle_covers_every_admin_route() {
 }
 
 db_test!(oracle_matches_the_admin_api, |db: TestDb| async move {
-    let (app, users) = setup(db).await;
+    // One anonymous session per guest case: more than a real browser makes in a minute.
+    let config = rustcms_testing::test_config(db.url()).with("auth.anonymous_sessions_per_ip", 10_000).unwrap();
+    let (app, users) = support::app::setup_with(db, config).await;
     let post = async |user, title: &str| {
         let response = app
             .acting_as(user)

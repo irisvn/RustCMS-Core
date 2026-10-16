@@ -10,6 +10,7 @@ use sea_orm::DatabaseTransaction;
 use crate::Data;
 use crate::action::ActionOutcome;
 use crate::adapter::ResourceAdapter;
+pub use crate::adapter::aggregate::Counted;
 use crate::context::Ctx;
 use crate::links::{LinkOp, LinkOption, LinkOutcome, LinkRequest};
 use crate::resource::{Envelope, ListQuery, Page, Relation, Resource, ResourceMeta, Through};
@@ -104,6 +105,20 @@ pub trait DynResource: Send + Sync {
     async fn keys_in_scope(&self, ctx: &Ctx, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>>;
     /// Refuses an import the user may not make (403; 404 when not importable).
     async fn admit_import(&self, ctx: &Ctx) -> AppResult<()>;
+    /// What is wrong with a dashboard widget over this resource (static checks).
+    fn widget_problem(&self, query: &ListQuery, date: Option<&str>, columns: &[String]) -> Option<String>;
+    /// Whether the user may read every field of `names`.
+    fn reads_all(&self, ctx: &Ctx, names: &[&str]) -> bool;
+    /// The label of field `name` in the user's language.
+    fn field_label(&self, ctx: &Ctx, name: &str) -> String;
+    /// Counts the rows of `query` the user may list (and per date range).
+    async fn counted(
+        &self,
+        ctx: &Ctx,
+        query: &ListQuery,
+        date: Option<&str>,
+        ranges: &[(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)],
+    ) -> AppResult<Counted>;
     /// Fields the user may set by import.
     fn import_fields(&self, ctx: &Ctx) -> Vec<crate::ImportField>;
     /// The import key field, if any.

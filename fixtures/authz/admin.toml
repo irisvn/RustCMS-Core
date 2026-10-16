@@ -33,6 +33,31 @@ actor = "token"
 status = 401
 
 [[case]]
+route = "GET /admin/api/dashboard"
+path = "/admin/api/dashboard"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/dashboard"
+path = "/admin/api/dashboard"
+actor = "member"
+status = 200
+
+# Hidden without the widget's permission (and listing posts).
+[[case]]
+route = "GET /admin/api/dashboard/widgets/{name}"
+path = "/admin/api/dashboard/widgets/posts_total"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/dashboard/widgets/{name}"
+path = "/admin/api/dashboard/widgets/posts_total"
+actor = "admin"
+status = 200
+
+[[case]]
 route = "GET /admin/api/resources/{slug}/schema"
 path = "/admin/api/resources/posts/schema?operation=create"
 actor = "member"

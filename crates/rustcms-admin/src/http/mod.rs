@@ -24,6 +24,8 @@ pub struct AdminPanel {
     pub settings: Arc<crate::settings::SettingsRegistry>,
     /// Custom pages and slots.
     pub custom: Arc<crate::custom::CustomPanel>,
+    /// The dashboard's widgets.
+    pub dashboard: Arc<crate::dashboard::Dashboard>,
 }
 
 /// `GET panel`.
@@ -99,6 +101,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
     .chain(crate::custom::routes(admin_path))
     .chain(crate::exports::routes(admin_path))
     .chain(crate::imports::routes(admin_path))
+    .chain(crate::dashboard::routes(admin_path))
     .collect()
 }
 
@@ -125,6 +128,7 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route(&format!("{resource}/fields/{{field}}/options"), get(options))
         .route(&format!("{base}/media"), post(crate::media::upload))
         .route(&format!("{base}/media/{{id}}/file"), get(crate::media::file))
+        .merge(crate::dashboard::router(Router::new(), admin_path))
 }
 
 mod actions;

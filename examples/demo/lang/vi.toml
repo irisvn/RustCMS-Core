@@ -31,6 +31,8 @@
 # Unique constraint messages (`ResourceMeta::unique`).
 "has already been taken" = "đã được sử dụng"
 
+"Published per week" = "Xuất bản theo tuần"
+
 [posts]
 # "Content" is also a navigation group; on the post form it is the first tab.
 "Content" = "Nội dung"

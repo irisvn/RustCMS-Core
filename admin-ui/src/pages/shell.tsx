@@ -15,6 +15,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { DashboardWidgets, useDashboard } from "@/components/dashboard";
 
 const navLink = "flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&.active]:bg-muted [&.active]:font-medium [&.active]:text-foreground data-[status=active]:bg-muted data-[status=active]:font-medium data-[status=active]:text-foreground";
 const activeProps = { "aria-current": "page" as const };
@@ -202,11 +203,14 @@ export function Shell() {
 export function Dashboard() {
   const t = useT();
   const panel = usePanel();
+  const dashboard = useDashboard();
   const p = panel.data;
+  const links = dashboard.data?.resourceLinks ?? true;
   return (
     <Page>
       <PageHeader title={p ? t("dashboard.welcomeName", { name: p.user.name }) : t("dashboard.welcome")} description={t("dashboard.description")} eyebrow={t("nav.overview")} />
-      <section className="mt-2">
+      {dashboard.data && <DashboardWidgets widgets={dashboard.data.widgets} />}
+      {links && <section className="mt-2">
         <div className="mb-4 flex items-center gap-3"><h2 className="text-sm font-semibold">{t("dashboard.resources")}</h2><span className="h-px flex-1 bg-border" /></div>
         {p?.navigation.length ? (
           <div className={cn("grid gap-4 sm:grid-cols-2", p.navigation.length > 2 && "xl:grid-cols-3")}>
@@ -218,7 +222,7 @@ export function Dashboard() {
             ))}
           </div>
         ) : <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">{t("dashboard.empty")}</div>}
-      </section>
+      </section>}
       <section className="rounded-xl border border-border bg-background p-5 sm:p-6">
         <h2 className="mb-1 text-sm font-semibold">{t("dashboard.settings")}</h2>
         <p className="mb-4 text-sm text-muted-foreground">{p?.system?.users || p?.system?.roles ? t("dashboard.settingsAdmin") : t("dashboard.settingsOwn")}</p>

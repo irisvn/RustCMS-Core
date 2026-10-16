@@ -49,7 +49,7 @@ on the admin engine, so it can change without touching them.
 | `engine/adapter/` | `ResourceAdapter<R>`: `input` (acceptance), `references` (checks after hooks), `read`, `write` (transactions, row and parent locks, ADR 0018), `schema`, `operations` (the `DynResource` impl), `audit` (snapshots, redaction, entries), `pivot` + `many` (belongs-to-many: `PivotAdapter`, lists through the pivot, attach/detach/update, ADR 0020), `action_form` (action forms: admission, canonical data, references), `export` (keys in list order, rows of readable fields, canonical queries), `import` (import fields and key, cell values, static row checks, key matches) |
 | `http/` | routes and handlers: `resources`, `relations`, `actions`, `extract` (`AdminCtx`) |
 | `contract/` | the DTOs the SPA receives (`ResourceSchema`, …); also reachable as `schema` |
-| `features/` | built-in features: `audit` (log viewer, record history), `queue` (System → Queue page, M15d), `custom/` (theme, custom pages and slots: templates + sanitizer, ADR 0019), `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
+| `features/` | built-in features: `audit` (log viewer, record history), `queue` (System → Queue page, M15d), `custom/` (theme, custom pages and slots: templates + sanitizer, ADR 0019), `dashboard/` (widgets, ADR 0024; counts in `engine/adapter/aggregate.rs`), `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
 
 ### rustcms-auth
 

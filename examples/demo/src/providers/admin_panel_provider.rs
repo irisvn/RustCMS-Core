@@ -17,6 +17,17 @@ pub fn provider() -> AdminProvider {
         // rustcms:resources
         .settings::<crate::settings::site_settings::SiteSettings>()
         .mail_settings()
+        .dashboard(
+            rustcms::admin::dashboard::Dashboard::new()
+                .widget(rustcms::admin::dashboard::Widget::stat("posts", "posts").label("Posts"))
+                .widget(
+                    rustcms::admin::dashboard::Widget::chart("posts_per_week", "posts", "published_at")
+                        .label("Published per week")
+                        .per(rustcms::admin::dashboard::Bucket::Week)
+                        .last(8)
+                        .span(2),
+                ),
+        )
         .page::<crate::admin::pages::post_stats_page::PostStatsPage>()
         // rustcms:pages
         .slot::<crate::admin::slots::post_summary_slot::PostSummarySlot>()

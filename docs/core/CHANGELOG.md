@@ -32,6 +32,17 @@ All notable changes are documented here. The format follows
 - Examples: LMS theme, course overview page, seats slot, progress cell; demo
   post stats page and visibility slot.
 
+### Added (0.3 — M22; ADR 0024)
+- Dashboard widgets: `AdminProvider::dashboard(Dashboard)`, `Widget::stat`
+  (`compare_last_days`), `Widget::chart` (`Bucket::Day/Week/Month`, `last`),
+  `Widget::recent` (`columns`, `sort`, `limit`), `.filter/.label/.span/
+  .permission`; permissions `dashboard.<name>` (group `dashboard`); routes
+  `GET dashboard`, `GET dashboard/widgets/{name}`; `DynResource::counted`
+  (database count on the list's subquery, or a bounded per-record scan;
+  `too_many`); boot checks; SPA widgets (SVG bar chart without inline
+  styles, a screen-reader table); demo and LMS dashboards; LMS
+  `courses.created_at` field.
+
 ### Added (0.3 — M20; ADR 0023)
 - Password resets: `[auth] password_reset` (+ `_minutes`, `reset_requests_per_*`,
   `reset_cooldown_secs`), `POST auth/forgot-password` (always 202),

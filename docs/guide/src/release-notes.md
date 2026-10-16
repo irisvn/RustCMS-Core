@@ -62,6 +62,9 @@ RustCMS is in pre-release. The current published version is
   one-time link (the same answer whether the account exists); administrators
   invite users who choose their own password; sign-in can be remembered for
   `remember_days` ([Authentication](security/authentication.md)).
+- **Dashboard widgets**: counts (compared with the period before), charts per
+  day, week or month, and the latest records of a resource, each with its own
+  permission and computed as the list shows records ([Dashboard](admin/dashboard.md)).
 - **Permission matrix**: the role page lays resource permissions out as
   resource × ability ([Users and roles](admin/users-roles.md)).
 - **Example**: `examples/lms`, a small LMS back office (seats under a lock,

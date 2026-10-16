@@ -2,6 +2,7 @@
 //! resources, pages and labels.
 
 use rustcms::admin::Theme;
+use rustcms::admin::dashboard::{Bucket, Dashboard, Widget};
 use rustcms::prelude::*;
 
 use crate::admin::resources::{
@@ -29,6 +30,28 @@ pub fn provider() -> AdminProvider {
         // rustcms:resources
         .settings::<crate::settings::lms_settings::LmsSettings>()
         .mail_settings()
+        .dashboard(
+            Dashboard::new()
+                .widget(Widget::stat("learners", "learners").label("Learners"))
+                .widget(
+                    Widget::stat("new_enrollments", "enrollments")
+                        .label("New enrollments")
+                        .compare_last_days(30, "enrolled_at"),
+                )
+                .widget(
+                    Widget::chart("enrollments_per_week", "enrollments", "enrolled_at")
+                        .label("Enrollments per week")
+                        .per(Bucket::Week)
+                        .last(12)
+                        .span(2),
+                )
+                .widget(
+                    Widget::recent("new_courses", "courses")
+                        .label("New courses")
+                        .columns(&["capacity"])
+                        .sort("-created_at"),
+                ),
+        )
         .page::<crate::admin::pages::course_overview_page::CourseOverviewPage>()
         // rustcms:pages
         .slot::<crate::admin::slots::course_seats_slot::CourseSeatsSlot>()

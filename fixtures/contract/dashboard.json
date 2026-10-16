@@ -1,0 +1,41 @@
+{
+  "resourceLinks": true,
+  "widgets": [
+    {
+      "kind": "stat",
+      "label": "Posts",
+      "name": "posts_total",
+      "resource": "posts",
+      "span": 1
+    },
+    {
+      "kind": "stat",
+      "label": "Published posts",
+      "name": "published_posts",
+      "resource": "posts",
+      "span": 1
+    },
+    {
+      "bucket": "day",
+      "kind": "chart",
+      "label": "Posts per day",
+      "name": "posts_per_day",
+      "resource": "posts",
+      "span": 2
+    },
+    {
+      "kind": "recent",
+      "label": "Latest posts",
+      "name": "latest_posts",
+      "resource": "posts",
+      "span": 1
+    },
+    {
+      "kind": "stat",
+      "label": "Notes total",
+      "name": "notes_total",
+      "resource": "notes",
+      "span": 1
+    }
+  ]
+}

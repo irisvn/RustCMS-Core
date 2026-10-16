@@ -934,6 +934,100 @@ ok: boolean,
  */
 code?: string, };
 
+export type Bucket = "day" | "week" | "month";
+
+export type WidgetInfo = { 
+/**
+ * Name (`GET dashboard/widgets/{name}`).
+ */
+name: string, 
+/**
+ * `stat`, `chart` or `recent`.
+ */
+kind: string, 
+/**
+ * Title in the user's language.
+ */
+label: string, 
+/**
+ * Grid columns taken (1 to 4).
+ */
+span: number, 
+/**
+ * The resource it counts or lists.
+ */
+resource: string, 
+/**
+ * Charts: their buckets.
+ */
+bucket?: Bucket, };
+
+export type DashboardView = { 
+/**
+ * The widgets the user may see, in order.
+ */
+widgets: Array<WidgetInfo>, 
+/**
+ * Show the resource cards.
+ */
+resourceLinks: boolean, };
+
+export type ChartBucket = { 
+/**
+ * First day (`YYYY-MM-DD`, UTC).
+ */
+start: string, 
+/**
+ * Records (an integer string, ADR 0003).
+ */
+count: string, };
+
+export type RecentColumn = { 
+/**
+ * Field.
+ */
+name: string, 
+/**
+ * Label in the user's language.
+ */
+label: string, };
+
+export type RecentRecord = { 
+/**
+ * Key (`/r/{resource}/records/{key}`).
+ */
+key: string, 
+/**
+ * Title.
+ */
+title?: string, 
+/**
+ * Text of each column (readable fields only; related records by title).
+ */
+values: { [key in string]: string }, };
+
+export type WidgetData = { "kind": "stat", 
+/**
+ * Records (an integer string).
+ */
+value: string, 
+/**
+ * The period before (compared stats).
+ */
+previous?: string, } | { "kind": "chart", 
+/**
+ * Buckets.
+ */
+buckets: Array<ChartBucket>, } | { "kind": "recent", 
+/**
+ * Columns shown.
+ */
+columns: Array<RecentColumn>, 
+/**
+ * Records.
+ */
+records: Array<RecentRecord>, } | { "kind": "too_many" };
+
 export type AuditActorView = { 
 /**
  * `user`, `system` or `guest`.

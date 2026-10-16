@@ -35,6 +35,7 @@
 # Admin panel
 
 - [Overview](admin/overview.md)
+- [Dashboard](admin/dashboard.md)
 - [Resources](admin/resources.md)
 - [Forms](admin/forms.md)
 - [Tables](admin/tables.md)

@@ -97,6 +97,8 @@ fn the_admin_route_list_is_unchanged() {
         "GET /admin/api/imports/{id}",
         "POST /admin/api/imports/{id}/preview",
         "POST /admin/api/imports/{id}/run",
+        "GET /admin/api/dashboard",
+        "GET /admin/api/dashboard/widgets/{name}",
     ];
     assert_eq!(listed, expected);
 }
