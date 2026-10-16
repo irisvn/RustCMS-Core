@@ -24,10 +24,14 @@ impl Project {
         for dir in start.ancestors() {
             let manifest = dir.join("Cargo.toml");
             let Ok(contents) = std::fs::read_to_string(&manifest) else { continue };
-            if contents.contains("[package.metadata.rustcms]") {
-                let package =
-                    package_name(&contents).with_context(|| format!("no package name in {}", manifest.display()))?;
-                return Ok(Self { root: dir.to_path_buf(), package });
+            let Ok(doc) = contents.parse::<toml::Table>() else { continue };
+            let Some(package) = doc.get("package").and_then(toml::Value::as_table) else { continue };
+            if package.get("metadata").and_then(|m| m.get("rustcms")).is_some() {
+                let package = package
+                    .get("name")
+                    .and_then(toml::Value::as_str)
+                    .with_context(|| format!("no package name in {}", manifest.display()))?;
+                return Ok(Self { root: dir.to_path_buf(), package: package.to_owned() });
             }
         }
         bail!(
@@ -47,27 +51,16 @@ impl Project {
     }
 }
 
-/// `name = "..."` in the `[package]` table.
-fn package_name(manifest: &str) -> Option<String> {
-    let mut in_package = false;
-    for line in manifest.lines().map(str::trim) {
-        if line.starts_with('[') {
-            in_package = line == "[package]";
-        } else if in_package && let Some(value) = line.strip_prefix("name") {
-            return Some(value.trim_start().strip_prefix('=')?.trim().trim_matches('"').to_owned());
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn reads_package_name() {
-        let manifest = "[workspace]\nname = \"x\"\n[package]\nname = \"blog\"\nversion = \"0.1.0\"\n";
-        assert_eq!(package_name(manifest).as_deref(), Some("blog"));
+    fn a_comment_or_another_table_is_not_an_application() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = "# [package.metadata.rustcms]\n[package]\nname = \"x\"\n";
+        std::fs::write(dir.path().join("Cargo.toml"), manifest).unwrap();
+        assert!(Project::find_from(dir.path()).is_err());
     }
 
     #[test]

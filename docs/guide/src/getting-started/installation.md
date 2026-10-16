@@ -24,7 +24,10 @@ The script picks the build for your system from the
 [releases](https://github.com/irisvn/RustCMS/releases), checks it against the
 release's `SHA256SUMS`, and installs it in `~/.rustcms/bin`. It prints the
 line to add to your shell profile, or adds it with `sh -s -- --modify-path`.
-Run it again to update.
+`rustcms self-update` updates it later; `rustcms doctor` checks that this
+machine can build an application (Rust version, C compiler, access to
+RustCMS-Core) and says what to install; `rustcms docs` opens this guide for
+your version, offline.
 
 - A given version: `RUSTCMS_VERSION=v0.4.0` (release candidates are only
   installed this way). Another directory: `RUSTCMS_INSTALL=/opt/rustcms`.

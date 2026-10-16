@@ -6,6 +6,24 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `rustcms doctor`: Rust and Cargo against the minimum version, a C compiler
+  that really builds, git and the RustCMS-Core tag, curl, the latest release,
+  the application's version; what to do for each problem.
+- `rustcms upgrade [--dry-run] [--force]`: the application to the command's
+  version (Core tag, SeaORM pins, metadata) with `toml_edit`, keeping comments
+  and features; a failed `cargo update` restores `Cargo.toml` and `Cargo.lock`.
+- `rustcms self-update [--version]`: for a command installed by `install.sh`
+  (`install.json`); one at a time; download, checksum, extraction and a run of
+  the new command before a rename over the old one.
+- `rustcms docs [--print-path]`: release builds embed the guide (offline, in
+  the user cache directory); other builds open the published copy of their
+  version. `rustcms --version` shows the target.
+
+### Changed
+- The application is found by parsing `Cargo.toml` (`[package.metadata.rustcms]`),
+  not by searching its text.
+
 ## [0.3.1] — 2026-10-16
 
 ### Added

@@ -3,13 +3,18 @@
 
 mod api;
 mod docs;
+mod doctor;
 mod generate;
+mod guide;
 mod layout;
 mod make;
 mod naming;
 mod project;
+mod release;
 mod resource;
 mod scaffold;
+mod self_update;
+mod upgrade;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -17,7 +22,7 @@ use std::process::ExitCode;
 use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "rustcms", version, about = "rustcms command line", disable_help_subcommand = true)]
+#[command(name = "rustcms", version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("RUSTCMS_TARGET"), ")"), about = "rustcms command line", disable_help_subcommand = true)]
 pub(crate) struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -138,6 +143,30 @@ enum Command {
         /// Widget name, `vendor/name`, e.g. `acme/color`
         name: String,
     },
+    /// Check that this machine can build an application
+    Doctor,
+    /// Move the application to this command's RustCMS version (Cargo.toml and Cargo.lock)
+    Upgrade {
+        /// Show the changes without writing them
+        #[arg(long)]
+        dry_run: bool,
+        /// Allow going back to an older version
+        #[arg(long)]
+        force: bool,
+    },
+    /// Replace this command with the latest release (installed by install.sh)
+    #[command(name = "self-update")]
+    SelfUpdate {
+        /// A given release instead of the latest, e.g. `v0.4.0` (may be older)
+        #[arg(long)]
+        version: Option<String>,
+    },
+    /// Open the guide of this version in a browser
+    Docs {
+        /// Print where it is instead of opening it
+        #[arg(long)]
+        print_path: bool,
+    },
     /// Print the command reference as Markdown
     #[command(name = "docs:cli")]
     DocsCli,
@@ -170,6 +199,12 @@ fn main() -> ExitCode {
         Command::MakeConsole { name } => app().and_then(|p| make::make_command(&p, &name)),
         Command::MakePage { name, script } => app().and_then(|p| make::make_page(&p, &name, script)),
         Command::MakeWidget { name } => app().and_then(|p| generate::make_widget(&p, &name)),
+        Command::Doctor => doctor::run(),
+        Command::Upgrade { dry_run, force } => {
+            project::Project::find().and_then(|p| upgrade::run(&p, &upgrade::Options { dry_run, force }))
+        }
+        Command::SelfUpdate { version } => self_update::run(version.as_deref()),
+        Command::Docs { print_path } => guide::run(print_path),
         Command::DocsCli => {
             let auth = clap::Command::new("auth").subcommands(rustcms_auth::commands::definitions());
             let admin = clap::Command::new("admin").subcommands(rustcms_admin::panel::provider::command_definitions());

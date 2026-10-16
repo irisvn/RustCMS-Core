@@ -44,7 +44,11 @@ Cargo must reach Core's source. crates.io is not used yet.
 - The install script accepts HTTPS only, check the checksum before opening the
   archive, take only the executable, install next to the destination then
   rename (an existing install survives a failure), and record `install.json`
-  (used by `self-update`, M24b).
+  (used by `self-update`).
+- M24b commands: `doctor`; `upgrade` (to the command's own version only: it
+  knows that version's SeaORM pins, so no compatibility table is needed);
+  `self-update` (only under an `install.json`, never a Cargo install);
+  `docs` (the guide embedded in release builds, which fail without it).
 
 ## Consequences
 

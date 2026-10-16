@@ -84,7 +84,7 @@ jobs:
   # asset, then an application is created from the tag, built and tested, all
   # on a native runner. A target that fails is not published.
   target:
-    needs: [verify, token]
+    needs: [verify, token, docs]
     strategy:
       fail-fast: false
       matrix:
@@ -103,7 +103,13 @@ jobs:
         with: { targets: "${{ matrix.target }}" }
       - if: matrix.musl
         run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+      # The guide is embedded (`rustcms docs`); a release build without it fails.
+      - uses: actions/download-artifact@v4
+        with: { name: book, path: "${{ runner.temp }}/book" }
       - run: cargo build --release --locked -p rustcms-cli --target ${{ matrix.target }}
+        env:
+          RUSTCMS_DOCS_DIR: ${{ runner.temp }}/book
+          RUSTCMS_RELEASE: "1"
       - name: Package
         run: |
           tag=$GITHUB_REF_NAME
@@ -128,7 +134,9 @@ jobs:
           echo "$RUNNER_TEMP/rustcms/bin" >> "$GITHUB_PATH"
       - name: An application from the tag builds and passes its tests
         run: |
-          rustcms --version
+          rustcms --version | grep -F "${GITHUB_REF_NAME#v} (${{ matrix.target }})"
+          rustcms doctor
+          test -f "$(rustcms docs --print-path)"
           cd "$RUNNER_TEMP"
           rustcms new demo
           cd demo

@@ -135,6 +135,31 @@ Create an admin widget script in `resources/admin/js`
 |---|---|
 | `<name>` | Widget name, `vendor/name`, e.g. `acme/color` |
 
+### `doctor`
+
+Check that this machine can build an application
+
+### `upgrade`
+
+Move the application to this command's RustCMS version (Cargo.toml and Cargo.lock)
+
+| Argument | Description |
+|---|---|
+| `--dry-run` | Show the changes without writing them |
+| `--force` | Allow going back to an older version |
+
+### `self-update`
+
+Replace this command with the latest release (installed by install.sh)
+
+### `docs`
+
+Open the guide of this version in a browser
+
+| Argument | Description |
+|---|---|
+| `--print-path` | Print where it is instead of opening it |
+
 ### `docs:cli`
 
 Print the command reference as Markdown

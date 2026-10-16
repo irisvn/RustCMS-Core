@@ -2,26 +2,38 @@
 
 ## Upgrading the command and an application
 
-1. The `rustcms` command: run the [install script](getting-started/installation.md#installing-the-rustcms-command)
-   again (it replaces the installed version), or set `RUSTCMS_VERSION` for a
-   given one. `rustcms --version` shows what you have.
-2. An application: change the tag of both `rustcms` and `rustcms-testing` in
-   `Cargo.toml` (always the same tag), and `[package.metadata.rustcms] version`;
-   apply the `sea-orm` pins and the steps of the section for that version
-   below; then:
+1. The command: `rustcms self-update` replaces it with the latest release
+   (`--version v0.4.0` for a given one, older included). It works when the
+   [install script](getting-started/installation.md#installing-the-rustcms-command)
+   installed it; a command built with `cargo install` is updated the same way
+   it was installed. `rustcms --version` shows the version and the platform.
+2. An application: in its directory, `rustcms upgrade` moves it to the
+   command's version:
 
    ```sh
-   cargo update -p rustcms -p rustcms-testing
+   rustcms upgrade --dry-run   # what changes in Cargo.toml
+   rustcms upgrade             # writes it, then updates Cargo.lock
    rustcms migrate
    cargo test
    ```
 
-   Commit `Cargo.toml` and `Cargo.lock` together.
+   It sets the tag of `rustcms` and `rustcms-testing` (always the same), the
+   `sea-orm` pins of that version and `[package.metadata.rustcms] version`,
+   keeping your comments and features. If Cargo cannot resolve the result,
+   `Cargo.toml` and `Cargo.lock` are put back. It refuses to go back to an
+   older version (unless `--force`), and leaves alone a dependency on a local
+   `path`, inherited from a workspace, renamed, or from another repository:
+   change those by hand. Then follow the section of that version below, and
+   commit `Cargo.toml` and `Cargo.lock` together.
+
+   To upgrade to another version than the command's, install that command
+   first (`rustcms self-update --version vX.Y.Z`).
 
 ## Applications made before 0.3.1
 
 They depend on `rustcms = "0.3.0"` (not on crates.io) or on a local `path`.
-Point both dependencies at the Git tag instead, keeping your features:
+`rustcms upgrade` moves a version dependency to the Git tag; a `path` is
+changed by hand, keeping your features:
 
 ```toml
 [dependencies]
