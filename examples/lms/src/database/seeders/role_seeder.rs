@@ -63,6 +63,54 @@ pub const STAFF: &[&str] = &[
     "dashboard.new_courses",
 ];
 
+/// Editors: the news (articles, categories, tags, their images), nothing of the courses.
+pub const EDITOR: &[&str] = &[
+    "news.view_any",
+    "news.view",
+    "news.create",
+    "news.update",
+    "news.delete",
+    "news.attach_tags",
+    "news.detach_tags",
+    "categories.view_any",
+    "categories.view",
+    "categories.create",
+    "categories.update",
+    "categories.delete",
+    "tags.view_any",
+    "tags.view",
+    "tags.create",
+    "tags.update",
+    "tags.delete",
+    "media.view_any",
+    "media.view",
+    "media.create",
+];
+
+/// Viewers: read everything of the school, export enrollments, the dashboard; change nothing.
+pub const VIEWER: &[&str] = &[
+    ALL_COURSES,
+    "courses.view_any",
+    "courses.view",
+    "lessons.view_any",
+    "lessons.view",
+    "learners.view_any",
+    "learners.view",
+    "enrollments.view_any",
+    "enrollments.view",
+    "enrollments.export",
+    "news.view_any",
+    "news.view",
+    "categories.view_any",
+    "categories.view",
+    "tags.view_any",
+    "tags.view",
+    "dashboard.learners",
+    "dashboard.new_enrollments",
+    "dashboard.enrollments_per_week",
+    "dashboard.new_courses",
+];
+
 pub struct RoleSeeder;
 
 #[async_trait]
@@ -75,7 +123,8 @@ impl Seeder for RoleSeeder {
         let auth = state.service::<AuthState>().expect("AuthProvider");
         let rbac = RbacService::new(state.db(), &auth.resolver);
         rbac.sync_permissions(&auth.permissions.all()).await?;
-        for (name, permissions) in [("staff", STAFF), ("instructor", INSTRUCTOR)] {
+        let roles = [("staff", STAFF), ("instructor", INSTRUCTOR), ("editor", EDITOR), ("viewer", VIEWER)];
+        for (name, permissions) in roles {
             if find(state, name).await?.is_none() {
                 let permissions: Vec<String> = permissions.iter().map(|p| (*p).to_owned()).collect();
                 rbac.create_role(Actor::System, ADMIN_GUARD, name, &permissions).await?;

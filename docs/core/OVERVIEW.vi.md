@@ -175,32 +175,31 @@ cảm (password, token…) và kiểu chưa hỗ trợ bị bỏ qua kèm cảnh
 
 ---
 
-## 6. Giới hạn đã biết của 0.1
+## 6. Giới hạn đã biết của 0.3
 
-- Chỉ chạy **một instance**: rate limit và cache quyền nằm trong bộ nhớ.
-- Chưa có: MySQL, JWT, quên mật khẩu và xác minh email, upload file, rich text,
-  soft delete, sửa quan hệ nhiều-nhiều trên giao diện, action có form modal,
-  khoá chính nhiều cột, idempotency key.
-- Đăng xuất một session hoặc thu hồi một token không huỷ được thao tác ghi đang
-  chạy dở bằng chính credential đó. Đổi mật khẩu và đăng xuất mọi nơi thì có hiệu lực.
-- Vòng Codex cuối cho M6 chưa chạy vì server Codex lỗi. M6 được review bởi 2 reviewer
-  toàn diện, và 7 điểm còn lại của M5 do Codex nêu đã được sửa trong cùng đợt.
-- Kích thước: binary release của demo khoảng 23 MB (18 MB sau `strip`); JS của admin
-  khoảng 0.55 MB (175 KB gzip).
+- Chưa có: import/export Excel (M18 tạm bỏ), Range request/thumbnail cho media (M21 tạm bỏ),
+  xác minh email riêng (lời mời đánh dấu email đã xác minh), widget dashboard ngoài đếm
+  (chưa có tổng/trung bình), biểu đồ theo múi giờ khác UTC, DKIM/đính kèm cho mail.
+- Rate limit gửi mail tính theo từng process; giới hạn chung nhiều instance để sau.
+- Biểu đồ dashboard trên SQLite hoặc với policy theo từng bản ghi dừng ở 10.000 bản ghi ứng viên.
+- Chưa có test SMTP qua TLS thật (chứng chỉ sai tên, AUTH qua TLS); mới có Mailpit không TLS
+  và từ chối khi server không có STARTTLS.
+- Đăng xuất một session hoặc thu hồi một token không huỷ được thao tác ghi đang chạy dở bằng
+  chính credential đó; đổi mật khẩu và đăng xuất mọi nơi thì có hiệu lực.
 
 ---
 
 ## 7. Lộ trình
 
-- **0.2 (đã xong, M7–M11 + R1/R2):**
-  - JWT guard kèm refresh token xoay vòng (M11), MySQL 8.4 (M10).
-  - RichEditor, Upload/Media, Tabs/KeyValue, field tuỳ biến (M7–M9).
-  - Soft delete, relationship manager (M7, M9).
-  - Chạy nhiều instance với Redis (rate limit, job định kỳ); quyền đồng bộ qua
-    database (M11); idempotency key (M7).
-  - Tầng API cho ứng dụng (`ApiRoutes`, `make:api`, R2); cấu trúc thư mục theo vai trò (R1).
-- **Sau 0.2:** Events, Settings, Queue/Jobs, Mail, quên mật khẩu và xác minh email,
-  Audit log, Pages/Menus kèm headless API, i18n, Dashboard widgets, Plugins.
+- **0.2 (xong):** JWT + refresh xoay vòng, MySQL, RichEditor/Media, soft delete, relationship
+  manager, Redis nhiều instance, idempotency key, tầng API.
+- **0.3 "LMS-ready admin" (xong, M12–M23 trừ M18/M21):** audit log, settings, queue/jobs,
+  i18n, cấu trúc app theo Laravel, tuỳ biến panel (theme, trang/slot HTML), quan hệ
+  nhiều-nhiều + action có form + ma trận quyền, import/export CSV, mail, quên mật khẩu +
+  mời user + ghi nhớ đăng nhập, dashboard widgets, ví dụ LMS đầy đủ, tài liệu vận hành,
+  tutorial tiếng Việt.
+- **Sau 0.3:** Excel (M18), media Range/thumbnail (M21), xác minh email, widget tổng/trung bình,
+  múi giờ, Pages/Menus kèm headless API, Plugins.
 
 ---
 

@@ -1,4 +1,4 @@
-//! Example accounts: an admin, a staff member and two instructors.
+//! Example accounts: an admin, a staff member, two instructors, an editor and a viewer.
 
 use rustcms::auth::entities::role;
 use rustcms::auth::{ADMIN_GUARD, Actor, AuthState, NewUser, RbacService};
@@ -13,11 +13,13 @@ use super::role_seeder;
 pub const PASSWORD: &str = "password123";
 
 /// `(name, email, role)`; `None` is the super admin.
-pub const ACCOUNTS: [(&str, &str, Option<&str>); 4] = [
+pub const ACCOUNTS: [(&str, &str, Option<&str>); 6] = [
     ("Ada Admin", "admin@example.test", None),
     ("Sam Staff", "staff@example.test", Some("staff")),
     ("Tess Teacher", "teacher@example.test", Some("instructor")),
     ("Tom Tutor", "tutor@example.test", Some("instructor")),
+    ("Eve Editor", "editor@example.test", Some("editor")),
+    ("Vic Viewer", "viewer@example.test", Some("viewer")),
 ];
 
 pub struct UserSeeder;

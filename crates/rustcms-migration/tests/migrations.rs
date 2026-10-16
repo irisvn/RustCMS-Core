@@ -359,3 +359,38 @@ db_test!(fresh_drops_tables_with_foreign_keys, |db: TestDb| async move {
     assert!(has_table(&db, "users").await);
     assert!(user::Entity::find().all(db.conn()).await.unwrap().is_empty());
 });
+
+// 0.2 → 0.3 with real credentials: an account of 0.2 (an Argon2 password)
+// signs in as before after the upgrade, and is not an invitation.
+db_test!(upgrade_from_0_2_keeps_credentials, |db: TestDb| async move {
+    Migrator::up(db.conn(), Some(before("add_locale_to_users"))).await.unwrap();
+    let passwords = rustcms_auth::password::Passwords::with_permits(1);
+    let hash = passwords.hash("an old password".into()).await.unwrap();
+    let sql = format!("INSERT INTO users (name, email, password) VALUES ('Ada', 'ada@example.test', '{hash}')");
+    db.conn().execute_unprepared(&sql).await.unwrap();
+    Migrator::up(db.conn(), None).await.unwrap();
+    let found = find_user(&db, "ada@example.test").await;
+    assert!(passwords.verify("an old password".into(), Some(found.password.clone())).await, "the password still works");
+    assert!(!passwords.verify("another".into(), Some(found.password.clone())).await);
+    assert!(found.is_active && !found.invitation_pending);
+    assert_eq!((found.auth_version, found.locale), (0, None), "sessions and tokens of version 0 stay valid");
+});
+
+// A run of the invitations migration cut after some DDL (MySQL commits each
+// statement) completes on the next run.
+db_test!(a_partly_applied_invitation_migration_completes, |db: TestDb| async move {
+    use sea_orm_migration::prelude::Alias;
+    Migrator::up(db.conn(), Some(before("add_invitations_to_users") + 1)).await.unwrap();
+    let manager = SchemaManager::new(db.conn());
+    for column in ["invited_by", "invited_at"] {
+        rustcms_migration::schema::drop_column(&manager, Alias::new("users"), Alias::new(column)).await.unwrap();
+    }
+    db.conn()
+        .execute_unprepared("DELETE FROM seaql_migrations WHERE version LIKE '%add_invitations_to_users%'")
+        .await
+        .unwrap();
+    Migrator::up(db.conn(), None).await.unwrap();
+    for column in ["invitation_pending", "invited_at", "invited_by"] {
+        assert!(manager.has_column("users", column).await.unwrap(), "{column}");
+    }
+});

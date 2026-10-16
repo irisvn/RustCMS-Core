@@ -17,6 +17,7 @@ impl ServiceProvider for AppServiceProvider {
         app.seeder(seeders::course_seeder::CourseSeeder);
         app.seeder(seeders::learner_seeder::LearnerSeeder);
         app.seeder(seeders::enrollment_seeder::EnrollmentSeeder);
+        app.seeder(seeders::news_seeder::NewsSeeder);
         // rustcms:seeders
         // New enrollments queue a welcome mail.
         app.job::<crate::jobs::send_welcome::SendWelcome>();

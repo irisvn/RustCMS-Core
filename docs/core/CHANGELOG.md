@@ -6,6 +6,21 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-26
+
+### Added (0.3 — M23)
+- `examples/lms`: news (categories, tags, articles with rich text, a cover,
+  a unique slug made from the title, scheduled by `published_at`), editor and
+  viewer roles and accounts, *Move up* / *Move down* on lessons (course lock,
+  renumbering, audit of every move), news seeder.
+- Guide: Operations chapter (queue, retention, backup and restore, APP_KEY,
+  mail); LMS page; Vietnamese tutorial in `docs/tutorial/`.
+- Upgrade tests: a 0.2 account's Argon2 password works after the upgrade; a
+  partly applied invitations migration completes on the next run.
+
+### Changed (0.3 — M23)
+- Version 0.3.0 (workspace, examples, admin SPA).
+
 ### Changed (docs)
 - Documentation split: `docs/guide/` is the public developer guide (English,
   mdBook; getting started, basics, security, admin panel, APIs, digging deeper,

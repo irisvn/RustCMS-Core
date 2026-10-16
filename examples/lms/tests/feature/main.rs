@@ -8,5 +8,6 @@ mod customizing;
 mod enrollments;
 mod instructors;
 mod languages;
+mod news;
 mod seeding;
 // rustcms:tests

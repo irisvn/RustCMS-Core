@@ -1,6 +1,6 @@
 # Upgrade guide
 
-## From 0.1.0-alpha.0 to the next release
+## From 0.1.0-alpha.0 (or a 0.2 build) to 0.3.0
 
 1. Update the `rustcms` dependency, then run `rustcms migrate` (new tables for
    media, JWT sign-ins, idempotency keys, locks, the audit log, settings,

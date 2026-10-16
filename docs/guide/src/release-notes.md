@@ -1,9 +1,9 @@
 # Release notes
 
-RustCMS is in pre-release. The current published version is
-**0.1.0-alpha.0**; everything below "Unreleased" is in the next release.
+RustCMS is in pre-release. The current version is **0.3.0** ("LMS-ready
+admin"); 0.1.0-alpha.0 was the first published one.
 
-## Unreleased
+## 0.3.0
 
 - **Admin panel**: soft deletes with a trash; tabs and key/value inputs;
   media library, file uploads and rich text documents; has-many relation
@@ -65,6 +65,11 @@ RustCMS is in pre-release. The current published version is
 - **Dashboard widgets**: counts (compared with the period before), charts per
   day, week or month, and the latest records of a resource, each with its own
   permission and computed as the list shows records ([Dashboard](admin/dashboard.md)).
+- **Example**: `examples/lms` grows news (categories, tags, scheduled
+  articles), editor and viewer roles, lessons moved up and down, a dashboard,
+  welcome mails and instructor invitations ([An LMS back office](examples/lms.md)).
+- **Operations**: running the queue, retention, backup and restore,
+  rotating `APP_KEY`, running mail ([Operations](operations/queue.md)).
 - **Permission matrix**: the role page lays resource permissions out as
   resource × ability ([Users and roles](admin/users-roles.md)).
 - **Example**: `examples/lms`, a small LMS back office (seats under a lock,

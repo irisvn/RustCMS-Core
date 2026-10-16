@@ -1,7 +1,8 @@
 # Example: an LMS back office
 
 `examples/lms` is a small learning-management back office: courses, lessons,
-learners and enrollments, run by staff and instructors. It follows the
+learners and enrollments run by staff and instructors, and the school's news
+written by editors; a dashboard, mail and invitations. It follows the
 [application layout](../getting-started/directory-structure.md) and shows
 where each kind of code goes.
 
@@ -12,7 +13,9 @@ cargo run -- migrate && cargo run -- db:seed && cargo run -- serve
 ```
 
 Sign in at `/admin` (password `password123`) as `staff@example.test` (every
-course) or `teacher@example.test` (their courses only). `db:seed` completes
+course), `teacher@example.test` (their courses only), `editor@example.test`
+(the news, nothing of the courses) or `viewer@example.test` (reads
+everything, exports enrollments, changes nothing). `db:seed` completes
 what an earlier run left and refuses to run in production: it creates
 accounts with a public password.
 
@@ -24,6 +27,9 @@ accounts with a public password.
 | `lessons` | `course_id` → courses (deleted with it), title, position, body |
 | `learners` | name, email (unique), phone: people taking courses, without a sign-in |
 | `enrollments` | `course_id`, `learner_id` (unique together, deleted with either), status `active` / `withdrawn`, progress 0–100 |
+| `categories`, `tags` | name (unique) |
+| `news` | title, slug (unique; made from the title when empty, Vietnamese marks removed), body (rich text), cover (an image), `category_id`, author, `published_at` (empty: a draft; in the future: scheduled) |
+| `news_tags` | the tags of an article (belongs-to-many, `news.attach_tags` / `news.detach_tags`) |
 
 ## Where the code is
 
@@ -37,7 +43,11 @@ accounts with a public password.
 | `src/jobs/send_welcome.rs` | the `lms.enrolled` job |
 | `src/database/seeders/` | roles, users, courses, learners, enrollments |
 | `src/database/factories/` | courses and learners for tests |
-| `tests/feature/` | enrollments, instructors, seeding, languages |
+| `src/admin/resources/news_resource.rs` | news, its slug (`slugify`), tags |
+| `src/admin/resources/lesson_resource.rs` | lessons and the *Move up* / *Move down* actions |
+| `src/providers/admin_panel_provider.rs` | resources, settings (LMS, Mail), the dashboard's widgets |
+| `src/database/seeders/news_seeder.rs` | categories, tags and three articles (one scheduled, one draft) |
+| `tests/feature/` | enrollments, instructors, news and lessons, seeding, languages |
 
 ## Seats
 
@@ -135,6 +145,23 @@ Field rules and the policy do the rest:
   `resources/admin/css/lms/progress.css`).
 
 See [Customizing the panel](../admin/customizing.md).
+
+## News, lessons in order, the dashboard
+
+- **News**: editors (`editor` role) write articles with a cover and rich
+  text, pick a category and link tags on the article's page. A taken slug is
+  refused (422). *Scheduled* is an article whose `published_at` is in the
+  future; nothing publishes it (filter by date).
+- **Lessons in order**: *Move up* / *Move down* on a lesson swaps it with its
+  neighbour among the lessons of its course the user may see. The course is
+  locked by the action, positions are renumbered 1…n first (ties in id
+  order), and every lesson that moves is recorded in the audit log.
+- **Dashboard**: learners, new enrollments (against the 30 days before),
+  enrollments per week and the newest courses — each with its permission,
+  granted to staff, instructors (their courses) and viewers.
+- **Mail and invitations**: the welcome mail goes to each new learner once
+  (`lms.enrolled`); staff invite instructors from System → Users (they choose
+  their password from the mail).
 
 ## Conflicts
 

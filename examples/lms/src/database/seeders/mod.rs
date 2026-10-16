@@ -8,6 +8,7 @@ use rustcms::{AppState, async_trait};
 pub mod course_seeder;
 pub mod enrollment_seeder;
 pub mod learner_seeder;
+pub mod news_seeder;
 pub mod role_seeder;
 pub mod user_seeder;
 // rustcms:seeder-mods
@@ -29,11 +30,15 @@ impl Seeder for DatabaseSeeder {
                 &course_seeder::CourseSeeder,
                 &learner_seeder::LearnerSeeder,
                 &enrollment_seeder::EnrollmentSeeder,
+                &news_seeder::NewsSeeder,
                 // rustcms:seeder-calls
             ],
         )
         .await?;
-        println!("Sign in at /admin as admin@, staff@ or teacher@example.test (password: {}).", user_seeder::PASSWORD);
+        println!(
+            "Sign in at /admin as admin@, staff@, teacher@, editor@ or viewer@example.test (password: {}).",
+            user_seeder::PASSWORD
+        );
         Ok(())
     }
 }
