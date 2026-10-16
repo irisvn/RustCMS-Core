@@ -10,6 +10,14 @@ use sha2::{Digest, Sha256};
 
 const NEW: &str = "v9.9.9";
 
+/// One test at a time: on Linux, a thread writing an executable while another
+/// forks makes running it fail (`ETXTBSY`, the child holds it open for writing).
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// `<root>/bin/rustcms` (a copy of the built command) and `<root>/install.json`.
 fn installed(root: &Path) -> PathBuf {
     let bin = root.join("bin/rustcms");
@@ -73,6 +81,7 @@ fn version(bin: &Path) -> String {
 
 #[test]
 fn updates_to_the_latest_release() {
+    let _serial = serial();
     let dir = tempfile::tempdir().unwrap();
     let bin = installed(&dir.path().join("root"));
     mirror(dir.path(), false);
@@ -87,6 +96,7 @@ fn updates_to_the_latest_release() {
 
 #[test]
 fn a_corrupted_download_changes_nothing() {
+    let _serial = serial();
     let dir = tempfile::tempdir().unwrap();
     let bin = installed(&dir.path().join("root"));
     let before = version(&bin);
@@ -99,6 +109,7 @@ fn a_corrupted_download_changes_nothing() {
 
 #[test]
 fn a_command_installed_another_way_is_left_alone() {
+    let _serial = serial();
     let dir = tempfile::tempdir().unwrap();
     let bin = installed(&dir.path().join("root"));
     std::fs::remove_file(dir.path().join("root/install.json")).unwrap();
@@ -110,6 +121,7 @@ fn a_command_installed_another_way_is_left_alone() {
 
 #[test]
 fn a_command_reporting_another_version_is_refused() {
+    let _serial = serial();
     let dir = tempfile::tempdir().unwrap();
     let bin = installed(&dir.path().join("root"));
     let before = version(&bin);
