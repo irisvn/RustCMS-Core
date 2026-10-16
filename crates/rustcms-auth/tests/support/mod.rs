@@ -25,9 +25,17 @@ pub fn provider() -> AuthProvider {
 
 /// [`build`] with mail (memory driver) and password resets on.
 pub fn build_with_mail(config: Config) -> AppBuilder {
+    build_mailing(config.with("auth.reset_cooldown_secs", 0).unwrap())
+}
+
+/// [`build_with_mail`] keeping the default reset cooldown (60 s).
+pub fn build_with_cooldown(config: Config) -> AppBuilder {
+    build_mailing(config)
+}
+
+fn build_mailing(config: Config) -> AppBuilder {
     let config = config
         .with("auth.password_reset", true)
-        .and_then(|c| c.with("auth.reset_cooldown_secs", 0))
         .and_then(|c| c.with("auth.reset_requests_per_email", 20))
         .and_then(|c| c.with("auth.reset_requests_per_ip", 20))
         .and_then(|c| c.with("mail.source", "config"))

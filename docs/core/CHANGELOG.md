@@ -46,6 +46,11 @@ All notable changes are documented here. The format follows
   a late upload's object is always recorded and deleted.
 - SPA: a lost answer to a reset or invitation says the password may already
   work (no retry offered); completions act only while their page is open.
+- Full gate: a quoted empty cell of a *required* text field is refused again
+  (it was imported empty); the marks of a credential change no longer count
+  as a recent token for the reset cooldown (a reset right after accepting an
+  invitation sent nothing); the admin SPA bundle is rebuilt; E2E covers
+  invitations, resets, remember me and the dashboard (Mailpit).
 
 ### Added (0.3 — M22; ADR 0024)
 - Dashboard widgets: `AdminProvider::dashboard(Dashboard)`, `Widget::stat`

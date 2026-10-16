@@ -9,11 +9,12 @@ const MAILPIT = process.env.RUSTCMS_MAILPIT_API ?? "http://127.0.0.1:58025";
 async function linkIn(page: Page, to: string, subject: RegExp, page_: string): Promise<string> {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    const found = await page.request.get(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`);
+    // Node's own fetch: Mailpit is outside the app under test.
+    const found = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${to}`)}`);
     const list = (await found.json()) as { messages: { ID: string; Subject: string }[] };
     const mail = list.messages.find((m) => subject.test(m.Subject));
     if (mail) {
-      const message = (await (await page.request.get(`${MAILPIT}/api/v1/message/${mail.ID}`)).json()) as { Text: string };
+      const message = (await (await fetch(`${MAILPIT}/api/v1/message/${mail.ID}`)).json()) as { Text: string };
       const match = message.Text.match(new RegExp(`(http\\S+/admin/${page_}#token=\\S+)`));
       if (match?.[1]) return match[1];
     }
@@ -30,7 +31,8 @@ test("an invited user chooses a password, resets it, and is remembered", async (
   await page.getByLabel("Email").fill(email);
   await page.getByLabel(/Send an invitation instead/).check();
   await page.getByRole("button", { name: "Send the invitation" }).click();
-  await expect(page.getByText("Invited", { exact: true }).first()).toBeVisible();
+  // On the new user's page: their invitation, pending.
+  await expect(page.getByRole("heading", { name: "Invitation" })).toBeVisible();
   await page.context().clearCookies();
 
   // The invitation: the token comes in the fragment and leaves the address bar.
@@ -69,8 +71,8 @@ test("an invited user chooses a password, resets it, and is remembered", async (
 
 test("the dashboard shows its widgets", async ({ page, watch }) => {
   await signIn(page, "admin@example.test");
-  await expect(page.getByRole("heading", { name: "Posts", exact: true })).toBeVisible();
+  await expect(page.locator("h2", { hasText: /^Posts$/ })).toBeVisible();
   await expect(page.getByRole("img", { name: "Published per week" })).toBeVisible();
-  await expect(page.locator("svg rect")).toHaveCount(8);
+  await expect(page.getByRole("img", { name: "Published per week" }).locator("rect")).toHaveCount(8);
   void watch;
 });

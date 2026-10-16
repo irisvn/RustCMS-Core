@@ -62,6 +62,14 @@
 - [Queues](digging-deeper/queues.md)
 - [Mail](digging-deeper/mail.md)
 
+# Operations
+
+- [Running the queue](operations/queue.md)
+- [Retention](operations/retention.md)
+- [Backup and restore](operations/backup-restore.md)
+- [Rotating APP_KEY](operations/app-key.md)
+- [Running mail](operations/mail.md)
+
 # Examples
 
 - [An LMS back office](examples/lms.md)

@@ -279,3 +279,26 @@ db_test!(an_older_request_never_comes_back_after_a_reset, migrate = Migrator, |d
     work(&app).await;
     assert!(app.take_mails().is_empty());
 });
+
+db_test!(a_reset_right_after_accepting_an_invitation_is_sent, migrate = Migrator, |db: TestDb| async move {
+    // The default cooldown: the marks a credential change leaves are no tokens.
+    let (app, _) = support::setup_with(support::build_with_cooldown, db, &[]).await;
+    let state = auth(&app);
+    RbacService::new(app.state().db(), &state.resolver)
+        .invite_user(Actor::System, "Ann", "ann@example.test", ADMIN_GUARD, &[])
+        .await
+        .unwrap();
+    work(&app).await;
+    let token = token_in(&app, "invitation");
+    let client = app.client();
+    client.fetch_csrf().await;
+    let body = json!({ "token": token, "password": NEW_PASSWORD, "password_confirmation": NEW_PASSWORD });
+    client.post_json(&app.admin_api("auth/invitation"), &body).await.assert_status(StatusCode::NO_CONTENT);
+    forgot(&app, "ann@example.test").await.assert_status(StatusCode::ACCEPTED);
+    work(&app).await;
+    assert!(token_in(&app, "reset-password").len() > 40);
+    // A second request within the cooldown: nothing more.
+    forgot(&app, "ann@example.test").await.assert_status(StatusCode::ACCEPTED);
+    work(&app).await;
+    assert!(app.take_mails().is_empty());
+});

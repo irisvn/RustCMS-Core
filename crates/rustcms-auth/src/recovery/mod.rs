@@ -164,7 +164,10 @@ pub(crate) async fn issue(
     if let Some(row) = find.one(&txn).await? {
         let answered = row.request_id == request.id && row.sent_at.is_some();
         let superseded = row.request_id != request.id && row.requested_at > request.at;
-        let recent = row.request_id != request.id && cooldown.is_some_and(|c| row.issued_at > now - c);
+        // The mark of a credential change is not a token: it never delays a new request.
+        let recent = row.request_id != request.id
+            && !row.token_hash.is_empty()
+            && cooldown.is_some_and(|c| row.issued_at > now - c);
         if answered || superseded || recent {
             return Ok(None);
         }

@@ -14,11 +14,11 @@ test("admin creates a role and a user who then sees only what the role allows", 
   await page.getByRole("link", { name: "New user" }).click();
   await page.getByLabel("Name").fill("Rita Reader");
   await page.getByLabel("Email").fill("rita@example.test");
-  await page.getByLabel("Password").fill("short");
+  await page.getByLabel("Password", { exact: true }).fill("short");
   await page.getByRole("checkbox", { name: "reader" }).check();
   await page.getByRole("button", { name: "Create user" }).click();
   await expect(page.getByText(/at least 8 characters/)).toBeVisible();
-  await page.getByLabel("Password").fill("readers password");
+  await page.getByLabel("Password", { exact: true }).fill("readers password");
   await page.getByRole("button", { name: "Create user" }).click();
   await expect(page.getByRole("heading", { name: /Rita Reader/ })).toBeVisible();
 
@@ -26,7 +26,7 @@ test("admin creates a role and a user who then sees only what the role allows", 
   const rita = await context.newPage();
   await rita.goto("/admin/login");
   await rita.getByLabel("Email").fill("rita@example.test");
-  await rita.getByLabel("Password").fill("readers password");
+  await rita.getByLabel("Password", { exact: true }).fill("readers password");
   await rita.getByRole("button", { name: "Sign in" }).click();
   const nav = rita.getByRole("navigation", { name: "Resources" });
   await expect(nav.getByRole("link", { name: "Posts" })).toBeVisible();

@@ -109,8 +109,9 @@ with an import key). Imports need the storage provider.
 
 Cells are read by the field's type like query strings (`7`, `true`,
 `2026-10-22`); an empty cell is `null` (an empty text for optional text fields
-that may not be null), and a quoted empty cell `""` of a text field the empty
-text, as exports write them. With an import key, a row whose key cell is filled
+that may not be null), and a quoted empty cell `""` of an optional text field
+the empty text, as exports write them (a required field is never set empty:
+the row is refused). With an import key, a row whose key cell is filled
 updates the record of the user's scope with that value (the key itself is not
 written), creates one when there is none, and fails when several match; a row
 without a key value is created. A trashed record with the same key is not
