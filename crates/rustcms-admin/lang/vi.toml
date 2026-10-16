@@ -37,6 +37,19 @@
 "Roles" = "Vai trò"
 "Permissions" = "Quyền"
 
+# The Mail settings page (`AdminProvider::mail_settings`).
+"Mail" = "Mail"
+"SMTP server" = "Máy chủ SMTP"
+"Port" = "Cổng"
+"Encryption" = "Mã hoá"
+"STARTTLS" = "STARTTLS"
+"TLS" = "TLS"
+"None" = "Không"
+"User name" = "Tên đăng nhập"
+"Sender address" = "Địa chỉ người gửi"
+"Sender name" = "Tên người gửi"
+"Reply-to address" = "Địa chỉ trả lời"
+
 [media]
 "Media" = "Thư viện media"
 "Mime" = "Loại tệp"

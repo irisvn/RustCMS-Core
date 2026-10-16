@@ -10,6 +10,10 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+# `TestApp::mails` (the `memory` mail driver).
+mail = ["rustcms-core/mail"]
+
 [dependencies]
 rustcms-core = { workspace = true, features = ["sqlite", "postgres", "mysql"] }
 rustcms-auth.workspace = true

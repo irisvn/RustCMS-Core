@@ -18,6 +18,8 @@ mysql = ["sea-orm/sqlx-mysql", "sea-orm-migration/sqlx-mysql"]
 # S3-compatible storage (`storage.disk = "s3"`).
 s3 = ["dep:object_store", "object_store/aws", "dep:futures-util"]
 redis = ["dep:redis"]
+# Mail (`[mail]`, SMTP through lettre).
+mail = ["dep:lettre"]
 
 [dependencies]
 aes-gcm.workspace = true
@@ -38,6 +40,7 @@ sea-orm.workspace = true
 sea-orm-migration.workspace = true
 sha2.workspace = true
 hex.workspace = true
+minijinja = { workspace = true, features = ["fuel"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -47,6 +50,7 @@ tokio-util.workspace = true
 cap-std.workspace = true
 object_store = { workspace = true, optional = true }
 redis = { workspace = true, optional = true }
+lettre = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 tower.workspace = true
 tower-http.workspace = true

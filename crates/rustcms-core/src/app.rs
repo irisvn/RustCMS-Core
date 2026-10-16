@@ -110,6 +110,8 @@ pub struct AppBuilder {
     body_limits: Vec<http::BodyLimit>,
     jobs: crate::queue::Jobs,
     seeders: crate::database::Seeders,
+    #[cfg(feature = "mail")]
+    mail_templates: crate::mail::MailTemplates,
 }
 
 /// A route as listed by `route:list`.
@@ -146,6 +148,8 @@ impl AppBuilder {
             body_limits: Vec::new(),
             jobs: crate::queue::Jobs::default(),
             seeders: crate::database::Seeders::default(),
+            #[cfg(feature = "mail")]
+            mail_templates: crate::mail::MailTemplates::default(),
         }
     }
 
@@ -220,6 +224,16 @@ impl AppBuilder {
         self
     }
 
+    /// Adds a mail template ([`crate::mail_template!`]).
+    ///
+    /// # Panics
+    /// On an invalid template, or one added twice.
+    #[cfg(feature = "mail")]
+    pub fn mail_template(&mut self, template: crate::mail::MailTemplate) -> &mut Self {
+        self.mail_templates.add(template);
+        self
+    }
+
     /// Registers a seeder for `db:seed` (the one named `database` runs by default).
     ///
     /// # Panics
@@ -280,6 +294,8 @@ impl AppBuilder {
         }
         crate::queue::QueueConfig::of(&self.config)?;
         self.services.insert(self.jobs);
+        #[cfg(feature = "mail")]
+        self.services.insert(self.mail_templates);
         let state = AppState(Arc::new(StateInner { config: self.config, db, services: self.services }));
         for provider in &self.providers {
             provider.boot(&state).await?;

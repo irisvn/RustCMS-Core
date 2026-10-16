@@ -868,7 +868,11 @@ export type SettingsAbilities = {
 /**
  * Save changes.
  */
-update: boolean, };
+update: boolean, 
+/**
+ * Send a test mail with the saved settings (the Mail page).
+ */
+test: boolean, };
 
 export type SettingsResponse = { 
 /**
@@ -907,6 +911,16 @@ version: string,
  * What the user may do.
  */
 abilities: SettingsAbilities, };
+
+export type MailTestResult = { 
+/**
+ * Sent.
+ */
+ok: boolean, 
+/**
+ * Why not (`smtp_auth`, `mail_not_configured`, …).
+ */
+code?: string, };
 
 export type AuditActorView = { 
 /**

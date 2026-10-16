@@ -13,6 +13,8 @@ pub mod http;
 pub mod i18n;
 pub mod jobs;
 pub mod key;
+#[cfg(feature = "mail")]
+pub mod mail;
 pub mod models;
 pub mod principal;
 pub mod queue;
@@ -21,6 +23,7 @@ pub mod redis;
 pub mod settings;
 pub mod storage;
 pub mod telemetry;
+pub mod template;
 
 pub use app::{App, AppBuilder, AppCommand, AppState, Inject, RouteInfo, ServiceProvider};
 pub use config::{Config, Environment};

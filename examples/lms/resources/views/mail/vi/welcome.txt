@@ -1,0 +1,5 @@
+Chào {{ data.name }},
+
+Bạn đã có chỗ trong khoá {{ data.course }} tại {{ data.school }}.
+
+{{ app_url }}

@@ -3,6 +3,7 @@
 #        RUSTCMS_TEST_MYSQL=mysql://root:mysql@localhost:53306/mysql
 #        RUSTCMS_TEST_REDIS=redis://localhost:56379
 #        RUSTCMS_TEST_S3=http://localhost:59000/rustcms-test (any AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)
+#        RUSTCMS_TEST_SMTP=127.0.0.1:51025 (Mailpit; its UI on http://localhost:58025)
 services:
   postgres:
     image: postgres:17-alpine
@@ -43,3 +44,9 @@ services:
       COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: rustcms-test
     ports:
       - "${RUSTCMS_S3_PORT:-59000}:9090"
+  # SMTP server catching every mail (development and the mail tests).
+  mailpit:
+    image: axllent/mailpit:v1.31.3
+    ports:
+      - "${RUSTCMS_SMTP_PORT:-51025}:1025"
+      - "${RUSTCMS_MAILPIT_UI_PORT:-58025}:8025"

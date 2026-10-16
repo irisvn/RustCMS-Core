@@ -40,12 +40,15 @@ features:
     cargo check -p rustcms --features redis
     cargo check -p rustcms-auth --features redis
     cargo check -p rustcms-core --no-default-features --features redis
+    cargo check -p rustcms-core --no-default-features --features mail
+    cargo check -p rustcms-admin --no-default-features --features sqlite,mail
+    cargo check -p rustcms --no-default-features --features sqlite
 
 # Tests on SQLite (temp files), PostgreSQL and MySQL, with Redis and an S3-compatible bucket (docker compose).
 test-matrix:
-    docker compose up -d --wait postgres mysql redis s3
+    docker compose up -d --wait postgres mysql redis s3 mailpit
     @for i in $(seq 1 60); do curl -sf --connect-timeout 2 -m 5 -o /dev/null {{s3_url}} && exit 0; sleep 1; done; echo "the S3 bucket is not ready: {{s3_url}}"; exit 1
-    RUSTCMS_TEST_PG={{pg_url}} RUSTCMS_TEST_MYSQL={{mysql_url}} RUSTCMS_TEST_REDIS={{redis_url}} RUSTCMS_TEST_S3={{s3_url}} AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test RUSTCMS_TEST_REQUIRE=postgres,mysql,redis,s3 cargo nextest run --workspace --features rustcms/redis,rustcms/s3
+    RUSTCMS_TEST_PG={{pg_url}} RUSTCMS_TEST_MYSQL={{mysql_url}} RUSTCMS_TEST_REDIS={{redis_url}} RUSTCMS_TEST_S3={{s3_url}} RUSTCMS_TEST_SMTP=127.0.0.1:51025 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test RUSTCMS_TEST_REQUIRE=postgres,mysql,redis,s3,smtp cargo nextest run --workspace --features rustcms/redis,rustcms/s3
 
 test:
     cargo nextest run --workspace

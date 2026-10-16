@@ -1169,6 +1169,21 @@ path = "/admin/api/resources/posts/records/{own}/history"
 actor = "guest"
 status = 401
 
+# Admitted before the body is read: garbage is still a 403.
+[[case]]
+route = "POST /admin/api/settings/mail/test"
+path = "/admin/api/settings/mail/test"
+actor = "member"
+status = 403
+body = '[]'
+
+[[case]]
+route = "POST /admin/api/settings/mail/test"
+path = "/admin/api/settings/mail/test"
+actor = "admin"
+status = 200
+body = '{"to": "a@example.com"}'
+
 [[case]]
 route = "GET /admin/api/settings/{group}"
 path = "/admin/api/settings/general"

@@ -70,3 +70,10 @@ tokens are never sent.
 - Clocks must be synchronized across instances (NTP).
 - Blocking code cannot be stopped by the timeout (`spawn_blocking`).
 - Ordering is best effort.
+
+## Amendment (M19, 2026-10-24)
+
+`Failure::permanent()` (`queue::Permanent`) fails a job at once instead of
+retrying it (an error retrying cannot fix: a refused address, a missing
+template). `queue:retry` still runs it again. A `Failure` (permanent or not)
+is logged by its code only; other errors are logged in full as before.

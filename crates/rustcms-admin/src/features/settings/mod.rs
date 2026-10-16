@@ -3,6 +3,8 @@
 //! entry, secrets encrypted (ADR 0015).
 
 mod http;
+#[cfg(feature = "mail")]
+mod mail;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
@@ -10,11 +12,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rustcms_core::settings::{Settings, Stored, typed, valid_group};
-use rustcms_core::{AppResult, ValidationErrors};
+use rustcms_core::{AppResult, AppState, ValidationErrors};
 use serde_json::{Map, Value};
 
 pub use http::{SecretStatus, SettingsAbilities, SettingsLink, SettingsResponse};
 pub(crate) use http::{router, routes};
+#[cfg(feature = "mail")]
+pub use mail::MailTestResult;
 
 use crate::context::Ctx;
 use crate::engine::validate::InputRule;
@@ -78,6 +82,7 @@ pub struct SettingField {
     pub(crate) max_length: Option<usize>,
     pub(crate) key_value: Option<(usize, usize)>,
     pub(crate) audit_redact: bool,
+    pub(crate) kept_while: Vec<String>,
 }
 
 macro_rules! kinds {
@@ -101,6 +106,7 @@ impl SettingField {
             max_length: None,
             key_value,
             audit_redact: false,
+            kept_while: Vec::new(),
         }
     }
 
@@ -190,6 +196,14 @@ impl SettingField {
         self
     }
 
+    /// A secret kept only while `fields` keep their values: changing one of
+    /// them without giving the secret again clears it (a saved password is
+    /// never sent to a server it was not given for).
+    pub fn kept_while(mut self, fields: &[&str]) -> Self {
+        self.kept_while = fields.iter().map(|f| (*f).to_owned()).collect();
+        self
+    }
+
     /// Never store this setting's values in the audit log (only that it changed).
     pub fn audit_redact(mut self) -> Self {
         self.audit_redact = true;
@@ -269,6 +283,12 @@ pub trait SettingsPage: Settings {
     async fn validate(_ctx: &Ctx, _settings: &Self) -> Result<(), ValidationErrors> {
         Ok(())
     }
+
+    /// Like [`Self::validate`] with the application (its configuration and
+    /// services); by default, [`Self::validate`].
+    async fn validate_in(_state: &AppState, ctx: &Ctx, settings: &Self) -> Result<(), ValidationErrors> {
+        Self::validate(ctx, settings).await
+    }
 }
 
 /// A registered settings page, type-erased.
@@ -280,7 +300,7 @@ pub(crate) trait DynSettings: Send + Sync {
     fn form(&self) -> &Form;
     fn defaults(&self) -> &Map<String, Value>;
     /// The group as stored, typed and checked by the application.
-    async fn validate(&self, ctx: &Ctx, stored: &Stored) -> AppResult<()>;
+    async fn validate(&self, state: &AppState, ctx: &Ctx, stored: &Stored) -> AppResult<()>;
 }
 
 pub(crate) struct SettingsAdapter<T> {
@@ -423,9 +443,9 @@ impl<T: SettingsPage> DynSettings for SettingsAdapter<T> {
         &self.defaults
     }
 
-    async fn validate(&self, ctx: &Ctx, stored: &Stored) -> AppResult<()> {
+    async fn validate(&self, state: &AppState, ctx: &Ctx, stored: &Stored) -> AppResult<()> {
         let settings: T = typed(stored)?;
-        T::validate(ctx, &settings).await.map_err(|errors| redacted(errors, stored).into())
+        T::validate_in(state, ctx, &settings).await.map_err(|errors| redacted(errors, stored).into())
     }
 }
 

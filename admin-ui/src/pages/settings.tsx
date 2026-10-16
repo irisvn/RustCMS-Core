@@ -5,6 +5,7 @@ import { ApiError } from "@/api/client";
 import { settingsScope, useSaveSettings, useSettings } from "@/api/settings";
 import type { SettingsResponse } from "@/api/types";
 import { Page, PageHeader } from "@/components/layout";
+import { MailTest } from "@/components/mail-test";
 import { ErrorState, Loading, PausedBanner, VersionBanner, compatibility } from "@/components/states";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -169,6 +170,7 @@ function SettingsForm({ group, latest, refreshError, refetch }: {
           </div>
         )}
       </form>
+      {latest.abilities.test && <MailTest />}
     </Page>
   );
 }

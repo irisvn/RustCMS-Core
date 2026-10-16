@@ -24,12 +24,22 @@ use crate::ui::{Component, SelectOption};
 /// Every settings route as `(method, path)`.
 pub(crate) fn routes(admin_path: &str) -> Vec<(Method, String)> {
     let path = format!("{}/api/settings/{{group}}", admin_path.trim_end_matches('/'));
-    vec![(Method::GET, path.clone()), (Method::PUT, path)]
+    #[cfg_attr(not(feature = "mail"), allow(unused_mut))]
+    let mut routes = vec![(Method::GET, path.clone()), (Method::PUT, path)];
+    #[cfg(feature = "mail")]
+    routes.push((Method::POST, format!("{}/api/settings/mail/test", admin_path.trim_end_matches('/'))));
+    routes
 }
 
 pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppState> {
     let path = format!("{}/api/settings/{{group}}", admin_path.trim_end_matches('/'));
-    router.route(&path, get(show).put(update))
+    let router = router.route(&path, get(show).put(update));
+    #[cfg(feature = "mail")]
+    let router = router.route(
+        &format!("{}/api/settings/mail/test", admin_path.trim_end_matches('/')),
+        axum::routing::post(super::mail::test),
+    );
+    router
 }
 
 /// A settings page in the navigation (`PanelResponse.settings`).
@@ -65,6 +75,8 @@ pub enum SecretStatus {
 pub struct SettingsAbilities {
     /// Save changes.
     pub update: bool,
+    /// Send a test mail with the saved settings (the Mail page).
+    pub test: bool,
 }
 
 /// `GET` / `PUT settings/{group}`.
@@ -107,7 +119,7 @@ impl SettingsRegistry {
     }
 }
 
-fn registry(state: &AppState) -> AppResult<Arc<SettingsRegistry>> {
+pub(super) fn registry(state: &AppState) -> AppResult<Arc<SettingsRegistry>> {
     Ok(state
         .service::<AdminPanel>()
         .ok_or_else(|| AppError::internal("AdminProvider not registered"))?
@@ -118,7 +130,7 @@ fn registry(state: &AppState) -> AppResult<Arc<SettingsRegistry>> {
 /// The page `group` if `principal` may view it (and update it, with
 /// `update`). An unknown group is a 404 only for users who may view some
 /// settings: others learn nothing about which groups exist.
-fn admit(
+pub(super) fn admit(
     settings: &SettingsRegistry,
     principal: &Principal,
     group: &str,
@@ -177,7 +189,10 @@ fn response(ctx: &Ctx, page: &dyn DynSettings, stored: &Stored) -> SettingsRespo
         data,
         secrets,
         version: stored.version.to_string(),
-        abilities: super::SettingsAbilities { update },
+        abilities: super::SettingsAbilities {
+            update,
+            test: update && page.group() == "mail" && cfg!(feature = "mail"),
+        },
     }
 }
 
@@ -326,9 +341,17 @@ async fn update(
     let mut values = Map::new();
     let mut secrets = BTreeMap::new();
     let mut errors = ValidationErrors::new();
+    // A secret bound to other fields is not kept when one of them changes.
+    let changed = |name: &String| {
+        data.get(name).is_some_and(|value| Some(value) != stored.values.get(name).or_else(|| page.defaults().get(name)))
+    };
     for field in page.fields() {
         if field.is_secret() {
-            let after = match (writes.remove(&field.name).unwrap_or(SecretWrite::Keep), stored.secret(&field.name)) {
+            let mut write = writes.remove(&field.name).unwrap_or(SecretWrite::Keep);
+            if matches!(write, SecretWrite::Keep) && field.kept_while.iter().any(changed) {
+                write = SecretWrite::Clear;
+            }
+            let after = match (write, stored.secret(&field.name)) {
                 (SecretWrite::Replace(plain), _) => Some(plain),
                 (SecretWrite::Clear, _) | (SecretWrite::Keep, SecretState::Unset) => None,
                 (SecretWrite::Keep, SecretState::Set(plain)) => Some(plain.clone()),
@@ -367,7 +390,7 @@ async fn update(
     // The application's check runs inside the write, as the user is now.
     let mut within = ctx.within(txn.clone());
     within.principal = current.clone();
-    page.validate(&within, &after).await?;
+    page.validate(&state, &within, &after).await?;
     drop(within);
     let txn =
         Arc::try_unwrap(txn).map_err(|_| AppError::internal("settings: the write transaction is still in use"))?;

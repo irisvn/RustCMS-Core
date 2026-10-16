@@ -52,6 +52,12 @@ RustCMS is in pre-release. The current published version is
   in the background, checked again at download) and `importable()` /
   `import_key()` (upload, check, import through the usual write paths, a
   receipt per row) ([Import and export](admin/import-export.md)).
+- **Mail**: SMTP (the server set in Settings → Mail or the configuration,
+  within the operator's `allowed_hosts`/`allowed_ports`, TLS required),
+  templates per language, mails queued with the change (`send_later`) and
+  retried on temporary failures, a test-mail button, `log` and `memory`
+  drivers; failed queue jobs can fail at once (`Failure::permanent`)
+  ([Mail](digging-deeper/mail.md)).
 - **Permission matrix**: the role page lays resource permissions out as
   resource × ability ([Users and roles](admin/users-roles.md)).
 - **Example**: `examples/lms`, a small LMS back office (seats under a lock,

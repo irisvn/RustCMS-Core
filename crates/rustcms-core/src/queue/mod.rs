@@ -109,7 +109,25 @@ impl Failure {
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self { code: code.into(), message: message.into() }
     }
+
+    /// The same failure, not retried: the job fails at once (retrying cannot
+    /// help until someone changes something; `queue:retry` still runs it again).
+    pub fn permanent(self) -> Permanent {
+        Permanent(self)
+    }
 }
+
+/// A [`Failure`] the queue does not retry (see [`Failure::permanent`]).
+#[derive(Debug, Clone)]
+pub struct Permanent(pub Failure);
+
+impl std::fmt::Display for Permanent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::error::Error for Permanent {}
 
 impl std::fmt::Display for Failure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -281,11 +299,17 @@ impl<J: Job> Handler for Typed<J> {
         match job.handle(ctx).await {
             Ok(()) => Outcome::Done,
             Err(err) => {
-                tracing::warn!(kind = J::KIND, %id, err = %format!("{err:#}"), "job failed");
-                match err.downcast_ref::<Failure>() {
-                    Some(failure) => Outcome::Retry(cut(&failure.to_string(), 500)),
-                    None => Outcome::Retry(format!("failed (see the logs for job {id})")),
+                // A failure's own text is safe to log; any other error is logged as it is.
+                if let Some(Permanent(failure)) = err.downcast_ref::<Permanent>() {
+                    tracing::warn!(kind = J::KIND, %id, code = %failure.code, "job failed (not retried)");
+                    return Outcome::Fail(cut(&failure.to_string(), 500));
                 }
+                if let Some(failure) = err.downcast_ref::<Failure>() {
+                    tracing::warn!(kind = J::KIND, %id, code = %failure.code, "job failed");
+                    return Outcome::Retry(cut(&failure.to_string(), 500));
+                }
+                tracing::warn!(kind = J::KIND, %id, err = %format!("{err:#}"), "job failed");
+                Outcome::Retry(format!("failed (see the logs for job {id})"))
             }
         }
     }

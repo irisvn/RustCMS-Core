@@ -32,6 +32,32 @@ All notable changes are documented here. The format follows
 - Examples: LMS theme, course overview page, seats slot, progress cell; demo
   post stats page and visibility slot.
 
+### Added (0.3 — M19; ADR 0022)
+- Mail (`rustcms_core::mail`, feature `mail`, default in `rustcms`):
+  `MailProvider`, `[mail]` (drivers `disabled`/`smtp`/`log`/`memory`, source
+  `settings`/`config`, `allowed_hosts`/`allowed_ports`/`allow_insecure`,
+  timeout, per-process rate, `log_body` local only, `tls_ca_file`),
+  `MailSettings` group, `render`/`send`/`send_later` (`mail.send` job, 8 runs),
+  `mail_template!` + `AppBuilder::mail_template` (re-read in local
+  development), `MailError` codes. lettre 0.11.23 (rustls).
+- `queue::Failure::permanent()` / `queue::Permanent`: failed at once, not retried
+  (ADR 0016 amended); `Failure`s are logged by code only.
+- `rustcms_core::template`: the bounded minijinja environment (moved from the
+  admin's custom pages, shared with mail).
+- Admin: `AdminProvider::mail_settings()` (Mail page, policy-checked),
+  `SettingField::kept_while` (a secret cleared when bound fields change),
+  `SettingsPage::validate_in`, `POST settings/mail/test`, `abilities.test`
+  on settings pages; SPA test-mail card.
+- Testing: `TestApp::mails` / `take_mails` (feature `mail`), `test_config`
+  sets the memory driver; Mailpit (`axllent/mailpit:v1.31.3`) in docker
+  compose, `RUSTCMS_TEST_SMTP` in `just test-matrix`.
+- Examples: LMS welcome mail (en/vi, sent once per seat), demo log driver;
+  both have the Mail settings page.
+
+### Changed (0.3 — M19)
+- nextest stops a test after five minutes (`slow-timeout`), so a stuck test
+  fails instead of holding the run.
+
 ### Added (0.3 — M17b; ADR 0021)
 - CSV imports: `ResourceMeta::importable()` / `import_key(field)`, ability
   `import`; routes `POST {slug}/imports`, `GET imports/{id}`, `POST

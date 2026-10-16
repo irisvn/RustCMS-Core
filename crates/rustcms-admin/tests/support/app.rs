@@ -122,6 +122,7 @@ pub fn build(config: Config) -> AppBuilder {
         .expect("storage config");
     let mut app = AppBuilder::new(config);
     app.provider(rustcms_core::storage::StorageProvider);
+    app.provider(rustcms_core::mail::MailProvider);
     app.provider(AuthProvider::new().permission(ADMIN_GUARD, "posts.update_own", "posts"));
     app.provider(
         AdminProvider::new()
@@ -134,6 +135,7 @@ pub fn build(config: Config) -> AppBuilder {
             .resource::<TagResource>()
             .resource::<NoteResource>()
             .settings::<GeneralSettings>()
+            .mail_settings()
             .translations("vi", VI),
     );
     app
@@ -147,9 +149,15 @@ pub struct Users {
 
 /// Admin (super admin), editor (posts + read categories), member (nothing).
 pub async fn setup(db: TestDb) -> (TestApp, Users) {
+    let config = rustcms_testing::test_config(db.url());
+    setup_with(db, config).await
+}
+
+/// [`setup`] with `config`.
+pub async fn setup_with(db: TestDb, config: Config) -> (TestApp, Users) {
     db.migrate::<rustcms_migration::Migrator>().await;
     super::create_tables(db.conn()).await;
-    let app = TestApp::new(build, db).await;
+    let app = TestApp::with_config(build, config, db).await;
     let auth = app.state().service::<AuthState>().unwrap();
     let db = app.state().db();
     let rbac = RbacService::new(db, &auth.resolver);

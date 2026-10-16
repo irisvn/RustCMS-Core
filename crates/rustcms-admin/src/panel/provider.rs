@@ -126,6 +126,13 @@ impl AdminProvider {
         self
     }
 
+    /// Adds the Mail settings page ([`rustcms_core::mail::MailSettings`]:
+    /// the SMTP server, checked against `[mail]`'s policy) and its test mail.
+    #[cfg(feature = "mail")]
+    pub fn mail_settings(self) -> Self {
+        self.settings::<rustcms_core::mail::MailSettings>()
+    }
+
     /// Name shown in the panel.
     /// The panel's look: colors, radius, fonts, logo, favicon, color scheme.
     pub fn theme(mut self, theme: crate::custom::Theme) -> Self {

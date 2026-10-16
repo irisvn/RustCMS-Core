@@ -14,6 +14,11 @@
    - `Principal` and `rustcms::models::user::Model` have new fields
      (`locale`, `credential`): struct literals need them, or `..Default::default()`.
    - `AppError::Conflict` has a new `reason` field.
+   - `SettingsAbilities` has a new `test` field; `SettingsPage::validate_in`
+     (with the application) runs `validate` by default.
+   - Mail: register `rustcms::mail::MailProvider` (and
+     `AdminProvider::mail_settings()` for the page); in production with
+     `driver = "smtp"` and `source = "settings"`, set `[mail] allowed_hosts`.
    - Functions that change credentials record an audit entry and take one more
      argument: `credentials::change_password` and `credentials::logout_everywhere`
      an `&AuditContext`; `credentials::issue_token` and

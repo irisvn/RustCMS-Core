@@ -89,6 +89,14 @@ Keep a hand-written table of expected outcomes (route × actor → status), for
 example in a TOML file next to your tests, and test the application against it. Derive
 nothing from the code under test, and fail when a route has no row.
 
+## Mail
+
+With the `mail` feature of `rustcms-testing`, `test_config` sets the `memory`
+mail driver: `app.mails()` lists what was sent, `app.take_mails()` takes it.
+Run the queue (`queue::run_until_idle`) to send mails queued with
+`send_later`. `RUSTCMS_TEST_SMTP=127.0.0.1:51025` (Mailpit, in
+`docker compose`) enables the tests against a real SMTP server.
+
 ## Factories
 
 Implement `Factory::definition` for your entities; `create` and `create_many`

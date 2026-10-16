@@ -172,8 +172,18 @@ db_test!(enrolling_queues_a_welcome, migrate = Migrator, |db: TestDb| async move
     let roomy = CourseFactory::new().create(db).await;
     enroll(&app, &staff, roomy.id, 999_999).await.assert_validation_error("learner_id");
     assert_eq!(jobs().await, 1);
+    app.take_mails();
     assert_eq!(rustcms::queue::run_until_idle(app.state(), None, 10).await.unwrap(), 1);
     assert_eq!(jobs().await, 0, "done");
+    let mails = app.take_mails();
+    assert_eq!(mails.len(), 1);
+    assert_eq!((mails[0].to.clone(), mails[0].from.as_str()), (vec![ann.email.clone()], "LMS <no-reply@lms.example>"));
+    assert!(mails[0].subject.contains(&course.title) && mails[0].html.is_some(), "{:?}", mails[0]);
+    // Once per seat: the job running again sends nothing.
+    let again = lms::jobs::send_welcome::SendWelcome { course_id: course.id, learner_id: ann.id };
+    rustcms::queue::enqueue(db, &again).await.unwrap();
+    rustcms::queue::run_until_idle(app.state(), None, 10).await.unwrap();
+    assert!(app.take_mails().is_empty());
 });
 
 db_test!(the_enroll_action_asks_for_a_learner_and_keeps_the_rules, migrate = Migrator, |db: TestDb| async move {

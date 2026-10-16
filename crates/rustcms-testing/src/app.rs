@@ -19,6 +19,8 @@ pub fn test_config(database_url: &str) -> Config {
     let overrides = json!({
         "app": { "env": "testing", "key": AppKey::generate().encode() },
         "database": { "url": database_url },
+        // Mails are kept in memory (`TestApp::mails`) when the mail provider is registered.
+        "mail": { "driver": "memory" },
     });
     let figment = Config::figment(Path::new("config")).expect("config files").merge(Serialized::defaults(overrides));
     Config::from_figment(figment).expect("test configuration")
@@ -50,6 +52,18 @@ impl TestApp {
     /// Test database.
     pub fn db(&self) -> &TestDb {
         &self.db
+    }
+
+    /// Mails sent so far with the `memory` driver (`[mail] driver = "memory"`).
+    #[cfg(feature = "mail")]
+    pub fn mails(&self) -> Vec<rustcms_core::mail::SentMail> {
+        rustcms_core::mail::mailer(self.state()).map(|m| m.sent()).unwrap_or_default()
+    }
+
+    /// Takes the mails sent so far (the next call sees only newer ones).
+    #[cfg(feature = "mail")]
+    pub fn take_mails(&self) -> Vec<rustcms_core::mail::SentMail> {
+        rustcms_core::mail::mailer(self.state()).map(|m| m.take_sent()).unwrap_or_default()
     }
 
     /// The full router, for tests that read a response themselves (a body

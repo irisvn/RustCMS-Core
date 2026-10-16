@@ -28,6 +28,7 @@ pub fn provider() -> AdminProvider {
         .resource::<EnrollmentResource>()
         // rustcms:resources
         .settings::<crate::settings::lms_settings::LmsSettings>()
+        .mail_settings()
         .page::<crate::admin::pages::course_overview_page::CourseOverviewPage>()
         // rustcms:pages
         .slot::<crate::admin::slots::course_seats_slot::CourseSeatsSlot>()

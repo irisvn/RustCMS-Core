@@ -111,6 +111,17 @@ return Err(Failure::new("smtp_rejected", "the mail server refused the message").
 Any other error is kept as "failed (see the logs for job …)", and its full
 text goes to the application log only, so a secret in an error message never
 reaches the table. Do not put secrets in errors anyway: logs are kept too.
+A `Failure` is logged by its code only.
+
+When retrying cannot help (a refused address, a missing template), fail at
+once instead of using the remaining runs:
+
+```rust,ignore
+return Err(Failure::new("smtp_rejected", "the mail server refused the message").permanent().into());
+```
+
+The job is then failed like one that used all its runs (`queue:retry` still
+runs it again).
 
 ## At least once
 

@@ -65,7 +65,7 @@ on the admin engine, so it can change without touching them.
 ### rustcms-core
 
 Small modules stay at the top (`app`, `config`, `console`, `error`, `http`,
-`key`, `principal`, `telemetry`, `models`, `i18n` (locale, catalogs, issue codes), `audit` (entries, diff, bounds, prune; ADR 0014), `settings` (groups, `Secret`, encrypted storage; ADR 0015), `queue/` (jobs, workers, commands, `manage`: statuses and single-job actions; ADR 0016), `jobs` (periodic jobs run by one
+`key`, `principal`, `telemetry`, `models`, `i18n` (locale, catalogs, issue codes), `audit` (entries, diff, bounds, prune; ADR 0014), `settings` (groups, `Secret`, encrypted storage; ADR 0015), `queue/` (jobs, workers, commands, `manage`: statuses and single-job actions; ADR 0016), `mail/` (feature `mail`: config and policy, templates, drivers; ADR 0022), `template` (the bounded minijinja environment shared by mail and the panel's custom pages), `jobs` (periodic jobs run by one
 instance), `redis` with feature `redis`). Two are directories:
 
 - `db/`: `connect`, `check` (MySQL setup), `transactions`, `locks` (named locks).

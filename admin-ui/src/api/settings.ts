@@ -3,7 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useLocale } from "@/i18n";
 import { useApi, useSession } from "./context";
 import { guardedWrite } from "./queries";
-import type { SettingsResponse } from "./types";
+import type { MailTestResult, SettingsResponse } from "./types";
 
 /** Write scope of a group (see `guardedWrite`). */
 export const settingsScope = (group: string) => `settings:${group}`;
@@ -17,6 +17,14 @@ export function useSettings(group: string) {
     queryKey: ["settings", group, locale],
     queryFn: () => api.get<SettingsResponse>(`/settings/${enc(group)}`),
     placeholderData: keepPreviousData,
+  });
+}
+
+/** `POST settings/mail/test`: a test mail with the saved mail settings. */
+export function useMailTest() {
+  const api = useApi();
+  return useMutation({
+    mutationFn: (to: string) => api.request<MailTestResult>("POST", "/settings/mail/test", { to }),
   });
 }
 

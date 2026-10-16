@@ -16,6 +16,7 @@ pub fn provider() -> AdminProvider {
         .resource::<TagResource>()
         // rustcms:resources
         .settings::<crate::settings::site_settings::SiteSettings>()
+        .mail_settings()
         .page::<crate::admin::pages::post_stats_page::PostStatsPage>()
         // rustcms:pages
         .slot::<crate::admin::slots::post_summary_slot::PostSummarySlot>()

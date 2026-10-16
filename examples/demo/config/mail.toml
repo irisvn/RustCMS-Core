@@ -1,0 +1,4 @@
+# Mail (see the guide's Mail page): the log driver, the sender set in
+# Settings → Mail. `RUSTCMS_MAIL__LOG_BODY=true` (APP_ENV=local only) also
+# logs the bodies.
+driver = "log"

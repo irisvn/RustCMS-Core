@@ -76,7 +76,10 @@ db_test!(defaults_are_shown_and_access_is_per_group, |db: TestDb| async move {
     assert_eq!(translated["label"], json!("Chung"));
     support::contract("settings.vi.json", &translated);
     let panel = admin.get(&app.admin_api("panel")).await.json();
-    assert_eq!(panel["settings"], json!([{"group": "general", "label": "General", "icon": "settings"}]));
+    assert_eq!(
+        panel["settings"],
+        json!([{"group": "general", "label": "General", "icon": "settings"}, {"group": "mail", "label": "Mail", "icon": "mail"}])
+    );
 
     // No settings permission: 403 for any group (existing or not), no link.
     let member = app.acting_as(&users.member).await;

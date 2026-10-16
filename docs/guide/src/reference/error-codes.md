@@ -119,3 +119,24 @@ A message that follows none of these templates has the code `custom` and
 | `validation_failed` | 422 | |
 | `too_many_requests` | 429 | |
 | `internal_error` | 500 | |
+
+## Mail
+
+Codes of `rustcms::mail::MailError`: answered by `POST settings/mail/test`
+(`{ok: false, code}`) and kept as the `last_error` of failed `mail.send` jobs.
+
+| Code | Retried | Meaning |
+|---|---|---|
+| `mail_disabled` | no | `[mail] driver = "disabled"` |
+| `mail_not_configured` | no | no server or sender saved |
+| `mail_policy` | no | the server is outside `allowed_hosts` / `allowed_ports` / `allow_insecure` |
+| `mail_settings_unreadable` | no | the saved password cannot be decrypted (`APP_KEY` changed) |
+| `mail_invalid` | no | an address or header is invalid |
+| `mail_template` | no | a template is missing, invalid or failed |
+| `smtp_auth` | no | the server refused the credentials |
+| `smtp_rejected` | no | the server refused the message (5xx) |
+| `smtp_connect` | yes | no connection |
+| `smtp_tls` | yes | TLS failed, or the server offers no STARTTLS |
+| `smtp_temporary` | yes | the server deferred the message (4xx) |
+| `smtp_timeout` | yes | too slow |
+| `smtp_throttled` | yes | this process sent `max_per_minute` already |

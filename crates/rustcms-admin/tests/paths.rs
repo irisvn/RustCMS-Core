@@ -77,6 +77,7 @@ fn the_admin_route_list_is_unchanged() {
         "GET /admin/api/system/permissions",
         "GET /admin/api/settings/{group}",
         "PUT /admin/api/settings/{group}",
+        "POST /admin/api/settings/mail/test",
         "GET /admin/api/audit",
         "GET /admin/api/resources/{slug}/records/{key}/history",
         "GET /admin/api/queue",

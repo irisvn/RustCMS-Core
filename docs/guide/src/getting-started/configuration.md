@@ -67,6 +67,12 @@ Uploads and the media library: see [File storage](../digging-deeper/storage.md).
 
 See [Audit log](../digging-deeper/audit-log.md).
 
+### `[mail]` (`config/mail.toml`, feature `mail`)
+
+Driver (`disabled`, `smtp`, `log`, `memory`), where the SMTP server comes from
+(`settings` or `config`), the hosts and ports mail may go to, timeouts and the
+rate: see [Mail](../digging-deeper/mail.md#configuration).
+
 ### `[queue]` (`config/queue.toml`)
 
 Workers and job leases: see [Queues](../digging-deeper/queues.md#configuration).

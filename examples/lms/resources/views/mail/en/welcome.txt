@@ -1,0 +1,5 @@
+Hello {{ data.name }},
+
+You have a seat in {{ data.course }} at {{ data.school }}.
+
+{{ app_url }}

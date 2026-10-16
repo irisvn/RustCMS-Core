@@ -11,7 +11,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = ["sqlite", "postgres", "mysql"]
+default = ["sqlite", "postgres", "mysql", "mail"]
 sqlite = ["rustcms-core/sqlite", "rustcms-admin/sqlite"]
 postgres = ["rustcms-core/postgres", "rustcms-admin/postgres"]
 mysql = ["rustcms-core/mysql", "rustcms-admin/mysql"]
@@ -19,6 +19,8 @@ mysql = ["rustcms-core/mysql", "rustcms-admin/mysql"]
 redis = ["rustcms-core/redis", "rustcms-auth/redis", "rustcms-admin/redis"]
 # S3-compatible storage for uploads (`storage.disk = "s3"`).
 s3 = ["rustcms-core/s3"]
+# Mail: SMTP, templates, the Mail settings page.
+mail = ["rustcms-core/mail", "rustcms-admin/mail"]
 
 [dependencies]
 rustcms-core.workspace = true

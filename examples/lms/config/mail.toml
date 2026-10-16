@@ -1,0 +1,9 @@
+# Mail (see the guide's Mail page). Locally the log driver; in production
+# `driver = "smtp"` with `allowed_hosts`, the server set in Settings → Mail
+# (`source = "settings"`), or here with `source = "config"`.
+driver = "log"
+source = "config"
+
+[smtp]
+from_address = "no-reply@lms.example"
+from_name = "LMS"

@@ -176,6 +176,28 @@ with an error naming the secret, the page marks it **Cannot be read**, and
 the group cannot be saved until each such secret is replaced or cleared. Keep
 `APP_KEY` stable, and plan to enter secrets again if you rotate it.
 
+### Secrets bound to other settings
+
+`SettingField::secret("password").kept_while(&["host", "port", "username"])`
+keeps the saved secret only while those settings keep their values: changing
+one without giving the secret again clears it, so a password is never used
+with a server it was not given for.
+
+`validate_in(state, ctx, settings)` is `validate` with the application (its
+configuration and services), for checks that depend on them.
+
+## Mail
+
+`AdminProvider::mail_settings()` adds the **Mail** page: the SMTP server of
+[`MailSettings`](../digging-deeper/mail.md) (host, port, encryption, user
+name, password, sender, reply-to), checked against `[mail]`'s policy when
+saved, the password bound to host, port and user name. Its **Send test mail**
+card (`POST /admin/api/settings/mail/test` `{to}`) sends a mail now with the
+saved settings and answers `{ok}` or `{ok: false, code}` (`smtp_auth`,
+`mail_policy`, …); it needs `settings.mail.update` (checked before the body
+is read), is limited to five a minute per user, and is recorded in the audit
+log as `mail.test_sent` with the recipient masked (`a***@example.com`).
+
 ## Permissions and history
 
 Each group declares `settings.<group>.view` and `settings.<group>.update`
