@@ -28,7 +28,8 @@ Cargo must reach Core's source. crates.io is not used yet.
   a network failure is a warning, a missing tag or a resolution failure fails.
   Applications commit `Cargo.lock` and their generated CI uses `--locked`.
 - A tag `vX.Y.Z` (or `-rc.N`) runs the release workflow: the tag matches every
-  version (`scripts/release_version.py check`), the full CI, then per target a
+  version (`scripts/release_version.py check`), the CI run of the tagged commit
+  on `main` passed (waited for, not repeated), then per target a
   native runner builds, packages, installs with the install script from the
   packaged asset, creates an application from the tag and builds and tests it.
   Only then: a draft release, every asset uploaded and checked against

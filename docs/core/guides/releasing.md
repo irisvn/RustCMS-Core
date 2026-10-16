@@ -19,9 +19,12 @@ What a release publishes and why: [ADR 0025](../adr/0025-distribution.md).
    candidate may stay under `[Unreleased]`; its notes are taken from there).
    `docs/guide/src/upgrade.md`: the steps from the previous version.
 3. Gate, commit, push `main`, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
-4. Watch the Release workflow: `verify`, the full `ci`, `docs`, one `target`
-   job per platform (build, package, install with the script, new application
-   from the tag, build, test), then `publish`.
+4. Watch the Release workflow: `verify`, `token`, `ci` (waits for the CI run
+   of the tagged commit on `main`; nothing is tested twice), `docs`, one
+   `target` job per platform (build, package, install with the script, new
+   application from the tag, build, test), then `publish`. Push the commit to
+   `main` before the tag; a newer push to `main` cancels the older CI run, so
+   tag the last commit or re-run its CI.
 
 Never move or delete a published tag: applications depend on it. A broken
 release is fixed by the next one.
@@ -30,7 +33,9 @@ release is fixed by the next one.
 
 - `verify`: a version does not match the tag. Delete the tag (not yet
   published), fix with `release-bump`, tag again.
-- `ci` or a `target`: nothing was published. Fix on `main`, delete and
+- `ci` (the CI run of the commit failed or was cancelled) or a `target`:
+  nothing was published. A cancelled CI run: re-run it, then re-run the
+  Release workflow. Fix on `main`, delete and
   re-create the tag only if no release exists for it on irisvn/RustCMS;
   otherwise release the next patch version.
 - `publish`: re-run the job. A draft release gets its missing assets; a

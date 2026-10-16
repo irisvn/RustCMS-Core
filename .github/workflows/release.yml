@@ -42,9 +42,31 @@ jobs:
           [ "$(gh api "repos/$DIST_REPO" --jq .permissions.push)" = true ] \
             || { echo "DIST_TOKEN cannot write to $DIST_REPO"; exit 1; }
 
+  # The tagged commit must have passed CI on main: its run is waited for, not
+  # repeated (push the commit to main, then the tag).
   ci:
     needs: verify
-    uses: ./.github/workflows/ci.yml
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - run: |
+          set -eu
+          for i in $(seq 1 170); do
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&branch=main&event=push&per_page=1" \
+              --jq '.workflow_runs[0] | select(.) | "\(.status) \(.conclusion) \(.html_url)"')
+            case "$run" in
+              "") echo "no CI run on main for $GITHUB_SHA yet" ;;
+              "completed success "*) echo "CI passed: ${run##* }"; exit 0 ;;
+              completed*) echo "CI did not pass: $run (re-run it, then this workflow)"; exit 1 ;;
+              *) echo "CI: $run" ;;
+            esac
+            sleep 30
+          done
+          echo "no successful CI run on main for $GITHUB_SHA: push the commit to main before the tag"; exit 1
 
   docs:
     needs: verify

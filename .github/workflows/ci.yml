@@ -4,8 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
-  # The release workflow runs it on the tag first.
-  workflow_call:
+
+# A newer push to the same branch or pull request cancels the older run. The
+# release workflow waits for this workflow's run on the tagged commit.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
