@@ -7,8 +7,8 @@ version = "0.3.0"
 edition = "2024"
 rust-version = "1.94"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/irisvn/rustcms"
-homepage = "https://github.com/irisvn/rustcms"
+repository = "https://github.com/irisvn/RustCMS-Core"
+homepage = "https://irisvn.github.io/RustCMS/"
 keywords = ["cms", "admin", "framework", "axum", "seaorm"]
 categories = ["web-programming", "web-programming::http-server"]
 

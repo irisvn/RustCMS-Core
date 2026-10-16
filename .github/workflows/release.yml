@@ -1,0 +1,253 @@
+# A tag vX.Y.Z (or vX.Y.Z-rc.N) publishes the `rustcms` command and the guide
+# to irisvn/RustCMS: GitHub Release (binaries, SHA256SUMS, manifest.json) and
+# Pages (guide, install scripts, latest.txt). See docs/core/guides/releasing.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# One release at a time; never cancelled half-way.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  DIST_REPO: irisvn/RustCMS
+  MDBOOK_VERSION: "0.5.4"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python3 scripts/release_version.py check "$GITHUB_REF_NAME"
+
+  # Fails early, before any build, when DIST_TOKEN is missing, expired or
+  # cannot write to the dist repository.
+  token:
+    needs: verify
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.DIST_TOKEN }}
+    steps:
+      - run: |
+          [ -n "$GH_TOKEN" ] || { echo "DIST_TOKEN is not set (docs/core/guides/releasing.md)"; exit 1; }
+          [ "$(gh api "repos/$DIST_REPO" --jq .permissions.push)" = true ] \
+            || { echo "DIST_TOKEN cannot write to $DIST_REPO"; exit 1; }
+
+  ci:
+    needs: verify
+    uses: ./.github/workflows/ci.yml
+
+  docs:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: taiki-e/install-action@v2
+        with: { tool: "mdbook@${{ env.MDBOOK_VERSION }}" }
+      - run: mdbook build docs/guide -d "$RUNNER_TEMP/book"
+      - uses: actions/upload-artifact@v4
+        with: { name: book, path: "${{ runner.temp }}/book", if-no-files-found: error }
+
+  # Built, packaged, installed with the install script from the packaged
+  # asset, then an application is created from the tag, built and tested, all
+  # on a native runner. A target that fails is not published.
+  target:
+    needs: [verify, token]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, os: macos-14 }
+          - { target: x86_64-apple-darwin, os: macos-15-intel }
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-24.04, musl: true }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm, musl: true }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "${{ matrix.target }}" }
+      - if: matrix.musl
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+      - run: cargo build --release --locked -p rustcms-cli --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          tag=$GITHUB_REF_NAME
+          out=target/${{ matrix.target }}/release
+          mkdir -p "$RUNNER_TEMP/pkg" "$RUNNER_TEMP/mirror/$tag"
+          cp LICENSE-MIT LICENSE-APACHE "$RUNNER_TEMP/pkg/"
+          if [ "${{ runner.os }}" = Windows ]; then
+            cp "$out/rustcms.exe" "$RUNNER_TEMP/pkg/"
+            asset="rustcms-$tag-${{ matrix.target }}.zip"
+            (cd "$RUNNER_TEMP/pkg" && 7z a -tzip -bso0 "$RUNNER_TEMP/mirror/$tag/$asset" rustcms.exe LICENSE-MIT LICENSE-APACHE)
+          else
+            cp "$out/rustcms" "$RUNNER_TEMP/pkg/"
+            asset="rustcms-$tag-${{ matrix.target }}.tar.gz"
+            tar -czf "$RUNNER_TEMP/mirror/$tag/$asset" -C "$RUNNER_TEMP/pkg" rustcms LICENSE-MIT LICENSE-APACHE
+          fi
+          # Linux binaries are static (musl): they run on any distribution.
+          if [ "${{ runner.os }}" = Linux ]; then
+            file "$out/rustcms"
+            if ldd "$out/rustcms" 2>/dev/null | grep -q '=>'; then echo "dynamically linked"; exit 1; fi
+          fi
+          (cd "$RUNNER_TEMP/mirror/$tag" && { sha256sum "$asset" 2>/dev/null || shasum -a 256 "$asset"; } > SHA256SUMS)
+          echo "$tag" > "$RUNNER_TEMP/mirror/latest.txt"
+          echo "ASSET=$RUNNER_TEMP/mirror/$tag/$asset" >> "$GITHUB_ENV"
+      - name: Install (unix)
+        if: runner.os != 'Windows'
+        run: |
+          RUSTCMS_DOWNLOAD_BASE="file://$RUNNER_TEMP/mirror" RUSTCMS_LATEST_URL="file://$RUNNER_TEMP/mirror/latest.txt" \
+            RUSTCMS_INSTALL="$RUNNER_TEMP/rustcms" sh dist/install.sh
+          echo "$RUNNER_TEMP/rustcms/bin" >> "$GITHUB_PATH"
+      - name: Install (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:RUSTCMS_DOWNLOAD_BASE = "$env:RUNNER_TEMP\mirror"
+          $env:RUSTCMS_INSTALL = "$env:RUNNER_TEMP\rustcms"
+          ./dist/install.ps1
+          Add-Content -Path $env:GITHUB_PATH -Value "$env:RUNNER_TEMP\rustcms\bin"
+      - name: An application from the tag builds and passes its tests
+        run: |
+          rustcms --version
+          cd "$RUNNER_TEMP"
+          rustcms new demo
+          cd demo
+          grep -F "tag = \"$GITHUB_REF_NAME\"" Cargo.toml
+          cargo build --locked
+          cargo test --locked
+      - uses: actions/upload-artifact@v4
+        with: { name: "asset-${{ matrix.target }}", path: "${{ env.ASSET }}", if-no-files-found: error }
+
+  publish:
+    needs: [ci, docs, target, token]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.DIST_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v4
+        with: { path: "${{ runner.temp }}/artifacts" }
+      - name: Assets, checksums, manifest and notes
+        run: |
+          set -eu
+          a="$RUNNER_TEMP/assets"; mkdir -p "$a"
+          find "$RUNNER_TEMP/artifacts" -path '*/asset-*/*' -type f -exec cp {} "$a/" \;
+          count=$(ls "$a" | wc -l); [ "$count" = 5 ] || { echo "expected 5 assets, got $count"; exit 1; }
+          (cd "$a" && sha256sum rustcms-* > SHA256SUMS)
+          targets=$(ls "$a" | sed -n "s/^rustcms-$TAG-\(.*\)\.\(tar\.gz\|zip\)$/\1/p" | sort | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().split()))')
+          printf '{"tag":"%s","core_repository":"%s","core_commit":"%s","targets":%s}\n' \
+            "$TAG" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_SHA" "$targets" > "$a/manifest.json"
+          python3 - "$TAG" > "$RUNNER_TEMP/notes.md" <<'PY'
+          import re, sys
+          tag = sys.argv[1]; version = tag[1:]
+          text = open("docs/core/CHANGELOG.md").read()
+          heading = "## [Unreleased]" if "-rc." in version else f"## [{version}]"
+          start = text.find(heading)
+          body = ""
+          if start >= 0:
+              rest = text[start + len(heading):]
+              end = re.search(r"^## \[", rest, re.M)
+              body = rest[: end.start()] if end else rest
+          print(f"RustCMS {tag}. Install: https://irisvn.github.io/RustCMS/ (guide, install scripts).")
+          print(f"\nBuilt from irisvn/RustCMS-Core {tag}.\n")
+          print(body.strip())
+          PY
+          if [[ "$TAG" == *-rc.* ]]; then echo "PRERELEASE=1" >> "$GITHUB_ENV"; else echo "PRERELEASE=0" >> "$GITHUB_ENV"; fi
+      - uses: actions/download-artifact@v4
+        with: { name: book, path: "${{ runner.temp }}/book" }
+      # The dist repository: `main` holds dist/ (README, install scripts); a
+      # release needs a commit there to point at.
+      - name: Sync the dist repository
+        run: |
+          set -eu
+          git config --global user.name "rustcms-release"
+          git config --global user.email "rustcms-release@users.noreply.github.com"
+          url="https://x-access-token:$GH_TOKEN@github.com/$DIST_REPO.git"
+          git clone --quiet --branch main "$url" "$RUNNER_TEMP/dist" 2>/dev/null \
+            || { mkdir "$RUNNER_TEMP/dist"; git -C "$RUNNER_TEMP/dist" init -q -b main; git -C "$RUNNER_TEMP/dist" remote add origin "$url"; }
+          cd "$RUNNER_TEMP/dist"
+          # Release candidates only bootstrap an empty repository.
+          if [ "$PRERELEASE" = 0 ] || [ -z "$(git ls-files)" ]; then
+            cp "$GITHUB_WORKSPACE"/dist/README.md "$GITHUB_WORKSPACE"/dist/install.sh "$GITHUB_WORKSPACE"/dist/install.ps1 .
+            cp "$GITHUB_WORKSPACE"/LICENSE-MIT "$GITHUB_WORKSPACE"/LICENSE-APACHE .
+            git add -A
+            git diff --cached --quiet || git commit -q -m "RustCMS $TAG"
+            git push -q origin main
+          fi
+      - name: Release (draft, then published once complete)
+        run: |
+          set -eu
+          a="$RUNNER_TEMP/assets"
+          if state=$(gh release view "$TAG" -R "$DIST_REPO" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$state" = false ]; then echo "$TAG is already published"; exit 0; fi
+          else
+            flags=""; [ "$PRERELEASE" = 1 ] && flags="--prerelease"
+            gh release create "$TAG" -R "$DIST_REPO" --draft --target main --title "RustCMS $TAG" \
+              --notes-file "$RUNNER_TEMP/notes.md" $flags
+          fi
+          gh release upload "$TAG" -R "$DIST_REPO" --clobber "$a"/*
+          # Every asset is there and matches SHA256SUMS before anyone can see it.
+          mkdir "$RUNNER_TEMP/check" && cd "$RUNNER_TEMP/check"
+          gh release download "$TAG" -R "$DIST_REPO" --pattern '*'
+          sha256sum -c SHA256SUMS
+          [ "$(ls | wc -l)" = 7 ]
+          if [ "$PRERELEASE" = 1 ]; then
+            gh release edit "$TAG" -R "$DIST_REPO" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$TAG" -R "$DIST_REPO" --draft=false --latest
+          fi
+      # gh-pages: /v/X.Y.Z/ for every release; a stable release also becomes
+      # the root guide, the install scripts and latest.txt.
+      - name: Pages
+        run: |
+          set -eu
+          version="${TAG#v}"
+          cd "$RUNNER_TEMP"
+          url="https://x-access-token:$GH_TOKEN@github.com/$DIST_REPO.git"
+          if git clone --quiet --branch gh-pages --depth 1 "$url" pages 2>/dev/null; then :; else
+            mkdir pages && git -C pages init -q -b gh-pages && git -C pages remote add origin "$url"
+          fi
+          cd pages
+          rm -rf "v/$version" && mkdir -p "v/$version" && cp -R "$RUNNER_TEMP/book/." "v/$version/"
+          if [ "$PRERELEASE" = 0 ]; then
+            find . -mindepth 1 -maxdepth 1 ! -name .git ! -name v -exec rm -rf {} +
+            cp -R "$RUNNER_TEMP/book/." .
+            cp "$GITHUB_WORKSPACE"/dist/install.sh "$GITHUB_WORKSPACE"/dist/install.ps1 .
+            echo "$TAG" > latest.txt
+          fi
+          touch .nojekyll
+          git add -A
+          git diff --cached --quiet || git commit -q -m "RustCMS $TAG"
+          git push -q origin gh-pages
+      - name: Check what developers download
+        run: |
+          set -eu
+          base="https://irisvn.github.io/RustCMS"
+          check() { for i in $(seq 1 30); do curl -fsSL --max-time 10 "$1" >/dev/null 2>&1 && return 0; sleep 10; done; echo "not served: $1"; return 1; }
+          check "$base/v/${TAG#v}/index.html"
+          check "https://github.com/$DIST_REPO/releases/download/$TAG/SHA256SUMS"
+          if [ "$PRERELEASE" = 0 ]; then
+            check "$base/install.sh"; check "$base/install.ps1"
+            for i in $(seq 1 30); do [ "$(curl -fsSL "$base/latest.txt" | tr -d '\n')" = "$TAG" ] && exit 0; sleep 10; done
+            echo "latest.txt is not $TAG"; exit 1
+          fi

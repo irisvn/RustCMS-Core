@@ -2,23 +2,77 @@
 
 ## Requirements
 
-- Rust (stable, 1.94 or newer).
+- **Rust**, stable 1.94 or newer, from [rustup.rs](https://rustup.rs). Your
+  application is a Rust project: Cargo builds it together with RustCMS.
+- **A C compiler**, for the few dependencies with C code (SQLite, TLS):
+  - macOS: Xcode Command Line Tools (`xcode-select --install`);
+  - Linux: `build-essential` on Debian/Ubuntu, `gcc` or `clang` elsewhere;
+  - Windows: Visual Studio Build Tools with "Desktop development with C++".
+- **Network access to GitHub** for the first build: applications depend on
+  [RustCMS-Core](https://github.com/irisvn/RustCMS-Core) through a Git tag.
 - A database: SQLite works out of the box; PostgreSQL or MySQL 8.4 for
-  production.
+  production. Node.js is not needed (the admin panel is built in).
+
+## Installing the `rustcms` command
+
+macOS and Linux:
+
+```sh
+curl -fsSL https://irisvn.github.io/RustCMS/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://irisvn.github.io/RustCMS/install.ps1 | iex
+```
+
+The script picks the build for your system from the
+[releases](https://github.com/irisvn/RustCMS/releases), checks it against the
+release's `SHA256SUMS`, and installs it in `~/.rustcms/bin`
+(`%USERPROFILE%\.rustcms\bin` on Windows, added to your user `PATH`). On
+macOS and Linux it prints the line to add to your shell profile, or adds it
+with `sh -s -- --modify-path`. Run it again to update.
+
+- A given version: `RUSTCMS_VERSION=v0.4.0` (release candidates are only
+  installed this way). Another directory: `RUSTCMS_INSTALL=/opt/rustcms`.
+- To read the script first: `curl -fsSLO https://irisvn.github.io/RustCMS/install.sh`,
+  then `sh install.sh`. Or download an archive from the releases page and put
+  `rustcms` on your `PATH` yourself.
+- The checksum detects a corrupted download; it does not prove who published
+  the release. Releases are not code-signed yet: an archive downloaded with a
+  browser may be blocked by macOS (`xattr -d com.apple.quarantine rustcms`)
+  or flagged by Windows SmartScreen. The install scripts are not affected.
+- Built for macOS (Apple silicon and Intel, 11 or newer), Linux (x86_64 and
+  arm64, any distribution: the binary is static) and Windows (x86_64; Arm via
+  emulation).
+- Without the scripts, Cargo can build it from source:
+  `cargo install --git https://github.com/irisvn/RustCMS-Core --tag v0.4.0 rustcms-cli`.
 
 ## Creating an application
 
-RustCMS is not published on crates.io yet. Install the `rustcms` command from
-the Git URL or archive you were given:
-
 ```sh
-cargo install --git <rustcms-git-url> rustcms-cli    # the `rustcms` command
 rustcms new blog
 cd blog
 rustcms migrate                    # SQLite file by default (DATABASE_URL in .env)
 rustcms make:user --email you@example.com --name You --super-admin
 rustcms serve                      # http://localhost:8000/admin
 ```
+
+`rustcms new` writes a project whose `Cargo.toml` depends on the RustCMS-Core
+tag of the command's version, then resolves the dependencies (`Cargo.lock`):
+
+```toml
+rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.4.0" }
+```
+
+Commit `Cargo.lock`: it pins the exact commit and every dependency, so your
+team and your CI build what you tested (the generated `.github/workflows/ci.yml`
+runs `cargo test --locked`). Offline, `rustcms new blog --no-fetch` skips the
+resolution; Cargo does it on the first build. A tag that does not exist, or
+dependencies that do not resolve, fail the command (the project is left in
+place to inspect). The first build compiles everything and takes a few minutes;
+later builds only compile your code.
 
 `rustcms new` writes a fresh `APP_KEY` to `.env`. Never commit `.env`.
 

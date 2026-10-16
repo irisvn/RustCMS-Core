@@ -6,5 +6,6 @@ language = "en"
 src = "src"
 
 [output.html]
-# The guide is published on its own: no links to the (private) repository.
 no-section-label = false
+git-repository-url = "https://github.com/irisvn/RustCMS-Core"
+edit-url-template = "https://github.com/irisvn/RustCMS-Core/edit/main/docs/guide/{path}"

@@ -4,8 +4,8 @@ A Rust framework for admin panels and headless CMS backends, inspired by
 Laravel and FilamentPHP: declare resources in Rust, get an authorized CRUD API
 and an admin panel (React, embedded in your binary — no Node needed to use it).
 
-> **Status: 0.1 pre-release.** Feature-complete for the 0.1 scope
-> ([limitations](docs/guide/src/reference/limitations.md)); not yet published to crates.io.
+> **Status: 0.3.** See the [limitations](docs/guide/src/reference/limitations.md). Not on
+> crates.io: applications depend on a Git tag of this repository.
 
 ```rust,ignore
 impl Resource for PostResource {
@@ -24,8 +24,10 @@ impl Resource for PostResource {
 
 ## Quick start
 
+Install the `rustcms` command and read the guide from
+[irisvn/RustCMS](https://github.com/irisvn/RustCMS) (`curl -fsSL https://irisvn.github.io/RustCMS/install.sh | sh`), then:
+
 ```sh
-cargo install --path crates/rustcms-cli
 rustcms new blog && cd blog
 rustcms make:model Post -m                     # edit the model and migration, then:
 rustcms make:resource Post --generate
@@ -33,6 +35,10 @@ rustcms migrate
 rustcms make:user --email you@example.com --name You --super-admin
 rustcms serve                                  # http://localhost:8000/admin
 ```
+
+Working on RustCMS itself: `cargo install --path crates/rustcms-cli`, and
+`rustcms new blog --rustcms-path <this checkout>` for an application on your
+local changes. Releases: [docs/core/guides/releasing.md](docs/core/guides/releasing.md).
 
 Or run the demo (blog with categories, posts, an editor role and a token API):
 

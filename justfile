@@ -114,3 +114,11 @@ dev:
 # Every crate packages and verifies for crates.io (no upload).
 publish-check:
     cargo publish --workspace --exclude demo --dry-run
+
+# Every version of the workspace (X.Y.Z or X.Y.Z-rc.N) and Cargo.lock; then tag `vX.Y.Z`.
+release-bump version:
+    python3 scripts/release_version.py bump {{version}}
+
+# The tag matches every version (run by the release workflow).
+release-check tag:
+    python3 scripts/release_version.py check {{tag}}

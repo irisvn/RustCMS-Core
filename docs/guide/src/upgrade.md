@@ -1,5 +1,36 @@
 # Upgrade guide
 
+## Upgrading the command and an application
+
+1. The `rustcms` command: run the [install script](getting-started/installation.md#installing-the-rustcms-command)
+   again (it replaces the installed version), or set `RUSTCMS_VERSION` for a
+   given one. `rustcms --version` shows what you have.
+2. An application: change the tag of both `rustcms` and `rustcms-testing` in
+   `Cargo.toml` (always the same tag), and `[package.metadata.rustcms] version`;
+   apply the `sea-orm` pins and the steps of the section for that version
+   below; then:
+
+   ```sh
+   cargo update -p rustcms -p rustcms-testing
+   rustcms migrate
+   cargo test
+   ```
+
+   Commit `Cargo.toml` and `Cargo.lock` together.
+
+## Applications made before 0.3.1
+
+They depend on `rustcms = "0.3.0"` (not on crates.io) or on a local `path`.
+Point both dependencies at the Git tag instead, keeping your features:
+
+```toml
+[dependencies]
+rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.3.1" }
+
+[dev-dependencies]
+rustcms-testing = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.3.1" }
+```
+
 ## From 0.1.0-alpha.0 (or a 0.2 build) to 0.3.0
 
 1. Update the `rustcms` dependency, then run `rustcms migrate` (new tables for

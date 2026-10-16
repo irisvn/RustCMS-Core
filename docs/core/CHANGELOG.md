@@ -6,6 +6,24 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Distribution (ADR 0025): a tag publishes the `rustcms` command for macOS,
+  Linux and Windows, the guide and install scripts (`install.sh`,
+  `install.ps1`) to irisvn/RustCMS (`.github/workflows/release.yml`), after
+  each binary installed itself and built and tested a new application on its
+  platform. `just release-bump` / `release-check` keep every version in step.
+- `rustcms new` writes a CI workflow for the application (`cargo test --locked`)
+  and resolves the dependencies (`--no-fetch` to skip).
+- Tests of SMTP over TLS against a `mailpit-tls` service (STARTTLS, AUTH, a
+  test CA from `just test-tls-cert`): delivery with the trusted root, refusal
+  of another name and of an untrusted certificate, no password in the audit.
+
+### Changed
+- `rustcms new` depends on the Git tag of RustCMS-Core matching the command's
+  version (`rustcms = { git = …, tag = "vX.Y.Z" }`); a local checkout only with
+  `--rustcms-path`. Paths are written as proper TOML strings (Windows).
+- The repository is irisvn/RustCMS-Core; the guide links to it.
+
 ### Fixed
 - Codex verify of M23: the restore procedure also ends JWT sign-ins; LMS
   viewers and editors see the news' images (`media.manage_all`, viewing
@@ -29,11 +47,6 @@ All notable changes are documented here. The format follows
   unpublished example apps.
 - CI: Mailpit for the E2E suite and the SMTP test; test binaries built
   without debug info (the linker ran out of disk).
-
-### Added
-- Tests of SMTP over TLS against a `mailpit-tls` service (STARTTLS, AUTH, a
-  test CA from `just test-tls-cert`): delivery with the trusted root, refusal
-  of another name and of an untrusted certificate, no password in the audit.
 
 ## [0.3.0] — 2026-10-26
 

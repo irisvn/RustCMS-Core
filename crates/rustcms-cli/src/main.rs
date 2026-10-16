@@ -32,12 +32,15 @@ enum Command {
         /// Parent directory
         #[arg(long, default_value = ".")]
         path: PathBuf,
-        /// Use a local rustcms checkout instead of crates.io (written verbatim, relative to the new app)
+        /// Use a local rustcms checkout instead of the Git tag (written verbatim, relative to the new app)
         #[arg(long, hide = true)]
         rustcms_path: Option<String>,
         /// Do not declare a standalone `[workspace]` (for apps inside another workspace)
         #[arg(long)]
         in_workspace: bool,
+        /// Do not resolve the dependencies (`Cargo.lock` is written on the first build)
+        #[arg(long)]
+        no_fetch: bool,
     },
     /// Create a SeaORM entity in `src/models`
     #[command(name = "make:model")]
@@ -146,8 +149,10 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
-        Command::New { name, path, rustcms_path, in_workspace } => {
-            scaffold::new_app(&name, &path, rustcms_path.as_deref(), in_workspace)
+        Command::New { name, path, rustcms_path, in_workspace, no_fetch } => {
+            let options =
+                scaffold::NewOptions { rustcms_path: rustcms_path.as_deref(), in_workspace, fetch: !no_fetch };
+            scaffold::new_app(&name, &path, &options)
         }
         Command::MakeModel { name, migration } => app().and_then(|p| generate::make_model(&p, &name, migration)),
         Command::MakeResource { model, generate, belongs_to } => {

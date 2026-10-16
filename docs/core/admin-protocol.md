@@ -92,7 +92,7 @@ abilities, form, table, relations?}` (`schemaVersion` 2: actions may carry a
 `attachForm`, `pivotForm`). It contains only what the user may see: inputs for
 fields they may write (create), readable fields with `disabled` set when not
 writable (edit), and actions they may run. The reference payload is
-[`fixtures/contract/posts.schema.json`](https://github.com/irisvn/rustcms/blob/main/fixtures/contract/posts.schema.json),
+[`fixtures/contract/posts.schema.json`](https://github.com/irisvn/RustCMS-Core/blob/main/fixtures/contract/posts.schema.json),
 checked by the server tests and shared with the admin SPA. Each input carries
 `valueType` (the wire kind), `nullable` (an emptied input sends `null`; for text
 kinds that are not nullable, `""`) and client `rules` (`required`, `max_length`

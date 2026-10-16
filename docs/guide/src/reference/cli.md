@@ -17,6 +17,7 @@ Create a new application
 | `<name>` | Package name (lowercase letters, digits, `-` and `_`) |
 | `--path` | Parent directory (default: `.`) |
 | `--in-workspace` | Do not declare a standalone `[workspace]` (for apps inside another workspace) |
+| `--no-fetch` | Do not resolve the dependencies (`Cargo.lock` is written on the first build) |
 
 ### `make:model`
 

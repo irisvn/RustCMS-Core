@@ -12,6 +12,7 @@ Not published. For the people building RustCMS itself.
 | [reports/](reports/) | báo cáo từng milestone và các đợt review (tiếng Việt) |
 | [review-checklist.md](review-checklist.md) | what every review checks |
 | [guides/admin-ui.md](guides/admin-ui.md) | developing the React panel (`admin-ui/`), E2E |
+| [guides/releasing.md](guides/releasing.md) | tagging a release: binaries, guide and install scripts on irisvn/RustCMS |
 | [guides/deployment.vi.md](guides/deployment.vi.md) | build và chạy binary (tiếng Việt; bản tiếng Anh ở guide) |
 
 The public developer guide is in [`../guide/`](../guide/).
