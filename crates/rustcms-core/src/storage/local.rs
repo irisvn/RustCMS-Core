@@ -63,7 +63,10 @@ impl Storage for LocalStorage {
                 std::io::copy(&mut std::fs::File::open(&source)?, &mut out)?;
                 out.sync_all()?;
                 dir.rename(&partial, dir, &key)?;
-                dir.open_dir(parent)?.into_std_file().sync_all()
+                // Opened for reading: `open_dir` uses `O_PATH` on Linux, which
+                // cannot be synced (EBADF).
+                let parent = if parent.as_os_str().is_empty() { Path::new(".") } else { parent };
+                dir.open_with(parent, cap_std::fs::OpenOptions::new().read(true))?.sync_all()
             })();
             if result.is_err() {
                 let _ = dir.remove_file(&partial);

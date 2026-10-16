@@ -74,21 +74,32 @@ jobs:
         image: adobe/s3mock:5.2.3
         env: { COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: rustcms-test }
         ports: ["9090:9090"]
+      # Catches every mail (invitations, password resets, the SMTP tests).
+      mailpit:
+        image: axllent/mailpit:v1.31.3
+        ports: ["51025:1025", "58025:8025"]
     env:
       RUSTCMS_TEST_PG: postgres://postgres:postgres@localhost:5432/postgres
       RUSTCMS_TEST_MYSQL: mysql://root:mysql@localhost:3306/mysql
       RUSTCMS_TEST_REDIS: redis://localhost:6379
       RUSTCMS_TEST_S3: http://localhost:9090/rustcms-test
+      RUSTCMS_TEST_SMTP: 127.0.0.1:51025
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       # A server that is not reachable fails the run instead of being skipped.
-      RUSTCMS_TEST_REQUIRE: postgres,mysql,redis,s3
+      RUSTCMS_TEST_REQUIRE: postgres,mysql,redis,s3,smtp
+      # Dozens of test binaries: without debug info they fit the runner's disk
+      # (the linker died with SIGBUS when it filled up).
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-nextest }
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
       - name: Wait for the S3 bucket
         run: for i in $(seq 1 60); do curl -sf --connect-timeout 2 -m 5 -o /dev/null "$RUSTCMS_TEST_S3" && exit 0; sleep 1; done; exit 1
       - run: cargo nextest run --workspace --features rustcms/redis,rustcms/s3
@@ -134,6 +145,11 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    # Invitations and password resets are read back from Mailpit (`e2e/serve.sh`).
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.31.3
+        ports: ["51025:1025", "58025:8025"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

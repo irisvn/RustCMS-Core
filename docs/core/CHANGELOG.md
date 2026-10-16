@@ -16,6 +16,14 @@ All notable changes are documented here. The format follows
   and mail retries really do.
 - Mail: a TLS handshake refused (a certificate not trusted, or for another
   name) is reported as `smtp_tls`, not `smtp_connect`.
+- Local storage on Linux: every upload, import and export failed with
+  `Bad file descriptor` (the parent directory was synced through an `O_PATH`
+  handle); it is now opened for reading.
+- Security: ammonia 4.2.3 (RUSTSEC-2021-0157, -0158) and rustls 0.23.46
+  (RUSTSEC-2026-0346 to -0349); `cargo deny` skips the licenses of the
+  unpublished example apps.
+- CI: Mailpit for the E2E suite and the SMTP test; test binaries built
+  without debug info (the linker ran out of disk).
 
 ### Added
 - Tests of SMTP over TLS against a `mailpit-tls` service (STARTTLS, AUTH, a
