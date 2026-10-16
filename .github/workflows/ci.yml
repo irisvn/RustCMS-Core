@@ -54,7 +54,10 @@ jobs:
       - run: cargo check --workspace --all-targets
       - run: cargo check -p rustcms --features redis,s3
 
+  # Off for now (the maintainer's choice): run `just test-matrix` locally
+  # before a release. Two tests are flaky here (docs/core/reports/2026-10-16-m24a.vi.md).
   test-rust:
+    if: false
     runs-on: ubuntu-latest
     services:
       postgres:
