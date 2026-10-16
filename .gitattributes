@@ -1,0 +1,9 @@
+# The same bytes on every platform: templates are embedded in the `rustcms`
+# binary (a Windows checkout would otherwise embed CRLF), and the install and
+# shell scripts must keep LF to run.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+*.sqlite binary

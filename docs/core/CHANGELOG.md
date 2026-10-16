@@ -23,6 +23,8 @@ All notable changes are documented here. The format follows
   version (`rustcms = { git = …, tag = "vX.Y.Z" }`); a local checkout only with
   `--rustcms-path`. Paths are written as proper TOML strings (Windows).
 - The repository is irisvn/RustCMS-Core; the guide links to it.
+- `.gitattributes`: LF everywhere, so a Windows build embeds the same
+  templates (generators insert code at `\n`-terminated markers).
 
 ### Fixed
 - Codex verify of M23: the restore procedure also ends JWT sign-ins; LMS
