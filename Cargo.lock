@@ -3328,7 +3328,7 @@ dependencies = [
 
 [[package]]
 name = "rustcms"
-version = "0.3.1-rc.2"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -3343,7 +3343,7 @@ dependencies = [
 
 [[package]]
 name = "rustcms-admin"
-version = "0.3.1-rc.2"
+version = "0.3.1"
 dependencies = [
  "ammonia",
  "anyhow",
@@ -3385,7 +3385,7 @@ dependencies = [
 
 [[package]]
 name = "rustcms-auth"
-version = "0.3.1-rc.2"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "argon2",
@@ -3417,7 +3417,7 @@ dependencies = [
 
 [[package]]
 name = "rustcms-cli"
-version = "0.3.1-rc.2"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -3438,7 +3438,7 @@ dependencies = [
 
 [[package]]
 name = "rustcms-core"
-version = "0.3.1-rc.2"
+version = "0.3.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3480,7 +3480,7 @@ dependencies = [
 
 [[package]]
 name = "rustcms-migration"
-version = "0.3.1-rc.2"
+version = "0.3.1"
 dependencies = [
  "chrono",
  "rustcms-auth",
@@ -3493,7 +3493,7 @@ dependencies = [
 
 [[package]]
 name = "rustcms-testing"
-version = "0.3.1-rc.2"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",

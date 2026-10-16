@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-10-16
+
 ### Added
 - Distribution (ADR 0025): a tag publishes the `rustcms` command for macOS
   on Apple silicon and Linux (x86_64, arm64; Windows: WSL; Intel Macs: `cargo install`), the guide and the install script (`install.sh`)
