@@ -1,7 +1,8 @@
 # What is kept, and for how long
 
-`serve` deletes expired data on its own, once per period, on one instance at
-a time (a lock in the database or Redis). The commands do the same on demand.
+`serve` deletes expired data on its own, once per period. With Redis, one
+instance at a time does it; without, every instance runs the pass (each
+deletion is safe to repeat). The commands do the same on demand.
 
 | Data | Kept | Pruned by |
 |---|---|---|
@@ -13,7 +14,8 @@ a time (a lock in the database or Redis). The commands do the same on demand.
 | Failed jobs, `once` receipts | `queue.failed_retention_days` (30) | the workers |
 | Background exports (file and row) | 24 hours, removed an hour later | `serve` |
 | Imports (file, row, report, receipts) | 24 hours from upload, or from the start of the run | `serve` |
-| Media no record uses, interrupted uploads | one hour after they are orphaned | `serve` every minute, `media:prune` |
+| Media files of deleted media records, interrupted uploads | removed within minutes (queued deletions), an hour (abandoned uploads) | `serve` every minute, `media:prune` |
+| Uploaded media | until deleted from the Media library (a cover removed from a record, or an abandoned draft's, stays) | by hand |
 
 Run the commands from cron when `serve` is not running (workers only, or
 maintenance windows):

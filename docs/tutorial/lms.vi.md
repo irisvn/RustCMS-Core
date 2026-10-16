@@ -5,6 +5,9 @@ tuyến: khoá học, bài học, học viên, ghi danh, tin tức, quyền theo
 import/export, mail, mời người dùng và dashboard. Mã nguồn hoàn chỉnh nằm ở
 `examples/lms`; mỗi bước chỉ ra file tương ứng để đối chiếu.
 
+Lệnh tạo mã (`rustcms new`, `rustcms make:*`) là của CLI `rustcms`; lệnh của
+app (`migrate`, `db:seed`, `serve`, `permission:sync`…) chạy bằng `cargo run --`.
+
 Yêu cầu: Rust (rustup), Node 20+ chỉ khi sửa giao diện admin, Docker nếu muốn
 dùng PostgreSQL/MySQL/Mailpit. Hướng dẫn dùng SQLite.
 
@@ -27,9 +30,9 @@ Tạo tài khoản quản trị: `cargo run -- make:user --email you@example.tes
 ## 2. Khoá học và bài học
 
 ```sh
-cargo run -- make:migration create_courses_table
-cargo run -- make:model Course
-cargo run -- make:resource Course
+rustcms make:migration create_courses_table
+rustcms make:model Course
+rustcms make:resource Course
 ```
 
 - Migration: `src/database/migrations/m20261020_000001_create_courses_table.rs`

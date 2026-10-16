@@ -40,6 +40,8 @@ impl Seeder for NewsSeeder {
             if news::Entity::find().filter(news::Column::Slug.eq(&slug)).one(db).await?.is_some() {
                 continue;
             }
+            // The article and its tags together: an interrupted run leaves none or all.
+            let txn = rustcms::db::begin_write(db).await?;
             let article = news::ActiveModel {
                 title: Set(title.into()),
                 slug: Set(slug),
@@ -49,15 +51,16 @@ impl Seeder for NewsSeeder {
                 created_at: Set(chrono::Utc::now()),
                 ..Default::default()
             }
-            .insert(db)
+            .insert(&txn)
             .await?;
             for name in tags {
-                let tag = match tag::Entity::find().filter(tag::Column::Name.eq(*name)).one(db).await? {
+                let tag = match tag::Entity::find().filter(tag::Column::Name.eq(*name)).one(&txn).await? {
                     Some(found) => found,
-                    None => tag::ActiveModel { name: Set((*name).into()), ..Default::default() }.insert(db).await?,
+                    None => tag::ActiveModel { name: Set((*name).into()), ..Default::default() }.insert(&txn).await?,
                 };
-                news_tag::ActiveModel { news_id: Set(article.id), tag_id: Set(tag.id) }.insert(db).await?;
+                news_tag::ActiveModel { news_id: Set(article.id), tag_id: Set(tag.id) }.insert(&txn).await?;
             }
+            txn.commit().await?;
         }
         Ok(())
     }

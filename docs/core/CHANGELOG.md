@@ -6,6 +6,22 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Codex verify of M23: the restore procedure also ends JWT sign-ins; LMS
+  viewers and editors see the news' images (`media.manage_all`, viewing
+  only); a slug cleared while editing is made again from the title;
+  Vietnamese slugs from decomposed text; the news seeder writes an article
+  and its tags in one transaction; tutorial generator commands use the
+  `rustcms` CLI; operations pages say what media pruning, scheduler locks
+  and mail retries really do.
+- Mail: a TLS handshake refused (a certificate not trusted, or for another
+  name) is reported as `smtp_tls`, not `smtp_connect`.
+
+### Added
+- Tests of SMTP over TLS against a `mailpit-tls` service (STARTTLS, AUTH, a
+  test CA from `just test-tls-cert`): delivery with the trusted root, refusal
+  of another name and of an untrusted certificate, no password in the audit.
+
 ## [0.3.0] — 2026-10-26
 
 ### Added (0.3 — M23)

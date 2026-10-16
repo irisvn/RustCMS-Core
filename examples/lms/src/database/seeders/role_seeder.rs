@@ -85,6 +85,8 @@ pub const EDITOR: &[&str] = &[
     "media.view_any",
     "media.view",
     "media.create",
+    // Every image of the news, not only one's own uploads (viewing only).
+    "media.manage_all",
 ];
 
 /// Viewers: read everything of the school, export enrollments, the dashboard; change nothing.
@@ -105,6 +107,10 @@ pub const VIEWER: &[&str] = &[
     "categories.view",
     "tags.view_any",
     "tags.view",
+    // The covers and images of the news (viewing only).
+    "media.view_any",
+    "media.view",
+    "media.manage_all",
     "dashboard.learners",
     "dashboard.new_enrollments",
     "dashboard.enrollments_per_week",

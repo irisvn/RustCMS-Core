@@ -25,6 +25,10 @@ pub fn slugify(title: &str) -> String {
     ];
     let mut out = String::new();
     for c in title.to_lowercase().chars() {
+        // Combining marks (decomposed text: `o` + U+0323): dropped, the letter kept.
+        if ('\u{0300}'..='\u{036f}').contains(&c) {
+            continue;
+        }
         let c = GROUPS.iter().find(|(set, _)| set.contains(c)).map_or(c, |(_, plain)| *plain);
         if c.is_ascii_alphanumeric() {
             out.push(c);
@@ -84,6 +88,21 @@ impl Resource for NewsResource {
         vec![Relation::belongs_to_many("tags", "tags", news_tag::Column::NewsId, news_tag::Column::TagId).label("Tags")]
     }
 
+    /// A slug cleared while editing is made again from the (new or current) title.
+    async fn mutate_before_update(
+        _ctx: &Ctx,
+        _txn: &DatabaseTransaction,
+        current: &news::Model,
+        mut data: Data,
+    ) -> AppResult<Data> {
+        let cleared = data.get("slug").is_some_and(|s| s.as_str().is_none_or(|s| s.trim().is_empty()));
+        if cleared {
+            let title = data.get("title").and_then(|t| t.as_str()).unwrap_or(&current.title).to_owned();
+            data.insert("slug".into(), json!(slugify(&title)));
+        }
+        Ok(data)
+    }
+
     async fn mutate_before_create(ctx: &Ctx, _txn: &DatabaseTransaction, mut data: Data) -> AppResult<Data> {
         data.insert("author_id".into(), json!(ctx.principal.id));
         data.insert(
@@ -106,5 +125,8 @@ mod tests {
         assert_eq!(super::slugify("Khai giảng khoá học Rust — đợt 2!"), "khai-giang-khoa-hoc-rust-dot-2");
         assert_eq!(super::slugify("  Hello, World  "), "hello-world");
         assert_eq!(super::slugify("???"), "news");
+        // The same title decomposed (`o` + combining dot below): the same slug.
+        assert_eq!(super::slugify("Ho\u{0323}c Rust"), super::slugify("Học Rust"));
+        assert_eq!(super::slugify("Học Rust"), "hoc-rust");
     }
 }

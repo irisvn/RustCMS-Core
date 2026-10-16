@@ -182,8 +182,6 @@ cảm (password, token…) và kiểu chưa hỗ trợ bị bỏ qua kèm cảnh
   (chưa có tổng/trung bình), biểu đồ theo múi giờ khác UTC, DKIM/đính kèm cho mail.
 - Rate limit gửi mail tính theo từng process; giới hạn chung nhiều instance để sau.
 - Biểu đồ dashboard trên SQLite hoặc với policy theo từng bản ghi dừng ở 10.000 bản ghi ứng viên.
-- Chưa có test SMTP qua TLS thật (chứng chỉ sai tên, AUTH qua TLS); mới có Mailpit không TLS
-  và từ chối khi server không có STARTTLS.
 - Đăng xuất một session hoặc thu hồi một token không huỷ được thao tác ghi đang chạy dở bằng
   chính credential đó; đổi mật khẩu và đăng xuất mọi nơi thì có hiệu lực.
 

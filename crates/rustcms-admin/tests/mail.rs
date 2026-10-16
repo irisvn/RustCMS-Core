@@ -173,3 +173,62 @@ db_test!(smtp_sends_through_a_real_server_and_requires_starttls, |db: TestDb| as
     let refused = admin.post_json(&url, &json!({"to": "smtp-test@example.com"})).await;
     assert_eq!(refused.json(), json!({"ok": false, "code": "smtp_tls"}));
 });
+
+/// A TLS SMTP server (Mailpit, STARTTLS, any credentials) and the root it is
+/// signed with: `RUSTCMS_TEST_SMTP_TLS=localhost:51026`, `RUSTCMS_TEST_SMTP_TLS_CA=…`.
+fn tls_server() -> Option<(String, u16, String)> {
+    let (Ok(server), Ok(ca)) = (std::env::var("RUSTCMS_TEST_SMTP_TLS"), std::env::var("RUSTCMS_TEST_SMTP_TLS_CA"))
+    else {
+        let required = std::env::var("RUSTCMS_TEST_REQUIRE").unwrap_or_default();
+        assert!(
+            !required.split(',').any(|b| b.trim() == "smtp_tls"),
+            "RUSTCMS_TEST_SMTP_TLS and RUSTCMS_TEST_SMTP_TLS_CA are required (RUSTCMS_TEST_REQUIRE) but not set"
+        );
+        eprintln!("skipped: RUSTCMS_TEST_SMTP_TLS is not set");
+        return None;
+    };
+    let (host, port) = server.rsplit_once(':').expect("RUSTCMS_TEST_SMTP_TLS=host:port");
+    Some((host.to_owned(), port.parse().expect("port"), ca))
+}
+
+db_test!(smtp_over_tls_authenticates_and_verifies_the_certificate, |db: TestDb| async move {
+    let Some((host, port, ca)) = tls_server() else { return };
+    let config = rustcms_testing::test_config(db.url())
+        .with("mail.driver", "smtp")
+        .and_then(|c| c.with("mail.allowed_ports", [port]))
+        .and_then(|c| c.with("mail.tls_ca_file", ca.as_str()))
+        .unwrap();
+    let (app, users) = support::app::setup_with(db, config).await;
+    let admin = app.acting_as(&users.admin).await;
+    let url = app.admin_api("settings/mail/test");
+    let secret = "tls-password-never-shown";
+    let server = json!({"host": host, "port": port, "encryption": "starttls", "username": "app",
+        "password": secret, "from_address": "no-reply@example.com", "from_name": "Test CMS"});
+    put(&app, &admin, "0", server).await.assert_status(StatusCode::OK);
+    // STARTTLS, the certificate checked against the trusted root, AUTH: sent.
+    let sent = admin.post_json(&url, &json!({"to": "tls-test@example.com"})).await;
+    assert_eq!(sent.json(), json!({"ok": true}));
+    // The same server by another name than its certificate's: refused before AUTH.
+    let renamed = put(&app, &admin, "1", json!({"host": "127.0.0.1", "password": secret})).await;
+    renamed.assert_status(StatusCode::OK);
+    let refused = admin.post_json(&url, &json!({"to": "tls-test@example.com"})).await;
+    assert_eq!(refused.json(), json!({"ok": false, "code": "smtp_tls"}));
+    let audit = format!("{:?}", audit_entries(&app).await);
+    assert!(!audit.contains(secret), "{audit}");
+});
+
+db_test!(smtp_over_tls_refuses_an_untrusted_certificate, |db: TestDb| async move {
+    let Some((host, port, _)) = tls_server() else { return };
+    // No extra root: the self-signed certificate is not trusted.
+    let config = rustcms_testing::test_config(db.url())
+        .with("mail.driver", "smtp")
+        .and_then(|c| c.with("mail.allowed_ports", [port]))
+        .unwrap();
+    let (app, users) = support::app::setup_with(db, config).await;
+    let admin = app.acting_as(&users.admin).await;
+    let server = json!({"host": host, "port": port, "encryption": "starttls", "username": "app",
+        "password": "x", "from_address": "no-reply@example.com"});
+    put(&app, &admin, "0", server).await.assert_status(StatusCode::OK);
+    let refused = admin.post_json(&app.admin_api("settings/mail/test"), &json!({"to": "tls-test@example.com"})).await;
+    assert_eq!(refused.json(), json!({"ok": false, "code": "smtp_tls"}));
+});

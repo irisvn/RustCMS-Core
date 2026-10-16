@@ -294,7 +294,9 @@ fn classify(err: &lettre::transport::smtp::Error, encryption: Encryption) -> Mai
         return MailError::TIMEOUT;
     }
     // A client error with encryption asked for: the server offers no STARTTLS.
-    if err.is_tls() || (err.is_client() && encryption != Encryption::None) {
+    // A handshake refused (a certificate not trusted, or for another name)
+    // surfaces as invalid data under a connection error.
+    if err.is_tls() || (encryption != Encryption::None && (err.is_client() || handshake_refused(err))) {
         return MailError::TLS;
     }
     if let Some(code) = err.status() {
@@ -310,6 +312,18 @@ fn classify(err: &lettre::transport::smtp::Error, encryption: Encryption) -> Mai
         return MailError::TEMPORARY;
     }
     MailError::CONNECT
+}
+
+/// Whether an I/O error of kind `InvalidData` (rustls' refusals) caused `err`.
+fn handshake_refused(err: &lettre::transport::smtp::Error) -> bool {
+    let mut source = std::error::Error::source(err);
+    while let Some(cause) = source {
+        if cause.downcast_ref::<std::io::Error>().is_some_and(|io| io.kind() == std::io::ErrorKind::InvalidData) {
+            return true;
+        }
+        source = cause.source();
+    }
+    false
 }
 
 /// Sends per minute, for this process (a token bucket refilled continuously).

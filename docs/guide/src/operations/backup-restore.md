@@ -24,12 +24,14 @@ Files referenced by the database may be deleted while a live backup runs
 1. Stop every web and worker process.
 2. Restore the database and the storage of the same point in time, with the
    same `APP_KEY`.
-3. Before opening, end what the backup brought back: every session and
-   sign-in token issued before the backup, links of resets and invitations,
+3. Before opening, end what the backup brought back: every session and JWT
+   sign-in (a sign-in revoked after the backup would work again), links of resets and invitations,
    and jobs that were waiting:
 
    ```sql
    DELETE FROM sessions;
+   DELETE FROM jwt_refresh_tokens;
+   DELETE FROM jwt_families;
    DELETE FROM user_tokens;
    DELETE FROM jobs WHERE kind IN ('auth.password_reset', 'auth.invitation', 'mail.send');
    ```

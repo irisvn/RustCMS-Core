@@ -5,7 +5,9 @@ See [Mail](../digging-deeper/mail.md) for the configuration.
 - **Check it**: Settings → Mail → *Send test mail* sends now with the saved
   settings and shows the error code (`smtp_auth`, `smtp_tls`, `mail_policy`…).
 - **The server is down**: mails wait in the queue and are retried with
-  backoff (8 runs over about 20 minutes), then fail. Once it is back,
+  backoff, then fail: `mail.send` and invitations 8 runs (about 20 minutes
+  of waits), password resets 5 runs (about 2½ minutes; the user asks again).
+  Sending time and a busy queue add to these. Once it is back,
   `rustcms queue:retry --all` (or retry the `mail.send` jobs on the Queue page).
 - **A refused message, a bad template**: fails at once (not retried). Fix,
   then retry.

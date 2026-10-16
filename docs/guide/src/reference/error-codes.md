@@ -138,7 +138,7 @@ Codes of `rustcms::mail::MailError`: answered by `POST settings/mail/test`
 | `smtp_auth` | no | the server refused the credentials |
 | `smtp_rejected` | no | the server refused the message (5xx) |
 | `smtp_connect` | yes | no connection |
-| `smtp_tls` | yes | TLS failed, or the server offers no STARTTLS |
+| `smtp_tls` | yes | TLS failed: no STARTTLS offered, a certificate not trusted or for another name |
 | `smtp_temporary` | yes | the server deferred the message (4xx) |
 | `smtp_timeout` | yes | too slow |
 | `smtp_throttled` | yes | this process sent `max_per_minute` already |

@@ -45,10 +45,22 @@ features:
     cargo check -p rustcms --no-default-features --features sqlite
 
 # Tests on SQLite (temp files), PostgreSQL and MySQL, with Redis and an S3-compatible bucket (docker compose).
-test-matrix:
-    docker compose up -d --wait postgres mysql redis s3 mailpit
+# A test CA and a certificate it signs for `localhost` (the TLS mail test server), made once.
+test-tls-cert:
+    #!/usr/bin/env sh
+    set -eu
+    test -f .test-tls/ca.pem && exit 0
+    mkdir -p .test-tls && cd .test-tls
+    openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=rustcms test CA" -keyout ca-key.pem -out ca.pem 2>/dev/null
+    openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" -keyout key.pem -out server.csr 2>/dev/null
+    printf "subjectAltName=DNS:localhost\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n" > server.ext
+    openssl x509 -req -in server.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial -days 3650 -extfile server.ext -out cert.pem 2>/dev/null
+    chmod 644 key.pem
+
+test-matrix: test-tls-cert
+    docker compose up -d --wait postgres mysql redis s3 mailpit mailpit-tls
     @for i in $(seq 1 60); do curl -sf --connect-timeout 2 -m 5 -o /dev/null {{s3_url}} && exit 0; sleep 1; done; echo "the S3 bucket is not ready: {{s3_url}}"; exit 1
-    RUSTCMS_TEST_PG={{pg_url}} RUSTCMS_TEST_MYSQL={{mysql_url}} RUSTCMS_TEST_REDIS={{redis_url}} RUSTCMS_TEST_S3={{s3_url}} RUSTCMS_TEST_SMTP=127.0.0.1:51025 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test RUSTCMS_TEST_REQUIRE=postgres,mysql,redis,s3,smtp cargo nextest run --workspace --features rustcms/redis,rustcms/s3
+    RUSTCMS_TEST_PG={{pg_url}} RUSTCMS_TEST_MYSQL={{mysql_url}} RUSTCMS_TEST_REDIS={{redis_url}} RUSTCMS_TEST_S3={{s3_url}} RUSTCMS_TEST_SMTP=127.0.0.1:51025 RUSTCMS_TEST_SMTP_TLS=localhost:51026 RUSTCMS_TEST_SMTP_TLS_CA={{justfile_directory()}}/.test-tls/ca.pem AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test RUSTCMS_TEST_REQUIRE=postgres,mysql,redis,s3,smtp,smtp_tls cargo nextest run --workspace --features rustcms/redis,rustcms/s3
 
 test:
     cargo nextest run --workspace

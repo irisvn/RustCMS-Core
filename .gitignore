@@ -8,3 +8,5 @@ node_modules/
 .codex/
 /admin-ui/playwright-report/
 /admin-ui/test-results/
+# Self-signed certificate of the TLS mail test server (`just test-tls-cert`).
+/.test-tls/

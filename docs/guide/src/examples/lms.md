@@ -160,8 +160,8 @@ See [Customizing the panel](../admin/customizing.md).
   enrollments per week and the newest courses — each with its permission,
   granted to staff, instructors (their courses) and viewers.
 - **Mail and invitations**: the welcome mail goes to each new learner once
-  (`lms.enrolled`); staff invite instructors from System → Users (they choose
-  their password from the mail).
+  (`lms.enrolled`); an administrator invites instructors from System → Users
+  (they choose their password from the mail; staff have no user management).
 
 ## Conflicts
 

@@ -4,6 +4,7 @@
 #        RUSTCMS_TEST_REDIS=redis://localhost:56379
 #        RUSTCMS_TEST_S3=http://localhost:59000/rustcms-test (any AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)
 #        RUSTCMS_TEST_SMTP=127.0.0.1:51025 (Mailpit; its UI on http://localhost:58025)
+#        RUSTCMS_TEST_SMTP_TLS=localhost:51026 RUSTCMS_TEST_SMTP_TLS_CA=.test-tls/ca.pem (`just test-tls-cert`)
 services:
   postgres:
     image: postgres:17-alpine
@@ -50,3 +51,16 @@ services:
     ports:
       - "${RUSTCMS_SMTP_PORT:-51025}:1025"
       - "${RUSTCMS_MAILPIT_UI_PORT:-58025}:8025"
+  # The same with STARTTLS (a certificate for `localhost` signed by a test CA,
+  # made by `just test-tls-cert`) and any credentials accepted: the TLS mail tests.
+  mailpit-tls:
+    image: axllent/mailpit:v1.31.3
+    environment:
+      MP_SMTP_TLS_CERT: /tls/cert.pem
+      MP_SMTP_TLS_KEY: /tls/key.pem
+      MP_SMTP_REQUIRE_STARTTLS: "true"
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+    volumes:
+      - ./.test-tls:/tls:ro
+    ports:
+      - "${RUSTCMS_SMTP_TLS_PORT:-51026}:1025"

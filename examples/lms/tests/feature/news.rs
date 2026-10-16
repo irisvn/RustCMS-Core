@@ -3,7 +3,7 @@
 
 use lms::database::migrations::Migrator;
 use lms::models::lesson;
-use rustcms::axum::http::StatusCode;
+use rustcms::axum::http::{Method, StatusCode};
 use rustcms_testing::{TestDb, db_test};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde_json::json;
@@ -20,6 +20,12 @@ db_test!(news_get_a_slug_and_refuse_a_taken_one, migrate = Migrator, |db: TestDb
     assert!(errors(&twin).contains("slug"), "{}", twin.text());
     let chosen = editor.post_json(&records(&app, "news"), &json!({"title": "Other", "slug": "my-own"})).await;
     assert_eq!(chosen.json()["data"]["data"]["slug"], json!("my-own"));
+    // A slug cleared while editing is made again from the title.
+    let key = chosen.json()["data"]["key"].as_str().unwrap().to_owned();
+    let cleared =
+        editor.send(Method::PATCH, &format!("{}/{key}", records(&app, "news")), Some(&json!({"slug": " "}))).await;
+    cleared.assert_status(StatusCode::OK);
+    assert_eq!(cleared.json()["data"]["data"]["slug"], json!("other"));
 });
 
 db_test!(editors_write_news_only_and_viewers_read, migrate = Migrator, |db: TestDb| async move {
@@ -34,6 +40,8 @@ db_test!(editors_write_news_only_and_viewers_read, migrate = Migrator, |db: Test
     viewer.post_json(&records(&app, "courses"), &json!({"title": "Nope"})).await.assert_status(StatusCode::FORBIDDEN);
     let export = viewer.get(&app.admin_api("resources/enrollments/export")).await;
     export.assert_status(StatusCode::OK);
+    // The news' images, whoever uploaded them (viewing only).
+    viewer.get(&records(&app, "media")).await.assert_status(StatusCode::OK);
 });
 
 db_test!(tags_are_linked_with_their_own_ability, migrate = Migrator, |db: TestDb| async move {
