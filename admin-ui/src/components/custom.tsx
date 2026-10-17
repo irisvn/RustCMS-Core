@@ -62,10 +62,13 @@ type ScriptViewProps = {
 /** A mounted view and the streams it opened (closed with it). */
 interface Mount {
   instance: ViewInstance;
+  /** `mounting` while its `mount` runs; once `disposed`, nothing opens again. */
+  phase: "mounting" | "active" | "disposed";
   streams: Set<EventsHandle>;
 }
 
 function closeStreams(mount: Mount) {
+  mount.phase = "disposed";
   for (const stream of mount.streams) stream.close();
   mount.streams.clear();
 }
@@ -112,7 +115,8 @@ function MountedView({ kind, name, data, record, props, reload, impl }: ScriptVi
     realtime: {
       events: (path, handlers) => {
         // Opened by a view no longer shown (or of an earlier session): nothing.
-        if (!current(mount) && mount.instance !== undefined) return { close() {} };
+        const allowed = mount.phase === "mounting" || (mount.phase === "active" && current(mount));
+        if (!allowed) return { close() {} };
         const handle = openEvents(api, String(path), handlers);
         mount.streams.add(handle);
         return {
@@ -128,13 +132,14 @@ function MountedView({ kind, name, data, record, props, reload, impl }: ScriptVi
     const host = element.current;
     if (!host) return;
     // The mount's identity exists before `mount` runs, so its callbacks can be bound to it.
-    const mount: Mount = { instance: undefined as unknown as ViewInstance, streams: new Set() };
+    const mount: Mount = { instance: undefined as unknown as ViewInstance, phase: "mounting", streams: new Set() };
     try {
       const instance = impl.mount(host, context(mount));
       if (typeof instance?.update !== "function" || typeof instance?.unmount !== "function") {
         throw new Error(`view ${name} did not return {update, unmount}`);
       }
       mount.instance = instance;
+      mount.phase = "active";
       live.current = mount;
     } catch (e) {
       closeStreams(mount);

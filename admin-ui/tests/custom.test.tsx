@@ -132,6 +132,29 @@ it("gives a script page server-sent events, closed when the view goes", async ()
   await waitFor(() => expect(aborted).toBe(true));
 });
 
+it("never opens a stream for a view whose mount failed", async () => {
+  let requests = 0;
+  server.use(
+    http.get("*/admin/api/x/live/ticks", () => {
+      requests += 1;
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  let later: (() => void) | undefined;
+  registerPage("test/report", {
+    apiVersion: 1,
+    mount(_element, ctx) {
+      later = () => ctx.realtime.events("/live/ticks", { onEvent: () => {} });
+      throw new Error("broken view");
+    },
+  });
+  mount("/p/report");
+  expect(await screen.findByText(/extension script is missing or failed/)).toBeInTheDocument();
+  later?.();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(requests).toBe(0);
+});
+
 it("says so when a page's script is missing", async () => {
   mount("/p/report");
   expect(await screen.findByText(/extension script is missing or failed/)).toBeInTheDocument();

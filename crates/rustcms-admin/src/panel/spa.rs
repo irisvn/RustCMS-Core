@@ -233,8 +233,11 @@ fn render_index(
     }
     config["theme"] = look;
     let config = config.to_string();
+    // Without a favicon of its own, an empty one: browsers would ask for
+    // `/favicon.ico` on every page and log its 404 (`data:` is in `img-src`).
+    let icon = if theme.favicon.is_none() { "<link rel=\"icon\" href=\"data:,\">" } else { "" };
     let tags = format!(
-        "<base href=\"{}/\"><meta name=\"rustcms-admin\" content=\"{}\">",
+        "<base href=\"{}/\"><meta name=\"rustcms-admin\" content=\"{}\">{icon}",
         escape_attr(base),
         escape_attr(&config)
     );
@@ -260,7 +263,7 @@ mod tests {
         assert_eq!(
             html,
             "<head><base href=\"/back-office/\"><meta name=\"rustcms-admin\" \
-             content=\"{&quot;basePath&quot;:&quot;/back-office&quot;,&quot;locale&quot;:&quot;en&quot;,&quot;locales&quot;:[&quot;en&quot;,&quot;vi&quot;],&quot;theme&quot;:{&quot;colorScheme&quot;:&quot;system&quot;}}\"><script src=\"./assets/a.js\"></script></head>"
+             content=\"{&quot;basePath&quot;:&quot;/back-office&quot;,&quot;locale&quot;:&quot;en&quot;,&quot;locales&quot;:[&quot;en&quot;,&quot;vi&quot;],&quot;theme&quot;:{&quot;colorScheme&quot;:&quot;system&quot;}}\"><link rel=\"icon\" href=\"data:,\"><script src=\"./assets/a.js\"></script></head>"
         );
         assert!(render_index(None, "/admin", &[], &en(), &ThemeConfig::default()).contains("not built"));
         let ext = [Extension::new("acme", "x", false), Extension::new("acme", "y", true)];

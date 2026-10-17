@@ -50,7 +50,7 @@ describe("openEvents", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("stops on 401 and 403, retries 429 and network drops with backoff", async () => {
+  it("stops on 401, retries 429 and network drops with backoff", async () => {
     const refused = client([() => new Response(null, { status: 401 })]);
     const states: unknown[] = [];
     openEvents(refused.api, "/a", { onEvent: () => {}, onState: (s) => states.push(s) });
@@ -117,6 +117,45 @@ describe("openEvents", () => {
     } finally {
       globalThis.fetch = original;
     }
+  });
+
+  it("parses CRLF split across chunks and stops at a closed event at once", async () => {
+    const first = streamed();
+    const { api } = client([() => first.response]);
+    const events: unknown[] = [];
+    const states: unknown[] = [];
+    openEvents(api, "/a", { onEvent: (n, d) => events.push([n, d]), onState: (s) => states.push(s) });
+    await vi.waitFor(() => expect(states).toEqual([{ state: "open" }]));
+    first.send("event: tick\r");
+    first.send('\ndata: {"n":1}\r\n\r\n');
+    await vi.waitFor(() => expect(events).toEqual([["tick", { n: 1 }]]));
+    // Nothing after `closed` counts, even in the same chunk.
+    first.send('event: closed\ndata: {"reason":"forbidden"}\n\nevent: tick\ndata: {"n":2}\n\n');
+    await vi.waitFor(() => expect(states.at(-1)).toEqual({ state: "closed", reason: "forbidden" }));
+    expect(events).toEqual([["tick", { n: 1 }]]);
+  });
+
+  it("stops on 403 and on a response of another account", async () => {
+    const forbidden = client([() => new Response(null, { status: 403 })]);
+    const states: unknown[] = [];
+    openEvents(forbidden.api, "/a", { onEvent: () => {}, onState: (s) => states.push(s) });
+    await vi.waitFor(() => expect(states).toEqual([{ state: "closed", status: 403 }]));
+
+    const other = streamed();
+    const fetch = vi.fn(async () => {
+      other.response.headers.set("X-Rustcms-User", "2");
+      return other.response;
+    });
+    const api = new ApiClient({
+      apiPath: "/admin/api",
+      fetch: fetch as unknown as typeof globalThis.fetch,
+      observeIdentity: (user) => user === "1",
+    });
+    const seen: unknown[] = [];
+    openEvents(api, "/a", { onEvent: () => {}, onState: (s) => seen.push(s) });
+    await vi.waitFor(() => expect(seen).toEqual([{ state: "closed", reason: "session" }]));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("refuses paths outside the namespace", () => {

@@ -77,12 +77,19 @@ impl TestApp {
         self.request_from(SocketAddr::from(([127, 0, 0, 1], 40000)), request).await
     }
 
-    /// Sends a request as if the TCP peer were `peer`.
+    /// Sends a request as if the TCP peer were `peer`. A server-sent events
+    /// response is not read (it would never end): its status and headers come
+    /// back with an empty body, and the stream is dropped.
     pub async fn request_from(&self, peer: SocketAddr, mut request: Request<Body>) -> TestResponse {
         request.extensions_mut().insert(ConnectInfo(peer));
         let response = self.app.router().oneshot(request).await.expect("infallible router");
         let (parts, body) = response.into_parts();
-        let body = body.collect().await.expect("response body").to_bytes();
+        let streaming = parts
+            .headers
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.starts_with("text/event-stream"));
+        let body = if streaming { Default::default() } else { body.collect().await.expect("response body").to_bytes() };
         TestResponse { status: parts.status, headers: parts.headers, body }
     }
 

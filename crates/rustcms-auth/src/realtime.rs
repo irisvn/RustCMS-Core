@@ -133,10 +133,6 @@ impl Drop for Permits {
     }
 }
 
-/// The access of the events route being served (set by `AdminRoutes`).
-#[derive(Clone)]
-pub(crate) struct LiveRoute(pub(crate) AdminAccess);
-
 /// Admission of a stream: no CSRF token, but only from the panel's own
 /// origin. An `Origin`, when sent, must be an allowed one (exactly, not
 /// `null`); `Sec-Fetch-Site`, when sent, must be `same-origin`; a request with
@@ -152,8 +148,10 @@ pub(crate) fn check_streaming_origin(auth: &AuthState, headers: &HeaderMap) -> A
         first.map(|v| v.to_str().map(str::to_owned).map_err(|_| AppError::Forbidden)).transpose()
     };
     let allowed = |origin: &str| auth.allowed_origins.iter().any(|a| a == origin);
+    // All three are well-formed, whichever decides.
     let origin = single(header::ORIGIN)?;
     let site = single(header::HeaderName::from_static("sec-fetch-site"))?;
+    let referer = single(header::REFERER)?;
     if let Some(origin) = &origin {
         let exact = crate::config::origin_of(origin).filter(|o| *o == origin.to_ascii_lowercase());
         if !exact.is_some_and(|o| allowed(&o)) {
@@ -166,7 +164,7 @@ pub(crate) fn check_streaming_origin(auth: &AuthState, headers: &HeaderMap) -> A
         return Err(AppError::Forbidden);
     }
     if origin.is_none() && site.is_none() {
-        let referer = single(header::REFERER)?.and_then(|r| crate::config::origin_of(&r));
+        let referer = referer.and_then(|r| crate::config::origin_of(&r));
         if !referer.is_some_and(|o| allowed(&o)) {
             return Err(AppError::Forbidden);
         }
@@ -174,12 +172,11 @@ pub(crate) fn check_streaming_origin(auth: &AuthState, headers: &HeaderMap) -> A
     Ok(())
 }
 
-/// An open admin stream's identity, admitted by its route (extractor; only in
-/// [`AdminRoutes::events`](crate::AdminRoutes::events) handlers, as their
-/// first argument). Checks the panel's own origin (403), then reserves
-/// the stream's place (429 when this instance or this user is at the limit;
-/// 503 while the server stops). Turn it into the response with
-/// [`stream`](Self::stream).
+/// An open admin stream's identity (extractor; only in
+/// [`AdminRoutes::events`](crate::AdminRoutes::events) handlers). Its route
+/// admitted the request before any extractor ran: the panel's own origin
+/// (403), the open limits, the stream's place (429), the server not stopping
+/// (503). Turn it into the response with [`stream`](Self::stream).
 pub struct LiveSession {
     state: AppState,
     auth: Arc<AuthState>,
@@ -190,60 +187,73 @@ pub struct LiveSession {
     auth_version: i64,
     access: AdminAccess,
     principal: Principal,
-    _permits: Permits,
+    /// Shared with the response body: the place is held until both end.
+    permits: Arc<Permits>,
+}
+
+/// The admitted stream, waiting for its handler's `LiveSession`.
+#[derive(Clone)]
+struct Admission(Arc<Mutex<Option<LiveSession>>>);
+
+/// Admits a stream request (the route layer, before the handler's
+/// extractors). A handler that takes no `LiveSession` releases it with the
+/// request.
+pub(crate) async fn admit(req: &mut axum::extract::Request, access: &AdminAccess) -> Result<(), Box<Response>> {
+    let fail = |e: AppError| Box::new(e.into_response());
+    let app =
+        req.extensions().get::<AppState>().cloned().ok_or_else(|| fail(AppError::internal("admin guard missing")))?;
+    let caller = req
+        .extensions()
+        .get::<Authenticated>()
+        .filter(|c| c.principal.guard == ADMIN_GUARD)
+        .cloned()
+        .ok_or_else(|| fail(AppError::Unauthenticated))?;
+    let session_id = req
+        .extensions()
+        .get::<Session>()
+        .and_then(Session::stored_id)
+        .ok_or_else(|| fail(AppError::Unauthenticated))?;
+    let auth = app.service::<AuthState>().ok_or_else(|| fail(AppError::internal("AuthProvider not registered")))?;
+    let realtime = app.service::<Realtime>().ok_or_else(|| fail(AppError::internal("AuthProvider not registered")))?;
+    let shutdown = app.service::<Shutdown>().ok_or_else(|| fail(AppError::internal("no Shutdown bound")))?;
+    check_streaming_origin(&auth, req.headers()).map_err(fail)?;
+    if !shutdown.is_open() {
+        return Err(Box::new(unavailable()));
+    }
+    let ip = req.extensions().get::<ClientIp>().map(|c| c.0.to_string()).unwrap_or_default();
+    let config = &realtime.config;
+    auth.limiter
+        .reserve(&[
+            (&format!("realtime:open:{}", caller.user.id), config.opens_per_user_per_minute),
+            (&format!("realtime:open-ip:{ip}"), config.opens_per_ip_per_minute),
+        ])
+        .await
+        .map_err(fail)?;
+    let permits = realtime.acquire(caller.user.id).ok_or_else(|| fail(AppError::TooManyRequests { retry_after: 5 }))?;
+    let live = LiveSession {
+        state: app.clone(),
+        auth,
+        realtime,
+        shutdown,
+        session_id,
+        user_id: caller.user.id,
+        auth_version: caller.user.auth_version,
+        access: access.clone(),
+        principal: caller.principal,
+        permits: Arc::new(permits),
+    };
+    req.extensions_mut().insert(Admission(Arc::new(Mutex::new(Some(live)))));
+    Ok(())
 }
 
 impl FromRequestParts<AppState> for LiveSession {
     type Rejection = Response;
 
-    async fn from_request_parts(parts: &mut Parts, app: &AppState) -> Result<Self, Response> {
-        let fail = |e: AppError| e.into_response();
-        let LiveRoute(access) = parts
-            .extensions
-            .get::<LiveRoute>()
-            .cloned()
-            .ok_or_else(|| fail(AppError::internal("LiveSession outside AdminRoutes::events")))?;
-        let caller = parts
-            .extensions
-            .get::<Authenticated>()
-            .filter(|c| c.principal.guard == ADMIN_GUARD)
-            .cloned()
-            .ok_or_else(|| fail(AppError::Unauthenticated))?;
-        let session_id = parts
-            .extensions
-            .get::<Session>()
-            .and_then(Session::stored_id)
-            .ok_or_else(|| fail(AppError::Unauthenticated))?;
-        let auth = app.service::<AuthState>().ok_or_else(|| fail(AppError::internal("AuthProvider not registered")))?;
-        let realtime =
-            app.service::<Realtime>().ok_or_else(|| fail(AppError::internal("AuthProvider not registered")))?;
-        let shutdown = app.service::<Shutdown>().ok_or_else(|| fail(AppError::internal("no Shutdown bound")))?;
-        check_streaming_origin(&auth, &parts.headers).map_err(fail)?;
-        if !shutdown.is_open() {
-            return Err(unavailable());
-        }
-        let ClientIp(ip) = ClientIp::from_request_parts(parts, app).await.map_err(IntoResponse::into_response)?;
-        let config = &realtime.config;
-        auth.limiter
-            .reserve(&[
-                (&format!("realtime:open:{}", caller.user.id), config.opens_per_user_per_minute),
-                (&format!("realtime:open-ip:{ip}"), config.opens_per_ip_per_minute),
-            ])
-            .await
-            .map_err(fail)?;
-        let permits =
-            realtime.acquire(caller.user.id).ok_or_else(|| fail(AppError::TooManyRequests { retry_after: 5 }))?;
-        Ok(Self {
-            state: app.clone(),
-            auth,
-            realtime,
-            shutdown,
-            session_id,
-            user_id: caller.user.id,
-            auth_version: caller.user.auth_version,
-            access,
-            principal: caller.principal,
-            _permits: permits,
+    async fn from_request_parts(parts: &mut Parts, _: &AppState) -> Result<Self, Response> {
+        let admission = parts.extensions.get::<Admission>().cloned();
+        let live = admission.and_then(|a| a.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take());
+        live.ok_or_else(|| {
+            AppError::internal("LiveSession outside AdminRoutes::events (or taken twice)").into_response()
         })
     }
 }
@@ -355,13 +365,16 @@ impl IntoResponse for EventStream {
         let (tx, mut rx) = mpsc::channel::<Queued>(QUEUE_EVENTS);
         let queued = Arc::new(AtomicUsize::new(0));
         let shutdown = self.live.shutdown.clone();
+        let permits = self.live.permits.clone();
         let pump = pump(self, tx, queued.clone());
         if shutdown.spawn(pump).is_none() {
             return unavailable();
         }
         // The body only reads the queue: a client that stops reading never
-        // blocks the pump, its rechecks or its cancellation.
+        // blocks the pump, its rechecks or its cancellation. It holds the
+        // stream's place until it is dropped too.
         let body = futures_util::stream::poll_fn(move |cx| {
+            let _held = &permits;
             rx.poll_recv(cx).map(|item| {
                 item.map(|Queued(event, size)| {
                     queued.fetch_sub(size, Ordering::SeqCst);
@@ -388,7 +401,11 @@ async fn pump(stream: EventStream, tx: mpsc::Sender<Queued>, queued: Arc<AtomicU
         Queued(SseEvent::default().event("closed").data(data), 0)
     };
     // The target may already be out of reach.
-    if let Err(reason) = live.check_in_time(target.as_ref()).await {
+    let first = tokio::select! {
+        checked = live.check_in_time(target.as_ref()) => checked,
+        () = tx.closed() => return,
+    };
+    if let Err(reason) = first {
         let _ = tx.try_send(closed(reason));
         return;
     }
@@ -396,12 +413,16 @@ async fn pump(stream: EventStream, tx: mpsc::Sender<Queued>, queued: Arc<AtomicU
         tokio::select! {
             biased;
             () = token.cancelled() => break Some(Closed::Shutdown),
+            // The client left (its body was dropped): stop at once.
+            () = tx.closed() => break None,
             _ = recheck.tick() => {
-                if tx.is_closed() {
-                    break None;
-                }
-                if let Err(reason) = live.check_in_time(target.as_ref()).await {
-                    break Some(reason);
+                tokio::select! {
+                    checked = live.check_in_time(target.as_ref()) => {
+                        if let Err(reason) = checked {
+                            break Some(reason);
+                        }
+                    }
+                    () = tx.closed() => break None,
                 }
             }
             event = events.next() => {

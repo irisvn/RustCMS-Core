@@ -22,12 +22,11 @@ db_test!(only_allowed_users_reach_the_live_routes, migrate = Migrator, |db: Test
         &app,
         &demo::routes::admin::routes(),
         &[
-            // Allowed streams never end, so only refusals are checked here.
-            Case::new(Method::GET, "/demo/ticks").expect("visitor", &visitor, StatusCode::UNAUTHORIZED).expect(
-                "editor",
-                &editor,
-                StatusCode::FORBIDDEN,
-            ),
+            // An admitted stream is checked by its status, then dropped.
+            Case::new(Method::GET, "/demo/ticks")
+                .expect("visitor", &visitor, StatusCode::UNAUTHORIZED)
+                .expect("editor", &editor, StatusCode::FORBIDDEN)
+                .expect("admin", &admin, StatusCode::OK),
             Case::new(Method::POST, "/demo/ticks/reset")
                 .expect("visitor", &visitor, StatusCode::UNAUTHORIZED)
                 .expect("editor", &editor, StatusCode::FORBIDDEN)

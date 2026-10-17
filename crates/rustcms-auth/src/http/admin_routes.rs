@@ -235,8 +235,8 @@ impl AdminRoutes {
     }
 }
 
-/// A stream: GET only, then the route's access (before any extractor); the
-/// handler's `LiveSession` checks the origin and finds that access.
+/// A stream: GET only, the route's access, then its admission, all before any
+/// extractor of the handler.
 async fn admitted_stream(access: &AdminAccess, mut req: Request, next: Next) -> Response {
     if req.method() != Method::GET {
         return AppError::MethodNotAllowed.into_response();
@@ -244,7 +244,10 @@ async fn admitted_stream(access: &AdminAccess, mut req: Request, next: Next) -> 
     if let Err(err) = access.check(req.extensions().get::<Authenticated>()) {
         return err.into_response();
     }
-    req.extensions_mut().insert(crate::realtime::LiveRoute(access.clone()));
+    // Origin, limits and the stream's place, before any extractor of the handler.
+    if let Err(refused) = crate::realtime::admit(&mut req, access).await {
+        return *refused;
+    }
     next.run(req).await
 }
 

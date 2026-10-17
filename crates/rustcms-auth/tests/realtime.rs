@@ -35,8 +35,16 @@ async fn ticks(live: LiveSession, Path(id): Path<String>, Inject(visible): Injec
     }))
 }
 
+async fn silent(live: LiveSession) -> AppResult<EventStream> {
+    Ok(live.stream(futures::stream::pending()))
+}
+
 fn routes() -> AdminRoutes {
-    AdminRoutes::new("/live").events("/ticks/{id}", AdminAccess::can("live.view"), ticks)
+    AdminRoutes::new("/live")
+        .events("/ticks/{id}", AdminAccess::can("live.view"), ticks)
+        .events("/silent", AdminAccess::can("live.view"), silent)
+        // A handler that takes no LiveSession is still admitted by its route.
+        .events("/bare", AdminAccess::can("live.view"), || async { "not a stream" })
 }
 
 fn build(config: Config) -> AppBuilder {
@@ -94,8 +102,12 @@ struct Sse {
 }
 
 async fn open(addr: SocketAddr, method: &str, headers: &[(&str, &str)]) -> Sse {
+    open_at(addr, method, PATH, headers).await
+}
+
+async fn open_at(addr: SocketAddr, method: &str, path: &str, headers: &[(&str, &str)]) -> Sse {
     let mut stream = TcpStream::connect(addr).await.unwrap();
-    let mut request = format!("{method} {PATH} HTTP/1.1\r\nHost: localhost:8000\r\nConnection: close\r\n");
+    let mut request = format!("{method} {path} HTTP/1.1\r\nHost: localhost:8000\r\nConnection: close\r\n");
     for (name, value) in headers {
         request.push_str(&format!("{name}: {value}\r\n"));
     }
@@ -186,6 +198,16 @@ db_test!(admission_needs_the_panels_own_origin_and_the_permission, migrate = Mig
     assert_eq!(get(with(&[("Sec-Fetch-Site", "same-site")])).await, 403, "a sibling subdomain");
     assert_eq!(get(with(&[("Origin", ORIGIN), ("Sec-Fetch-Site", "cross-site")])).await, 403);
     assert_eq!(get(with(&[("Referer", "https://evil.example/")])).await, 403);
+    // A header given twice, even one that would not decide.
+    assert_eq!(get(with(&[("Origin", ORIGIN), ("Origin", ORIGIN)])).await, 403);
+    assert_eq!(get(with(&[("Origin", ORIGIN), ("Referer", "http://localhost:8000/"), ("Referer", "x")])).await, 403);
+    // The route admits before the handler: one without LiveSession too.
+    let bare = |headers: Vec<(&'static str, String)>| async move {
+        let borrowed: Vec<(&str, &str)> = headers.iter().map(|(n, v)| (*n, v.as_str())).collect();
+        open_at(server.addr, "GET", "/admin/api/x/live/bare", &borrowed).await.status
+    };
+    assert_eq!(bare(with(&[])).await, 403, "no origin");
+    assert_eq!(bare(with(&[("Origin", ORIGIN)])).await, 200);
     // Credentials and access come first.
     let same = [("Origin", ORIGIN.to_owned())];
     assert_eq!(get(same.to_vec()).await, 401, "no session");
@@ -248,6 +270,14 @@ db_test!(an_open_stream_stops_when_access_ends, migrate = Migrator, |db: TestDb|
     // Already out of reach: closed before the first event.
     let mut stream = signed_in(&server, &admin).await;
     assert_eq!(stream.closed(bound).await.as_deref(), Some("forbidden"));
+    server.state.service::<Visible>().unwrap().0.store(true, Ordering::SeqCst);
+    // The account disabled.
+    let mut stream = signed_in(&server, &admin).await;
+    assert!(stream.next(Duration::from_secs(2)).await.is_some());
+    let mut disabled = seed.admin.clone().into_active_model();
+    disabled.is_active = Set(false);
+    disabled.update(db).await.unwrap();
+    assert_eq!(stream.closed(bound).await.as_deref(), Some("signed_out"));
 });
 
 db_test!(streams_are_bounded_per_user_and_released, migrate = Migrator, |db: TestDb| async move {
@@ -267,6 +297,34 @@ db_test!(streams_are_bounded_per_user_and_released, migrate = Migrator, |db: Tes
     assert_eq!(signed_in(&server, &reader).await.status, 200);
 });
 
+db_test!(a_silent_stream_left_by_its_client_frees_its_place_at_once, migrate = Migrator, |db: TestDb| async move {
+    let (app, seed) = setup_with(build, db, &[WATCHER]).await;
+    let server = serve(&app).await;
+    let reader = cookie(&app, &seed.reader).await;
+    let headers = [("Cookie", reader.as_str()), ("Origin", ORIGIN)];
+    let first = open_at(server.addr, "GET", "/admin/api/x/live/silent", &headers).await;
+    let _second = open_at(server.addr, "GET", "/admin/api/x/live/silent", &headers).await;
+    assert_eq!(first.status, 200);
+    assert_eq!(open_at(server.addr, "GET", "/admin/api/x/live/silent", &headers).await.status, 429);
+    // Nothing is ever written to it: the closed connection is noticed by the
+    // server dropping the body, well before a recheck would.
+    drop(first);
+    let realtime = server.state.service::<rustcms_auth::realtime::Realtime>().unwrap();
+    let freed = async {
+        while realtime.open_for(seed.reader.id) >= 2 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    };
+    tokio::time::timeout(Duration::from_millis(900), freed).await.expect("released before the 1 s recheck");
+});
+
+db_test!(no_new_stream_while_stopping, migrate = Migrator, |db: TestDb| async move {
+    let (app, seed) = setup_with(build, db, &[WATCHER]).await;
+    let server = serve(&app).await;
+    server.state.service::<rustcms_core::realtime::Shutdown>().unwrap().begin();
+    assert_eq!(signed_in(&server, &cookie(&app, &seed.reader).await).await.status, 503);
+});
+
 db_test!(shutdown_ends_streams_within_the_grace, migrate = Migrator, |db: TestDb| async move {
     let (app, seed) = setup_with(build, db, &[WATCHER]).await;
     let mut server = serve(&app).await;
@@ -275,14 +333,14 @@ db_test!(shutdown_ends_streams_within_the_grace, migrate = Migrator, |db: TestDb
     let started = Instant::now();
     server.stop.take().unwrap().send(()).unwrap();
     assert_eq!(stream.closed(Duration::from_secs(3)).await.as_deref(), Some("shutdown"));
-    tokio::time::timeout(Duration::from_secs(6), &mut server.task).await.expect("serve returned").unwrap().unwrap();
-    assert!(started.elapsed() < Duration::from_secs(6));
+    tokio::time::timeout(Duration::from_secs(4), &mut server.task).await.expect("serve returned").unwrap().unwrap();
+    assert!(started.elapsed() < Duration::from_secs(4), "within the 2 s grace, with margin");
 });
 
 #[test]
 fn events_routes_are_listed_with_their_permission() {
     let routes = routes();
     let listed: Vec<String> = routes.list().into_iter().map(|(m, p, _)| format!("{m} {p}")).collect();
-    assert_eq!(listed, ["GET /live/ticks/{id}"]);
+    assert_eq!(listed, ["GET /live/ticks/{id}", "GET /live/silent", "GET /live/bare"]);
     assert_eq!(routes.permissions().into_iter().collect::<Vec<_>>(), ["live.view"]);
 }

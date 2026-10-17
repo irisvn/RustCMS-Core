@@ -23,6 +23,9 @@
 "Between 1 and 100" = "Từ 1 đến 100"
 "Mail password" = "Mật khẩu mail"
 "Post stats" = "Thống kê bài viết"
+"Live" = "Trực tiếp"
+# The permission group of `demo.live`.
+"Demo" = "Demo"
 "Latest posts" = "Bài viết mới"
 "Visibility" = "Hiển thị"
 "Visible to readers." = "Người đọc thấy bài này."

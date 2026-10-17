@@ -121,6 +121,16 @@ export class ApiClient {
     };
   }
 
+  /**
+   * Whether `response` belongs to this tab's account (`X-Rustcms-User`), as
+   * every other admin response is checked: false means the session moved to
+   * another account and the response must not be shown.
+   */
+  acceptsResponse(response: Response): boolean {
+    const owner = response.headers.get("X-Rustcms-User");
+    return owner === null || !this.opts.observeIdentity || this.opts.observeIdentity(owner);
+  }
+
   /** The `fetch` this client uses (tests replace it), callable as a method. */
   get fetcher(): typeof fetch {
     const custom = this.opts.fetch;

@@ -17,8 +17,11 @@ terminals) is deferred to W2b; commands go through W1 `AdminRoutes` POSTs.
 - **Declaration:** `AdminRoutes::events(path, AdminAccess, handler)`.
   - GET only; `HEAD` is 405 and starts nothing.
   - W1's access check runs before extractors.
-  - The handler takes `LiveSession` (first argument) and returns
-    `live.stream(events).target(check)`.
+  - Admission (origin, open limits, permits, shutdown) runs in the route
+    layer before any extractor; the handler takes the admitted
+    `LiveSession` and returns `live.stream(events).target(check)`.
+  - Permits are held by the producing task and by the response body, until
+    both end; a dropped body stops the task at once.
   - Streams are read-only by contract: changes belong in a POST.
 - **Admission:**
   - no CSRF token: a GET stream changes nothing, and CORS keeps other
@@ -54,7 +57,8 @@ terminals) is deferred to W2b; commands go through W1 `AdminRoutes` POSTs.
 - **Limits, per instance:**
   - `max_connections` (1000) and `max_per_user` (10): non-waiting permits
     owned by the stream, so every path releases them; when full, 429;
-  - opens per user (60/min) and per IP (300/min);
+  - opens per user (60/min) and per IP (300/min), through the rate
+    limiter (deployment-wide with Redis);
   - events at most 64 KiB;
   - a keep-alive every 15 s.
 - **Shutdown:**

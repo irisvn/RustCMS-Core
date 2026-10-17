@@ -122,6 +122,8 @@ pub(crate) async fn authenticate(State(app): State<AppState>, req: Request, next
 }
 
 async fn admin(app: &AppState, auth: &Arc<AuthState>, mut req: Request, next: Next) -> AppResult<Response> {
+    // Route layers of admin routes (streams' admission) read the app from here.
+    req.extensions_mut().insert(app.clone());
     let session = session::load(auth, app.db(), req.headers()).await?;
     if !is_safe(req.method()) {
         check_origin(auth, req.headers())?;

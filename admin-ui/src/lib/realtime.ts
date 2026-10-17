@@ -90,6 +90,11 @@ export function openEvents(
     }
     if (!live()) return;
     if (FINAL_STATUSES.has(response.status)) return stop({ state: "closed", status: response.status });
+    // Another account's stream (the cookie changed under this tab): never shown.
+    if (!api.acceptsResponse(response)) {
+      controller.abort();
+      return stop({ state: "closed", reason: "session" });
+    }
     if (!response.ok || !response.body) return retry({ status: response.status });
     report({ state: "open" });
     const reader = response.body.getReader();
@@ -97,10 +102,13 @@ export function openEvents(
     let buffer = "";
     let reason: string | undefined;
     try {
-      for (;;) {
+      reading: for (;;) {
         const { value, done } = await reader.read();
         if (done || !live()) break;
-        buffer += decoder.decode(value, { stream: true }).replace(/\r\n?/g, "\n");
+        buffer += decoder.decode(value, { stream: true });
+        // CR LF may be split across chunks: a trailing CR waits for the next one.
+        const pending = buffer.endsWith("\r") ? "\r" : "";
+        buffer = buffer.slice(0, buffer.length - pending.length).replace(/\r\n?/g, "\n") + pending;
         let end: number;
         while ((end = buffer.indexOf("\n\n")) >= 0) {
           const block = buffer.slice(0, end);
@@ -108,8 +116,10 @@ export function openEvents(
           const event = parse(block);
           if (!event || !live()) continue;
           if (event.name === "closed") {
+            // The server ended it: nothing after this counts.
             reason = (event.data as { reason?: string } | null)?.reason ?? "closed";
-            continue;
+            controller.abort();
+            break reading;
           }
           failures = 0;
           handlers.onEvent(event.name, event.data);

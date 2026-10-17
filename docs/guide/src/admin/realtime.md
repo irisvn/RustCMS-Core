@@ -35,8 +35,10 @@ pub async fn stats(live: LiveSession, Path(id): Path<String>, Inject(docker): In
 }
 ```
 
-- `LiveSession` is the handler's **first argument**. It checks the origin,
-  reserves the stream's place and gives `live.principal()`.
+- The route admits the request before the handler runs: the origin, the
+  open limits and the stream's place. The handler takes `LiveSession` (the
+  admitted stream, with `live.principal()`); a handler without it is
+  admitted all the same.
 - `live.stream(events)` takes any `Stream<Item = Event>`.
   `Event::json(name, &value)` serializes a value (names `[a-z0-9_.-]`, at
   most 64 KiB of JSON).
@@ -52,7 +54,7 @@ pub async fn stats(live: LiveSession, Path(id): Path<String>, Inject(docker): In
 ## Many viewers, one producer: the hub
 
 ```rust,ignore
-// bound once, e.g. in a provider's register: app.bind(Stats(Hub::new(&app.shutdown(), HubLimits::default())))
+// bound once, e.g. in a provider's register: app.bind(Stats(Hub::new(app.shutdown(), HubLimits::default())))
 pub struct Stats(pub Hub<String>);
 
 let subscription = stats.0
@@ -110,7 +112,7 @@ window.rustcms.registerPage("docker/stats", {
 | Origin | an `Origin`, when sent, must be the panel's; `Sec-Fetch-Site`, when sent, `same-origin`; with neither (an old browser), a same-origin `Referer`. No CSRF token is needed |
 | Access | the route's `AdminAccess` before anything runs (401, 403); `HEAD` is 405 |
 | While open | every `revalidate_secs` (30): the session, the user and its credential version, its permissions and `target`. Delivery stops within `revalidate_secs + 5 s` of a sign-out, a password change, a disabled account or a lost permission (`event: closed`) |
-| Limits (per instance) | `max_connections` (1000), `max_per_user` (10), 429 beyond; opens per user (60/min) and per IP (300/min) |
+| Limits | per instance: `max_connections` (1000), `max_per_user` (10), 429 beyond. Opens per user (60/min) and per IP (300/min) use the rate limiter, so with Redis they count across instances |
 | Slow clients | a bounded queue (64 events, 1 MiB): a client that stops reading is dropped (`lagging`) and never holds the server |
 | Shutdown | new streams get 503; open ones end with `closed: shutdown` within `shutdown_grace_secs` (5) |
 

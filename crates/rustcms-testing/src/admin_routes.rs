@@ -43,8 +43,9 @@ impl<'c, 'a> Case<'c, 'a> {
     }
 }
 
-/// Sends every case as every actor (unsafe methods with an empty JSON body)
-/// and checks the statuses; also checks that every route of `routes` has at
+/// Sends every case as every actor (unsafe methods with an empty JSON body;
+/// an admitted event stream is checked by its status and dropped) and checks
+/// the statuses; also checks that every route of `routes` has at
 /// least one case, so a new route cannot go untested.
 ///
 /// # Panics
