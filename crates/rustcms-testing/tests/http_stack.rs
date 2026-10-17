@@ -211,3 +211,46 @@ async fn a_route_can_have_its_own_body_limit() {
     // Chunked bodies over the route's own limit are cut there too.
     app.request(post("/big", 1_001, false)).await.assert_status(StatusCode::PAYLOAD_TOO_LARGE);
 }
+
+/// A test double behind a trait, bound as a newtype (`bind` keys by type).
+trait Clock: Send + Sync {
+    fn now(&self) -> &'static str;
+}
+struct Clocks(Arc<dyn Clock>);
+struct Fixed;
+impl Clock for Fixed {
+    fn now(&self) -> &'static str {
+        "12:00"
+    }
+}
+
+#[tokio::test]
+async fn a_closure_builds_the_app_with_captured_doubles() {
+    let clock: Arc<dyn Clock> = Arc::new(Fixed);
+    let built = Arc::new(AtomicBool::new(false));
+    let seen = built.clone();
+    let app = TestApp::new(
+        move |config: Config| {
+            seen.store(true, Ordering::SeqCst);
+            let mut app = AppBuilder::new(config);
+            app.bind(Clocks(clock));
+            app.routes(|r| r.route("/now", get(|Inject(c): Inject<Clocks>| async move { c.0.now() })));
+            app
+        },
+        TestDb::sqlite().await,
+    )
+    .await;
+    assert!(built.load(Ordering::SeqCst));
+    let body = app.client().get("/now").await.assert_status(StatusCode::OK).text();
+    assert_eq!(body, "12:00");
+}
+
+fn plain(config: Config) -> AppBuilder {
+    AppBuilder::new(config)
+}
+
+#[tokio::test]
+async fn a_function_still_builds_the_app() {
+    let app = TestApp::new(plain, TestDb::sqlite().await).await;
+    app.client().get("/nothing-here").await.assert_status(StatusCode::NOT_FOUND);
+}

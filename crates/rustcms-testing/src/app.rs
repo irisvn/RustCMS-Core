@@ -34,12 +34,12 @@ pub struct TestApp {
 
 impl TestApp {
     /// Builds the app with [`test_config`] on `db`.
-    pub async fn new(build: fn(Config) -> AppBuilder, db: TestDb) -> Self {
+    pub async fn new(build: impl FnOnce(Config) -> AppBuilder, db: TestDb) -> Self {
         Self::with_config(build, test_config(db.url()), db).await
     }
 
     /// Builds the app with an explicit configuration.
-    pub async fn with_config(build: fn(Config) -> AppBuilder, config: Config, db: TestDb) -> Self {
+    pub async fn with_config(build: impl FnOnce(Config) -> AppBuilder, config: Config, db: TestDb) -> Self {
         let app = build(config).build_with_db(db.conn().clone()).await.expect("build app");
         Self { app, db }
     }

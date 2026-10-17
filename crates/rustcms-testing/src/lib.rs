@@ -31,7 +31,50 @@ pub fn skip(backend: Backend) {
         !required.split(',').any(|b| b.trim() == name),
         "{variable} is required (RUSTCMS_TEST_REQUIRE) but not set"
     );
+    // Chosen explicitly: never an all-skipped green run.
+    assert!(
+        std::env::var("RUSTCMS_TEST_BACKENDS").is_err(),
+        "{variable} is required (RUSTCMS_TEST_BACKENDS selects {name}) but not set"
+    );
     eprintln!("skipped: {variable} is not set");
+}
+
+/// Whether `db_test!` runs on `backend`: every backend by default, else those
+/// of `RUSTCMS_TEST_BACKENDS` (`mysql`, `sqlite,postgres`, …).
+///
+/// # Panics
+/// On an empty or unknown name, or when `RUSTCMS_TEST_REQUIRE` asks for a
+/// backend that is not selected.
+#[doc(hidden)]
+pub fn selected(backend: Backend) -> bool {
+    let backends = std::env::var("RUSTCMS_TEST_BACKENDS").ok();
+    let required = std::env::var("RUSTCMS_TEST_REQUIRE").unwrap_or_default();
+    selection(backends.as_deref(), &required, backend).unwrap_or_else(|e| panic!("{e}"))
+}
+
+fn backend_name(backend: Backend) -> &'static str {
+    match backend {
+        Backend::Sqlite => "sqlite",
+        Backend::Postgres => "postgres",
+        Backend::Mysql => "mysql",
+    }
+}
+
+fn selection(backends: Option<&str>, required: &str, backend: Backend) -> Result<bool, String> {
+    let Some(backends) = backends else { return Ok(true) };
+    let names: Vec<&str> = backends.split(',').map(str::trim).filter(|n| !n.is_empty()).collect();
+    if names.is_empty() {
+        return Err("RUSTCMS_TEST_BACKENDS is empty: name sqlite, postgres or mysql".into());
+    }
+    if let Some(unknown) = names.iter().find(|n| !["sqlite", "postgres", "mysql"].contains(n)) {
+        return Err(format!("RUSTCMS_TEST_BACKENDS: unknown backend `{unknown}` (sqlite, postgres, mysql)"));
+    }
+    for wanted in required.split(',').map(str::trim).filter(|n| ["postgres", "mysql", "sqlite"].contains(n)) {
+        if !names.contains(&wanted) {
+            return Err(format!("RUSTCMS_TEST_REQUIRE asks for {wanted}, which RUSTCMS_TEST_BACKENDS does not select"));
+        }
+    }
+    Ok(names.contains(&backend_name(backend)))
 }
 pub use factory::UserFactory;
 /// Moved to [`rustcms_core::database::Factory`] (seeders use it too); kept here for tests.
@@ -84,7 +127,9 @@ impl TestS3 {
 /// Declares a database test that runs on SQLite, PostgreSQL and MySQL.
 ///
 /// PostgreSQL runs when `RUSTCMS_TEST_PG` holds an admin connection URL, MySQL
-/// when `RUSTCMS_TEST_MYSQL` does; otherwise that variant prints a skip notice. With `migrate = M`, the database
+/// when `RUSTCMS_TEST_MYSQL` does; otherwise that variant prints a skip notice.
+/// `RUSTCMS_TEST_BACKENDS=mysql` (any of `sqlite,postgres,mysql`) runs only
+/// those, each then required (see [`selected`]). With `migrate = M`, the database
 /// is migrated with migrator `M` first.
 ///
 /// ```rust,ignore
@@ -107,6 +152,10 @@ macro_rules! db_test {
 
             #[tokio::test]
             async fn sqlite() {
+                if !$crate::selected($crate::Backend::Sqlite) {
+                    eprintln!("skipped: not in RUSTCMS_TEST_BACKENDS");
+                    return;
+                }
                 let db = ($open)($crate::Backend::Sqlite).await.expect("sqlite is always available");
                 let cleanup = db.clone();
                 ($body)(db).await;
@@ -115,6 +164,10 @@ macro_rules! db_test {
 
             #[tokio::test]
             async fn postgres() {
+                if !$crate::selected($crate::Backend::Postgres) {
+                    eprintln!("skipped: not in RUSTCMS_TEST_BACKENDS");
+                    return;
+                }
                 let Some(db) = ($open)($crate::Backend::Postgres).await else {
                     $crate::skip($crate::Backend::Postgres);
                     return;
@@ -126,6 +179,10 @@ macro_rules! db_test {
 
             #[tokio::test]
             async fn mysql() {
+                if !$crate::selected($crate::Backend::Mysql) {
+                    eprintln!("skipped: not in RUSTCMS_TEST_BACKENDS");
+                    return;
+                }
                 let Some(db) = ($open)($crate::Backend::Mysql).await else {
                     $crate::skip($crate::Backend::Mysql);
                     return;
@@ -136,4 +193,21 @@ macro_rules! db_test {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backends_are_selected_strictly() {
+        assert_eq!(selection(None, "", Backend::Sqlite), Ok(true), "all by default");
+        assert_eq!(selection(Some("mysql"), "", Backend::Sqlite), Ok(false));
+        assert_eq!(selection(Some("mysql"), "", Backend::Mysql), Ok(true));
+        assert_eq!(selection(Some(" sqlite , postgres "), "", Backend::Postgres), Ok(true));
+        assert!(selection(Some(""), "", Backend::Mysql).is_err(), "empty");
+        assert!(selection(Some("maria"), "", Backend::Mysql).is_err(), "unknown");
+        assert!(selection(Some("mysql"), "postgres,redis", Backend::Mysql).is_err(), "required but not selected");
+        assert_eq!(selection(Some("mysql"), "mysql,redis,s3", Backend::Mysql), Ok(true), "other services ignored");
+    }
 }

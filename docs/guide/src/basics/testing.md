@@ -58,6 +58,38 @@ Without `RUSTCMS_TEST_PG` / `RUSTCMS_TEST_MYSQL`, those variants print a skip
 notice and pass, unless `RUSTCMS_TEST_REQUIRE` lists them (`postgres,mysql`):
 then they fail. Set them in CI so every test runs on the three databases.
 
+An application that runs on one database can test only that one:
+`RUSTCMS_TEST_BACKENDS=mysql` (any of `sqlite,postgres,mysql`) runs those
+variants and makes them required, so a missing server fails instead of
+skipping. An empty or unknown name fails, as does a backend that
+`RUSTCMS_TEST_REQUIRE` asks for but the selection leaves out. Unset, all
+three run as before.
+
+## Test doubles
+
+`TestApp::new` (and `with_config`) takes any `FnOnce(Config) -> AppBuilder`,
+so a closure can bind a double next to your real providers:
+
+```rust,ignore
+struct Docker(Arc<dyn DockerApi>); // a newtype: `bind` keys services by type
+
+let fake = Arc::new(FakeDocker::default());
+let double = fake.clone();
+let app = TestApp::new(
+    move |config| {
+        let mut app = bootstrap::build(config);
+        app.bind(Docker(double));    // replaces the one bound by your provider
+        app
+    },
+    db,
+)
+.await;
+```
+
+`bind` replaces a service of the **same concrete type**: bind a newtype
+around `Arc<dyn Trait>` (not the trait object itself) and resolve it with
+`Inject<Docker>`, so the double and the real service share one key.
+
 ## HTTP helpers
 
 | Helper                                   | Does                                   |

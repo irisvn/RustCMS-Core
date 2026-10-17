@@ -241,7 +241,9 @@ impl Config {
         // `_FILE` variables are not settings themselves.
         let names = files.names();
         figment = figment.merge(
-            Env::prefixed("RUSTCMS_").filter(move |key| !names.iter().any(|n| key.as_str().eq_ignore_ascii_case(n))).split("__"),
+            Env::prefixed("RUSTCMS_")
+                .filter(move |key| !names.iter().any(|n| key.as_str().eq_ignore_ascii_case(n)))
+                .split("__"),
         );
         for (path, value) in files.prefixed()? {
             figment = figment.merge(Serialized::default(&path, value));
@@ -346,7 +348,11 @@ mod tests {
             struct Mail {
                 smtp: Smtp,
             }
-            assert_eq!(config.section::<Mail>("mail").unwrap().smtp.password, " spaced secret ", "other whitespace kept");
+            assert_eq!(
+                config.section::<Mail>("mail").unwrap().smtp.password,
+                " spaced secret ",
+                "other whitespace kept"
+            );
             // RUSTCMS_* still wins over a well-known variable's file.
             jail.set_env("RUSTCMS_DATABASE__URL", "sqlite://other.db");
             assert_eq!(load().unwrap().database.url, "sqlite://other.db");
@@ -383,7 +389,11 @@ mod tests {
         let sqlite = ("DATABASE_URL", "sqlite::memory:");
         fails_with(&[], &[sqlite, ("RUSTCMS_MAIL__PASSWORD_FILE", "missing")], "RUSTCMS_MAIL__PASSWORD_FILE missing");
         fails_with(&[("empty", b"\n")], &[sqlite, ("RUSTCMS_MAIL__PASSWORD_FILE", "empty")], "is empty");
-        fails_with(&[("binary", &[0xff, 0xfe, 0x00])], &[sqlite, ("RUSTCMS_MAIL__PASSWORD_FILE", "binary")], "not UTF-8");
+        fails_with(
+            &[("binary", &[0xff, 0xfe, 0x00])],
+            &[sqlite, ("RUSTCMS_MAIL__PASSWORD_FILE", "binary")],
+            "not UTF-8",
+        );
         let big = vec![b'x'; 64 * 1024 + 1];
         fails_with(&[("big", &big)], &[sqlite, ("RUSTCMS_MAIL__PASSWORD_FILE", "big")], "larger than");
         fails_with(

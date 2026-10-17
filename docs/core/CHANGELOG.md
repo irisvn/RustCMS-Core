@@ -6,6 +6,13 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.4 — W9)
+- `TestApp::new` / `with_config` take any `FnOnce(Config) -> AppBuilder`
+  (closures binding test doubles; function items still work).
+- `RUSTCMS_TEST_BACKENDS=mysql` (any of `sqlite,postgres,mysql`): `db_test!`
+  runs only those, each then required; empty or unknown names, or a required
+  backend left out, fail.
+
 ### Added (0.4 — W7)
 - Configuration from files: every well-known variable and every
   `RUSTCMS_<PATH>` also reads `<VAR>_FILE` (Docker/Kubernetes secrets), in its
