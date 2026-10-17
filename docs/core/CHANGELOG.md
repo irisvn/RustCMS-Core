@@ -6,6 +6,12 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.4 — W7)
+- Configuration from files: every well-known variable and every
+  `RUSTCMS_<PATH>` also reads `<VAR>_FILE` (Docker/Kubernetes secrets), in its
+  variable's place; both set, a missing, empty, non-UTF-8 or over-64-KiB file
+  fail boot without quoting the content; one trailing line break removed.
+
 ### Added
 - Guide: *Database schema* reference (users, roles, permissions and their
   assignments, sessions, tokens, JWT, one-time links, every other framework

@@ -111,3 +111,27 @@ Every key can be set from the environment as `RUSTCMS_<SECTION>__<KEY>`
 `RUSTCMS_AUTH__JWT__ACCESS_TTL_SECS=600`. Lists are written in TOML syntax:
 `RUSTCMS_HTTP__TRUSTED_PROXIES='["10.0.0.0/8"]'`. With every value in the
 environment, the `config/` directory is optional.
+
+### From files (Docker and Kubernetes secrets)
+
+Any of these variables (the well-known ones and every `RUSTCMS_…`) can be read
+from a file instead: add `_FILE` to its name and give the path.
+
+```sh
+APP_KEY_FILE=/run/secrets/app_key
+DATABASE_URL_FILE=/run/secrets/database_url
+RUSTCMS_MAIL__SMTP__PASSWORD_FILE=/run/secrets/smtp_password
+```
+
+- The value takes its variable's place in the order above: a
+  `RUSTCMS_DATABASE__URL` still wins over `DATABASE_URL_FILE`.
+- One trailing line break is removed (as `echo` and editors add it); any other
+  whitespace is kept. Values are read like environment values (`true`,
+  numbers), except that a value with leading or trailing spaces stays exactly
+  that string.
+- Boot fails when a variable and its `_FILE` are both set, or when the file is
+  missing, unreadable, empty, not UTF-8 or larger than 64 KiB. The message
+  names the variable and the path, never the content.
+- A key whose own name ends in `_file` cannot be set from the environment
+  (`RUSTCMS_X__LOG_FILE` means the file of `x.log`); put it in a TOML file.
+  A key named `file` itself is fine: `RUSTCMS_LOG__FILE` is `log.file`.
