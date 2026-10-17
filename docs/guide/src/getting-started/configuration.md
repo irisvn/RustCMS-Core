@@ -95,6 +95,19 @@ With a URL set, boot fails if Redis does not answer, or if RustCMS was built
 without the `redis` feature. Commands time out after 1 s; rate limits then
 fail closed (500). See [Several instances](../digging-deeper/instances.md).
 
+### `[realtime]` (`config/realtime.toml`)
+
+[Realtime events](../admin/realtime.md) streams. Every limit is per instance.
+
+| Key | Default | |
+|---|---|---|
+| `realtime.revalidate_secs` | `30` | how often an open stream rechecks the session, user and permissions (at least 1; each check costs about 3 queries) |
+| `realtime.max_connections` | `1000` | open streams on this instance (429 beyond) |
+| `realtime.max_per_user` | `10` | open streams of one user on this instance |
+| `realtime.opens_per_user_per_minute` | `60` | |
+| `realtime.opens_per_ip_per_minute` | `300` | shared IPs (offices, proxies) share it |
+| `realtime.shutdown_grace_secs` | `5` | time given to open streams when the server stops |
+
 ## Your own sections
 
 ```rust,ignore

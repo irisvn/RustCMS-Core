@@ -6,6 +6,22 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.4 — W2a, W3)
+- Server-sent events on admin routes (ADR 0027): `AdminRoutes::events`,
+  `LiveSession`, `EventStream::target`.
+  - Admission on the panel's own origin without a CSRF token.
+  - Rechecks every `[realtime] revalidate_secs` (session, user and version,
+    fresh permissions, target).
+  - Bounded queues independent of the client, per-instance limits (429),
+    `closed` events.
+  - Shutdown within `shutdown_grace_secs` (`Shutdown`, `App::serve_on`).
+- `rustcms::realtime::Hub` (ADR 0028): one producer per key, idle grace,
+  `Lagged` → `resync`, bounded keys and events. `Event::json`, plus re-exported
+  `stream`, `StreamExt` and `time`.
+- SPA: `ctx.realtime.events` for script views (fetch-based, backoff, closed on
+  unmount and on session change); `ApiClient.onEpochChange`.
+- Demo: a Live page (hub counter, reset POST); E2E on Chrome.
+
 ### Added (0.4 — W1)
 - `AdminRoutes` / `AdminAccess` (ADR 0026): JSON routes for the panel's own
   pages under `{admin_path}/api/x`, on the admin session (Origin and CSRF on

@@ -115,5 +115,5 @@ answers 422 there. Test the real bodies separately. An anonymous client with
 a CSRF token (`client.fetch_csrf().await`) reaches the access check on writes
 (401); without one, the guard refuses first (403).
 
-Streaming (server-sent events, WebSocket) is not available on admin routes
-yet.
+For live data, declare a stream with `.events(…)`: see
+[Realtime events](realtime.md).

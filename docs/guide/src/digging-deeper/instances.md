@@ -30,6 +30,11 @@ limits: run one instance unless Redis is configured. Password-hashing and
 upload concurrency limits are always per instance (each bounds its own CPU
 and disk).
 
+[Realtime events](../admin/realtime.md) are per instance too. Each instance
+runs its own hub producers, and the `[realtime]` connection limits apply to
+each one. A change on one instance still reaches every open stream within a
+recheck, because rechecks read the database.
+
 ## Your own periodic jobs
 
 ```rust,ignore
