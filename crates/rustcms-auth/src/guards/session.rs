@@ -108,6 +108,11 @@ impl Session {
         self.state().data.auth_version
     }
 
+    /// The stored id (the hash of the cookie's value), if this session exists.
+    pub(crate) fn stored_id(&self) -> Option<String> {
+        self.state().stored_id.clone()
+    }
+
     /// Signs `user_id` in: new session id and CSRF token.
     pub fn login(&self, user_id: i64, auth_version: i64) {
         self.login_remembered(user_id, auth_version, false);
@@ -148,6 +153,21 @@ impl Session {
         state.data = Data::default();
         state.destroy = true;
     }
+}
+
+/// Whether the stored session `id` still exists, unexpired, signed in as
+/// `user_id` at `auth_version` (a live connection's recheck: a re-issued
+/// session has another id, so it no longer matches).
+pub(crate) async fn still_signed_in<C: ConnectionTrait>(
+    db: &C,
+    id: &str,
+    user_id: i64,
+    auth_version: i64,
+) -> AppResult<bool> {
+    let row =
+        entity::Entity::find_by_id(id.to_owned()).filter(entity::Column::ExpiresAt.gt(Utc::now())).one(db).await?;
+    let data: Option<Data> = row.and_then(|row| serde_json::from_str(&row.data).ok());
+    Ok(data.is_some_and(|d| d.user_id == Some(user_id) && d.auth_version == auth_version))
 }
 
 /// Loads the session named by the request cookie.

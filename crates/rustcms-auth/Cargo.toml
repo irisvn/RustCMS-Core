@@ -16,6 +16,7 @@ categories.workspace = true
 redis = ["rustcms-core/redis", "dep:redis"]
 
 [dependencies]
+futures-util.workspace = true
 redis = { workspace = true, optional = true }
 rustcms-core = { workspace = true, features = ["mail"] }
 anyhow.workspace = true

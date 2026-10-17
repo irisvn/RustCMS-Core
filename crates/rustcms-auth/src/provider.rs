@@ -114,6 +114,9 @@ impl ServiceProvider for AuthProvider {
         for (guard, name, group) in &self.permissions {
             state.permissions.declare(guard, name, group.as_deref());
         }
+        let realtime: crate::realtime::RealtimeConfig =
+            app.config().section("realtime").unwrap_or_else(|e| panic!("invalid [realtime] configuration: {e}"));
+        app.bind(crate::realtime::Realtime::new(realtime));
         app.bind(state);
         let admin_path = config.admin_path.clone();
         app.describe_routes("auth", routes::routes(&admin_path));

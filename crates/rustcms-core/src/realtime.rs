@@ -304,11 +304,12 @@ impl<K: Eq + Hash + Clone + Send + Sync + 'static> Hub<K> {
             // Nobody came back during the grace, and it is still that entry.
             let idle =
                 state.entries.get(&key).is_some_and(|e| e.id == id && e.subscribers == 0 && e.activity == activity);
-            if idle && let Some(entry) = state.entries.remove(&key) {
-                if let Some(producer) = entry.producer {
-                    producer.abort();
-                    state.stopping.insert(key, producer);
-                }
+            if idle
+                && let Some(entry) = state.entries.remove(&key)
+                && let Some(producer) = entry.producer
+            {
+                producer.abort();
+                state.stopping.insert(key, producer);
             }
         });
     }
@@ -330,6 +331,18 @@ impl<K: Eq + Hash + Clone + Send + Sync + 'static> Subscription<K> {
             Err(broadcast::error::RecvError::Lagged(missed)) => Some(HubEvent::Lagged(missed)),
             Err(broadcast::error::RecvError::Closed) => None,
         }
+    }
+
+    /// As server-sent events: items as they are, `Lagged` as an event
+    /// `resync` (the page reloads its state), ending with the producer.
+    pub fn into_events(self) -> impl Stream<Item = Event> + Send {
+        self.into_stream().filter_map(|event| async move {
+            match event {
+                HubEvent::Item(event) => Some(event),
+                HubEvent::Lagged(missed) => Event::json("resync", &serde_json::json!({"missed": missed})).ok(),
+                HubEvent::Ended => None,
+            }
+        })
     }
 
     /// As a stream of events, ending after `Ended`.

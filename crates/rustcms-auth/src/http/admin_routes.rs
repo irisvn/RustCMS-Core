@@ -79,10 +79,14 @@ impl AdminAccess {
         let Some(caller) = caller.filter(|c| c.principal.guard == ADMIN_GUARD) else {
             return Err(AppError::Unauthenticated);
         };
+        if self.allows(&caller.principal) { Ok(()) } else { Err(AppError::Forbidden) }
+    }
+
+    /// Whether an admin `principal` passes (rechecks of open streams).
+    pub(crate) fn allows(&self, principal: &rustcms_core::Principal) -> bool {
         match self {
-            Self::Authenticated => Ok(()),
-            Self::Can(permission) if caller.principal.can(permission) => Ok(()),
-            Self::Can(_) => Err(AppError::Forbidden),
+            Self::Authenticated => principal.guard == ADMIN_GUARD,
+            Self::Can(permission) => principal.guard == ADMIN_GUARD && principal.can(permission),
         }
     }
 }
@@ -136,6 +140,25 @@ impl AdminRoutes {
         put => PUT, put;
         patch => PATCH, patch;
         delete => DELETE, delete;
+    }
+
+    /// A server-sent events route at `path` (GET only; `HEAD` is 405). Its
+    /// handler takes a [`LiveSession`](crate::LiveSession) and returns an
+    /// [`EventStream`](crate::EventStream). Admission needs no CSRF token but
+    /// the panel's own origin; the stream is rechecked while open (ADR 0027).
+    pub fn events<H, T>(mut self, path: &str, access: AdminAccess, handler: H) -> Self
+    where
+        H: Handler<T, AppState>,
+        T: 'static,
+    {
+        assert!(path.starts_with('/'), "admin route paths start with `/`: {path:?}");
+        let checked = access.clone();
+        let router = get(handler).route_layer(middleware::from_fn(move |req: Request, next: Next| {
+            let access = checked.clone();
+            async move { admitted_stream(&access, req, next).await }
+        }));
+        self.routes.push(Route { method: Method::GET, path: join("", path), access, router });
+        self
     }
 
     /// Adds `routes` (with their own prefix, if any) under `prefix`, relative
@@ -210,6 +233,19 @@ impl AdminRoutes {
             router
         });
     }
+}
+
+/// A stream: GET only, then the route's access (before any extractor); the
+/// handler's `LiveSession` checks the origin and finds that access.
+async fn admitted_stream(access: &AdminAccess, mut req: Request, next: Next) -> Response {
+    if req.method() != Method::GET {
+        return AppError::MethodNotAllowed.into_response();
+    }
+    if let Err(err) = access.check(req.extensions().get::<Authenticated>()) {
+        return err.into_response();
+    }
+    req.extensions_mut().insert(crate::realtime::LiveRoute(access.clone()));
+    next.run(req).await
 }
 
 async fn guarded(access: &AdminAccess, req: Request, next: Next) -> Response {

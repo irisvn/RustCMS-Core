@@ -3395,6 +3395,7 @@ dependencies = [
  "chrono",
  "clap",
  "futures",
+ "futures-util",
  "hex",
  "hmac",
  "moka",
