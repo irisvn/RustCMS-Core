@@ -128,9 +128,12 @@ pub struct RouteInfo {
 impl AppBuilder {
     /// Starts from a loaded configuration.
     pub fn new(config: Config) -> Self {
+        let mut services = ServiceMap::default();
+        // Long-lived tasks stop with the server (`serve`).
+        services.insert(crate::realtime::Shutdown::default());
         Self {
             config,
-            services: ServiceMap::default(),
+            services,
             routes: Vec::new(),
             providers: Vec::new(),
             commands: vec![
@@ -179,6 +182,12 @@ impl AppBuilder {
     /// Configuration.
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// The shutdown of long-lived tasks (streams, hub producers), cancelled
+    /// when the server stops.
+    pub fn shutdown(&self) -> Arc<crate::realtime::Shutdown> {
+        self.services.get().expect("bound by AppBuilder::new")
     }
 
     /// Binds a service, replacing any previous binding of the same type.
@@ -327,6 +336,16 @@ impl App {
         let addr = listen.unwrap_or(self.state.config().app.listen);
         let listener = tokio::net::TcpListener::bind(addr).await?;
         tracing::info!(%addr, "listening");
+        self.serve_on(listener, shutdown_signal()).await
+    }
+
+    /// Serves HTTP on `listener` until `stop` completes, then shuts down as
+    /// [`serve`](Self::serve) does on a signal (tests, embedding).
+    pub async fn serve_on(
+        self,
+        listener: tokio::net::TcpListener,
+        stop: impl Future<Output = ()> + Send + 'static,
+    ) -> anyhow::Result<()> {
         // Workers run beside the server and stop after it (jobs may finish).
         let queue = crate::queue::QueueConfig::of(self.state.config())?;
         let workers = (queue.enabled && queue.workers > 0)
@@ -334,9 +353,23 @@ impl App {
         // One signal for both: workers stop claiming at once and drain while
         // the server drains its requests.
         let (signalled, signal) = tokio::sync::watch::channel(false);
+        // Streams and hub producers: admission closes and their token is
+        // cancelled with the signal; they get the grace, then are aborted. The
+        // server is not waited for longer either (an open stream would keep
+        // it), while workers drain as long as their own `shutdown_secs`.
+        let grace = std::time::Duration::from_secs(
+            self.state.config().section::<RealtimeShutdown>("realtime").map_or(5, |r| r.shutdown_grace_secs),
+        );
+        let long_lived = self.state.service::<crate::realtime::Shutdown>();
         let listen = tokio::spawn(async move {
-            shutdown_signal().await;
+            stop.await;
+            if let Some(long_lived) = &long_lived {
+                long_lived.begin();
+            }
             let _ = signalled.send(true);
+            if let Some(long_lived) = long_lived {
+                long_lived.drain(grace).await;
+            }
         });
         let (mut server_signal, mut worker_signal) = (signal.clone(), signal.clone());
         let server = axum::serve(listener, self.router.into_make_service_with_connect_info::<std::net::SocketAddr>())
@@ -349,7 +382,20 @@ impl App {
                 workers.shutdown().await;
             }
         };
-        let mut server = std::pin::pin!(async { server.await });
+        let mut bounded_signal = signal.clone();
+        let mut server = std::pin::pin!(async move {
+            let mut served = std::pin::pin!(async { server.await });
+            tokio::select! {
+                served = &mut served => served,
+                () = async {
+                    let _ = bounded_signal.wait_for(|s| *s).await;
+                    tokio::time::sleep(grace).await;
+                } => {
+                    tracing::warn!("connections still open after the shutdown grace: no longer waiting for them");
+                    Ok(())
+                }
+            }
+        });
         let mut drain = std::pin::pin!(drain);
         let mut drained = false;
         let served = tokio::select! {
@@ -364,10 +410,26 @@ impl App {
         if !drained && *signal.borrow() {
             drain.await;
         }
-        listen.abort();
+        // The listener task also drains long-lived tasks after the signal.
+        if *signal.borrow() {
+            let _ = listen.await;
+        } else {
+            listen.abort();
+        }
         served?;
         Ok(())
     }
+}
+
+/// `[realtime] shutdown_grace_secs` (default 5).
+#[derive(serde::Deserialize)]
+struct RealtimeShutdown {
+    #[serde(default = "default_grace")]
+    shutdown_grace_secs: u64,
+}
+
+fn default_grace() -> u64 {
+    5
 }
 
 pub(crate) async fn shutdown_signal() {

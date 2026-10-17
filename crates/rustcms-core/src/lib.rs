@@ -18,6 +18,7 @@ pub mod mail;
 pub mod models;
 pub mod principal;
 pub mod queue;
+pub mod realtime;
 #[cfg(feature = "redis")]
 pub mod redis;
 pub mod settings;
