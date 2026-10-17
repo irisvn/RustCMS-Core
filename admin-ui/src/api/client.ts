@@ -121,9 +121,11 @@ export class ApiClient {
     };
   }
 
-  /** The `fetch` this client uses (tests replace it). */
+  /** The `fetch` this client uses (tests replace it), callable as a method. */
   get fetcher(): typeof fetch {
-    return this.opts.fetch ?? fetch;
+    const custom = this.opts.fetch;
+    // The browser's `fetch` throws "Illegal invocation" unless called on the window.
+    return custom ?? ((input, init) => globalThis.fetch(input, init));
   }
 
   /** Forgets the CSRF token (after login/logout the server rotates it). */

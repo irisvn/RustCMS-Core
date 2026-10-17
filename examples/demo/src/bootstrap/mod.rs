@@ -8,8 +8,10 @@ use rustcms::prelude::*;
 pub fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
     let api = crate::routes::api::routes();
-    providers::register(&mut app, &api);
+    let admin = crate::routes::admin::routes();
+    providers::register(&mut app, &api, &admin);
     // Mounted and listed by `rustcms route:list` from the same declarations.
     api.register(&mut app);
+    admin.register(&mut app);
     app
 }

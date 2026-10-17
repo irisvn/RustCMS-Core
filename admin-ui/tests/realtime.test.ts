@@ -101,6 +101,24 @@ describe("openEvents", () => {
     expect(pending.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("calls the browser's fetch as a function, never on the client", async () => {
+    // A real browser throws "Illegal invocation" when fetch runs with another `this`.
+    const original = globalThis.fetch;
+    const receivers: unknown[] = [];
+    globalThis.fetch = function (this: unknown) {
+      receivers.push(this);
+      return Promise.resolve(new Response(null, { status: 401 }));
+    } as typeof fetch;
+    try {
+      const api = new ApiClient({ apiPath: "/admin/api" });
+      openEvents(api, "/a", { onEvent: () => {} });
+      await vi.waitFor(() => expect(receivers).toHaveLength(1));
+      expect(receivers[0]).not.toBe(api);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it("refuses paths outside the namespace", () => {
     const { api } = client([]);
     expect(() => openEvents(api, "docker", { onEvent: () => {} })).toThrow();

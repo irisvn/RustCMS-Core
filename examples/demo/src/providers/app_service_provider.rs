@@ -11,6 +11,9 @@ pub struct AppServiceProvider;
 #[async_trait]
 impl ServiceProvider for AppServiceProvider {
     fn register(&self, app: &mut AppBuilder) {
+        // The live page's counter (one producer for every viewer).
+        let ticker = crate::services::ticker::Ticker::new(&app.shutdown());
+        app.bind(ticker);
         // `rustcms db:seed` runs `database` (it calls the others).
         app.seeder(seeders::DatabaseSeeder);
         app.seeder(seeders::user_seeder::UserSeeder);

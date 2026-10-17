@@ -12,5 +12,6 @@ pub mod models;
 pub mod policies;
 pub mod providers;
 pub mod routes;
+pub mod services;
 pub mod settings;
 // rustcms:mods

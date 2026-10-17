@@ -8,13 +8,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use futures_util::{FutureExt, Stream, StreamExt};
+use futures_util::FutureExt;
 use serde::Serialize;
 use tokio::sync::broadcast;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::AppError;
+
+/// Stream helpers and timers for producers and handlers (`stream::unfold`,
+/// `.chain`, `time::sleep`, `time::interval`), so applications need no
+/// crate of their own for them.
+pub use futures_util::{Stream, StreamExt, stream};
+pub use tokio::time;
 
 /// Largest serialized event (its JSON data).
 pub const MAX_EVENT_BYTES: usize = 64 * 1024;

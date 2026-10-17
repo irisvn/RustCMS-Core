@@ -29,11 +29,14 @@ pub fn provider() -> AdminProvider {
                 ),
         )
         .page::<crate::admin::pages::post_stats_page::PostStatsPage>()
+        .page::<crate::admin::pages::live_page::LivePage>()
         // rustcms:pages
         .slot::<crate::admin::slots::post_summary_slot::PostSummarySlot>()
         // The `demo/color` widget of the category form.
         .extension_script("demo-color", include_str!("../../resources/admin/js/demo/color.js"))
         .extension_style("demo-color", include_str!("../../resources/admin/css/demo/color.css"))
+        // The live page (`LivePage`, server-sent events).
+        .extension_script("demo-live", include_str!("../../resources/admin/js/demo/live.js"))
         // rustcms:extensions
         // Vietnamese labels (`cargo run -- lang:missing vi` lists what is missing).
         .translations("vi", include_str!("../../lang/vi.toml"))
