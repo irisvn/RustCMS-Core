@@ -99,6 +99,39 @@ it("mounts a script page with its data, and unmounts it on leaving", async () =>
   expect(calls).toContain("unmount");
 });
 
+it("gives a script page server-sent events, closed when the view goes", async () => {
+  let aborted = false;
+  server.use(
+    http.get("*/admin/api/x/live/ticks", ({ request }) => {
+      request.signal.addEventListener("abort", () => {
+        aborted = true;
+      });
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('event: tick\ndata: {"n":7}\n\n'));
+        },
+      });
+      return new HttpResponse(body, { headers: { "Content-Type": "text/event-stream" } });
+    }),
+  );
+  registerPage("test/report", {
+    apiVersion: 1,
+    mount(element, ctx) {
+      ctx.realtime.events("/live/ticks", {
+        onEvent: (name, data) => {
+          element.textContent = `${name} ${(data as { n: number }).n}`;
+        },
+      });
+      return { update() {}, unmount() {} };
+    },
+  });
+  const router = mount("/p/report");
+  expect(await screen.findByText("tick 7")).toBeInTheDocument();
+  await router.navigate({ to: "/p/$slug", params: { slug: "overview" } });
+  await screen.findByRole("heading", { name: "Seats" });
+  await waitFor(() => expect(aborted).toBe(true));
+});
+
 it("says so when a page's script is missing", async () => {
   mount("/p/report");
   expect(await screen.findByText(/extension script is missing or failed/)).toBeInTheDocument();

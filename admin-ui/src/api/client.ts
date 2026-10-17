@@ -98,6 +98,7 @@ export class ApiClient {
   private generation = 0;
   private csrfLoading: Promise<string> | null = null;
   private readonly opts: ClientOptions;
+  private readonly epochListeners = new Set<() => void>();
 
   constructor(opts: ClientOptions) {
     this.opts = opts;
@@ -112,11 +113,31 @@ export class ApiClient {
     return this.generation;
   }
 
+  /** Calls `listener` as soon as the epoch changes; returns the unsubscribe. */
+  onEpochChange(listener: () => void): () => void {
+    this.epochListeners.add(listener);
+    return () => {
+      this.epochListeners.delete(listener);
+    };
+  }
+
+  /** The `fetch` this client uses (tests replace it). */
+  get fetcher(): typeof fetch {
+    return this.opts.fetch ?? fetch;
+  }
+
   /** Forgets the CSRF token (after login/logout the server rotates it). */
   resetCsrf() {
     this.generation += 1;
     this.csrf = null;
     this.csrfLoading = null;
+    for (const listener of [...this.epochListeners]) {
+      try {
+        listener();
+      } catch (e) {
+        console.error(e);
+      }
+    }
   }
 
   /**

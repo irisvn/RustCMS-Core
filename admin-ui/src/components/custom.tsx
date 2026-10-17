@@ -7,6 +7,7 @@ import type { CustomContent } from "@/api/types";
 import { Alert } from "@/components/ui/alert";
 import { useLocale, useT } from "@/i18n";
 import { panelPath } from "@/lib/config";
+import { type EventsHandle, openEvents } from "@/lib/realtime";
 import {
   type View,
   type ViewContext,
@@ -58,6 +59,17 @@ type ScriptViewProps = {
   fallback?: React.ReactNode;
 };
 
+/** A mounted view and the streams it opened (closed with it). */
+interface Mount {
+  instance: ViewInstance;
+  streams: Set<EventsHandle>;
+}
+
+function closeStreams(mount: Mount) {
+  for (const stream of mount.streams) stream.close();
+  mount.streams.clear();
+}
+
 /** A script view, or `fallback` while none is registered under `name` (or it failed). */
 export function ScriptView(props: ScriptViewProps) {
   const impl = useSyncExternalStore(subscribeWidgets, () => view(props.kind, props.name));
@@ -76,7 +88,7 @@ function Unavailable() {
  */
 function MountedView({ kind, name, data, record, props, reload, impl }: ScriptViewProps & { impl: View }) {
   const element = useRef<HTMLDivElement>(null);
-  const live = useRef<{ instance: ViewInstance } | null>(null);
+  const live = useRef<Mount | null>(null);
   const api = useApi();
   const epoch = api.epoch;
   const locale = useLocale();
@@ -84,8 +96,8 @@ function MountedView({ kind, name, data, record, props, reload, impl }: ScriptVi
   const state = JSON.stringify([data ?? null, record ?? null, props ?? null, locale]);
   const latest = useRef({ open, reload });
   latest.current = { open, reload };
-  const current = (mount: { instance: ViewInstance }) => live.current === mount && api.epoch === epoch;
-  const context = (mount: { instance: ViewInstance }): ViewContext => ({
+  const current = (mount: Mount) => live.current === mount && api.epoch === epoch;
+  const context = (mount: Mount): ViewContext => ({
     data: structuredClone(data),
     record: record === undefined ? undefined : structuredClone(record),
     props: props === undefined ? undefined : structuredClone(props),
@@ -97,12 +109,26 @@ function MountedView({ kind, name, data, record, props, reload, impl }: ScriptVi
     reload: () => {
       if (current(mount)) latest.current.reload?.();
     },
+    realtime: {
+      events: (path, handlers) => {
+        // Opened by a view no longer shown (or of an earlier session): nothing.
+        if (!current(mount) && mount.instance !== undefined) return { close() {} };
+        const handle = openEvents(api, String(path), handlers);
+        mount.streams.add(handle);
+        return {
+          close: () => {
+            mount.streams.delete(handle);
+            handle.close();
+          },
+        };
+      },
+    },
   });
   useEffect(() => {
     const host = element.current;
     if (!host) return;
     // The mount's identity exists before `mount` runs, so its callbacks can be bound to it.
-    const mount = { instance: undefined as unknown as ViewInstance };
+    const mount: Mount = { instance: undefined as unknown as ViewInstance, streams: new Set() };
     try {
       const instance = impl.mount(host, context(mount));
       if (typeof instance?.update !== "function" || typeof instance?.unmount !== "function") {
@@ -111,12 +137,14 @@ function MountedView({ kind, name, data, record, props, reload, impl }: ScriptVi
       mount.instance = instance;
       live.current = mount;
     } catch (e) {
+      closeStreams(mount);
       host.replaceChildren();
       markViewFailed(kind, name, e);
       return;
     }
     return () => {
       if (live.current === mount) live.current = null;
+      closeStreams(mount);
       try {
         mount.instance.unmount();
       } catch (e) {

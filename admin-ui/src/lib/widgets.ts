@@ -50,6 +50,14 @@ export interface ViewContext {
   navigate: (path: string) => void;
   /** Reads the page or slot again from the server (pages and slots). */
   reload: () => void;
+  /**
+   * Server-sent events of an admin route (`AdminRoutes::events`), by its path
+   * under `{admin}/api/x` (`/docker/stats/web`). Closed when the view is
+   * unmounted or the session changes; see `openEvents`.
+   */
+  realtime: {
+    events: (path: string, handlers: import("./realtime").EventsHandlers) => import("./realtime").EventsHandle;
+  };
 }
 
 export interface ViewInstance {
