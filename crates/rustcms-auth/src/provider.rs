@@ -69,6 +69,20 @@ impl AuthProvider {
         self
     }
 
+    /// Declares, in the `admin` guard, every permission `routes` requires
+    /// (group: the name's first segment, `docker.manage` → `docker`), so
+    /// `permission:sync` creates them and the Roles page lists them.
+    pub fn admin_permissions(mut self, routes: &crate::AdminRoutes) -> Self {
+        for permission in routes.permissions() {
+            if self.permissions.iter().any(|(guard, name, _)| guard == crate::ADMIN_GUARD && name == permission) {
+                continue;
+            }
+            let group = crate::http::api::group_of(permission);
+            self = self.permission(crate::ADMIN_GUARD, permission, group);
+        }
+        self
+    }
+
     /// Defines a gate ability (see [`Gate::define`]).
     pub fn define(self, ability: &str, check: impl Fn(&Principal) -> bool + Send + Sync + 'static) -> Self {
         self.gate

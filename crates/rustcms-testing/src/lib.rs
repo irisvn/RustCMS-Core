@@ -4,9 +4,11 @@
 //! - [`db_test!`]: runs a test body on both databases,
 //! - [`TestApp`]: drives the full router (middleware included) without a socket,
 //! - [`TestClient`]: cookies, CSRF and bearer tokens (`acting_as`, `login_as`, `with_token`),
-//! - [`Factory`]: builds and inserts records.
+//! - [`Factory`]: builds and inserts records,
+//! - [`admin_routes::assert_access`]: an access table for `AdminRoutes`.
 #![warn(missing_docs)]
 
+pub mod admin_routes;
 mod app;
 mod client;
 mod db;

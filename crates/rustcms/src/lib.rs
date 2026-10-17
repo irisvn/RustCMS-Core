@@ -35,7 +35,7 @@ pub mod migration {
 /// Common imports for application code.
 pub mod prelude {
     pub use crate::admin::AdminProvider;
-    pub use crate::auth::{Access, ApiRoutes, Auth, AuthProvider, MaybeAuth, Throttle};
+    pub use crate::auth::{Access, AdminAccess, AdminRoutes, ApiRoutes, Auth, AuthProvider, MaybeAuth, Throttle};
     pub use crate::{
         ApiPage, AppBuilder, AppError, AppResult, AppState, ClientIp, Config, Inject, Json, Pagination,
         ServiceProvider, Validate, Validated, ValidationErrors,

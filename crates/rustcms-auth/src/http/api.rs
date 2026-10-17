@@ -246,7 +246,7 @@ fn may_match_under(path: &str, admin: &str) -> bool {
 }
 
 /// `"/api" + "/"` → `/api`, `"/api" + "/posts"` → `/api/posts`, `"" + "/"` → `/`.
-fn join(prefix: &str, path: &str) -> String {
+pub(crate) fn join(prefix: &str, path: &str) -> String {
     let path = path.trim_end_matches('/');
     let joined = format!("{}{path}", prefix.trim_end_matches('/'));
     if joined.is_empty() { "/".to_owned() } else { joined }

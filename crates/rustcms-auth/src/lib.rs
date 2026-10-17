@@ -28,6 +28,7 @@ pub use support::{audit, password, rate_limit, secret};
 
 pub use config::AuthConfig;
 pub use guard::{Auth, Authenticated, CSRF_HEADER, MaybeAuth};
+pub use http::admin_routes::{AdminAccess, AdminRoutes};
 pub use http::api::{Access, ApiRoutes, Throttle};
 pub use provider::{AuthProvider, BUILT_IN_PERMISSIONS};
 pub use rbac::{Actor, Grants, NewUser, PermissionResolver, RbacService};

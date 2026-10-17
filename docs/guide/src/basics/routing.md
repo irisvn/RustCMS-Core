@@ -58,6 +58,8 @@ inside a handler after reading the body.
 - `HEAD` follows `GET`; other methods of a path answer 405.
 - No API route may match a path under `auth.admin_path`, captures included
   (`/{section}/report` is refused with the default `/admin`): registration panics.
+  Endpoints for the panel's own pages, on its session, are
+  [admin routes](../admin/admin-routes.md).
 
 `api_permissions` declares each `Access::can` permission on the API guard, in
 the group named before the first `.` (`posts.create` → `posts`). A permission

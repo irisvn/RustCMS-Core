@@ -30,7 +30,8 @@
 - New auth routes must be added to `rustcms_auth::routes::routes` and to `fixtures/authz/auth.toml` (the oracle test fails otherwise).
 - Admin API routes are listed in `rustcms_admin::http::routes`; each needs a case in `fixtures/authz/admin.toml`.
 - Application API routes use `ApiRoutes` with an explicit `Access` per route (checked before extractors); never
-  authorize inside a handler after reading the body.
+  authorize inside a handler after reading the body. JSON routes for panel pages use `AdminRoutes` with an
+  explicit `AdminAccess` (ADR 0026); `{admin}/api/x` is theirs, nothing built in may live there.
 - Admin UI text goes through `admin-ui/src/i18n` (`t()`, lint `i18n/no-literal-text`); new server validation
   messages need a template in `rustcms_core::i18n::TEMPLATES` (checked by `crates/rustcms-admin/tests/issues.rs`).
 - `fixtures/contract/*.json` is the server↔SPA contract: regenerate with `UPDATE_CONTRACT=1 cargo test -p rustcms-admin` and review the diff.

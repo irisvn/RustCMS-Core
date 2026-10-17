@@ -102,3 +102,16 @@ fn the_admin_route_list_is_unchanged() {
     ];
     assert_eq!(listed, expected);
 }
+
+/// `{admin}/api/x` belongs to applications (`AdminRoutes`, ADR 0026): nothing
+/// built in, panel or auth, may live there.
+#[test]
+fn nothing_built_in_uses_the_application_namespace() {
+    let builtin = routes("/admin").into_iter().chain(rustcms_auth::routes::routes("/admin"));
+    for (method, path) in builtin {
+        assert!(
+            !(path == "/admin/api/x" || path.starts_with("/admin/api/x/")),
+            "{method} {path} is under /admin/api/x"
+        );
+    }
+}

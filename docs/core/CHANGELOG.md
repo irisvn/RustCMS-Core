@@ -6,6 +6,16 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.4 — W1)
+- `AdminRoutes` / `AdminAccess` (ADR 0026): JSON routes for the panel's own
+  pages under `{admin_path}/api/x`, on the admin session (Origin and CSRF on
+  writes), each with `authenticated()` or `can(permission)` checked before
+  extractors; no public access; API tokens and JWTs get 401.
+  `AuthProvider::admin_permissions` declares their permissions in the admin
+  guard; `register` lists them in `route:list`.
+- `rustcms_testing::admin_routes::assert_access`: an access table per route
+  and actor that also fails on a route without a case.
+
 ### Added (0.4 — W9)
 - `TestApp::new` / `with_config` take any `FnOnce(Config) -> AppBuilder`
   (closures binding test doubles; function items still work).
