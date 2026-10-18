@@ -58,6 +58,15 @@ Without `RUSTCMS_TEST_PG` / `RUSTCMS_TEST_MYSQL`, those variants print a skip
 notice and pass, unless `RUSTCMS_TEST_REQUIRE` lists them (`postgres,mysql`):
 then they fail. Set them in CI so every test runs on the three databases.
 
+While working, `just test-fast` in RustCMS (or `RUSTCMS_TEST_BACKENDS=sqlite
+cargo test` in an application) runs every test on SQLite in seconds; run every
+database before pushing. Test servers are faster in memory and without fsync
+(RustCMS's `docker-compose.yml` does it: PostgreSQL `-c fsync=off -c
+synchronous_commit=off -c full_page_writes=off`, MySQL
+`--innodb-flush-log-at-trx-commit=0 --innodb-doublewrite=OFF
+--innodb-flush-method=nosync --sync-binlog=0 --skip-log-bin`, data dirs on
+`tmpfs`); never use these settings for data you keep.
+
 An application that runs on one database can test only that one:
 `RUSTCMS_TEST_BACKENDS=mysql` (any of `sqlite,postgres,mysql`) runs those
 variants and makes them required, so a missing server fails instead of

@@ -6,6 +6,12 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (tooling)
+- Test servers (docker compose PostgreSQL and MySQL) keep their data in
+  memory and never fsync: the test matrix runs in 158 s instead of 360 s
+  (MySQL variants about 3x faster).
+- `just test-fast`: every test on SQLite only, no server.
+
 ### Security
 - ammonia 4.2.4 (RUSTSEC-2026-0373: case-insensitive CSS `url(` in style
   attributes). Not reachable here: the HTML allowlist drops `style`.
