@@ -194,7 +194,7 @@ macro_rules! integer_rows {
         }
     )*};
 }
-integer_rows!(i16, i32, i64, u16, u32, u64);
+integer_rows!(i8, i16, i32, i64, u8, u16, u32, u64);
 
 impl RowIdentity for uuid::Uuid {
     fn canonical(&self) -> String {
@@ -323,10 +323,10 @@ fn parse(envelope: &str) -> Option<Parts<'_>> {
     Some(Parts { header: &envelope[..VERSION.len() + 1 + ID_LEN * 2], id, sealed })
 }
 
-/// Whether `text` is shaped like an envelope (`rcms1.<key id>.<payload>`):
-/// screens that must never show ciphertext mask such values.
+/// Whether `text` may be an envelope, even a damaged one (it starts with
+/// `rcms1.`): screens that must never show ciphertext mask such values.
 pub fn looks_sealed(text: &str) -> bool {
-    parse(text).is_some()
+    text.starts_with("rcms1.")
 }
 
 fn cipher(key: &AppKey) -> Aes256Gcm {

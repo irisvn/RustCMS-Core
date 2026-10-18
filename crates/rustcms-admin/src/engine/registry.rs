@@ -385,8 +385,9 @@ fn check_pivot(
             field.name
         );
         assert!(
-            field.belongs_to.is_none() && field.media.is_none() && !field.rich_text,
-            "resource `{slug}`: relation `{name}`: pivot field `{}` may not be a relationship, media or rich text",
+            field.belongs_to.is_none() && field.media.is_none() && !field.rich_text && field.secret.is_none(),
+            "resource `{slug}`: relation `{name}`: pivot field `{}` may not be a relationship, media, rich text \
+             or encrypted",
             field.name
         );
     }

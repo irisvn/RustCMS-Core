@@ -443,7 +443,7 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
       }
       return <SecretWidget id={id} name={input.name} control={ctx.secrets} disabled={disabled} invalid={invalid} describedBy={describedBy} placeholder={input.placeholder} />;
     case "secret_map":
-      return <SecretMapEditor id={id} label={input.label} value={value} onChange={onChange} onBlur={onBlur} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
+      return <SecretMapEditor id={id} label={input.label} nullable={input.nullable} value={value} onChange={onChange} onBlur={onBlur} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
     case "key_value":
       return <KeyValueEditor id={id} label={input.label} nullable={input.nullable} value={value} onChange={onChange} onBlur={onBlur} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
     default:
@@ -456,9 +456,10 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
  * Named secrets: stored keys are kept, replaced or removed (their values are
  * never shown nor prefilled); new rows take a key and a value.
  */
-function SecretMapEditor({ id, label, value, onChange, onBlur, disabled, invalid, describedBy }: {
+function SecretMapEditor({ id, label, nullable, value, onChange, onBlur, disabled, invalid, describedBy }: {
   id: string;
   label: string;
+  nullable: boolean;
   value: FormValue;
   onChange: (value: FormValue) => void;
   onBlur: () => void;
@@ -469,6 +470,15 @@ function SecretMapEditor({ id, label, value, onChange, onBlur, disabled, invalid
   const t = useT();
   const current = parseSecretMap(value);
   const set = (rows: SecretRow[]) => onChange(JSON.stringify({ ...current, rows }));
+  const clearing = (clear: boolean) => onChange(JSON.stringify({ ...current, clear }));
+  if (current.clear) {
+    return (
+      <div id={id} tabIndex={-1} role="group" aria-label={label} aria-describedby={describedBy} className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">{t("secret.willClear")}</span>
+        {!disabled && <Button type="button" variant="ghost" size="sm" onClick={() => clearing(false)}>{t("secret.undo")}</Button>}
+      </div>
+    );
+  }
   const edit = (index: number, change: Partial<SecretRow>) =>
     set(current.rows.map((row, i) => (i === index ? { ...row, ...change } : row)));
   return (
@@ -518,6 +528,12 @@ function SecretMapEditor({ id, label, value, onChange, onBlur, disabled, invalid
           onClick={() => set([...current.rows, { key: "", stored: false, action: "replace", value: "" }])}>
           <Plus /> {t("form.addEntry")}
         </Button>
+        {/* Stored (even unreadable) and nullable: it can go back to "not set". */}
+        {nullable && current.state !== "unset" && current.revision !== undefined && (
+          <Button type="button" size="sm" variant="ghost" className="ml-2" disabled={disabled} onClick={() => clearing(true)}>
+            {t("secret.clear")}
+          </Button>
+        )}
       </div>
     </div>
   );

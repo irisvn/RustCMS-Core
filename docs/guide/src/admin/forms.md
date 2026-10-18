@@ -109,11 +109,14 @@ The panel never shows them.
     try again.
   - Keeping a name of a map that cannot be read (another `APP_KEY`) is
     refused; replacing every value recovers it.
+  - A nullable map can be cleared back to *not set* (Clear in the form).
+  - After a 409 the form offers Reload.
   - The key/value bounds hold on the result.
 - **Who sees what:** users who may read the field see the names. Users who
   may only write it see the state and can still replace everything.
 - **Never allowed:** encrypted fields are always write-only, never sortable,
-  searchable, filterable, a title or a key. They are never exported or
+  searchable, filterable, a title or a key, a pivot field or a dashboard
+  column. They are never exported or
   imported, and always redacted in the audit log. Anything else panics at
   start.
 - **In hooks and actions:** read the stored value with

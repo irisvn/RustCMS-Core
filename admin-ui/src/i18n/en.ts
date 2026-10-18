@@ -437,6 +437,7 @@ export const en = {
   "value.yes": "Yes",
   "value.no": "No",
   "record.saveFailed": "Could not save.",
+  "record.reload": "Reload",
   "record.editTitle": "Edit {record}",
   "record.editDescription": "Update the record details below.",
   "record.createDescription": "Fill in the details to create a record.",

@@ -57,3 +57,13 @@ describe("encrypted fields in resource forms", () => {
     expect(payloadOf([setting], { smtp_password: "" })).toEqual({});
   });
 });
+
+describe("clearing an encrypted map", () => {
+  it("sends clear with the revision, and only for a stored map", () => {
+    const values = defaultValues([env], record);
+    const map = parseSecretMap(values.env);
+    expect(secretMapOperation(JSON.stringify({ ...map, clear: true }))).toEqual({ revision: "r1", clear: true });
+    const fresh = parseSecretMap(defaultValues([env]).env);
+    expect(secretMapOperation(JSON.stringify({ ...fresh, clear: true }))).toBeUndefined();
+  });
+});

@@ -23,6 +23,8 @@ export interface SecretMapValue {
   state: string;
   revision?: string;
   rows: SecretRow[];
+  /** Saving clears the map to "not set" (nullable fields only). */
+  clear?: boolean;
 }
 
 /** Resource secrets have their own value type; settings secrets do not. */
@@ -81,7 +83,8 @@ export function secretOperation(text: unknown): unknown {
  * prefilled, so a kept key is sent by name only.
  */
 export function secretMapOperation(text: unknown): unknown {
-  const { revision, rows } = parseSecretMap(text);
+  const { revision, rows, clear } = parseSecretMap(text);
+  if (clear) return revision === undefined ? undefined : { revision, clear: true };
   const changed = rows.some((r) => !r.stored || r.action !== "keep");
   if (!changed) return undefined;
   const keep: string[] = [];

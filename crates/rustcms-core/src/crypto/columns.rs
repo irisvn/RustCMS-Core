@@ -24,7 +24,14 @@ pub enum Binding {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum KeyKind {
-    Integer,
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
     Text,
     Uuid,
 }
@@ -54,14 +61,15 @@ impl EncryptedColumn {
             panic!("encrypted column {table}.{}: the primary key must be one column", column.as_str())
         };
         let key_kind = match key.def().get_column_type() {
-            ColumnType::TinyInteger
-            | ColumnType::SmallInteger
-            | ColumnType::Integer
-            | ColumnType::BigInteger
-            | ColumnType::TinyUnsigned
-            | ColumnType::SmallUnsigned
-            | ColumnType::Unsigned
-            | ColumnType::BigUnsigned => KeyKind::Integer,
+            // Decoded with the declared width and sign (the drivers check them).
+            ColumnType::TinyInteger => KeyKind::I8,
+            ColumnType::SmallInteger => KeyKind::I16,
+            ColumnType::Integer => KeyKind::I32,
+            ColumnType::BigInteger => KeyKind::I64,
+            ColumnType::TinyUnsigned => KeyKind::U8,
+            ColumnType::SmallUnsigned => KeyKind::U16,
+            ColumnType::Unsigned => KeyKind::U32,
+            ColumnType::BigUnsigned => KeyKind::U64,
             ColumnType::Uuid => KeyKind::Uuid,
             ColumnType::Char(_) | ColumnType::String(_) | ColumnType::Text => KeyKind::Text,
             other => panic!("encrypted column {table}.{}: unsupported primary key type {other:?}", column.as_str()),
@@ -108,11 +116,22 @@ impl EncryptedColumn {
 
     /// The primary key of `row` as a value, and in canonical text.
     fn key_of(&self, row: &QueryResult) -> AppResult<(Value, String)> {
+        fn int<T>(row: &QueryResult) -> AppResult<(Value, String)>
+        where
+            T: sea_orm::TryGetable + Into<Value> + RowIdentity + Copy,
+        {
+            let key: T = row.try_get_by_index(0)?;
+            Ok((key.into(), key.canonical()))
+        }
         Ok(match self.key_kind {
-            KeyKind::Integer => {
-                let key: i64 = row.try_get_by_index(0)?;
-                (Value::from(key), key.canonical())
-            }
+            KeyKind::I8 => int::<i8>(row)?,
+            KeyKind::I16 => int::<i16>(row)?,
+            KeyKind::I32 => int::<i32>(row)?,
+            KeyKind::I64 => int::<i64>(row)?,
+            KeyKind::U8 => int::<u8>(row)?,
+            KeyKind::U16 => int::<u16>(row)?,
+            KeyKind::U32 => int::<u32>(row)?,
+            KeyKind::U64 => int::<u64>(row)?,
             KeyKind::Uuid => {
                 let key: uuid::Uuid = row.try_get_by_index(0)?;
                 (Value::from(key), key.canonical())

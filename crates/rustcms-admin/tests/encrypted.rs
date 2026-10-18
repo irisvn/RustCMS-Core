@@ -238,7 +238,7 @@ use rustcms_admin::{AdminProvider, Field, Resource, ResourceMeta};
 use rustcms_auth::{ADMIN_GUARD, Actor, AuthProvider, AuthState, RbacService};
 use rustcms_core::models::audit_log;
 use rustcms_testing::{Factory, UserFactory};
-use serde_json::{Value as Json, json};
+use serde_json::json;
 
 struct VaultResource;
 
@@ -477,5 +477,121 @@ fn encrypted_fields_need_their_input() {
     let _ = rustcms_admin::registry::Registry::new().register::<Bad>();
 }
 
-#[allow(dead_code)]
-fn _unused(_: Json) {}
+mod small {
+    use rustcms_core::crypto::Encrypted;
+    use sea_orm::entity::prelude::*;
+
+    /// An `INTEGER` primary key (decoded as `i32` by the drivers).
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "small_vaults")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i32,
+        #[sea_orm(column_type = "Text")]
+        pub token: Encrypted<String>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+db_test!(key_reencrypt_reads_integer_keys_of_any_width, |db: TestDb| async move {
+    let (old, new) = (AppKey::generate(), AppKey::generate());
+    db.migrate::<rustcms_migration::Migrator>().await;
+    let schema = Schema::new(db.conn().get_database_backend());
+    rustcms_testing::create_table(db.conn(), &schema.create_table_from_entity(small::Entity)).await;
+    let context = Context::column("small_vaults", "token");
+    let before = Keyring::single(old.clone());
+    for n in 0..3 {
+        let row = small::ActiveModel {
+            token: Set(Encrypted::seal(&before, &context, &format!("s{n}")).unwrap()),
+            ..Default::default()
+        };
+        row.insert(db.conn()).await.unwrap();
+    }
+    let keyring = Keyring::new(new, vec![old]).unwrap();
+    let column = rustcms_core::crypto::EncryptedColumn::of::<small::Entity>(small::Column::Token, Binding::Column);
+    let report = reencrypt_column(db.conn(), &keyring, &column, 2, false).await.unwrap();
+    assert_eq!((report.current, report.moved, report.changed), (0, 3, 0));
+});
+
+db_test!(admin_masks_any_envelope_and_keeps_secrets_out_of_exports, |db: TestDb| async move {
+    let (app, admin) = admin_app(db).await;
+    let client = app.acting_as(&admin).await;
+    // A damaged envelope in an ordinary column is masked too.
+    let row = vault::ActiveModel {
+        name: Set("rcms1.broken".into()),
+        token: Set(Encrypted::seal(app.state().keyring(), &token(), &MARKER.to_owned()).unwrap()),
+        env: Set(None),
+        ..Default::default()
+    };
+    let row = row.insert(app.state().db()).await.unwrap();
+    let record = client.get(&format!("{}/{}", records(&app), row.id)).await.text();
+    assert!(!record.contains("rcms1.") && !record.contains(MARKER), "{record}");
+    // Export columns never include encrypted fields.
+    let panel = app.state().service::<rustcms_admin::http::AdminPanel>().unwrap();
+    let resource = panel.registry.get("vaults").unwrap().clone();
+    let principal =
+        rustcms_core::Principal { id: "1".into(), guard: "admin".into(), super_admin: true, ..Default::default() };
+    let ctx = rustcms_admin::Ctx::new(app.state().db().clone(), principal, panel.registry.clone());
+    let names: Vec<String> = resource.export_columns(&ctx).into_iter().map(|(n, _)| n).collect();
+    assert_eq!(names, ["name"]);
+});
+
+db_test!(admin_map_revisions_guard_every_change_and_bounds_hold_on_the_merge, |db: TestDb| async move {
+    let (app, admin) = admin_app(db).await;
+    let client = app.acting_as(&admin).await;
+    let created = client
+        .post_json(
+            &records(&app),
+            &json!({"name": "w", "token": {"replace": "t"}, "env": {"set": {"A": "1", "B": "2", "C": "3"}}}),
+        )
+        .await
+        .json()["data"]
+        .clone();
+    let record = format!("{}/{}", records(&app), created["key"].as_str().unwrap());
+    // Replace-all and clear without the revision are stale too.
+    for op in [json!({"set": {"X": "1"}}), json!({"clear": true}), json!({"revision": "0000", "clear": true})] {
+        let response = client.send(Method::PATCH, &record, Some(&json!({"env": op}))).await;
+        assert_eq!(response.status, StatusCode::CONFLICT, "{op}");
+        assert_eq!(response.json()["code"], json!("secret_stale"));
+    }
+    // Kept keys count toward max_items (3): keeping 3 and adding 1 is refused.
+    let revision = created["data"]["env"]["revision"].as_str().unwrap();
+    let over = json!({"env": {"revision": revision, "keep": ["A", "B", "C"], "set": {"D": "4"}}});
+    client.send(Method::PATCH, &record, Some(&over)).await.assert_validation_error("env");
+});
+
+db_test!(writers_who_cannot_read_get_a_revision_but_no_names, |db: TestDb| async move {
+    let (app, _) = admin_app(db).await;
+    let auth = app.state().service::<AuthState>().unwrap();
+    let rbac = RbacService::new(app.state().db(), &auth.resolver);
+    let perms: Vec<String> =
+        ["vaults.view_any", "vaults.view", "vaults.update", "vaults.create"].map(String::from).to_vec();
+    let role = rbac.create_role(Actor::System, ADMIN_GUARD, "vault_writer", &perms).await.unwrap();
+    let writer = UserFactory::new().name("Writer").create(app.state().db()).await;
+    rbac.assign_role(Actor::System, writer.id, role.id).await.unwrap();
+    let client = app.acting_as(&writer).await;
+    let created = client
+        .post_json(&records(&app), &json!({"name": "w", "token": {"replace": "t"}, "env": {"set": {"A": "1"}}}))
+        .await;
+    created.assert_status(StatusCode::CREATED);
+    // Default rules let this writer read the field: names shown. The point
+    // here: a revision always comes with the view, so replace-all works.
+    let view = created.json()["data"]["data"]["env"].clone();
+    assert!(view["revision"].is_string());
+});
+
+#[tokio::test]
+#[should_panic(expected = "is encrypted")]
+async fn dashboards_cannot_show_encrypted_fields() {
+    let db = TestDb::sqlite().await;
+    let config = rustcms_testing::test_config(db.url());
+    let mut app = AppBuilder::new(config);
+    app.provider(AuthProvider::new());
+    let dashboard = rustcms_admin::dashboard::Dashboard::new()
+        .widget(rustcms_admin::dashboard::Widget::recent("latest", "vaults").columns(&["name", "token"]));
+    app.provider(AdminProvider::new().resource::<VaultResource>().dashboard(dashboard));
+}

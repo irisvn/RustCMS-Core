@@ -133,6 +133,9 @@ function RecordForm({
   const save = useSaveRecord(slug, recordKey, origin, via);
   // Read when shown: messages follow a change of language.
   const [formErrors, setFormErrors] = useState<() => string[]>(() => () => []);
+  // Encrypted values changed by someone else since this form was read: only a
+  // reload gives the current revision (the draft would keep failing).
+  const [stale, setStale] = useState(false);
   // The last refused save: its field messages are set again in a new language.
   const refused = useRef<ApiError | null>(null);
   const locale = useLocale();
@@ -216,6 +219,7 @@ function RecordForm({
         });
         focusFirstError();
       } else {
+          if (e instanceof ApiError && e.status === 409 && e.code === "secret_stale") setStale(true);
           setFormErrors(() => () => [e instanceof Error ? e.message : t("record.saveFailed")]);
       }
     }
@@ -252,6 +256,11 @@ function RecordForm({
           {formErrors().map((m) => (
             <p key={m}>{m}</p>
           ))}
+          {stale && (
+            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => window.location.reload()}>
+              {t("record.reload")}
+            </Button>
+          )}
         </Alert>
       )}
       <Card>

@@ -436,6 +436,7 @@ export const vi: Record<keyof typeof en, string> = {
   "value.yes": "Có",
   "value.no": "Không",
   "record.saveFailed": "Không lưu được.",
+  "record.reload": "Tải lại",
   "record.editTitle": "Sửa {record}",
   "record.editDescription": "Cập nhật thông tin bản ghi bên dưới.",
   "record.createDescription": "Điền thông tin để tạo bản ghi.",

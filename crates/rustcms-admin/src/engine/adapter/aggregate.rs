@@ -74,6 +74,9 @@ impl<R: Resource> ResourceAdapter<R> {
         if let Some(name) = columns.iter().find(|c| self.field(c).is_none()) {
             return Some(format!("`{name}` is not a field"));
         }
+        if let Some(name) = columns.iter().find(|c| self.field(c).is_some_and(|f| f.secret.is_some())) {
+            return Some(format!("`{name}` is encrypted"));
+        }
         if let Some(sort) = &query.sort {
             let name = sort.trim_start_matches('-');
             if !self.field(name).is_some_and(|f| f.sortable) {
