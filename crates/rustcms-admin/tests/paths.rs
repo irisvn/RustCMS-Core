@@ -88,6 +88,7 @@ fn the_admin_route_list_is_unchanged() {
         "POST /admin/api/queue/jobs/{id}/forget",
         "POST /admin/api/queue/jobs/{id}/cancel",
         "GET /admin/api/pages/{slug}",
+        "GET /admin/api/pages/{slug}/{*path}",
         "GET /admin/api/slots",
         "GET /admin/api/resources/{slug}/export",
         "POST /admin/api/resources/{slug}/exports",

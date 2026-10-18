@@ -26,8 +26,10 @@ const entries = fs.existsSync(src)
 const wanted = new Set();
 for (const entry of entries) {
   const rel = path.relative(src, entry).replace(/\\/g, "/").replace(/\.tsx$/, "");
-  await build(rustcmsExtension({ entry, root }));
   const css = path.join(root, "css", `${rel}.css`);
+  // A previous build's styles never outlive the entry's last CSS import.
+  fs.rmSync(css, { force: true });
+  await build(rustcmsExtension({ entry, root }));
   if (!fs.existsSync(css)) {
     fs.mkdirSync(path.dirname(css), { recursive: true });
     fs.writeFileSync(css, "");

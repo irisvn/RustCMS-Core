@@ -122,7 +122,8 @@ Hooks wrap them with React Query:
 
 When the session changes (sign-in, sign-out, another tab), the view is
 mounted again for the new session; calls and callbacks of the old one do
-nothing (a call rejects with `ApiError` code `session_changed`).
+nothing (a call rejects with `ApiError` code `session_changed`). A refused
+CSRF token also ends the session state, so that call rejects the same way.
 
 ## Sub-pages
 
@@ -130,7 +131,8 @@ nothing (a call rejects with `ApiError` code `session_changed`).
 `"sub/path"` (`""` without one), and `PanelPage::data` reads
 `ctx.page_path()`. The page's permissions cover every sub-path; check more in
 `data` when some need it. Segments are `A-Z a-z 0-9 . _ ~ -`, at most 16;
-anything else is "not found" in the panel and 400 from the API.
+anything else is "not found" in the panel and a 422 validation error on
+`path` from the API.
 
 ## Styles
 

@@ -25,7 +25,8 @@ function guard() {
       }
       return null;
     },
-    renderDynamicImport() {
+    // Every `import()`, local ones too (they would be inlined otherwise).
+    resolveDynamicImport() {
       this.error("rustcms: dynamic imports are not supported (one file per entry)");
     },
   };

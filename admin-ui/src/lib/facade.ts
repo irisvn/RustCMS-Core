@@ -47,7 +47,9 @@ export function extensionApi(session: Session, mount: MountToken, namespace: str
     const canonical = extensionPath(path);
     const pairs = queryPairs(query);
     const search = pairs.length > 0 ? `?${new URLSearchParams(pairs).toString()}` : "";
-    const run = () => session.api.request<T>(method, `/x${canonical}${search}`, body);
+    // Rechecked when it runs: a queued write of a mount that went stale is never sent.
+    const run = () =>
+      live(session, mount) ? session.api.request<T>(method, `/x${canonical}${search}`, body) : Promise.reject(sessionChanged());
     let result: T;
     try {
       // A maybe-applied write is recorded by `guardedWrite` before this sees it.

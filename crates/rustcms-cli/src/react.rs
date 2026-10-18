@@ -44,7 +44,9 @@ pub fn install_sdk(dir: &Path) -> anyhow::Result<Vec<String>> {
         let fresh = digest(file.contents());
         let edited = match std::fs::read(&target) {
             Ok(current) => installed.get(&rel).is_none_or(|h| *h != digest(&current)) && digest(&current) != fresh,
-            Err(_) => false,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            // Unreadable is not unedited: never overwrite what cannot be compared.
+            Err(e) => return Err(e).with_context(|| format!("reading {}", target.display())),
         };
         if edited {
             kept.push(rel.clone());
@@ -137,5 +139,10 @@ mod tests {
         assert_eq!(kept, ["index.js"]);
         assert_eq!(std::fs::read_to_string(sdk.join("index.js")).unwrap(), "// mine");
         assert!(sdk.join("ui.js").exists(), "a missing file comes back");
+        // Unreadable (here a directory in place of the file) stops, nothing overwritten.
+        std::fs::remove_file(sdk.join("host.js")).unwrap();
+        std::fs::create_dir(sdk.join("host.js")).unwrap();
+        assert!(install_sdk(&sdk).is_err());
+        assert!(sdk.join("host.js").is_dir());
     }
 }

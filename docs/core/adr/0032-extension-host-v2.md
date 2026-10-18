@@ -54,7 +54,7 @@ CSRF, sub-pages and permission-aware buttons, without shipping a second React.
   refused if it becomes `.`, `..`, `/`, `\` or still holds `%`; the final URL
   must keep the origin and the `{admin}/api/x/` prefix. Sub-pages
   `GET {admin}/api/pages/{slug}/{*path}` read the raw `OriginalUri`, split
-  before decoding, and refuse with 400 after the usual 401/403/404 checks
+  before decoding, and refuse with a 422 validation error on `path` after the usual 401/403/404 checks
   (segments `[A-Za-z0-9._~-]+`, ≤16 segments, ≤512 bytes).
   `Ctx::page_path()` gives the canonical sub-path to `PanelPage::data`.
 - **`permissions`.** `GET {admin}/api/panel` lists the declared admin-guard

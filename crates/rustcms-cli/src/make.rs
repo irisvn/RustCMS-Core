@@ -186,6 +186,29 @@ pub fn make_command(project: &Project, command: &str) -> anyhow::Result<ExitCode
     Ok(ExitCode::SUCCESS)
 }
 
+/// Refuses a slug another page (whatever its file name) or extension already uses:
+/// the panel would refuse to boot.
+fn taken_page_slug(project: &Project, slug: &str) -> anyhow::Result<()> {
+    let pages = project.src(layout::PAGES.path);
+    let quoted = format!("\"{slug}\"");
+    for entry in std::fs::read_dir(&pages).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "rs")
+            && std::fs::read_to_string(&path)
+                .is_ok_and(|text| text.lines().any(|l| l.contains("const SLUG") && l.contains(&quoted)))
+        {
+            bail!("the page slug `{slug}` is already used by {}", path.display());
+        }
+    }
+    let provider = std::fs::read_to_string(project.src(ADMIN_PROVIDER)).unwrap_or_default();
+    for call in ["extension_script", "extension_script_v2", "extension_style"] {
+        if provider.contains(&format!("{call}(\"{slug}\"")) {
+            bail!("the extension name `{slug}` is already registered in {ADMIN_PROVIDER}");
+        }
+    }
+    Ok(())
+}
+
 pub fn make_page(project: &Project, name: &str, kind: PageKind) -> anyhow::Result<ExitCode> {
     let script = kind != PageKind::Template;
     let react = kind == PageKind::React;
@@ -238,6 +261,7 @@ pub fn make_page(project: &Project, name: &str, kind: PageKind) -> anyhow::Resul
         new.extend([built_js.as_path(), built_css.as_path(), source_css.as_path()]);
     }
     preflight(&new, &checks)?;
+    taken_page_slug(project, &slug)?;
     let fresh_setup = if react { crate::react::ensure_setup(&admin)? } else { false };
     let index = project.prepare_module(&layout::PAGES)?;
     std::fs::create_dir_all(asset.parent().expect("a file"))?;
@@ -392,6 +416,15 @@ mod tests {
         assert!(
             !dir.path().join("src/admin/pages/a_very_long_name_for_a_script_page_that_is_too_long_page.rs").exists()
         );
+        // A slug or extension name already taken by a page of another file name.
+        std::fs::write(
+            dir.path().join("src/admin/pages/hand_written.rs"),
+            "impl PanelPage for X {\n    const SLUG: &'static str = \"board\";\n}\n",
+        )
+        .unwrap();
+        assert!(make_page(&project, "BoardPage", PageKind::React).is_err(), "slug taken");
+        assert!(!dir.path().join("src/admin/pages/board_page.rs").exists());
+        assert!(make_page(&project, "ProgressPage", PageKind::React).is_err(), "never twice");
         // A React page: the source, placeholders for the build, the setup once.
         make_page(&project, "StatsPage", PageKind::React).unwrap();
         assert!(read(&dir, "src/admin/pages/stats_page.rs").contains("PageView::Script(\"lms/stats\")"));

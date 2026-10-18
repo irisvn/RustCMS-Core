@@ -28,9 +28,21 @@ export function queryPairs(query) {
   return pairs;
 }
 
+/** `path` with each segment decoded once and re-encoded, as the panel sends it. */
+function canonicalPath(path) {
+  try {
+    return path
+      .split("/")
+      .map((segment) => encodeURIComponent(decodeURIComponent(segment)))
+      .join("/");
+  } catch {
+    return path; // refused by `api` anyway
+  }
+}
+
 /** The cache key of `path` + `query` in the view's scope. */
 export function adminKey(props, path, query) {
-  return ["rustcms.x", props.scope.namespace, props.scope.epoch, props.locale, path, queryPairs(query)];
+  return ["rustcms.x", props.scope.namespace, props.scope.epoch, props.locale, canonicalPath(path), queryPairs(query)];
 }
 
 /** `GET {admin}/api/x{path}` with React Query, in the view's scope. */
@@ -57,7 +69,7 @@ export function useAdminMutation(props, path, method = "post", options = {}) {
       alive.current = false;
     };
   }, []);
-  const { onSuccess, onError, ...rest } = options;
+  const { onSuccess, onError, onSettled, ...rest } = options;
   return useMutation({
     mutationFn: (body) => (method === "delete" ? props.api.delete(path) : props.api[method](path, body)),
     retry: false,
@@ -69,6 +81,9 @@ export function useAdminMutation(props, path, method = "post", options = {}) {
     },
     onError: (error, variables, context) => {
       if (alive.current) onError?.(error, variables, context);
+    },
+    onSettled: (data, error, variables, context) => {
+      if (alive.current) onSettled?.(data, error, variables, context);
     },
   });
 }

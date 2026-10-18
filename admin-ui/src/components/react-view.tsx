@@ -2,11 +2,12 @@
 // panel's own tree (one React, one QueryClient), bound to its mount and the
 // session epoch, behind an error boundary.
 
-import { Component, type ComponentType, type ReactNode, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { Component, type ComponentType, type ReactNode, useCallback, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useSession } from "@/api/context";
 import { usePanel } from "@/api/queries";
 import { Alert } from "@/components/ui/alert";
+import { PausedBanner } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { useLocale, useT } from "@/i18n";
 import { type ExtensionApi, type MountToken, extensionApi } from "@/lib/facade";
@@ -58,10 +59,18 @@ export function ReactView(props: ViewProps) {
   const subscribe = useCallback((listener: () => void) => api.onEpochChange(listener), [api]);
   const epoch = useSyncExternalStore(subscribe, () => api.epoch);
   const [attempt, setAttempt] = useState(0);
-  return (
+  const view = (
     <ViewBoundary key={`${epoch}:${attempt}`} kind={props.kind} name={props.name} fallback={props.fallback} onRetry={() => setAttempt((n) => n + 1)}>
       <Instance {...props} epoch={epoch} />
     </ViewBoundary>
+  );
+  // Writes of the view whose outcome is unknown pause it, as built-in writes do.
+  if (props.place.kind === "cell") return view;
+  return (
+    <>
+      <PausedBanner scope={`x:${namespaceOf(props.place)}`} />
+      {view}
+    </>
   );
 }
 
@@ -77,7 +86,9 @@ function Instance({ component, place, data, record, props, reload, epoch }: View
     epoch,
     handles: new Set(),
   }));
-  useEffect(() => {
+  // A layout effect: under StrictMode it is set again before the children's
+  // effects reopen their streams.
+  useLayoutEffect(() => {
     mount.alive = true;
     return () => {
       mount.alive = false;
@@ -92,7 +103,8 @@ function Instance({ component, place, data, record, props, reload, epoch }: View
     };
   }, [mount]);
   const live = useCallback(() => mount.alive && session.api.epoch === mount.epoch, [mount, session]);
-  const permissions = panel.data && !panel.isPlaceholderData ? panel.data.permissions : undefined;
+  // Fail closed while loading, on another epoch's data, or after a failed refresh.
+  const permissions = panel.data && !panel.isPlaceholderData && !panel.isError ? panel.data.permissions : undefined;
   const namespace = namespaceOf(place);
   const api: ExtensionApi = useMemo(() => extensionApi(session, mount, namespace), [session, mount, namespace]);
   const guard = useCallback(

@@ -3,7 +3,7 @@ import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { useEffect } from "react";
+import { StrictMode, useEffect } from "react";
 import { SessionContext } from "@/api/context";
 import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
@@ -11,6 +11,8 @@ import { HOST_VERSIONS, incompatibility } from "@/lib/host";
 import { canonicalSubPath, extensionPath, extensionUrl } from "@/lib/paths";
 import { queryPairs } from "@/lib/facade";
 import { loadExtensions, registerPage, registerReactView, resetWidgets } from "@/lib/widgets";
+// The SDK as an extension bundles it (its `react` and React Query are the panel's here).
+import { adminKey, useAdminMutation } from "../sdk/index.js";
 
 const panel = {
   brand: "T",
@@ -40,18 +42,19 @@ afterEach(() => {
   pageRequests.length = 0;
 });
 
-function mount(path: string) {
+function mount(path: string, { strict = false } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const session = createSession({ basePath: "/admin", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
   const router = createAppRouter({ queryClient, session }, createMemoryHistory({ initialEntries: [path] }));
-  render(
+  const tree = (
     <SessionContext.Provider value={session}>
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
       </QueryClientProvider>
-    </SessionContext.Provider>,
+    </SessionContext.Provider>
   );
-  return { router, queryClient, session };
+  const { unmount } = render(strict ? <StrictMode>{tree}</StrictMode> : tree);
+  return { router, queryClient, session, unmount };
 }
 
 describe("extension paths", () => {
@@ -124,6 +127,7 @@ describe("compatibility", () => {
 });
 
 type PageProps = {
+  realtime: { events: (path: string, handlers: object) => { close(): void } };
   data: { n: number };
   path: string;
   search: URLSearchParams;
@@ -200,5 +204,113 @@ describe("v2 pages", () => {
     fail = false;
     act(() => retry.click());
     expect(await screen.findByText("recovered")).toBeInTheDocument();
+  });
+
+  it("a queued write of a view that went away is never sent", async () => {
+    const posts: string[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    server.use(
+      http.post("*/admin/api/x/docker/:op", async ({ params }) => {
+        posts.push(String(params.op));
+        if (params.op === "first") await held;
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    let api: PageProps["api"] | undefined;
+    function Page(props: PageProps) {
+      useEffect(() => {
+        api = props.api;
+      });
+      return <p>ready</p>;
+    }
+    registerReactView("page", "test/react", Page as never);
+    const { unmount } = mount("/p/react");
+    await screen.findByText("ready");
+    const first = api!.post("/docker/first", {});
+    const second = api!.post("/docker/second", {});
+    await waitFor(() => expect(posts).toEqual(["first"]));
+    unmount();
+    release();
+    await expect(first).rejects.toMatchObject({ code: "session_changed" });
+    await expect(second).rejects.toMatchObject({ code: "session_changed" });
+    expect(posts).toEqual(["first"]);
+  });
+
+  it("under StrictMode a stream stays open", async () => {
+    const opened: AbortSignal[] = [];
+    server.use(
+      http.get("*/admin/api/x/demo/ticks", ({ request }) => {
+        opened.push(request.signal);
+        return new HttpResponse(new ReadableStream({ start() {} }), { headers: { "content-type": "text/event-stream" } });
+      }),
+    );
+    function Page(props: PageProps) {
+      useEffect(() => {
+        const handle = props.realtime.events("/demo/ticks", {});
+        return () => handle.close();
+      }, [props.realtime]);
+      return <p>streaming</p>;
+    }
+    registerReactView("page", "test/react", Page as never);
+    const { unmount } = mount("/p/react", { strict: true });
+    await screen.findByText("streaming");
+    await waitFor(() => expect(opened.filter((s) => !s.aborted)).toHaveLength(1));
+    unmount();
+    await waitFor(() => expect(opened.filter((s) => !s.aborted)).toHaveLength(0));
+  });
+
+  it("an unknown write outcome shows the paused banner, and can() fails closed after a failed refresh", async () => {
+    server.use(http.post("*/admin/api/x/docker/restart", () => new HttpResponse(null, { status: 502 })));
+    let seen: PageProps | undefined;
+    function Page(props: PageProps) {
+      seen = props;
+      return <p>ready</p>;
+    }
+    registerReactView("page", "test/react", Page as never);
+    const { queryClient } = mount("/p/react");
+    await screen.findByText("ready");
+    await expect(seen!.api.post("/docker/restart", {})).rejects.toMatchObject({ code: "outcome_unknown" });
+    expect(await screen.findByText(/reload the page and check/i)).toBeInTheDocument();
+    await expect(seen!.api.post("/docker/restart", {})).rejects.toMatchObject({ code: "writes_paused" });
+    await waitFor(() => expect(seen!.can("docker.view")).toBe(true));
+    server.use(http.get("*/admin/api/panel", () => new HttpResponse(null, { status: 500 })));
+    await act(() => queryClient.refetchQueries());
+    await waitFor(() => expect(seen!.can("docker.view")).toBe(false));
+  });
+});
+
+describe("SDK hooks", () => {
+  it("cache keys use the path as sent", () => {
+    const props = { scope: { namespace: "page:a", epoch: 1 }, locale: "en" };
+    expect(adminKey(props as never, "/a%2Db")).toEqual(adminKey(props as never, "/a-b"));
+  });
+
+  it("no mutation callback runs after unmount", async () => {
+    let resolve!: (v: unknown) => void;
+    const props = {
+      scope: { namespace: "page:a", epoch: 1 },
+      locale: "en",
+      api: { post: () => new Promise((r) => (resolve = r)) },
+    };
+    const settled = vi.fn();
+    let mutate!: (body: unknown) => void;
+    function View() {
+      const m = useAdminMutation(props as never, "/x", "post", { onSettled: settled });
+      mutate = m.mutate;
+      return null;
+    }
+    const client = new QueryClient();
+    const { unmount } = render(
+      <QueryClientProvider client={client}>
+        <View />
+      </QueryClientProvider>,
+    );
+    act(() => mutate({}));
+    await waitFor(() => expect(resolve).toBeTypeOf("function"));
+    unmount();
+    resolve({ ok: true });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(settled).not.toHaveBeenCalled();
   });
 });
