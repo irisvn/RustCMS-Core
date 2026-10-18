@@ -11,6 +11,11 @@ All notable changes are documented here. The format follows
   memory and never fsync: the test matrix runs in 158 s instead of 360 s
   (MySQL variants about 3x faster).
 - `just test-fast`: every test on SQLite only, no server.
+- CI `test-rust` is back on: one `test-build` job archives the tests
+  (`cargo nextest archive`), then three shards run them at once: SQLite plus
+  every test without a database variant, PostgreSQL, and MySQL. The servers
+  run in memory without fsync. The nextest `ci` profile retries a failure
+  once and reports it as flaky.
 
 ### Security
 - ammonia 4.2.4 (RUSTSEC-2026-0373: case-insensitive CSS `url(` in style

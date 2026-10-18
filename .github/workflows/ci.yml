@@ -54,26 +54,41 @@ jobs:
       - run: cargo check --workspace --all-targets
       - run: cargo check -p rustcms --features redis,s3
 
-  # Off for now (the maintainer's choice): run `just test-matrix` locally
-  # before a release. Two tests are flaky here (docs/core/reports/2026-10-16-m24a.vi.md).
-  test-rust:
-    if: false
+  # Rust tests: built once into a nextest archive, then run in three shards
+  # at once (SQLite with every non-database test, PostgreSQL, MySQL). Database
+  # servers keep their data in memory without fsync, as in docker-compose.yml.
+  test-build:
     runs-on: ubuntu-latest
+    env:
+      # Dozens of test binaries: without debug info they fit the runner's disk
+      # (the linker died with SIGBUS when it filled up).
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with: { tool: cargo-nextest }
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - run: cargo nextest archive --workspace --features rustcms/redis,rustcms/s3 --archive-file tests.tar.zst
+      - uses: actions/upload-artifact@v4
+        with: { name: nextest-archive, path: tests.tar.zst, retention-days: 1 }
+
+  test-rust:
+    needs: test-build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Every test without a database variant runs here, once.
+          - { shard: sqlite, filter: "not (test(/::postgres$/) | test(/::mysql$/))", require: "redis,s3,smtp" }
+          - { shard: postgres, filter: "test(/::postgres$/)", require: "postgres,redis,s3,smtp" }
+          - { shard: mysql, filter: "test(/::mysql$/)", require: "mysql,redis,s3,smtp" }
+    name: test-rust (${{ matrix.shard }})
     services:
-      postgres:
-        image: postgres:17-alpine
-        env: { POSTGRES_PASSWORD: postgres }
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 3s --health-retries 30
-      # Test databases are created with their collation (utf8mb4_0900_bin): no server flags needed.
-      mysql:
-        image: mysql:8.4
-        env: { MYSQL_ROOT_PASSWORD: mysql }
-        ports: ["3306:3306"]
-        options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pmysql --silent"
-          --health-interval 2s --health-timeout 3s --health-retries 60
       redis:
         image: redis:7.4-alpine
         ports: ["6379:6379"]
@@ -97,22 +112,32 @@ jobs:
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       # A server that is not reachable fails the run instead of being skipped.
-      RUSTCMS_TEST_REQUIRE: postgres,mysql,redis,s3,smtp
-      # Dozens of test binaries: without debug info they fit the runner's disk
-      # (the linker died with SIGBUS when it filled up).
-      CARGO_PROFILE_DEV_DEBUG: "0"
-      CARGO_PROFILE_TEST_DEBUG: "0"
+      RUSTCMS_TEST_REQUIRE: ${{ matrix.require }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-nextest }
-      - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - uses: actions/download-artifact@v4
+        with: { name: nextest-archive }
+      # Services cannot take server flags: the databases are started here.
+      - name: Start PostgreSQL
+        if: matrix.shard == 'postgres'
+        run: |
+          docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres --tmpfs /var/lib/postgresql/data \
+            postgres:17-alpine postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+          for i in $(seq 1 60); do docker exec pg pg_isready -U postgres -h 127.0.0.1 && exit 0; sleep 1; done; exit 1
+      - name: Start MySQL
+        if: matrix.shard == 'mysql'
+        run: |
+          docker run -d --name mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=mysql --tmpfs /var/lib/mysql mysql:8.4 \
+            --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_bin --innodb-flush-log-at-trx-commit=0 \
+            --innodb-doublewrite=OFF --innodb-flush-method=nosync --sync-binlog=0 --skip-log-bin
+          for i in $(seq 1 120); do docker exec mysql mysqladmin ping -h 127.0.0.1 -uroot -pmysql --silent && exit 0; sleep 1; done; exit 1
       - name: Wait for the S3 bucket
         run: for i in $(seq 1 60); do curl -sf --connect-timeout 2 -m 5 -o /dev/null "$RUSTCMS_TEST_S3" && exit 0; sleep 1; done; exit 1
-      - run: cargo nextest run --workspace --features rustcms/redis,rustcms/s3
+      - run: >-
+          cargo nextest run --archive-file tests.tar.zst --workspace-remap . --profile ci
+          -E '${{ matrix.filter }}'
 
   doc:
     runs-on: ubuntu-latest

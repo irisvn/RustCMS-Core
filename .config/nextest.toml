@@ -9,3 +9,9 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 [[profile.default.overrides]]
 filter = 'test(heartbeats_keep_a_long_run_owned)'
 threads-required = 'num-cpus'
+
+# CI (`--profile ci`): a test that fails once is retried once and reported as
+# flaky, so a loaded runner does not fail the run; a test that fails twice does.
+[profile.ci]
+retries = 1
+failure-output = "immediate-final"
