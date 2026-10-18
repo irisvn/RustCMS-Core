@@ -36,8 +36,12 @@ pub enum InputType {
     /// A widget from an application extension script (vocabulary 4).
     Custom,
     /// A secret setting: shows whether it is set, never its value; replaced
-    /// or cleared explicitly (vocabulary 5).
+    /// or cleared explicitly (vocabulary 5). Also an encrypted field
+    /// (`Field::encrypted`, vocabulary 8).
     Secret,
+    /// Named secrets of a `Field::encrypted_map` field: the names, never the
+    /// values; each kept, replaced or removed (vocabulary 8).
+    SecretMap,
 }
 
 /// An option of a select, checkbox list or select filter.
@@ -207,6 +211,9 @@ input_types! {
     FileUpload => FileUpload,
     /// Rich text editor for a `Field::rich_text()` field.
     RichEditor => RichEditor,
-    /// Secret setting (`SettingField::secret`): set, replace or clear, never shown.
+    /// Secret setting (`SettingField::secret`) or encrypted field
+    /// (`Field::encrypted`): set, replace or clear, never shown.
     SecretInput => Secret,
+    /// Named secrets of a `Field::encrypted_map` field.
+    SecretMapInput => SecretMap,
 }

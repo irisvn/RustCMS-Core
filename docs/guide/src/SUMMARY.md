@@ -58,6 +58,7 @@
 
 # Digging deeper
 
+- [Encrypted columns](digging-deeper/encryption.md)
 - [File storage](digging-deeper/storage.md)
 - [Several instances](digging-deeper/instances.md)
 - [Audit log](digging-deeper/audit-log.md)

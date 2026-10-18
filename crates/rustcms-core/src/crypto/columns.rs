@@ -89,8 +89,9 @@ impl EncryptedColumn {
         &self.column
     }
 
-    /// The context of the row whose key is `row`.
-    fn context(&self, row: &str) -> Context {
+    /// The context of the row whose key is `row` (ignored when the column
+    /// binds no row).
+    pub fn context(&self, row: &str) -> Context {
         let context = Context::column(self.table(), self.column.clone());
         match self.binding {
             Binding::Column => context,

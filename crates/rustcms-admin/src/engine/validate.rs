@@ -98,7 +98,7 @@ fn report(name: &str, problem: Option<String>, errors: &mut ValidationErrors) ->
 }
 
 /// What is wrong with a key/value object, if anything.
-fn key_value_problem(value: &Value, (max_items, max_length): (usize, usize)) -> Option<String> {
+pub(crate) fn key_value_problem(value: &Value, (max_items, max_length): (usize, usize)) -> Option<String> {
     let Some(object) = value.as_object() else { return Some("must be an object of text values".to_owned()) };
     if object.len() > max_items {
         Some(format!("may not have more than {max_items} items"))

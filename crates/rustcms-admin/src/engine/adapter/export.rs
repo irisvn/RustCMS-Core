@@ -25,7 +25,7 @@ impl<R: Resource> ResourceAdapter<R> {
         use crate::exports::CellKind;
         self.fields
             .iter()
-            .filter(|f| f.can_read(ctx))
+            .filter(|f| f.can_read(ctx) && f.secret.is_none())
             .map(|f| {
                 let kind = match self.column(&f.name).kind {
                     FieldKind::String => CellKind::Text,

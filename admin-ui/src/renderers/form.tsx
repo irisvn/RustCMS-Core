@@ -4,7 +4,8 @@ import { Controller, type Control, type FieldErrors } from "react-hook-form";
 import { Plus, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type * as React from "react";
-import type { ComponentSchema, Data, InputSchema, LayoutSchema, SelectOption } from "@/api/types";
+import type { ComponentSchema, Data, InputSchema, LayoutSchema, SecretStatus, SelectOption } from "@/api/types";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Switch } from "@/components/ui/checkbox";
 import { Input, Label, NativeSelect, Textarea } from "@/components/ui/input";
@@ -26,6 +27,7 @@ import { FileUploadWidget, MediaThumb } from "./media";
 import { RichEditorWidget, RichTextView } from "./rich-text";
 import { CustomField } from "./custom";
 import { type SecretControl, SecretWidget } from "./secret";
+import { isResourceSecret, parseSecret, parseSecretMap, type SecretRow } from "@/schema/secrets";
 import { asDocument } from "@/lib/rich-text";
 import { useT } from "@/i18n";
 
@@ -429,13 +431,96 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
     case "custom":
       return <CustomField id={id} input={input} value={text} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
     case "secret":
+      if (isResourceSecret(input)) {
+        // An encrypted field: its state and intent live in the form value.
+        const current = parseSecret(value);
+        const control: SecretControl = {
+          status: { [input.name]: current.state as SecretStatus },
+          intents: { [input.name]: current.intent },
+          setIntent: (_, intent) => onChange(JSON.stringify({ state: current.state, intent })),
+        };
+        return <SecretWidget id={id} name={input.name} control={control} disabled={disabled} invalid={invalid} describedBy={describedBy} placeholder={input.placeholder} />;
+      }
       return <SecretWidget id={id} name={input.name} control={ctx.secrets} disabled={disabled} invalid={invalid} describedBy={describedBy} placeholder={input.placeholder} />;
+    case "secret_map":
+      return <SecretMapEditor id={id} label={input.label} value={value} onChange={onChange} onBlur={onBlur} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
     case "key_value":
       return <KeyValueEditor id={id} label={input.label} nullable={input.nullable} value={value} onChange={onChange} onBlur={onBlur} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
     default:
       // Unknown component (newer vocabulary): show the value, never edit it.
       return <Input {...common} value={Array.isArray(value) ? value.join(", ") : String(value)} disabled readOnly data-fallback="true" />;
   }
+}
+
+/**
+ * Named secrets: stored keys are kept, replaced or removed (their values are
+ * never shown nor prefilled); new rows take a key and a value.
+ */
+function SecretMapEditor({ id, label, value, onChange, onBlur, disabled, invalid, describedBy }: {
+  id: string;
+  label: string;
+  value: FormValue;
+  onChange: (value: FormValue) => void;
+  onBlur: () => void;
+  disabled?: boolean;
+  invalid: boolean;
+  describedBy?: string;
+}) {
+  const t = useT();
+  const current = parseSecretMap(value);
+  const set = (rows: SecretRow[]) => onChange(JSON.stringify({ ...current, rows }));
+  const edit = (index: number, change: Partial<SecretRow>) =>
+    set(current.rows.map((row, i) => (i === index ? { ...row, ...change } : row)));
+  return (
+    <div id={id} tabIndex={-1} role="group" aria-label={label} aria-invalid={invalid || undefined} aria-describedby={describedBy} className="flex flex-col gap-2 focus-visible:outline-none">
+      {current.state === "unreadable" && (
+        <Badge className="w-fit border border-destructive bg-background text-destructive">{t("secret.unreadable")}</Badge>
+      )}
+      {current.rows.length === 0 && <p className="text-sm text-muted-foreground">{t("form.noEntries")}</p>}
+      {current.rows.map((row, i) => (
+        <div key={i} className="flex min-w-0 flex-wrap items-center gap-2">
+          {row.stored ? (
+            <span className="min-w-0 flex-1 truncate font-mono text-sm">{row.key}</span>
+          ) : (
+            <Input aria-label={t("form.key", { n: i + 1 })} value={row.key} disabled={disabled} onBlur={onBlur} onChange={(e) => edit(i, { key: e.target.value })} className="min-w-0 flex-1" />
+          )}
+          {row.stored && row.action === "keep" && <Badge>{t("secretMap.kept")}</Badge>}
+          {row.stored && row.action === "remove" && <span className="text-xs text-muted-foreground">{t("secretMap.removed")}</span>}
+          {(!row.stored || row.action === "replace") && (
+            <Input
+              type="password"
+              autoComplete="new-password"
+              aria-label={t("form.value", { n: i + 1 })}
+              placeholder={t("secret.placeholder")}
+              value={row.value}
+              disabled={disabled}
+              onBlur={onBlur}
+              onChange={(e) => edit(i, { value: e.target.value })}
+              className="min-w-0 flex-[2]"
+            />
+          )}
+          {!disabled && row.stored && row.action === "keep" && (
+            <Button type="button" variant="outline" size="sm" onClick={() => edit(i, { action: "replace" })}>{t("secret.replace")}</Button>
+          )}
+          {!disabled && row.stored && row.action !== "keep" && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => edit(i, { action: "keep", value: "" })}>{t("secret.undo")}</Button>
+          )}
+          {!disabled && (row.stored ? row.action === "keep" : true) && (
+            <Button size="icon" variant="ghost" aria-label={t("form.removeEntry", { n: i + 1 })}
+              onClick={() => (row.stored ? edit(i, { action: "remove" }) : set(current.rows.filter((_, j) => j !== i)))}>
+              <X />
+            </Button>
+          )}
+        </div>
+      ))}
+      <div>
+        <Button size="sm" variant="outline" disabled={disabled}
+          onClick={() => set([...current.rows, { key: "", stored: false, action: "replace", value: "" }])}>
+          <Plus /> {t("form.addEntry")}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /** Editable key/value rows; duplicates and empty keys are reported by validation. */

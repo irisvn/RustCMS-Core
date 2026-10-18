@@ -27,7 +27,8 @@ impl FromRequestParts<AppState> for AdminCtx {
             rustcms_core::audit::AuditActor::user(&auth.principal),
             rustcms_core::audit::RequestMeta::from_parts(parts),
         );
-        let ctx = Ctx::new(state.db().clone(), auth.principal, panel.registry.clone());
+        let ctx =
+            Ctx::new(state.db().clone(), auth.principal, panel.registry.clone()).with_keyring(state.keyring().clone());
         Ok(Self(ctx.with_locale(locale, panel.translator.clone()).with_audit(audit)))
     }
 }

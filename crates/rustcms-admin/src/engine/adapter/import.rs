@@ -42,6 +42,8 @@ impl<R: Resource> ResourceAdapter<R> {
         self.fields
             .iter()
             .filter(|f| f.name != self.pk_name || natural)
+            // Encrypted fields are never imported (nor exported).
+            .filter(|f| f.secret.is_none())
             .filter(|f| {
                 f.can_write(Operation::Create, ctx)
                     || (self.meta.import_key.is_some() && f.can_write(Operation::Update, ctx))

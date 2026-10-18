@@ -36,6 +36,7 @@ write are left out or disabled, and the server checks everything again.
 | `KeyValue` | a JSON object of text values ([below](#key-value)) |
 | `FileUpload`, `RichEditor` | [media and rich text](media.md) |
 | `CustomInput::make(field, "vendor/widget")` | a [custom widget](custom-fields.md) |
+| `SecretInput`, `SecretMapInput` | [encrypted fields](#encrypted-fields) (chosen for them by default) |
 
 Common options: `.label(…)`, `.placeholder(…)`, `.help(…)`, `.column_span(n)`.
 `SelectInput` is named so it does not clash with `sea_orm::Select`.
@@ -74,3 +75,48 @@ then apply to every write, API and hooks included, whatever the form shows:
 `max_length` (default 1,000). A stored value that is not an object of text is
 shown read-only and never rewritten; a nullable field can be cleared to "not
 set" (distinct from an empty object).
+
+## Encrypted fields
+
+```rust,ignore
+Field::column(integration::Column::ApiToken).encrypted(),
+Field::column(integration::Column::Env).encrypted_map().max_items(20),
+```
+
+Both hold secrets sealed with `APP_KEY` in a text column; the model's field
+is an [`Encrypted<T>`](../digging-deeper/encryption.md):
+- `encrypted()` takes an `Encrypted<String>`;
+- `encrypted_map()` takes an `Encrypted<BTreeMap<String, String>>`.
+
+The panel never shows them.
+- **A secret string** (`SecretInput`) shows *Set*, *Not set* or *Cannot be
+  read*, with Replace and Clear. Leaving it alone keeps it.
+- **Named secrets** (`SecretMapInput`):
+  - the names are listed, and each one is kept, replaced or removed;
+  - new rows take a name and a value;
+  - values are never shown or prefilled.
+- What the API returns and takes (for scripts and tests):
+
+  | | Record value | Write |
+  |---|---|---|
+  | string | `{"state": "set"}` (`unset`, `unreadable`) | `{"replace": "…"}`, `{"clear": true}`; left out: kept |
+  | map | `{"state", "keys", "revision"}` | `{"revision", "set": {…}, "keep": ["NAME"]}`, `{"revision", "clear": true}` |
+
+- **Map rules:**
+  - Names neither kept nor set are removed.
+  - On an existing record every change needs the `revision` it was read
+    with. If someone changed the map meanwhile the save gets 409: reload and
+    try again.
+  - Keeping a name of a map that cannot be read (another `APP_KEY`) is
+    refused; replacing every value recovers it.
+  - The key/value bounds hold on the result.
+- **Who sees what:** users who may read the field see the names. Users who
+  may only write it see the state and can still replace everything.
+- **Never allowed:** encrypted fields are always write-only, never sortable,
+  searchable, filterable, a title or a key. They are never exported or
+  imported, and always redacted in the audit log. Anything else panics at
+  start.
+- **In hooks and actions:** read the stored value with
+  `model.env.open(ctx.keyring()?, &context)`, and write it with
+  `Encrypted::seal`.
+

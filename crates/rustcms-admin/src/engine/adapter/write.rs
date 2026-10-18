@@ -122,7 +122,7 @@ impl<R: Resource> ResourceAdapter<R> {
         input: Option<&Data>,
     ) -> AppResult<(Model<R>, BTreeSet<String>)> {
         let model = self.find_model_in(ctx, txn, key, trashed).await?;
-        if !self.policy.allows(ctx, ability, Some(&Self::record(&model))).await {
+        if !self.policy.allows(ctx, ability, Some(&self.record(&model))).await {
             return Err(AppError::Forbidden);
         }
         let read_parent = self.parent_of_model(&model);
@@ -136,7 +136,7 @@ impl<R: Resource> ResourceAdapter<R> {
         if self.parent_of_model(&model) != read_parent {
             return Err(parent_moved());
         }
-        if !self.policy.allows(ctx, ability, Some(&Self::record(&model))).await {
+        if !self.policy.allows(ctx, ability, Some(&self.record(&model))).await {
             return Err(AppError::Forbidden);
         }
         Ok((model, parents))
@@ -145,7 +145,7 @@ impl<R: Resource> ResourceAdapter<R> {
     /// The parent key of `model` ([`ResourceMeta::lock_parent`]), if any.
     pub(super) fn parent_of_model(&self, model: &Model<R>) -> Option<String> {
         let (field, _) = self.meta.parent_lock.as_ref()?;
-        key_text(Self::record(model).get(field)?)
+        key_text(self.record(model).get(field)?)
     }
 
     /// The parent key `data` sets: `None` when it does not set the field,

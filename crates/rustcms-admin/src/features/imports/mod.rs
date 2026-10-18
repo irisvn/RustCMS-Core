@@ -738,7 +738,8 @@ async fn still_allowed(
     panel: &AdminPanel,
     row: &entity::Model,
 ) -> Result<(), Result<Stopped, AppError>> {
-    let ctx = Ctx::new(app.db().clone(), principal(app, row).await?, panel.registry.clone());
+    let ctx = Ctx::new(app.db().clone(), principal(app, row).await?, panel.registry.clone())
+        .with_keyring(app.keyring().clone());
     let resource = resource(&ctx, &row.resource).map_err(Err)?;
     if resource.admit_import(&ctx).await.is_err() {
         return Err(Ok(Stopped("revoked")));
@@ -762,7 +763,9 @@ async fn write(job: &JobCtx, row: &entity::Model) -> Result<(), Result<Stopped, 
         .ok_or_else(|| Err(AppError::internal("import without a mapping")))?;
     let (header, rows) = file_rows(app, row).await.map_err(Err)?;
     let ctx_for = |principal: Principal| {
-        Ctx::new(app.db().clone(), principal, panel.registry.clone()).with_audit(job.audit_context())
+        Ctx::new(app.db().clone(), principal, panel.registry.clone())
+            .with_audit(job.audit_context())
+            .with_keyring(app.keyring().clone())
     };
     // Rows written by an earlier run are counted, never written again.
     let mut done = written(app.db(), row.id).await.map_err(Err)?;

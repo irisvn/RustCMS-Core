@@ -26,6 +26,9 @@
   checked by `tests/paths.rs` in core, auth and admin — keep them passing).
 - Security invariants: deny by default; undeclared columns never exposed; field rules
   and `scope()` enforced server-side on every path, including relationships and actions.
+- Secrets in app tables use `rustcms::crypto::Encrypted<T>` (ADR 0030): explicit `seal`/`open` with the keyring;
+  never put plaintext or envelopes in `record()`, the wire, logs or the audit log; admin fields use
+  `Field::encrypted`/`encrypted_map`.
 - Wire format (ADR 0003): i64/decimal as strings, decimals rescaled to column scale.
 - Auth: all RBAC writes go through `RbacService` (crates/rustcms-auth/src/rbac/); never write role/permission tables directly.
 - New auth routes must be added to `rustcms_auth::routes::routes` and to `fixtures/authz/auth.toml` (the oracle test fails otherwise).

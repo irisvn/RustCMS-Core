@@ -248,6 +248,15 @@ impl AppBuilder {
         self
     }
 
+    /// Registers an encrypted column built elsewhere (the admin's fields).
+    ///
+    /// # Panics
+    /// When the same column is registered with another binding.
+    pub fn add_encrypted_column(&mut self, column: crate::crypto::EncryptedColumn) -> &mut Self {
+        self.encrypted.add(column);
+        self
+    }
+
     /// The encrypted columns registered so far.
     pub fn encrypted_columns(&self) -> &crate::crypto::EncryptedColumns {
         &self.encrypted

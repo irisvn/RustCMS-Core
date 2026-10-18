@@ -479,7 +479,9 @@ async fn build(job: &JobCtx, row: &entity::Model) -> Result<(), Result<Refused, 
     let panel = app.service::<AdminPanel>().ok_or_else(|| internal("AdminProvider not registered"))?;
     let storage = storage(app).ok_or_else(|| internal("storage not registered"))?;
     let ctx_for = |principal: Principal| {
-        Ctx::new(app.db().clone(), principal, panel.registry.clone()).with_audit(job.audit_context())
+        Ctx::new(app.db().clone(), principal, panel.registry.clone())
+            .with_audit(job.audit_context())
+            .with_keyring(app.keyring().clone())
     };
     let ctx = ctx_for(principal(app, row).await?);
     let resource = resource(&ctx, &row.resource).map_err(refusal)?;

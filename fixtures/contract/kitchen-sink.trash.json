@@ -12,6 +12,9 @@
         "accent": null,
         "active": true,
         "agreed": false,
+        "api_token": {
+          "state": "unset"
+        },
         "category_id": 1,
         "colors": [
           "red"
@@ -19,6 +22,10 @@
         "count": 3,
         "day": "2026-10-12",
         "deleted_at": "2026-10-12T09:30:00Z",
+        "env": {
+          "revision": "none",
+          "state": "unset"
+        },
         "happened_at": "2026-10-12T02:30:00Z",
         "local_at": "2026-10-12T09:30:00",
         "name": "Defaults",

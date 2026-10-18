@@ -98,7 +98,8 @@ describe("key/value", () => {
     mount();
     await userEvent.type(await screen.findByLabelText(/^Name/), "Widget");
     await userEvent.click(screen.getByRole("tab", { name: "Specs" }));
-    const add = screen.getByRole("button", { name: /Add entry/ });
+    // The key/value input of the Specs tab (the form also has named secrets).
+    const add = within(screen.getByRole("group", { name: "Specs" })).getByRole("button", { name: /Add entry/ });
     await userEvent.click(add);
     await userEvent.type(screen.getByLabelText("Key 1"), "size");
     await userEvent.type(screen.getByLabelText("Value 1"), "M");
@@ -128,7 +129,7 @@ describe("key/value", () => {
     expect(toFormValue(specs, null)).toBe("");
     mount();
     await userEvent.click(await screen.findByRole("tab", { name: "Specs" }));
-    await userEvent.click(screen.getByRole("button", { name: /Add entry/ }));
+    await userEvent.click(within(screen.getByRole("group", { name: "Specs" })).getByRole("button", { name: /Add entry/ }));
     expect(screen.getByLabelText("Key 1")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Clear (not set)" }));
     expect(screen.getByText("Not set.")).toBeInTheDocument();

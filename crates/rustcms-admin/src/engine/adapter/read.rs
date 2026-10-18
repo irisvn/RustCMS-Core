@@ -17,7 +17,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let title_readable = self.meta.title_field.as_ref().filter(|t| readable.iter().any(|f| &f.name == *t));
         let mut out = Vec::with_capacity(models.len());
         for (model, labels) in models.iter().zip(labels) {
-            let record = Self::record(model);
+            let record = self.record(model);
             let trashed = self.is_trashed(&record);
             let mut abilities = BTreeMap::new();
             abilities.insert(ability::VIEW, self.policy.allows(ctx, ability::VIEW, Some(&record)).await);
@@ -44,7 +44,20 @@ impl<R: Resource> ResourceAdapter<R> {
                 title: title_readable.filter(|_| viewable).map(|t| title_text(&record[t.as_str()])),
                 abilities,
                 data: if viewable {
-                    readable.iter().map(|f| (f.name.clone(), record[f.name.as_str()].clone())).collect()
+                    let mut data: Data = readable
+                        .iter()
+                        .filter(|f| f.secret.is_none())
+                        .map(|f| (f.name.clone(), record[f.name.as_str()].clone()))
+                        .collect();
+                    // Encrypted fields: their masked view, also for those who
+                    // may only write them (state and revision, no key names).
+                    for field in self.fields.iter().filter(|f| f.secret.is_some()) {
+                        let names = field.can_read(ctx);
+                        if names || field.can_write(Operation::Update, ctx) {
+                            data.insert(field.name.clone(), self.secret_view(ctx, &field.name, model, names));
+                        }
+                    }
+                    data
                 } else {
                     Data::new()
                 },
@@ -250,7 +263,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let mut loaded: HashMap<String, (Model<R>, Data)> = models
             .into_iter()
             .map(|model| {
-                let record = Self::record(&model);
+                let record = self.record(&model);
                 (self.key_of(&model), (model, record))
             })
             .collect();

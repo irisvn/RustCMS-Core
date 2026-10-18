@@ -202,6 +202,10 @@ impl ServiceProvider for AdminProvider {
             for permission in resource.permissions() {
                 auth.permissions.declare(ADMIN_GUARD, &permission, Some(resource.slug()));
             }
+            // Encrypted fields rotate with `key:reencrypt`.
+            for column in resource.encrypted_columns() {
+                app.add_encrypted_column(column);
+            }
         }
         for permission in crate::audit::permissions() {
             auth.permissions.declare(ADMIN_GUARD, permission, Some("audit"));

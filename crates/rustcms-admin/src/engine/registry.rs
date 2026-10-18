@@ -121,6 +121,8 @@ pub trait DynResource: Send + Sync {
     ) -> AppResult<Counted>;
     /// Fields the user may set by import.
     fn import_fields(&self, ctx: &Ctx) -> Vec<crate::ImportField>;
+    /// Columns of `Field::encrypted*` fields (for `key:reencrypt`).
+    fn encrypted_columns(&self) -> Vec<rustcms_core::crypto::EncryptedColumn>;
     /// The import key field, if any.
     fn import_key(&self) -> Option<&str>;
     /// The value of a CSV cell for field `name` (empty: null).

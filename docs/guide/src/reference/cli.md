@@ -265,6 +265,16 @@ Delete failed jobs
 | `<id>` | Job id |
 | `--all` | Every failed job |
 
+### `key:reencrypt`
+
+Seal every encrypted column and settings secret with APP_KEY (after a rotation)
+
+| Argument | Description |
+|---|---|
+| `--dry-run` | Check and count; write nothing |
+| `--list` | List the encrypted columns and exit |
+| `--batch` | Rows read at a time (default: `500`) |
+
 ## Auth commands
 
 Added by `AuthProvider` (registered in new applications).

@@ -25,12 +25,15 @@ impl<R: Resource> ResourceAdapter<R> {
     /// The declared fields of a record as stored (wire values), before
     /// redaction; rich text documents as their size and digest.
     pub(super) fn audit_snapshot(&self, model: &Model<R>) -> Map<String, Json> {
-        let record = Self::record(model);
+        let record = self.record(model);
         self.fields
             .iter()
             .filter_map(|field| {
                 let value = record.get(&field.name)?.clone();
-                let value = if field.rich_text && !value.is_null() {
+                let value = if field.secret.is_some() {
+                    // Compared to find changes, then redacted: never stored.
+                    self.secret_digest(&field.name, model)
+                } else if field.rich_text && !value.is_null() {
                     let text = value.to_string();
                     json!({ "document": true, "bytes": text.len(), "sha256": audit::summary(&text)["sha256"] })
                 } else {

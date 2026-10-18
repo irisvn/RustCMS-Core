@@ -151,7 +151,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if let Some(key) = key {
             let admission = if op == SchemaOperation::Edit { ability::UPDATE } else { ability::VIEW };
             self.admit(ctx, admission).await?;
-            let record = Self::record(&self.find_model(ctx, &ctx.db, key).await?);
+            let record = self.record(&self.find_model(ctx, &ctx.db, key).await?);
             for name in [ability::VIEW, ability::UPDATE, ability::DELETE] {
                 abilities.insert(name, self.policy.allows(ctx, name, Some(&record)).await);
             }
@@ -247,7 +247,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 if !self.policy.admits(ctx, ability::UPDATE).await && !self.policy.admits(ctx, ability::VIEW).await {
                     return Err(AppError::Forbidden);
                 }
-                let record = Self::record(&self.find_model(ctx, &ctx.db, key).await?);
+                let record = self.record(&self.find_model(ctx, &ctx.db, key).await?);
                 (field.can_write(Operation::Update, ctx)
                     && self.policy.allows(ctx, ability::UPDATE, Some(&record)).await)
                     || (field.can_read(ctx) && self.policy.allows(ctx, ability::VIEW, Some(&record)).await)
@@ -365,7 +365,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     async fn find(&self, ctx: &Ctx, key: &str) -> AppResult<Envelope> {
         self.admit(ctx, ability::VIEW).await?;
         let model = self.find_model(ctx, &ctx.db, key).await?;
-        if !self.policy.allows(ctx, ability::VIEW, Some(&Self::record(&model))).await {
+        if !self.policy.allows(ctx, ability::VIEW, Some(&self.record(&model))).await {
             return Err(AppError::Forbidden);
         }
         Ok(self.envelopes(ctx, vec![model]).await?.remove(0))
@@ -418,7 +418,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.check_written(&wctx, &txn, &data).await?;
 
         let mut active = <<Entity<R> as EntityTrait>::ActiveModel as ActiveModelBehavior>::new();
-        self.apply(&mut active, &data, Operation::Create)?;
+        self.apply(&wctx, &mut active, &data, Operation::Create, None)?;
         // New records are active, whatever the model's or the column's default.
         self.set_marker(&mut active, false)?;
         match self.meta.key {
@@ -456,7 +456,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 R::SLUG,
                 &format!("update:{key}"),
                 k,
-                &serde_json::Value::Object(input.clone()),
+                &serde_json::Value::Object(self.claim_input(ctx, &input)),
             )
         });
         let input = self.accept_input(ctx, Operation::Update, input)?;
@@ -481,8 +481,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let model = if data.is_empty() {
             model
         } else {
+            let stored = model.clone();
             let mut active = model.into_active_model();
-            self.apply(&mut active, &data, Operation::Update)?;
+            self.apply(&wctx, &mut active, &data, Operation::Update, Some(&stored))?;
             active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?
         };
         self.check_parent_stored(&wctx, &model, &parents)?;
@@ -531,7 +532,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let model = self.find_authorized_locked(&wctx, &txn, key, ability::RESTORE, Trashed::Only).await?;
         // Back among active records, its relationships must point to records
         // the user can see, as when it was written.
-        let record = Self::record(&model);
+        let record = self.record(&model);
         let relations: Data = self
             .fields
             .iter()
@@ -708,6 +709,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
 
     fn import_fields(&self, ctx: &Ctx) -> Vec<crate::ImportField> {
         ResourceAdapter::import_fields(self, ctx)
+    }
+
+    fn encrypted_columns(&self) -> Vec<rustcms_core::crypto::EncryptedColumn> {
+        ResourceAdapter::encrypted_columns(self)
     }
 
     fn import_key(&self) -> Option<&str> {

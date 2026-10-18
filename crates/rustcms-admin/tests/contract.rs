@@ -44,6 +44,10 @@ pub mod gadget {
         pub specs: Option<Json>,
         pub photo: Option<Uuid>,
         pub accent: Option<String>,
+        #[sea_orm(column_type = "Text", nullable)]
+        pub api_token: Option<rustcms_core::crypto::Encrypted<String>>,
+        #[sea_orm(column_type = "Text", nullable)]
+        pub env: Option<rustcms_core::crypto::Encrypted<std::collections::BTreeMap<String, String>>>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -86,6 +90,8 @@ impl Resource for GadgetResource {
             Field::column(C::Specs).max_items(5).max_length(40),
             Field::column(C::Photo).media().accept(&["image/*"]).max_size(1_000_000),
             Field::column(C::Accent).max_length(7),
+            Field::column(C::ApiToken).encrypted(),
+            Field::column(C::Env).encrypted_map().max_items(10),
         ]
     }
 
@@ -120,6 +126,8 @@ impl Resource for GadgetResource {
             ]),
             Hidden::make("token"),
             TextInput::make("secret").password(),
+            SecretInput::make("api_token"),
+            SecretMapInput::make("env"),
         ])
     }
 

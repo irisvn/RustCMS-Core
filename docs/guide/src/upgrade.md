@@ -29,6 +29,17 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.4.0 to 0.4.1
+
+- `rustcms::settings::{read, load, write}` take the keyring
+  (`state.keyring()`) instead of `&state.config().app.key`.
+  `settings::get(&state)` is unchanged.
+- New, optional: `APP_PREVIOUS_KEYS` (see
+  [Rotating APP_KEY](operations/app-key.md)), and
+  [encrypted columns](digging-deeper/encryption.md).
+- The admin vocabulary is 8 (`secret_map` inputs). An extension that checks
+  the vocabulary version should accept 8.
+
 ## From 0.3.2 to 0.4.0
 
 `rustcms self-update`, then `rustcms upgrade` in each application. Nothing

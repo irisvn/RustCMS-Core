@@ -2,7 +2,7 @@
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
-export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value" | "file_upload" | "rich_editor" | "custom" | "secret";
+export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value" | "file_upload" | "rich_editor" | "custom" | "secret" | "secret_map";
 
 export type LayoutType = "section" | "grid" | "tabs" | "tab";
 

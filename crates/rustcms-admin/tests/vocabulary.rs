@@ -119,7 +119,7 @@ db_test!(key_value_inputs_hold_bounded_text_pairs, |db: TestDb| async move {
 db_test!(tabs_and_key_values_in_the_schema, |db: TestDb| async move {
     let (ctx, items) = items(&db).await;
     let schema = serde_json::to_value(items.schema(&ctx, SchemaOperation::Create, None).await.unwrap()).unwrap();
-    assert_eq!(schema["vocabularyVersion"], json!(7));
+    assert_eq!(schema["vocabularyVersion"], json!(8));
     let tabs = &schema["form"]["components"][0];
     assert_eq!(tabs["type"], json!("tabs"));
     let ids: Vec<&Value> = tabs["components"].as_array().unwrap().iter().map(|t| &t["id"]).collect();

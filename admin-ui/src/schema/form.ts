@@ -6,6 +6,15 @@ import type { ComponentSchema, InputSchema, JsonValue } from "@/api/types";
 import { asDocument } from "@/lib/rich-text";
 import { widget } from "@/lib/widgets";
 import { checkText, fromText, toText, type WireKind } from "@/lib/wire";
+import {
+  isResourceSecret,
+  parseSecret,
+  parseSecretMap,
+  secretFormValue,
+  secretMapFormValue,
+  secretMapOperation,
+  secretOperation,
+} from "./secrets";
 
 // No `new Function` (zod's JIT probes it): the panel's CSP forbids eval.
 z.config({ jitless: true });
@@ -73,6 +82,7 @@ export const encodePair = (key: string, value: string) => JSON.stringify([key, v
 /** Input types of vocabulary version 5. */
 export const KNOWN_INPUT_TYPES = new Set<string>([
   "secret",
+  "secret_map",
   "custom",
   "file_upload",
   "rich_editor",
@@ -106,7 +116,10 @@ export const isTriState = (input: InputSchema) =>
 
 export function toFormValue(input: InputSchema, value: unknown): FormValue {
   if (isTriState(input)) return value === null || value === undefined ? "" : value ? "true" : "false";
+  if (isResourceSecret(input)) return secretFormValue(value);
   switch (input.type) {
+    case "secret_map":
+      return secretMapFormValue(value);
     case "toggle":
     case "checkbox":
       return value === true;
@@ -140,7 +153,10 @@ const TEXT_KINDS = new Set<WireKind>(["string"]);
 
 export function fromFormValue(input: InputSchema, value: FormValue): unknown {
   if (isTriState(input)) return value === "" ? null : value === "true";
+  if (isResourceSecret(input)) return secretOperation(value);
   switch (input.type) {
+    case "secret_map":
+      return secretMapOperation(value);
     case "toggle":
     case "checkbox":
       return value === true;
@@ -194,8 +210,15 @@ export function payloadOf(
   for (const input of inputs) {
     // Disabled inputs are not writable; unknown (newer) input types are never submitted.
     if (input.disabled || !KNOWN_INPUT_TYPES.has(input.type)) continue;
-    // Secrets are sent from their explicit intent (keep, replace, clear), never from the form value.
-    if (input.type === "secret") continue;
+    // Settings secrets are sent from their explicit intent (keep, replace,
+    // clear), never from the form value.
+    if (input.type === "secret" && !isResourceSecret(input)) continue;
+    // Encrypted fields: their operation, only when the user changed something.
+    if (isResourceSecret(input) || input.type === "secret_map") {
+      const operation = fromFormValue(input, values[input.name] ?? "");
+      if (operation !== undefined) out[input.name] = operation;
+      continue;
+    }
     // A custom input is sent only through its widget, and only when set.
     if (input.type === "custom" && (!widget(input.widget) || values[input.name] === "")) continue;
     if (dirty && !dirty[input.name]) continue;
@@ -218,6 +241,28 @@ export function zodSchema(inputs: InputSchema[]) {
     if (isTriState(input)) {
       shape[input.name] = z.string().superRefine((v, ctx) => {
         if (required && v === "" && !input.disabled) ctx.addIssue({ code: "custom", message: t("issue.required") });
+      });
+      continue;
+    }
+    if (isResourceSecret(input)) {
+      shape[input.name] = z.string().superRefine((v, ctx) => {
+        const { state, intent } = parseSecret(v);
+        if (intent.kind === "replace" && intent.value === "") {
+          ctx.addIssue({ code: "custom", message: t("secret.emptyReplace") });
+        } else if (input.rules.some((r) => r.rule === "required") && state === "unset" && intent.kind !== "replace") {
+          ctx.addIssue({ code: "custom", message: t("issue.required") });
+        }
+      });
+      continue;
+    }
+    if (input.type === "secret_map") {
+      const most = input.rules.find((r) => r.rule === "max_items")?.value;
+      shape[input.name] = z.string().superRefine((v, ctx) => {
+        const rows = parseSecretMap(v).rows.filter((r) => r.action !== "remove");
+        const keys = rows.map((r) => r.key);
+        if (keys.some((k) => k === "")) ctx.addIssue({ code: "custom", message: t("issue.empty_key") });
+        else if (new Set(keys).size !== keys.length) ctx.addIssue({ code: "custom", message: t("issue.given_twice") });
+        else if (most !== undefined && keys.length > most) ctx.addIssue({ code: "custom", message: t("issue.max_items", { max: most }) });
       });
       continue;
     }

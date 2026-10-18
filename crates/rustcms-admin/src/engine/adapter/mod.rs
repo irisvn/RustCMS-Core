@@ -13,6 +13,7 @@ pub(crate) mod pivot;
 mod read;
 mod references;
 mod schema;
+mod secrets;
 mod write;
 
 pub use import::ImportField;
@@ -86,6 +87,8 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     form: Form,
     /// Key/value fields: most pairs and longest value.
     key_values: HashMap<String, (usize, usize)>,
+    /// Encrypted fields (`Field::encrypted*`).
+    secrets: HashMap<String, secrets::SecretField>,
     table_ui: Table,
     limits: Limits,
     _resource: PhantomData<fn() -> R>,
@@ -174,7 +177,54 @@ impl<R: Resource> ResourceAdapter<R> {
             }
         }
 
+        // Encrypted fields: write operations on a text column, out of every
+        // listing, search, sort, filter, key and default (ADR 0030).
+        let mut secrets = HashMap::new();
+        for field in &fields {
+            let Some(kind) = field.secret else { continue };
+            let name = field.name.as_str();
+            let info = &columns[name];
+            assert!(info.kind == FieldKind::String, "resource `{slug}`: encrypted field `{name}` needs a text column");
+            assert!(
+                !(field.sortable || field.searchable || field.filterable),
+                "resource `{slug}`: encrypted field `{name}` cannot be sortable, searchable or filterable"
+            );
+            assert!(
+                field.belongs_to.is_none()
+                    // `max_items` bounds a map (it sets `key_value`).
+                    && !(field.key_value && kind == crate::field::SecretKind::Text)
+                    && field.media.is_none()
+                    && !field.rich_text
+                    && name != pk_name
+                    && meta.title_field.as_deref() != Some(name)
+                    && meta.import_key.as_deref() != Some(name)
+                    && !meta.constraints.iter().any(|c| c.columns.iter().any(|col| col == name)),
+                "resource `{slug}`: encrypted field `{name}` cannot be a key, a title, a relation, media, rich \
+                 text, key/value or part of a constraint"
+            );
+            assert!(!info.has_default, "resource `{slug}`: encrypted field `{name}` may not have a column default");
+            let column = rustcms_core::crypto::EncryptedColumn::of::<Entity<R>>(
+                info.column,
+                rustcms_core::crypto::Binding::Column,
+            );
+            secrets.insert(field.name.clone(), secrets::SecretField { kind, column });
+        }
+
         let form = Some(R::form()).filter(|f| !f.components.is_empty()).unwrap_or_else(|| auto_form(&fields, &columns));
+        for input in form.inputs() {
+            let secret = fields.iter().find(|f| f.name == input.name).and_then(|f| f.secret);
+            let expected = match secret {
+                Some(crate::field::SecretKind::Text) => Some(InputType::Secret),
+                Some(crate::field::SecretKind::Map) => Some(InputType::SecretMap),
+                None => None,
+            };
+            assert!(
+                expected.map_or(!matches!(input.kind, InputType::Secret | InputType::SecretMap), |e| input.kind == e),
+                "resource `{slug}`: input `{}` must be a SecretInput for `Field::encrypted`, a SecretMapInput for \
+                 `Field::encrypted_map`, and those inputs only for them",
+                input.name
+            );
+        }
         for input in form.inputs() {
             assert!(
                 seen.contains(input.name.as_str()),
@@ -216,7 +266,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let inputs: HashSet<&str> =
             form.inputs().into_iter().filter(|i| i.kind == InputType::KeyValue).map(|i| i.name.as_str()).collect();
         let mut key_values = HashMap::new();
-        for field in fields.iter().filter(|f| f.key_value || inputs.contains(f.name.as_str())) {
+        for field in fields.iter().filter(|f| f.secret.is_none() && (f.key_value || inputs.contains(f.name.as_str()))) {
             assert!(
                 columns[&field.name].kind == FieldKind::Json,
                 "resource `{slug}`: key/value field `{}` needs a JSON column",
@@ -241,6 +291,11 @@ impl<R: Resource> ResourceAdapter<R> {
         let field = |name: &str| fields.iter().find(|f| f.name == name);
         for column in &table_ui.columns {
             assert!(field(&column.name).is_some(), "resource `{slug}`: table column `{}` is not a field", column.name);
+            assert!(
+                !secrets.contains_key(&column.name),
+                "resource `{slug}`: encrypted field `{}` cannot be a table column",
+                column.name
+            );
         }
         for filter in &table_ui.filters {
             assert!(
@@ -294,6 +349,7 @@ impl<R: Resource> ResourceAdapter<R> {
             relations: R::relations(),
             form,
             key_values,
+            secrets,
             table_ui,
             limits: Limits::default(),
             _resource: PhantomData,
@@ -308,11 +364,27 @@ impl<R: Resource> ResourceAdapter<R> {
         &self.columns[name]
     }
 
-    /// Every column of the record in wire format. Trusted: for policies and hooks only.
-    fn record(model: &Model<R>) -> Data {
+    /// Every column of the record in wire format. Trusted: for policies and
+    /// hooks only. Encrypted fields, and any other column holding an
+    /// envelope, are `null`: neither plaintext nor ciphertext leaves here.
+    fn record(&self, model: &Model<R>) -> Data {
         Column::<R>::iter()
-            .map(|c| (c.as_str().to_owned(), encode_column(c.def().get_column_type(), &model.get(c))))
+            .map(|c| {
+                let value = model.get(c);
+                let sealed = matches!(&value, Value::String(Some(text)) if rustcms_core::crypto::looks_sealed(text));
+                let value = if sealed || self.secrets.contains_key(c.as_str()) {
+                    serde_json::Value::Null
+                } else {
+                    encode_column(c.def().get_column_type(), &value)
+                };
+                (c.as_str().to_owned(), value)
+            })
             .collect()
+    }
+
+    /// The encrypted columns of this resource (for `key:reencrypt`).
+    pub(crate) fn encrypted_columns(&self) -> Vec<rustcms_core::crypto::EncryptedColumn> {
+        self.secrets.values().map(|s| s.column.clone()).collect()
     }
 
     fn key_of(&self, model: &Model<R>) -> String {
@@ -390,7 +462,7 @@ impl<R: Resource> ResourceAdapter<R> {
         Ok(models
             .into_iter()
             .map(|m| {
-                let r = Self::record(&m);
+                let r = self.record(&m);
                 (m, r)
             })
             .collect())
@@ -436,7 +508,12 @@ fn auto_form<C>(fields: &[Field], columns: &HashMap<String, ColumnInfo<C>>) -> F
         .iter()
         .filter(|f| !f.guarded)
         .map(|f| {
-            let kind = if f.belongs_to.is_some() {
+            let kind = if let Some(secret) = f.secret {
+                match secret {
+                    crate::field::SecretKind::Text => InputType::Secret,
+                    crate::field::SecretKind::Map => InputType::SecretMap,
+                }
+            } else if f.belongs_to.is_some() {
                 InputType::Select
             } else {
                 match columns[&f.name].kind {
@@ -459,7 +536,7 @@ fn auto_columns<C>(fields: &[Field], columns: &HashMap<String, ColumnInfo<C>>) -
     use crate::ui::{BooleanColumn, DateColumn, TextColumn};
     fields
         .iter()
-        .filter(|f| !f.guarded && columns[&f.name].kind != FieldKind::Json)
+        .filter(|f| !f.guarded && f.secret.is_none() && columns[&f.name].kind != FieldKind::Json)
         .take(6)
         .map(|f| match columns[&f.name].kind {
             FieldKind::Bool => BooleanColumn::make(&f.name),

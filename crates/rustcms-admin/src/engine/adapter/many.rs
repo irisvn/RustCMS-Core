@@ -282,7 +282,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let ability = LinkOp::Attach.ability(name);
         self.admit(ctx, &ability).await?;
         let parent = self.find_model(ctx, &ctx.db, key).await?;
-        if !self.policy.allows(ctx, &ability, Some(&Self::record(&parent))).await {
+        if !self.policy.allows(ctx, &ability, Some(&self.record(&parent))).await {
             return Err(AppError::Forbidden);
         }
         let target = Self::many_target(ctx, relation)?;

@@ -18,6 +18,7 @@ Configuration is read when the application starts. Sources, last one wins:
 | `app.debug`                 | `false`                |                                              |
 | `app.url`                   | `http://localhost:8000`|                                              |
 | `app.key`                   | — (**required**)       | `base64:` + 32 bytes; `rustcms key:generate` |
+| `app.previous_keys`         | `[]`                   | keys `APP_KEY` replaced, only to open [encrypted values](../digging-deeper/encryption.md) until `key:reencrypt` ran; env `APP_PREVIOUS_KEYS` (comma-separated) |
 | `app.listen`                | `127.0.0.1:8000`       |                                              |
 | `app.locale`                | `en`                   | admin interface language by default ([Languages](../admin/i18n.md)) |
 | `app.locales`               | `["en", "vi"]`         | languages users may choose (the panel ships `en`, `vi`) |

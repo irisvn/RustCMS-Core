@@ -6,6 +6,40 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.4.1 — W8)
+- Encrypted columns (ADR 0030):
+  - `rustcms::crypto::Encrypted<T>`, a SeaORM value type holding only
+    ciphertext;
+  - explicit `seal` / `open` with the keyring and a `Context`
+    (table/column/row AAD);
+  - `Debug` redacted, `Serialize` `null`, never deserialized;
+  - 32 KiB per value.
+- Keyring: `APP_PREVIOUS_KEYS` (`app.previous_keys`) only opens. Sessions,
+  JWTs and links still end at a rotation. Available as `state.keyring()` and
+  `Ctx::keyring()`.
+- `key:reencrypt` (`--dry-run`, `--list`, `--batch`):
+  - authenticates every value;
+  - compare-and-swap writes;
+  - resumable; exits non-zero until done;
+  - also reseals settings secrets.
+  - Columns are registered with `AppBuilder::encrypted_column`, and admin
+    fields register theirs.
+- Admin: `Field::encrypted()` (`SecretInput`) and `Field::encrypted_map()`
+  (`SecretMapInput`, vocabulary 8).
+  - Write-only masked views (`state`, `keys`, `revision`).
+  - Write operations: keep, replace, clear, and set/keep/remove with a
+    revision (409 when stale).
+  - Redacted in the audit log; out of sorting, search, filters, tables,
+    imports and exports.
+  - Idempotency hashes keyed.
+- Settings secrets open with previous keys.
+- Demo: Integrations (an API token and environment variables); E2E on
+  Chrome.
+
+### Changed
+- `rustcms::settings::{read, load, write}` take the `Keyring`
+  (`state.keyring()`) instead of the `AppKey`.
+
 ## [0.4.0] — 2026-10-18
 
 ### Changed (tooling)

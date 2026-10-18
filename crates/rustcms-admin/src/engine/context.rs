@@ -33,6 +33,9 @@ pub struct Ctx {
     pub audit_context: AuditContext,
     /// A row of an import being written (see [`ImportRow`]; set by imports only).
     pub import_row: Option<ImportRow>,
+    /// `APP_KEY` and the keys it replaced, for encrypted fields (see
+    /// [`Ctx::keyring`]).
+    pub keyring: Option<rustcms_core::crypto::Keyring>,
 }
 
 /// A create or update writing row `row` of import `import`: its transaction
@@ -60,7 +63,22 @@ impl Ctx {
             translator: Arc::default(),
             audit_context,
             import_row: None,
+            keyring: None,
         }
+    }
+
+    /// The same context with the application's keyring (`state.keyring()`),
+    /// which encrypted fields need.
+    pub fn with_keyring(mut self, keyring: rustcms_core::crypto::Keyring) -> Self {
+        self.keyring = Some(keyring);
+        self
+    }
+
+    /// The keyring, to open or seal `Encrypted` values in hooks and actions.
+    pub fn keyring(&self) -> rustcms_core::AppResult<&rustcms_core::crypto::Keyring> {
+        self.keyring
+            .as_ref()
+            .ok_or_else(|| rustcms_core::AppError::internal("Ctx without a keyring (Ctx::with_keyring)"))
     }
 
     /// Records of the resource `slug` as this user may list them: scope,

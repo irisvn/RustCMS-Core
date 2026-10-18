@@ -14,6 +14,7 @@ pub fn provider() -> AdminProvider {
         .resource::<CategoryResource>()
         .resource::<PostResource>()
         .resource::<TagResource>()
+        .resource::<crate::admin::resources::integration_resource::IntegrationResource>()
         // rustcms:resources
         .settings::<crate::settings::site_settings::SiteSettings>()
         .mail_settings()

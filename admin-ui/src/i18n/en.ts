@@ -262,6 +262,8 @@ export const en = {
   "secret.willClear": "Will be cleared when you save.",
   "secret.placeholder": "New value",
   "secret.emptyReplace": "Enter a value, or choose Clear to remove it.",
+  "secretMap.kept": "Kept",
+  "secretMap.removed": "Will be removed when you save.",
   "nav.audit": "Audit log",
   "audit.description": "Who changed what, and when. Newest first.",
   "audit.filter.event": "Event",

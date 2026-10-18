@@ -308,6 +308,37 @@
         "type": "text_input",
         "valueType": "string",
         "writeOnly": true
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Api token",
+        "name": "api_token",
+        "nullable": true,
+        "rules": [],
+        "type": "secret",
+        "valueType": "secret",
+        "writeOnly": true
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Env",
+        "name": "env",
+        "nullable": true,
+        "rules": [
+          {
+            "rule": "max_items",
+            "value": 10
+          },
+          {
+            "rule": "max_length",
+            "value": 1000
+          }
+        ],
+        "type": "secret_map",
+        "valueType": "secret_map",
+        "writeOnly": true
       }
     ]
   },
@@ -455,5 +486,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 7
+  "vocabularyVersion": 8
 }

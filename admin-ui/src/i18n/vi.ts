@@ -261,6 +261,8 @@ export const vi: Record<keyof typeof en, string> = {
   "secret.willClear": "Sẽ bị xoá khi lưu.",
   "secret.placeholder": "Giá trị mới",
   "secret.emptyReplace": "Nhập giá trị, hoặc chọn Xoá để bỏ nó.",
+  "secretMap.kept": "Giữ nguyên",
+  "secretMap.removed": "Sẽ bị xoá khi lưu.",
   "nav.audit": "Nhật ký",
   "audit.description": "Ai đã thay đổi gì và khi nào. Mới nhất trước.",
   "audit.filter.event": "Sự kiện",

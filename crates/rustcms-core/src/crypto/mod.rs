@@ -323,6 +323,12 @@ fn parse(envelope: &str) -> Option<Parts<'_>> {
     Some(Parts { header: &envelope[..VERSION.len() + 1 + ID_LEN * 2], id, sealed })
 }
 
+/// Whether `text` is shaped like an envelope (`rcms1.<key id>.<payload>`):
+/// screens that must never show ciphertext mask such values.
+pub fn looks_sealed(text: &str) -> bool {
+    parse(text).is_some()
+}
+
 fn cipher(key: &AppKey) -> Aes256Gcm {
     Aes256Gcm::new(&key.derive(KEY_PURPOSE).into())
 }

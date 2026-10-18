@@ -156,7 +156,7 @@ let password = general.smtp_password.expose(); // Option<&str>
 
 `get` reads the row (one query) and is correct on every instance at once,
 with no cache to clear. Inside a transaction, read with
-`rustcms::settings::load::<GeneralSettings, _>(&txn, &state.config().app.key)` to see the
+`rustcms::settings::load::<GeneralSettings, _>(&txn, state.keyring())` to see the
 transaction's own writes. A group that was never saved reads as its
 `Default`; a field added to the struct later reads as its default until saved.
 

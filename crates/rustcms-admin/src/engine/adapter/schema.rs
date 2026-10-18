@@ -164,13 +164,21 @@ impl<R: Resource> ResourceAdapter<R> {
         if !include {
             return None;
         }
-        let write_only = !field.can_read(ctx);
+        // Encrypted fields are always write-only: their record value is a
+        // masked view, never the secret.
+        let write_only = !field.can_read(ctx) || field.secret.is_some();
         let mut rules = Vec::new();
         // Leaving a write-only input empty keeps the stored value: never required on edit.
         if field.required && !disabled && !(write_only && op == SchemaOperation::Edit) {
             rules.push(Rule::Required);
         }
-        if let Some(&(items, length)) = self.key_values.get(&input.name).filter(|_| input.kind == InputType::KeyValue) {
+        if field.secret == Some(crate::field::SecretKind::Map) {
+            let (items, length) = self.secret_bounds(&input.name);
+            rules.push(Rule::MaxItems { value: items });
+            rules.push(Rule::MaxLength { value: length });
+        } else if let Some(&(items, length)) =
+            self.key_values.get(&input.name).filter(|_| input.kind == InputType::KeyValue)
+        {
             rules.push(Rule::MaxItems { value: items });
             rules.push(Rule::MaxLength { value: length });
         } else if let Some(max) = field.max_length {
@@ -180,7 +188,11 @@ impl<R: Resource> ResourceAdapter<R> {
             kind: input.kind,
             name: input.name.clone(),
             label: ctx.t_in(R::SLUG, &input.label.clone().unwrap_or_else(|| field.display_label())),
-            value_type: self.column(&input.name).kind.name(),
+            value_type: match field.secret {
+                Some(crate::field::SecretKind::Text) => "secret",
+                Some(crate::field::SecretKind::Map) => "secret_map",
+                None => self.column(&input.name).kind.name(),
+            },
             nullable: self.column(&input.name).nullable,
             // A default is data: only for fields the user may read.
             default: (op == SchemaOperation::Create && !write_only)

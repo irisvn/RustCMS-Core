@@ -42,6 +42,16 @@ pub struct Field {
     pub(crate) rich_text: bool,
     pub(crate) label: Option<String>,
     pub(crate) audit_redact: bool,
+    pub(crate) secret: Option<SecretKind>,
+}
+
+/// What an encrypted field holds (ADR 0030).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SecretKind {
+    /// One secret string (`Encrypted<String>`).
+    Text,
+    /// Named secrets (`Encrypted<BTreeMap<String, String>>`).
+    Map,
 }
 
 impl Field {
@@ -65,6 +75,7 @@ impl Field {
             rich_text: false,
             label: None,
             audit_redact: false,
+            secret: None,
         }
     }
 
@@ -72,6 +83,27 @@ impl Field {
     /// Fields with a `readable` rule, guarded fields that are not readable and
     /// password inputs are redacted anyway.
     pub fn audit_redact(mut self) -> Self {
+        self.audit_redact = true;
+        self
+    }
+
+    /// Holds one secret string, encrypted with `APP_KEY` (an
+    /// `Encrypted<String>` text column, ADR 0030). Write-only for everyone:
+    /// the panel shows whether it is set and replaces or clears it, never
+    /// shows it. Never sortable, searchable, filterable, exported or imported;
+    /// never in the audit log.
+    pub fn encrypted(mut self) -> Self {
+        self.secret = Some(SecretKind::Text);
+        self.audit_redact = true;
+        self
+    }
+
+    /// Holds named secrets, encrypted with `APP_KEY` (an
+    /// `Encrypted<BTreeMap<String, String>>` text column, ADR 0030). Users who
+    /// may read the field see the names only; values are never sent. Bounded
+    /// like a key/value field (`max_items`, `max_length` for values).
+    pub fn encrypted_map(mut self) -> Self {
+        self.secret = Some(SecretKind::Map);
         self.audit_redact = true;
         self
     }

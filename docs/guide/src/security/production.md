@@ -22,6 +22,9 @@
       operators.
 - [ ] First super admin created with `make:user --super-admin`; `permission:sync` run after each deploy.
 - [ ] TLS terminates before the app; HTTP redirects to HTTPS at the proxy.
+- [ ] Rotating `APP_KEY` with [encrypted columns](../digging-deeper/encryption.md): old key in `APP_PREVIOUS_KEYS`,
+      every process restarted, `key:reencrypt` until it reports 0, then the old key removed
+      ([Rotating APP_KEY](../operations/app-key.md)).
 - [ ] WebSocket routes ([realtime](../admin/realtime.md#websocket)): the proxy passes `Upgrade` and allows long-lived
       connections, and its access and APM logs drop the `Sec-WebSocket-Protocol` request header (it carries the
       session's CSRF token).

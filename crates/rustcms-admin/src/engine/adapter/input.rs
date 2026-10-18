@@ -16,7 +16,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 R::SLUG,
                 &operation,
                 key,
-                &serde_json::Value::Object(input.clone()),
+                &serde_json::Value::Object(self.claim_input(ctx, input)),
             )
         })
     }
@@ -52,6 +52,11 @@ impl<R: Resource> ResourceAdapter<R> {
                 errors.add(name.as_str(), "is not allowed");
                 continue;
             };
+            if let Some(kind) = field.secret {
+                let nullable = self.column(name).nullable && !field.required;
+                secrets::check_operation(name, kind, op, nullable, value, &mut errors);
+                continue;
+            }
             check_input(name, &self.rule(name, field.required), value, &mut errors);
         }
         if op == Operation::Create {
@@ -65,12 +70,16 @@ impl<R: Resource> ResourceAdapter<R> {
         Ok(input)
     }
 
-    /// Writes trusted data (validated input, possibly changed by hooks) into the active model.
+    /// Writes trusted data (validated input, possibly changed by hooks) into
+    /// the active model; encrypted fields are resolved against `stored` (the
+    /// locked record of an update) and sealed here.
     pub(super) fn apply(
         &self,
+        ctx: &Ctx,
         model: &mut <Entity<R> as EntityTrait>::ActiveModel,
         data: &Data,
         op: Operation,
+        stored: Option<&Model<R>>,
     ) -> AppResult<()> {
         let mut errors = ValidationErrors::new();
         for (name, value) in data {
@@ -87,6 +96,17 @@ impl<R: Resource> ResourceAdapter<R> {
                     "`{}`: hooks may not write the soft delete column `{name}` (use delete and restore)",
                     R::SLUG
                 )));
+            }
+            if let Some(secret) = self.secret(name) {
+                let required = self.field(name).is_some_and(|f| f.required);
+                let nullable = column.nullable && !required;
+                if !secrets::check_operation(name, secret.kind, op, nullable, value, &mut errors) {
+                    continue;
+                }
+                if let Some(sealed) = self.seal_operation(ctx, name, value, op, stored, &mut errors)? {
+                    model.try_set(column.column, sealed).map_err(|e| AppError::internal(format!("`{name}`: {e}")))?;
+                }
+                continue;
             }
             // Hooks may change values: limits hold for what is actually written.
             if !check_written(name, &self.rule(name, false), value, &mut errors) {

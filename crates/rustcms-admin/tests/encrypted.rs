@@ -230,3 +230,252 @@ db_test!(key_reencrypt_never_overwrites_a_row_changed_meanwhile, |db: TestDb| as
     assert_eq!(stale.rows_affected, 0);
     assert_eq!(opened(&app, id).await.0, "second");
 });
+
+// ---- Admin resources with encrypted fields ----
+
+use axum::http::{Method, StatusCode};
+use rustcms_admin::{AdminProvider, Field, Resource, ResourceMeta};
+use rustcms_auth::{ADMIN_GUARD, Actor, AuthProvider, AuthState, RbacService};
+use rustcms_core::models::audit_log;
+use rustcms_testing::{Factory, UserFactory};
+use serde_json::{Value as Json, json};
+
+struct VaultResource;
+
+impl Resource for VaultResource {
+    type Entity = vault::Entity;
+    const SLUG: &'static str = "vaults";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Vault").title("name").audit(true)
+    }
+
+    fn fields() -> Vec<Field> {
+        vec![
+            Field::column(vault::Column::Name).required().searchable().sortable(),
+            Field::column(vault::Column::Token).encrypted().required(),
+            Field::column(vault::Column::Env).encrypted_map().max_items(3),
+        ]
+    }
+}
+
+fn admin_build(config: Config) -> AppBuilder {
+    let mut app = AppBuilder::new(config);
+    app.provider(AuthProvider::new());
+    app.provider(AdminProvider::new().resource::<VaultResource>());
+    app
+}
+
+const MARKER: &str = "marker-7f3a";
+
+/// An admin app on `db`, a super admin and an editor who may write vaults
+/// but read only the name.
+async fn admin_app(db: TestDb) -> (TestApp, rustcms_core::models::user::Model) {
+    db.migrate::<rustcms_migration::Migrator>().await;
+    let schema = Schema::new(db.conn().get_database_backend());
+    let table = schema.create_table_from_entity(vault::Entity).if_not_exists().to_owned();
+    rustcms_testing::create_table(db.conn(), &table).await;
+    let app = TestApp::new(admin_build, db).await;
+    let auth = app.state().service::<AuthState>().unwrap();
+    let rbac = RbacService::new(app.state().db(), &auth.resolver);
+    rbac.sync_permissions(&auth.permissions.all()).await.unwrap();
+    let admin = UserFactory::new().name("Admin").create(app.state().db()).await;
+    let role = rustcms_auth::entities::role::super_admin_id(app.state().db(), ADMIN_GUARD).await.unwrap().unwrap();
+    rbac.assign_role(Actor::System, admin.id, role).await.unwrap();
+    (app, admin)
+}
+
+fn records(app: &TestApp) -> String {
+    app.admin_api("resources/vaults/records")
+}
+
+db_test!(admin_fields_never_send_secrets, |db: TestDb| async move {
+    let (app, admin) = admin_app(db).await;
+    let client = app.acting_as(&admin).await;
+    let created = client
+        .post_json(
+            &records(&app),
+            &json!({"name": "web", "token": {"replace": MARKER}, "env": {"set": {"DB_PASSWORD": MARKER, "API": MARKER}}}),
+        )
+        .await;
+    created.assert_status(StatusCode::CREATED);
+    let body = created.json()["data"].clone();
+    let key = body["key"].as_str().unwrap().to_owned();
+    assert_eq!(body["data"]["token"], json!({"state": "set"}));
+    assert_eq!(body["data"]["env"]["state"], json!("set"));
+    assert_eq!(body["data"]["env"]["keys"], json!(["API", "DB_PASSWORD"]));
+    let record = format!("{}/{key}", records(&app));
+    // No marker, no envelope anywhere a user can look.
+    for url in [
+        records(&app),
+        record.clone(),
+        format!("{record}/history"),
+        app.admin_api("resources/vaults/schema?operation=edit"),
+        app.admin_api("resources/vaults/schema?operation=view"),
+        app.admin_api("audit"),
+    ] {
+        let text = client.get(&url).await.text();
+        assert!(!text.contains(MARKER) && !text.contains("rcms1."), "{url}: {text}");
+    }
+    // Stored: only ciphertext; opens with the keyring.
+    let row = vault::Entity::find().one(app.state().db()).await.unwrap().unwrap();
+    assert!(!row.token.envelope().contains(MARKER));
+    assert_eq!(row.token.open(app.state().keyring(), &token()).unwrap(), MARKER);
+    // Audit: the fields changed, as `[redacted]` only.
+    let entries = audit_log::Entity::find().all(app.state().db()).await.unwrap();
+    let text = serde_json::to_string(&entries.iter().map(|e| e.changes.clone()).collect::<Vec<_>>()).unwrap();
+    assert!(!text.contains(MARKER) && !text.contains("rcms1."), "{text}");
+    // The schema: write-only, typed as secrets, no default.
+    let schema = client.get(&app.admin_api("resources/vaults/schema?operation=edit")).await.json();
+    let inputs = schema["form"]["components"].as_array().unwrap();
+    let input = |name: &str| inputs.iter().find(|i| i["name"] == name).cloned().unwrap();
+    assert_eq!(input("token")["type"], json!("secret"));
+    assert_eq!(input("token")["writeOnly"], json!(true));
+    assert_eq!(input("env")["type"], json!("secret_map"));
+    assert_eq!(input("env")["valueType"], json!("secret_map"));
+    assert!(input("env").get("default").is_none());
+});
+
+db_test!(admin_secret_writes_keep_replace_clear_and_need_the_revision, |db: TestDb| async move {
+    let (app, admin) = admin_app(db).await;
+    let client = app.acting_as(&admin).await;
+    let created = client
+        .post_json(
+            &records(&app),
+            &json!({"name": "web", "token": {"replace": "one"}, "env": {"set": {"A": "1", "B": "2"}}}),
+        )
+        .await
+        .json()["data"]
+        .clone();
+    let record = format!("{}/{}", records(&app), created["key"].as_str().unwrap());
+    let revision = created["data"]["env"]["revision"].as_str().unwrap().to_owned();
+    let stored = || async {
+        let row = vault::Entity::find().one(app.state().db()).await.unwrap().unwrap();
+        let keyring = app.state().keyring();
+        (row.token.open(keyring, &token()).unwrap(), row.env.map(|e| e.open(keyring, &env()).unwrap()))
+    };
+    // Leaving a field out keeps it.
+    client.send(Method::PATCH, &record, Some(&json!({"name": "renamed"}))).await.assert_status(StatusCode::OK);
+    assert_eq!(stored().await.0, "one");
+    // Keep A, replace B, add C; anything not listed would go.
+    let ops = json!({"env": {"revision": revision, "keep": ["A"], "set": {"B": "two", "C": "3"}}, "token": {"replace": "two"}});
+    let updated = client.send(Method::PATCH, &record, Some(&ops)).await;
+    updated.assert_status(StatusCode::OK);
+    let (token_now, env_now) = stored().await;
+    assert_eq!(token_now, "two");
+    assert_eq!(
+        env_now.unwrap(),
+        [("A", "1"), ("B", "two"), ("C", "3")].map(|(k, v)| (k.to_owned(), v.to_owned())).into()
+    );
+    // The old revision is stale now: 409, nothing changed.
+    let stale = client.send(Method::PATCH, &record, Some(&json!({"env": {"revision": revision, "set": {}}}))).await;
+    assert_eq!(stale.status, StatusCode::CONFLICT);
+    let missing = client.send(Method::PATCH, &record, Some(&json!({"env": {"set": {}}}))).await;
+    assert_eq!(missing.status, StatusCode::CONFLICT, "a revision is required to change an existing map");
+    let revision = updated.json()["data"]["data"]["env"]["revision"].as_str().unwrap().to_owned();
+    // Keeping an unknown key, a key twice, or more than max_items: 422.
+    for bad in [
+        json!({"revision": revision, "keep": ["Z"]}),
+        json!({"revision": revision, "keep": ["A"], "set": {"A": "x"}}),
+        json!({"revision": revision, "set": {"1": "a", "2": "b", "3": "c", "4": "d"}}),
+        json!({"revision": revision, "set": {"A": 1}}),
+        json!("plain"),
+        json!(null),
+    ] {
+        let response = client.send(Method::PATCH, &record, Some(&json!({"env": bad}))).await;
+        response.assert_validation_error("env");
+        assert!(!response.text().contains("\"1\""), "no value quoted");
+    }
+    // Clear (the column is nullable) needs the revision too.
+    let cleared =
+        client.send(Method::PATCH, &record, Some(&json!({"env": {"revision": revision, "clear": true}}))).await;
+    cleared.assert_status(StatusCode::OK);
+    assert_eq!(cleared.json()["data"]["data"]["env"], json!({"state": "unset", "revision": "none"}));
+    assert!(stored().await.1.is_none());
+    // The token is required: it cannot be cleared nor emptied.
+    client
+        .send(Method::PATCH, &record, Some(&json!({"token": {"clear": true}})))
+        .await
+        .assert_validation_error("token");
+    client
+        .send(Method::PATCH, &record, Some(&json!({"token": {"replace": ""}})))
+        .await
+        .assert_validation_error("token");
+    // Keep on create is refused; so is a revision.
+    let bad = json!({"name": "x", "token": {"replace": "t"}, "env": {"keep": ["A"]}});
+    client.post_json(&records(&app), &bad).await.assert_validation_error("env");
+});
+
+db_test!(an_unreadable_map_is_replaced_never_kept, |db: TestDb| async move {
+    let (app, admin) = admin_app(db).await;
+    let client = app.acting_as(&admin).await;
+    // A row sealed with a key this app does not have.
+    let lost = Keyring::single(AppKey::generate());
+    let row = vault::ActiveModel {
+        name: Set("old".into()),
+        token: Set(Encrypted::seal(&lost, &token(), &"t".to_owned()).unwrap()),
+        env: Set(Some(Encrypted::seal(&lost, &env(), &BTreeMap::from([("A".to_owned(), "1".to_owned())])).unwrap())),
+        ..Default::default()
+    };
+    let row = row.insert(app.state().db()).await.unwrap();
+    let record = format!("{}/{}", records(&app), row.id);
+    let view = client.get(&record).await.json()["data"].clone();
+    assert_eq!(view["data"]["token"], json!({"state": "unreadable"}));
+    assert_eq!(view["data"]["env"]["state"], json!("unreadable"));
+    assert!(view["data"]["env"].get("keys").is_none());
+    let revision = view["data"]["env"]["revision"].as_str().unwrap().to_owned();
+    let keep = json!({"env": {"revision": revision, "keep": ["A"]}});
+    client.send(Method::PATCH, &record, Some(&keep)).await.assert_validation_error("env");
+    let replace = json!({"env": {"revision": revision, "set": {"A": "new"}}, "token": {"replace": "new"}});
+    let fixed = client.send(Method::PATCH, &record, Some(&replace)).await;
+    fixed.assert_status(StatusCode::OK);
+    assert_eq!(fixed.json()["data"]["data"]["env"]["keys"], json!(["A"]));
+});
+
+db_test!(encrypted_admin_columns_rotate_with_key_reencrypt, |db: TestDb| async move {
+    let (app, _) = admin_app(db).await;
+    let names: Vec<String> =
+        columns(&app).all().iter().map(|c| format!("{}.{}", c.table(), c.column())).collect::<Vec<_>>();
+    assert_eq!(names.len(), 2, "{names:?}");
+    assert!(names.contains(&"vaults.token".to_owned()) && names.contains(&"vaults.env".to_owned()));
+});
+
+#[test]
+#[should_panic(expected = "encrypted field `token` cannot be sortable")]
+fn encrypted_fields_cannot_be_sorted() {
+    struct Bad;
+    impl Resource for Bad {
+        type Entity = vault::Entity;
+        const SLUG: &'static str = "bad";
+        fn meta() -> ResourceMeta {
+            ResourceMeta::new("Bad")
+        }
+        fn fields() -> Vec<Field> {
+            vec![Field::column(vault::Column::Token).encrypted().sortable()]
+        }
+    }
+    let _ = rustcms_admin::registry::Registry::new().register::<Bad>();
+}
+
+#[test]
+#[should_panic(expected = "must be a SecretInput")]
+fn encrypted_fields_need_their_input() {
+    struct Bad;
+    impl Resource for Bad {
+        type Entity = vault::Entity;
+        const SLUG: &'static str = "bad";
+        fn meta() -> ResourceMeta {
+            ResourceMeta::new("Bad")
+        }
+        fn fields() -> Vec<Field> {
+            vec![Field::column(vault::Column::Token).encrypted()]
+        }
+        fn form() -> rustcms_admin::Form {
+            rustcms_admin::Form::new().schema(vec![rustcms_admin::TextInput::make("token").into()])
+        }
+    }
+    let _ = rustcms_admin::registry::Registry::new().register::<Bad>();
+}
+
+#[allow(dead_code)]
+fn _unused(_: Json) {}
