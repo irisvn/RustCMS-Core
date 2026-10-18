@@ -8,12 +8,14 @@ import { Alert } from "@/components/ui/alert";
 import { useLocale, useT } from "@/i18n";
 import { panelPath } from "@/lib/config";
 import { type EventsHandle, openEvents, openSocket } from "@/lib/realtime";
+import { ReactView, type ViewPlace } from "./react-view";
 import {
   type View,
   type ViewContext,
   type ViewInstance,
   type ViewKind,
   markViewFailed,
+  reactView,
   subscribeWidgets,
   translateExtension,
   view,
@@ -57,6 +59,8 @@ type ScriptViewProps = {
   props?: unknown;
   reload?: () => void;
   fallback?: React.ReactNode;
+  /** Where it is shown (v2 views' props). */
+  place?: ViewPlace;
 };
 
 /** A mounted view and the streams it opened (closed with it). */
@@ -76,6 +80,11 @@ function closeStreams(mount: Mount) {
 /** A script view, or `fallback` while none is registered under `name` (or it failed). */
 export function ScriptView(props: ScriptViewProps) {
   const impl = useSyncExternalStore(subscribeWidgets, () => view(props.kind, props.name));
+  const react = useSyncExternalStore(subscribeWidgets, () => reactView(props.kind, props.name));
+  if (react) {
+    const place = props.place ?? { kind: "cell" as const, resource: "", field: props.name };
+    return <ReactView {...props} component={react} place={place} />;
+  }
   if (!impl) return <>{props.fallback ?? <Unavailable />}</>;
   return <MountedView {...props} impl={impl} />;
 }
@@ -187,12 +196,13 @@ function MountedView({ kind, name, data, record, props, reload, impl }: ScriptVi
 }
 
 /** A page's or slot's content. */
-export function CustomContentView({ kind, content, record, reload }: {
+export function CustomContentView({ kind, content, record, reload, place }: {
   kind: "page" | "slot";
   content: CustomContent;
   record?: unknown;
   reload?: () => void;
+  place?: ViewPlace;
 }) {
   if (content.kind === "html") return <SafeHtml html={content.html} />;
-  return <ScriptView kind={kind} name={content.script} data={content.data} record={record} reload={reload} />;
+  return <ScriptView kind={kind} name={content.script} data={content.data} record={record} reload={reload} place={place} />;
 }

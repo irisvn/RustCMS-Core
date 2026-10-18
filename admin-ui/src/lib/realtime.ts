@@ -1,4 +1,5 @@
 import type { ApiClient } from "@/api/client";
+import { extensionUrl } from "./paths";
 
 /** What a stream reports besides its events. */
 export type EventsState =
@@ -41,10 +42,8 @@ export function openEvents(
   handlers: EventsHandlers,
   options: EventsOptions = {},
 ): EventsHandle {
-  if (!path.startsWith("/") || path.split("/").some((s) => s === ".." || s === ".")) {
-    throw new Error(`invalid stream path ${path}`);
-  }
-  const url = `${api.apiPath}/x${path}`;
+  // The shared extension-path rules (one leading slash, each segment checked).
+  const url = extensionUrl(api.apiPath, path);
   const minDelay = options.minDelay ?? 1000;
   const maxDelay = options.maxDelay ?? 30_000;
   const epoch = api.epoch;
@@ -218,12 +217,10 @@ export function openSocket(
   handlers: SocketHandlers,
   options: SocketOptions = {},
 ): SocketHandle {
-  if (!path.startsWith("/") || path.split("/").some((s) => s === ".." || s === ".")) {
-    throw new Error(`invalid socket path ${path}`);
-  }
+  const pathname = new URL(extensionUrl(api.apiPath, path), globalThis.location?.origin ?? "http://localhost").pathname;
   const Socket = options.WebSocket ?? globalThis.WebSocket;
   const scheme = globalThis.location?.protocol === "https:" ? "wss" : "ws";
-  const url = `${scheme}://${globalThis.location?.host ?? "localhost"}${api.apiPath}/x${path}`;
+  const url = `${scheme}://${globalThis.location?.host ?? "localhost"}${pathname}`;
   const maxBytes = options.maxMessageBytes ?? 64 * 1024;
   const minDelay = options.minDelay ?? 1000;
   const maxDelay = options.maxDelay ?? 30_000;

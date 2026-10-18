@@ -18,7 +18,8 @@ export function RecordSlots({ resource, recordKey, record }: { resource: string;
             </CardHeader>
           )}
           <CardContent className={slot.label ? undefined : "pt-5"}>
-            <CustomContentView kind="slot" content={slot.content} record={record} reload={() => void slots.refetch()} />
+            <CustomContentView kind="slot" content={slot.content} record={record} reload={() => void slots.refetch()}
+              place={{ kind: "slot", slot: slot.name, resource, recordKey }} />
           </CardContent>
         </Card>
       ))}

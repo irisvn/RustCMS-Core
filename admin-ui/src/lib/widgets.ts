@@ -2,7 +2,9 @@
 // The host API is framework-agnostic: a widget mounts into an element and is
 // told about every change; the panel owns form state and submission.
 
+import type * as React from "react";
 import { getLocale } from "@/i18n";
+import { HOST_VERSIONS, MODULES, type Requires, incompatibility } from "./host";
 
 /** What a widget is given; `value` is the field's wire JSON (undefined: not set). */
 export interface WidgetContext {
@@ -105,12 +107,39 @@ export function registerWidget(name: string, widget: Widget): void {
   widgets.set(name, widget);
 }
 
-function registerView(kind: ViewKind, name: string, view: View): void {
+/** React views of v2 scripts (ADR 0032): same names as v1, taken once by either. */
+const reactViews: Record<ViewKind, Map<string, React.ComponentType<never>>> = {
+  page: new Map(),
+  slot: new Map(),
+  cell: new Map(),
+};
+
+function checkRegistration(kind: ViewKind, name: string): void {
   if (frozen || (document.currentScript && expired.has(document.currentScript))) {
     throw new Error(`rustcms: ${kind}s must be registered while extensions load (${name})`);
   }
   if (!NAME.test(name)) throw new Error(`rustcms: invalid ${kind} name ${name}`);
-  if (views[kind].has(name)) throw new Error(`rustcms: ${kind} ${name} is already registered`);
+  if (views[kind].has(name) || reactViews[kind].has(name)) {
+    throw new Error(`rustcms: ${kind} ${name} is already registered`);
+  }
+}
+
+/** Registers a v2 React component (a page, slot or cell) under `name`. */
+export function registerReactView(kind: ViewKind, name: string, component: React.ComponentType<never>): void {
+  checkRegistration(kind, name);
+  if (typeof component !== "function" && (typeof component !== "object" || component === null)) {
+    throw new Error(`rustcms: ${kind} ${name} is not a React component`);
+  }
+  reactViews[kind].set(name, component);
+}
+
+/** The v2 component registered as `name`, unless missing or failed. */
+export function reactView(kind: ViewKind, name: string | undefined): React.ComponentType<never> | undefined {
+  return name && !failedViews.has(`${kind}:${name}`) ? reactViews[kind].get(name) : undefined;
+}
+
+function registerView(kind: ViewKind, name: string, view: View): void {
+  checkRegistration(kind, name);
   if (!view || view.apiVersion !== WIDGET_API_VERSION || typeof view.mount !== "function") {
     throw new Error(`rustcms: ${kind} ${name} does not implement host API version ${WIDGET_API_VERSION}`);
   }
@@ -178,16 +207,40 @@ export function subscribeWidgets(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** Loads extension styles and scripts in order (each bounded), then freezes the registry. */
-export async function loadExtensions(basePath: string, extensions: { scripts: string[]; styles: string[] }): Promise<void> {
+/** What the server says about extension scripts. */
+export interface ExtensionsConfig {
+  scripts: string[];
+  styles: string[];
+  /** v2 scripts' requirements, by script path (checked before they run). */
+  v2?: Record<string, Requires>;
+  /** Each script's deadline (`AdminProvider::extension_timeout`). */
+  timeoutMs?: number;
+}
+
+/**
+ * Loads extension styles and scripts in order (each bounded), then freezes
+ * the registry. A v2 script whose `requires` do not fit is never inserted.
+ */
+export async function loadExtensions(basePath: string, extensions: ExtensionsConfig): Promise<void> {
+  const v2 = Object.freeze({
+    apiVersion: 2,
+    versions: HOST_VERSIONS,
+    modules: MODULES,
+    registerPage: (name: string, component: React.ComponentType<never>) => registerReactView("page", name, component),
+    registerSlot: (name: string, component: React.ComponentType<never>) => registerReactView("slot", name, component),
+    registerCell: (name: string, component: React.ComponentType<never>) => registerReactView("cell", name, component),
+  });
   (window as unknown as { rustcms: unknown }).rustcms = {
     registerWidget,
     registerTranslations,
     registerPage,
     registerSlot,
     registerCell,
+    // v1 scripts check `apiVersion === 1`: it stays 1; v2 lives under `v2`.
     apiVersion: WIDGET_API_VERSION,
+    v2,
   };
+  const deadline = Math.min(60_000, Math.max(1_000, extensions.timeoutMs ?? 10_000));
   const url = (path: string) => `${basePath}/${path}`;
   for (const href of extensions.styles) {
     const link = document.createElement("link");
@@ -196,13 +249,19 @@ export async function loadExtensions(basePath: string, extensions: { scripts: st
     document.head.append(link);
   }
   for (const src of extensions.scripts) {
+    const requires = extensions.v2?.[src];
+    const reason = requires ? incompatibility(requires) : null;
+    if (reason) {
+      console.error(`rustcms: extension ${src} not loaded: it ${reason}`);
+      continue;
+    }
     await new Promise<void>((resolve) => {
       const script = document.createElement("script");
       const timer = setTimeout(() => {
         expired.add(script);
         console.error(`rustcms: extension ${src} did not load in time`);
         resolve();
-      }, 10_000);
+      }, deadline);
       script.src = url(src);
       // Loaded one at a time here: an `async=false` script would also hold back
       // the next ones until it runs.
@@ -226,6 +285,7 @@ export function resetWidgets(): void {
   widgets.clear();
   failed.clear();
   for (const map of Object.values(views)) map.clear();
+  for (const map of Object.values(reactViews)) map.clear();
   failedViews.clear();
   translations.clear();
   frozen = false;

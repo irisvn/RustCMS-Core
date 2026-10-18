@@ -142,6 +142,7 @@ export const en = {
   "error.write_conflict.not_waiting": "Only jobs waiting to run can be cancelled. Reload the list.",
   "nav.queue": "Queue",
   "custom.unavailable": "This part of the page is not available (its extension script is missing or failed).",
+  "custom.retry": "Retry",
   "queue.description": "Background jobs by status. Payloads are never shown.",
   "queue.workersOff": "Workers are off on this instance (queue.enabled = false): jobs run where queue:work runs.",
   "queue.empty": "No jobs in any queue.",

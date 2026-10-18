@@ -169,6 +169,15 @@ const customPage = createRoute({
     return <CustomPage key={slug} />;
   },
 });
+// Sub-pages of a custom page (`/p/docker/containers/web`): the same page.
+const customSubPage = createRoute({
+  getParentRoute: () => app,
+  path: "/p/$slug/$",
+  component: function CustomSub() {
+    const { slug } = customSubPage.useParams();
+    return <CustomPage key={slug} />;
+  },
+});
 const settings = createRoute({
   getParentRoute: () => app,
   path: "/settings/$group",
@@ -200,6 +209,7 @@ const routeTree = root.addChildren([
     systemAudit,
     systemQueue,
     customPage,
+    customSubPage,
     settings,
     account,
   ]),

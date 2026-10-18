@@ -20,6 +20,7 @@ export function Cell({ column, record }: { column: ColumnSchema; record: Envelop
   if (column.cell) {
     return (
       <ScriptView kind="cell" name={column.cell} data={value ?? null} record={record.data} props={column.props}
+        place={{ kind: "cell", resource: "", field: column.name }}
         fallback={<DefaultCell column={column} record={record} value={value} />} />
     );
   }

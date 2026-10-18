@@ -152,7 +152,8 @@ export function usePanel() {
   const api = useApi();
   const locale = useLocale();
   return useQuery({
-    queryKey: [...keys.panel, locale],
+    // The epoch too: what `can` reads must be this session's.
+    queryKey: [...keys.panel, locale, api.epoch],
     queryFn: () => api.get<PanelResponse>("/panel"),
     placeholderData: keepPreviousData,
   });

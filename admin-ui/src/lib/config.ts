@@ -7,7 +7,7 @@ export interface PanelConfig {
   /** URL prefix of the admin API (e.g. `/admin/api`). */
   apiPath: string;
   /** Extension scripts and styles, relative to `basePath`, in load order. */
-  extensions?: { scripts: string[]; styles: string[] };
+  extensions?: import("./widgets").ExtensionsConfig;
   /** Default interface language and the languages users may choose. */
   locale?: string;
   locales?: string[];
@@ -35,7 +35,22 @@ export function readConfig(doc: Document = document): PanelConfig {
         Array.isArray(list)
           ? list.filter((p): p is string => typeof p === "string" && new RegExp(`^assets/ext/[a-z0-9-]+\\.[0-9a-f]{8}\\.${ext}$`).test(p))
           : [];
-      if (ext) extensions = { scripts: own(ext.scripts, "js"), styles: own(ext.styles, "css") };
+      if (ext) {
+        const scripts = own(ext.scripts, "js");
+        // v2 requirements, only for this panel's own scripts and well-formed.
+        const v2: Record<string, import("./host").Requires> = {};
+        const given = ext.v2 && typeof ext.v2 === "object" ? (ext.v2 as Record<string, unknown>) : {};
+        for (const script of scripts) {
+          const r = given[script] as Partial<import("./host").Requires> | undefined;
+          if (r && typeof r.api === "number" && typeof r.react === "string" && typeof r.reactQuery === "string" && typeof r.ui === "number") {
+            v2[script] = { api: r.api, react: r.react, reactQuery: r.reactQuery, ui: r.ui };
+          }
+        }
+        const timeoutMs = typeof ext.timeoutMs === "number" && Number.isFinite(ext.timeoutMs) ? ext.timeoutMs : undefined;
+        extensions = { scripts, styles: own(ext.styles, "css") };
+        if (Object.keys(v2).length > 0) extensions.v2 = v2;
+        if (timeoutMs !== undefined) extensions.timeoutMs = timeoutMs;
+      }
       if (typeof parsed.locale === "string") locale = parsed.locale;
       if (Array.isArray(parsed.locales)) locales = parsed.locales.filter((l): l is string => typeof l === "string");
       if (parsed.signIn && typeof parsed.signIn === "object") {

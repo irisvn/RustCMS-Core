@@ -3,6 +3,7 @@ import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { type Plugin, defineConfig } from "vite";
+import pkg from "./package.json" with { type: "json" };
 
 // Production: built into the Rust crate, served under the admin path with a
 // `<base href>` injected by the server, so asset URLs are relative.
@@ -29,6 +30,10 @@ export default defineConfig(({ command }) => ({
   base: command === "build" ? "./" : "/admin/",
   plugins: [react(), tailwindcss(), runtimeConfig()],
   resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+  // The host's versions, for v2 extensions' `requires` (ADR 0032).
+  define: {
+    __RUSTCMS_HOST__: JSON.stringify({ reactQuery: pkg.dependencies["@tanstack/react-query"] }),
+  },
   build: {
     outDir: "../crates/rustcms-admin/assets",
     emptyOutDir: true,
