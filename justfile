@@ -57,6 +57,7 @@ test-tls-cert:
     openssl x509 -req -in server.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial -days 3650 -extfile server.ext -out cert.pem 2>/dev/null
     chmod 644 key.pem
 
+# Every database and service (the servers run in memory: see docker-compose.yml).
 test-matrix: test-tls-cert
     docker compose up -d --wait postgres mysql redis s3 mailpit mailpit-tls
     @for i in $(seq 1 60); do curl -sf --connect-timeout 2 -m 5 -o /dev/null {{s3_url}} && exit 0; sleep 1; done; echo "the S3 bucket is not ready: {{s3_url}}"; exit 1
@@ -64,6 +65,11 @@ test-matrix: test-tls-cert
 
 test:
     cargo nextest run --workspace
+
+# The inner loop: every test on SQLite only, no server needed (~40 s once
+# built). Run `test-matrix` before pushing.
+test-fast:
+    RUSTCMS_TEST_BACKENDS=sqlite cargo nextest run --workspace
 
 # `rustcms new` + generators produce an app that builds and passes its tests (slow).
 test-cli:

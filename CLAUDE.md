@@ -2,7 +2,8 @@
 
 - Docs: `docs/guide/` is the PUBLIC developer guide (English mdBook); `docs/core/` is PRIVATE (architecture,
   protocol, ADRs in `docs/core/adr/`, reports, CHANGELOG). Every change updates the matching guide page.
-- Commands: `just ci`, `just test-matrix` (starts PostgreSQL, MySQL and Redis with docker compose), `just test-cli` (slow scaffold test).
+- Commands: `just test-fast` (every test on SQLite, the inner loop), `just ci`, `just test-matrix` (starts PostgreSQL,
+  MySQL and Redis with docker compose, in memory without fsync), `just test-cli` (slow scaffold test).
 - Rust toolchain via Homebrew rustup: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
 - Postgres for tests runs on port 55439 (55432 belongs to another project); MySQL 8.4 on 53306
   (`RUSTCMS_TEST_MYSQL=mysql://root:mysql@localhost:53306/mysql`); Redis on 56379

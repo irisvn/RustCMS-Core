@@ -6,10 +6,16 @@
 #        RUSTCMS_TEST_SMTP=127.0.0.1:51025 (Mailpit; its UI on http://localhost:58025)
 #        RUSTCMS_TEST_SMTP_TLS=localhost:51026 RUSTCMS_TEST_SMTP_TLS_CA=.test-tls/ca.pem (`just test-tls-cert`)
 services:
+  # Test servers keep their data in memory and never fsync: much faster, and
+  # nothing to lose (every test makes its own database). Never use these flags
+  # for data you keep.
   postgres:
     image: postgres:17-alpine
     environment:
       POSTGRES_PASSWORD: postgres
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]
+    tmpfs:
+      - /var/lib/postgresql/data
     ports:
       - "${RUSTCMS_PG_PORT:-55439}:5432"
     healthcheck:
@@ -21,7 +27,16 @@ services:
     image: mysql:8.4
     environment:
       MYSQL_ROOT_PASSWORD: mysql
-    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_bin"]
+    command:
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_0900_bin"
+      - "--innodb-flush-log-at-trx-commit=0"
+      - "--innodb-doublewrite=OFF"
+      - "--innodb-flush-method=nosync"
+      - "--sync-binlog=0"
+      - "--skip-log-bin"
+    tmpfs:
+      - /var/lib/mysql
     ports:
       - "${RUSTCMS_MYSQL_PORT:-53306}:3306"
     healthcheck:
