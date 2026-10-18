@@ -531,7 +531,7 @@ db_test!(panel_pages_are_served_with_strict_headers, |db: TestDb| async move {
         assert_eq!(response.header("cache-control").as_deref(), Some("no-store"));
         assert_eq!(
             response.header("content-security-policy").as_deref(),
-            Some(rustcms_admin::spa::CONTENT_SECURITY_POLICY)
+            Some(rustcms_admin::spa::content_security_policy(&["http://localhost:8000".to_owned()]).as_str())
         );
         assert_eq!(response.header("x-frame-options").as_deref(), Some("DENY"));
         assert_eq!(response.header("x-content-type-options").as_deref(), Some("nosniff"));

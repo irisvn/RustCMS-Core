@@ -130,6 +130,24 @@ impl TestClient<'_> {
         *self.csrf.lock().unwrap() = token.map(str::to_owned);
     }
 
+    pub(crate) fn app(&self) -> &TestApp {
+        self.app
+    }
+
+    /// The CSRF token this client sends, if any.
+    pub fn csrf_token(&self) -> Option<String> {
+        self.csrf.lock().unwrap().clone()
+    }
+
+    pub(crate) fn cookie_header(&self) -> Option<String> {
+        let jar = self.cookies.lock().unwrap();
+        (!jar.is_empty()).then(|| jar.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("; "))
+    }
+
+    pub(crate) fn origin_header(&self) -> Option<&str> {
+        self.origin.as_deref()
+    }
+
     /// Current value of a cookie.
     pub fn cookie(&self, name: &str) -> Option<String> {
         self.cookies.lock().unwrap().get(name).cloned()

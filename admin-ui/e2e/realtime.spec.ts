@@ -25,3 +25,27 @@ test("a live page streams, resets and stops on sign-out", async ({ page, watch: 
   await page.waitForTimeout(3_000);
   expect(after).toBe(0);
 });
+
+// The same page's echo socket (`AdminRoutes::socket`): a same-origin
+// WebSocket carrying the CSRF token as a subprotocol, under the real CSP; a
+// command (`whoami`) is authorized when it runs.
+test("a live page talks over a WebSocket", async ({ page, watch: _ }) => {
+  await signIn(page, "admin@example.test");
+  const opened = page.waitForEvent("websocket", (ws) => ws.url().endsWith("/admin/api/x/demo/echo"));
+  await page.goto("/admin/p/live");
+  const socket = await opened;
+  const message = page.getByLabel("Message");
+  const echo = page.getByLabel("Echo");
+  await expect.poll(async () => {
+    await message.fill("hello");
+    await page.getByRole("button", { name: "Send" }).click();
+    return echo.textContent();
+  }, { timeout: 10_000 }).toBe("hello");
+  await message.fill("whoami");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(echo).toHaveText(/^admin:\S+$/);
+  // Leaving the page closes it.
+  const closed = new Promise<void>((resolve) => socket.on("close", () => resolve()));
+  await page.goto("/admin");
+  await closed;
+});

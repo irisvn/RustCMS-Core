@@ -13,10 +13,12 @@ mod app;
 mod client;
 mod db;
 mod factory;
+mod socket;
 
 pub use app::{TestApp, TestResponse, test_config};
 pub use client::TestClient;
 pub use db::{Backend, TestDb, create_table};
+pub use socket::{Refused, TestSocket};
 
 /// Reports a backend whose server variable is not set: a notice, or a failure
 /// when `RUSTCMS_TEST_REQUIRE` lists it (`postgres,mysql` in CI), so a broken

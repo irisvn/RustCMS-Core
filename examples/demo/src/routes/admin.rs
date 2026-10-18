@@ -6,9 +6,8 @@ use rustcms::prelude::*;
 use crate::http::controllers::live_controller;
 
 pub fn routes() -> AdminRoutes {
-    AdminRoutes::new("/demo").events("/ticks", AdminAccess::can("demo.live"), live_controller::ticks).post(
-        "/ticks/reset",
-        AdminAccess::can("demo.live"),
-        live_controller::reset,
-    )
+    AdminRoutes::new("/demo")
+        .events("/ticks", AdminAccess::can("demo.live"), live_controller::ticks)
+        .post("/ticks/reset", AdminAccess::can("demo.live"), live_controller::reset)
+        .socket("/echo", AdminAccess::can("demo.live"), live_controller::echo)
 }

@@ -97,7 +97,8 @@ fail closed (500). See [Several instances](../digging-deeper/instances.md).
 
 ### `[realtime]` (`config/realtime.toml`)
 
-[Realtime events](../admin/realtime.md) streams. Every limit is per instance.
+[Realtime](../admin/realtime.md) streams and sockets. Every limit is per instance; streams and sockets share
+`max_connections`, `max_per_user` and the open rates.
 
 | Key | Default | |
 |---|---|---|
@@ -106,7 +107,10 @@ fail closed (500). See [Several instances](../digging-deeper/instances.md).
 | `realtime.max_per_user` | `10` | open streams of one user on this instance |
 | `realtime.opens_per_user_per_minute` | `60` | |
 | `realtime.opens_per_ip_per_minute` | `300` | shared IPs (offices, proxies) share it |
-| `realtime.shutdown_grace_secs` | `5` | time given to open streams when the server stops |
+| `realtime.shutdown_grace_secs` | `5` | time given to open streams and sockets when the server stops |
+| `realtime.socket_revalidate_secs` | `10` | how often an open WebSocket rechecks (at least 1) |
+| `realtime.max_message_bytes` | `65536` | largest WebSocket message, either way (1009 beyond) |
+| `realtime.send_timeout_secs` | `10` | longest wait of a WebSocket send for a slow client (then `lagging`) |
 
 ## Your own sections
 

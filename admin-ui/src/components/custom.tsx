@@ -7,7 +7,7 @@ import type { CustomContent } from "@/api/types";
 import { Alert } from "@/components/ui/alert";
 import { useLocale, useT } from "@/i18n";
 import { panelPath } from "@/lib/config";
-import { type EventsHandle, openEvents } from "@/lib/realtime";
+import { type EventsHandle, openEvents, openSocket } from "@/lib/realtime";
 import {
   type View,
   type ViewContext,
@@ -120,6 +120,20 @@ function MountedView({ kind, name, data, record, props, reload, impl }: ScriptVi
         const handle = openEvents(api, String(path), handlers);
         mount.streams.add(handle);
         return {
+          close: () => {
+            mount.streams.delete(handle);
+            handle.close();
+          },
+        };
+      },
+      socket: (path, handlers, options) => {
+        const allowed = mount.phase === "mounting" || (mount.phase === "active" && current(mount));
+        if (!allowed) return { send: () => false, close() {} };
+        const reconnect = options?.reconnect === true;
+        const handle = openSocket(api, String(path), handlers, { reconnect });
+        mount.streams.add(handle);
+        return {
+          send: (data) => handle.send(data),
           close: () => {
             mount.streams.delete(handle);
             handle.close();

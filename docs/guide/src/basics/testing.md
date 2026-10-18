@@ -124,6 +124,23 @@ checks apply. Adjust with `.origin(None)`, `.set_csrf(..)`, `.from(peer)`.
 
 `UserFactory::new().password("secret")` creates users that can sign in.
 
+### WebSockets
+
+An upgrade needs a real connection: `client.socket(path)` starts a listener
+for the app on `127.0.0.1` (once, stopped with the app) and opens the socket
+with the client's cookies, `Origin` and CSRF subprotocol.
+
+```rust,ignore
+let mut socket = app.acting_as(&user).await.socket("/admin/api/x/docker/exec/web").await.unwrap();
+socket.send_text("ls\n").await;
+let output = socket.next_data(Duration::from_secs(2)).await;      // Some(Message::Text(..))
+assert_eq!(socket.closed(Duration::from_secs(15)).await, Some((4403, "forbidden".into())));
+```
+
+`socket_with(path, protocols, headers)` sends other subprotocols or headers
+(refusals come back as `Refused { status, body }`), and `socket.inner` is the
+raw tokio-tungstenite stream.
+
 ## Authorization oracles
 
 Keep a hand-written table of expected outcomes (route × actor → status), for

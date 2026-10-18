@@ -161,6 +161,26 @@ impl AdminRoutes {
         self
     }
 
+    /// A WebSocket route at `path` (GET only; `HEAD` is 405). Its handler
+    /// takes a [`LiveSocket`](crate::LiveSocket) and returns a
+    /// [`SocketResponse`](crate::SocketResponse). Admission needs a mandatory
+    /// exact `Origin` and the session's CSRF token as a subprotocol; the
+    /// socket is supervised and rechecked while open (ADR 0029).
+    pub fn socket<H, T>(mut self, path: &str, access: AdminAccess, handler: H) -> Self
+    where
+        H: Handler<T, AppState>,
+        T: 'static,
+    {
+        assert!(path.starts_with('/'), "admin route paths start with `/`: {path:?}");
+        let checked = access.clone();
+        let router = get(handler).route_layer(middleware::from_fn(move |req: Request, next: Next| {
+            let access = checked.clone();
+            async move { admitted_socket(&access, req, next).await }
+        }));
+        self.routes.push(Route { method: Method::GET, path: join("", path), access, router });
+        self
+    }
+
     /// Adds `routes` (with their own prefix, if any) under `prefix`, relative
     /// to this one. Each keeps its own access.
     pub fn nest(mut self, prefix: &str, routes: AdminRoutes) -> Self {
@@ -249,6 +269,21 @@ async fn admitted_stream(access: &AdminAccess, mut req: Request, next: Next) -> 
         return *refused;
     }
     next.run(req).await
+}
+
+/// A socket: GET only, the route's access, then its admission, all before
+/// any extractor of the handler.
+async fn admitted_socket(access: &AdminAccess, req: Request, next: Next) -> Response {
+    if req.method() != Method::GET {
+        return AppError::MethodNotAllowed.into_response();
+    }
+    if let Err(err) = access.check(req.extensions().get::<Authenticated>()) {
+        return err.into_response();
+    }
+    match crate::realtime::socket::admit(req, access).await {
+        Ok(req) => next.run(req).await,
+        Err(refused) => *refused,
+    }
 }
 
 async fn guarded(access: &AdminAccess, req: Request, next: Next) -> Response {

@@ -1,6 +1,7 @@
-//! The live page's stream and its reset (routes in `crate::routes::admin`).
+//! The live page's stream, its reset and its echo socket (routes in
+//! `crate::routes::admin`).
 
-use rustcms::auth::{EventStream, LiveSession};
+use rustcms::auth::{EventStream, LiveSession, LiveSocket, SocketMessage, SocketResponse};
 use rustcms::prelude::*;
 use rustcms::realtime::{Event, StreamExt, stream};
 
@@ -18,4 +19,23 @@ pub async fn ticks(live: LiveSession, Inject(ticker): Inject<Ticker>) -> AppResu
 pub async fn reset(Inject(ticker): Inject<Ticker>) -> StatusCode {
     ticker.reset();
     StatusCode::NO_CONTENT
+}
+
+/// `GET /admin/api/x/demo/echo` (WebSocket): sends back what it gets;
+/// `whoami` is a command, authorized when it runs.
+pub async fn echo(live: LiveSocket) -> SocketResponse {
+    live.accept(|mut socket| async move {
+        while let Some(message) = socket.recv().await {
+            let reply = match message {
+                SocketMessage::Text(text) if text == "whoami" => match socket.authorize().await {
+                    Ok(principal) => SocketMessage::Text(format!("{}:{}", principal.guard, principal.id)),
+                    Err(_) => break,
+                },
+                other => other,
+            };
+            if socket.send(reply).await.is_err() {
+                break;
+            }
+        }
+    })
 }

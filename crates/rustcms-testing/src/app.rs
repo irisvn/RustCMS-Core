@@ -30,6 +30,7 @@ pub fn test_config(database_url: &str) -> Config {
 pub struct TestApp {
     app: App,
     db: TestDb,
+    pub(crate) listener: tokio::sync::OnceCell<crate::socket::Listener>,
 }
 
 impl TestApp {
@@ -41,7 +42,7 @@ impl TestApp {
     /// Builds the app with an explicit configuration.
     pub async fn with_config(build: impl FnOnce(Config) -> AppBuilder, config: Config, db: TestDb) -> Self {
         let app = build(config).build_with_db(db.conn().clone()).await.expect("build app");
-        Self { app, db }
+        Self { app, db, listener: tokio::sync::OnceCell::new() }
     }
 
     /// Shared state.

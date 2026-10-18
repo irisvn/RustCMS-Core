@@ -22,6 +22,9 @@
       operators.
 - [ ] First super admin created with `make:user --super-admin`; `permission:sync` run after each deploy.
 - [ ] TLS terminates before the app; HTTP redirects to HTTPS at the proxy.
+- [ ] WebSocket routes ([realtime](../admin/realtime.md#websocket)): the proxy passes `Upgrade` and allows long-lived
+      connections, and its access and APM logs drop the `Sec-WebSocket-Protocol` request header (it carries the
+      session's CSRF token).
 - [ ] Database backups include `sessions` only if you want sessions to survive restores.
 - [ ] `audit.retention_days` set to what you must keep, no longer: the [audit log](../digging-deeper/audit-log.md)
       holds personal data (IP addresses, emails typed in failed sign-ins), and so do backups that include it.

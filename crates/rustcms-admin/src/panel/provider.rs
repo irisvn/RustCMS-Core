@@ -297,6 +297,8 @@ impl ServiceProvider for AdminProvider {
             password_reset: auth.config.password_reset,
             remember: auth.config.remember_days > 0,
         };
+        // Same-origin sockets, also for browsers whose `'self'` misses `ws:`/`wss:`.
+        let csp = spa::content_security_policy(auth.allowed_origins());
         app.routes(move |router| {
             spa::router(
                 crate::custom::router(
@@ -322,6 +324,7 @@ impl ServiceProvider for AdminProvider {
                 extensions,
                 &locales,
                 &theme,
+                &csp,
             )
         });
         app.command(IdempotencyPrune);

@@ -1,7 +1,8 @@
-# Realtime events
+# Realtime
 
 A panel page can show live data (stats, logs, progress) through **server-sent
-events** from an [admin route](admin-routes.md). The stream runs on the
+events**, and talk both ways (terminals, consoles) through a
+[**WebSocket**](#websocket), from an [admin route](admin-routes.md). The stream runs on the
 panel's session, is rechecked while open, and ends when the user signs out
 or loses access. Changes still go through ordinary POST admin routes.
 
@@ -143,5 +144,117 @@ queries per second: raise `revalidate_secs` or the database pool
 Streams are not cached, carry the session's `Set-Cookie` like any admin
 response, and never renew the session by themselves.
 
-WebSocket, for commands and terminals, comes later. Until then, send commands
-as POST admin routes.
+## WebSocket
+
+```rust,ignore
+// src/routes/admin.rs
+AdminRoutes::new("/docker")
+    .socket("/containers/{id}/exec", AdminAccess::can("docker.exec"), controllers::docker::exec)
+```
+
+```rust,ignore
+// src/http/controllers/docker.rs
+use rustcms::auth::{LiveSocket, SocketMessage, SocketResponse};
+
+pub async fn exec(live: LiveSocket, Path(id): Path<String>, Inject(docker): Inject<Docker>) -> SocketResponse {
+    let target = (docker.clone(), id.clone());
+    live.accept(move |mut socket| async move {
+        // Dropped when the socket ends: the process goes with it.
+        let Ok(mut shell) = docker.exec(&id).kill_on_drop(true).spawn() else { return };
+        loop {
+            tokio::select! {
+                input = socket.recv() => match input {
+                    Some(SocketMessage::Text(command)) if command.starts_with("resize ") => {
+                        // A command: authorized when it runs, on a fresh principal.
+                        let Ok(principal) = socket.authorize().await else { break };
+                        if !principal.can("docker.exec") { break }
+                        shell.resize(&command[7..]);
+                    }
+                    Some(SocketMessage::Binary(keys)) => shell.write(&keys).await,
+                    Some(_) => {}
+                    None => break,
+                },
+                output = shell.read() => match output {
+                    Some(bytes) => if socket.send(SocketMessage::Binary(bytes)).await.is_err() { break },
+                    None => break,
+                },
+            }
+        }
+    })
+    .target(move |principal| {
+        let (docker, id) = target.clone();
+        async move { docker.authorize(&principal, &id).await }
+    })
+}
+```
+
+- The route admits the handshake before the handler runs:
+  - a mandatory `Origin` that is exactly the panel's (no `Referer` fallback);
+  - the session's CSRF token in `Sec-WebSocket-Protocol`
+    (`rustcms.v1, rustcms.csrf.<token>`, which `ctx.realtime.socket` sends);
+  - the open limits and a place, shared with streams.
+
+  The `101` selects `rustcms.v1` only.
+- `live.accept(session)` runs `session` once the connection is upgraded and
+  the first check passed (the session, the user, the access, `target`).
+  `session` gets an `AdminSocket`:
+  - `recv()` gives `Text` or `Binary` messages, and `None` once the socket
+    ended;
+  - `send(message)` waits at most `send_timeout_secs` for a slow client (then
+    the socket ends as `lagging`) and refuses a message over
+    `max_message_bytes` (`SendError::TooLarge`);
+  - `authorize()` checks again now and returns the fresh principal.
+- **Authorize every command when it runs:** call `authorize()` and check the
+  command's own permission on what it returns, never on `live.principal()`.
+  A raw terminal is one capability: `target` decides who may use it. Its
+  input is accepted until the next recheck notices a revocation; it cannot
+  check each shell command, nor undo one that ran.
+- **Cleanup belongs in `Drop`.** When the socket ends (the client left, a
+  recheck failed, a slow client, the server stopping), the session's future
+  is dropped at once, before the close frame is sent. A child process needs
+  `kill_on_drop`. A remote process (`docker exec` through the API) may need
+  an explicit stop: dropping its stream does not end it.
+- Close codes: `4401 signed_out`, `4403 forbidden`, `1001 shutdown`,
+  `4008 lagging`, `1009 too_big`, `1011 error` (also a session that panics),
+  `1000` when the session returned. Delivering the code is best effort: a
+  connection with unread input may be reset first.
+
+### In a script page
+
+```js
+const socket = ctx.realtime.socket(`/docker/containers/${encodeURIComponent(ctx.data.id)}/exec`, {
+  onOpen() { /* … */ },
+  onMessage(data) { /* a string, or an ArrayBuffer for binary messages */ },
+  onState(state) { /* "open", "reconnecting", or "closed" with a code and reason */ },
+});
+socket.send(new TextEncoder().encode("ls\n"));   // false when not open, too large, or 1 MiB is already queued
+```
+
+- Closed for you on unmount and on a session change.
+- **No reconnect by default:** a new socket is a new session on the server
+  (a new shell). With `{ reconnect: true }`:
+  - it retries with backoff and a fresh token;
+  - it stops on 4401 and 4403, and after 5 failed or short (under 30 s)
+    connections;
+  - a refused handshake (seen as 1006) checks the session once.
+- Input is never queued for replay.
+- xterm.js injects `<style>` elements, which the panel's CSP blocks. A page
+  that embeds it needs its own workaround in its script. The CSP stays as it
+  is.
+
+### What the server enforces
+
+| | |
+|---|---|
+| Origin | mandatory, exactly one of the panel's origins; `Sec-Fetch-Site`, when sent, `same-origin` |
+| CSRF | the session's token as the `rustcms.csrf.<token>` subprotocol, beside `rustcms.v1`, nothing else |
+| Access | the route's `AdminAccess` before anything runs (401, 403); a handler error before `accept` is an ordinary JSON error |
+| While open | every `socket_revalidate_secs` (10) and at each `authorize()`: the session, the user and its version, the permissions and `target`. Work stops within `socket_revalidate_secs + 5 s` of a sign-out, an expired session, a password change, a disabled account or a lost permission |
+| Limits | shared with streams: `max_connections`, `max_per_user`, the open rates; messages up to `max_message_bytes` (64 KiB) |
+| Slow or flooding clients | 64 messages or 1 MiB queued each way; a client that floods a session, or stops reading, is dropped (`lagging`) |
+| Keepalive | one ping at a time, 15 s after the last answer; no matching pong within 45 s ends the socket |
+| Shutdown | new sockets get 503; open ones end with `1001` within `shutdown_grace_secs` |
+
+Sockets never renew the session. Limits are per instance. Behind a proxy,
+pass `Upgrade` and drop `Sec-WebSocket-Protocol` from access logs (see the
+[production checklist](../security/production.md)).

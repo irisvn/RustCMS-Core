@@ -1,6 +1,6 @@
-//! The live page's routes (`AdminRoutes`): its stream and its reset need
-//! `demo.live` (super admins only in the demo). The stream itself is covered
-//! end to end by `admin-ui/e2e/realtime.spec.ts`.
+//! The live page's routes (`AdminRoutes`): its stream, its reset and its
+//! echo socket need `demo.live` (super admins only in the demo). The page
+//! itself is covered end to end by `admin-ui/e2e/realtime.spec.ts`.
 
 use demo::bootstrap;
 use demo::database::migrations::Migrator;
@@ -27,6 +27,12 @@ db_test!(only_allowed_users_reach_the_live_routes, migrate = Migrator, |db: Test
                 .expect("visitor", &visitor, StatusCode::UNAUTHORIZED)
                 .expect("editor", &editor, StatusCode::FORBIDDEN)
                 .expect("admin", &admin, StatusCode::OK),
+            // A socket: in-process requests carry no upgrade, so one past its
+            // access is refused by the handshake (400); see tests of the socket itself.
+            Case::new(Method::GET, "/demo/echo")
+                .expect("visitor", &visitor, StatusCode::UNAUTHORIZED)
+                .expect("editor", &editor, StatusCode::FORBIDDEN)
+                .expect("admin", &admin, StatusCode::BAD_REQUEST),
             Case::new(Method::POST, "/demo/ticks/reset")
                 .expect("visitor", &visitor, StatusCode::UNAUTHORIZED)
                 .expect("editor", &editor, StatusCode::FORBIDDEN)
@@ -34,4 +40,20 @@ db_test!(only_allowed_users_reach_the_live_routes, migrate = Migrator, |db: Test
         ],
     )
     .await;
+});
+
+db_test!(the_echo_socket_answers_and_authorizes_its_command, migrate = Migrator, |db: TestDb| async move {
+    let app = TestApp::new(bootstrap::build, db).await;
+    seed(app.state()).await;
+    let admin = app.login_as("admin@example.test", PASSWORD).await;
+    let mut socket = admin.socket("/admin/api/x/demo/echo").await.expect("admitted");
+    let wait = std::time::Duration::from_secs(2);
+    socket.send_text("hello").await;
+    assert_eq!(socket.next_data(wait).await.map(|m| m.to_string()), Some("hello".to_owned()));
+    socket.send_text("whoami").await;
+    let me = socket.next_data(wait).await.map(|m| m.to_string()).unwrap_or_default();
+    assert!(me.starts_with("admin:"), "{me}");
+    // Without the permission there is no socket.
+    let editor = app.login_as("editor@example.test", PASSWORD).await;
+    assert_eq!(editor.socket("/admin/api/x/demo/echo").await.err().map(|e| e.status), Some(StatusCode::FORBIDDEN));
 });

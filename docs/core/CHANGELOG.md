@@ -17,6 +17,27 @@ All notable changes are documented here. The format follows
   attributes). Not reachable here: the HTML allowlist drops `style`.
 - inout 0.2.2 (aes-gcm's dependency): 0.2.3 was yanked.
 
+### Added (0.4 — W2b, W6)
+- WebSocket on admin routes (ADR 0029): `AdminRoutes::socket`, `LiveSocket`,
+  `SocketResponse::target`, `AdminSocket` (`recv`, `send`, `authorize`).
+  - Admission: a mandatory exact `Origin` and the session's CSRF token as
+    the `rustcms.csrf.<token>` subprotocol. No tickets.
+  - A supervisor exists before the `101`. Rechecks every
+    `[realtime] socket_revalidate_secs` (10).
+  - Bounded queues each way, deadlines on every write, and a keepalive with
+    one outstanding ping.
+  - Close codes 4401, 4403, 1001, 4008, 1009, 1011.
+  - New keys: `max_message_bytes`, `send_timeout_secs`.
+- `ctx.realtime.socket` for script views: no reconnect by default, epoch
+  bound, `send` bounded.
+- `TestApp::listen`, `TestClient::socket` / `socket_with`, and `TestSocket`
+  for WebSocket tests.
+- CSP (W6): the panel's policy adds the `ws(s)://` form of each panel origin
+  to `connect-src` (`rustcms::admin::spa::content_security_policy`). Nothing
+  else changes. `AuthState::allowed_origins`.
+- Demo: an echo socket on the Live page, with a `whoami` command authorized
+  when it runs; E2E on Chrome.
+
 ### Added (0.4 — W2a, W3)
 - `Event::resync()`: a producer asks pages to reload (as the hub does for a
   subscriber that fell behind); `rustcms::auth::TargetFuture` for reusable

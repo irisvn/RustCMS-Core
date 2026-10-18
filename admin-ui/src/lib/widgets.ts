@@ -57,6 +57,16 @@ export interface ViewContext {
    */
   realtime: {
     events: (path: string, handlers: import("./realtime").EventsHandlers) => import("./realtime").EventsHandle;
+    /**
+     * A WebSocket of an admin route (`AdminRoutes::socket`), by its path under
+     * `{admin}/api/x`. No reconnect unless `reconnect: true`; closed when the
+     * view is unmounted or the session changes; see `openSocket`.
+     */
+    socket: (
+      path: string,
+      handlers: import("./realtime").SocketHandlers,
+      options?: { reconnect?: boolean },
+    ) => import("./realtime").SocketHandle;
   };
 }
 

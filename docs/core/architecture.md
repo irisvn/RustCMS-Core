@@ -57,7 +57,8 @@ on the admin engine, so it can change without touching them.
 |---|---|
 | `guards/` | `guard` (`Auth`, `MaybeAuth`), `session`, `tokens`, `jwt` (access tokens), `jwt_session` (refresh families), `credentials` (revocation) |
 | `rbac/` | `service` (`RbacService`, every change; `begin_as` for writes outside RBAC under its lock), `rules` (no escalation), `resolver` (grants cache keyed by the database generation), `queries` |
-| `http/` | the auth routes |
+| `http/` | the auth routes, `admin_routes` (`AdminRoutes`, ADR 0026) |
+| `realtime/` | admission and rechecks shared by streams and sockets (`Live`), SSE (`LiveSession`, ADR 0027), `socket` (`LiveSocket`, `AdminSocket`, ADR 0029) |
 | `console/` | `user:create`, `role:assign`, … |
 | `support/` | password hashing, secret comparison, rate limits, `audit` (sign-in events) |
 | `entities/` | the auth tables |

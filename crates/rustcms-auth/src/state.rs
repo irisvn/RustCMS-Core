@@ -97,6 +97,12 @@ pub struct AuthState {
 }
 
 impl AuthState {
+    /// The origins the panel is served from (`[auth] admin_origins`, or the
+    /// origin of `app.url`).
+    pub fn allowed_origins(&self) -> &[String] {
+        &self.allowed_origins
+    }
+
     /// Builds the state for an application served at `app_url` with `key`
     /// (`APP_KEY`), which keys session ids: rotating it signs everyone out.
     pub fn new(config: AuthConfig, app_url: &str, key: &AppKey, gate: Gate) -> Self {

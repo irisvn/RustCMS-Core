@@ -37,6 +37,9 @@ use crate::session::{self, Session};
 use crate::state::{ADMIN_GUARD, AuthState};
 use rustcms_core::models::user;
 
+pub(crate) mod socket;
+pub use socket::{AdminSocket, LiveSocket, SendError, SocketClosed, SocketMessage, SocketResponse};
+
 /// `[realtime]` (`config/realtime.toml`), per instance.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
@@ -54,6 +57,12 @@ pub struct RealtimeConfig {
     pub opens_per_ip_per_minute: u32,
     /// Grace given to streams when the server stops (read by `serve`).
     pub shutdown_grace_secs: u64,
+    /// Seconds between the rechecks of an open WebSocket (at least 1).
+    pub socket_revalidate_secs: u64,
+    /// Largest WebSocket message, either way (bytes).
+    pub max_message_bytes: usize,
+    /// Longest wait for a WebSocket send (queue room, then the network).
+    pub send_timeout_secs: u64,
 }
 
 impl Default for RealtimeConfig {
@@ -65,6 +74,9 @@ impl Default for RealtimeConfig {
             opens_per_user_per_minute: 60,
             opens_per_ip_per_minute: 300,
             shutdown_grace_secs: 5,
+            socket_revalidate_secs: 10,
+            max_message_bytes: 64 * 1024,
+            send_timeout_secs: 10,
         }
     }
 }
@@ -74,7 +86,7 @@ const QUEUE_EVENTS: usize = 64;
 /// Bytes queued for one stream before it is ended as lagging.
 const QUEUE_BYTES: usize = 1024 * 1024;
 /// Longest recheck.
-const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 /// Comment sent when nothing else was.
 const KEEP_ALIVE: Duration = Duration::from_secs(15);
 
@@ -88,6 +100,9 @@ pub struct Realtime {
 impl Realtime {
     pub(crate) fn new(mut config: RealtimeConfig) -> Self {
         config.revalidate_secs = config.revalidate_secs.max(1);
+        config.socket_revalidate_secs = config.socket_revalidate_secs.max(1);
+        config.send_timeout_secs = config.send_timeout_secs.max(1);
+        config.max_message_bytes = config.max_message_bytes.clamp(1, QUEUE_BYTES);
         Self { total: Arc::new(Semaphore::new(config.max_connections)), users: Mutex::default(), config }
     }
 
@@ -111,7 +126,7 @@ impl Realtime {
 }
 
 /// Held by an open stream; released on every path when dropped.
-struct Permits {
+pub(crate) struct Permits {
     user: Option<OwnedSemaphorePermit>,
     total: Option<OwnedSemaphorePermit>,
     realtime: Arc<Realtime>,
@@ -178,6 +193,11 @@ pub(crate) fn check_streaming_origin(auth: &AuthState, headers: &HeaderMap) -> A
 /// (403), the open limits, the stream's place (429), the server not stopping
 /// (503). Turn it into the response with [`stream`](Self::stream).
 pub struct LiveSession {
+    live: Live,
+}
+
+/// What an admitted stream or socket knows of its user, and its place.
+pub(crate) struct Live {
     state: AppState,
     auth: Arc<AuthState>,
     realtime: Arc<Realtime>,
@@ -188,17 +208,39 @@ pub struct LiveSession {
     access: AdminAccess,
     principal: Principal,
     /// Shared with the response body: the place is held until both end.
-    permits: Arc<Permits>,
+    pub(crate) permits: Arc<Permits>,
 }
 
 /// The admitted stream, waiting for its handler's `LiveSession`.
 #[derive(Clone)]
 struct Admission(Arc<Mutex<Option<LiveSession>>>);
 
+/// Which origin rule admits a request.
+#[derive(Clone, Copy)]
+pub(crate) enum OriginRule {
+    /// Streams: Origin or Fetch Metadata, a same-origin `Referer` without either.
+    Stream,
+    /// Sockets: a mandatory exact `Origin` (browsers always send one).
+    Socket,
+}
+
 /// Admits a stream request (the route layer, before the handler's
 /// extractors). A handler that takes no `LiveSession` releases it with the
 /// request.
 pub(crate) async fn admit(req: &mut axum::extract::Request, access: &AdminAccess) -> Result<(), Box<Response>> {
+    // `&mut`: a shared `&Request` held across an await is not `Send`.
+    let live = admission(req, access, OriginRule::Stream).await?;
+    req.extensions_mut().insert(Admission(Arc::new(Mutex::new(Some(LiveSession { live })))));
+    Ok(())
+}
+
+/// The checks shared by streams and sockets: the caller, the origin, the
+/// server not stopping, the open limits and a place.
+pub(crate) async fn admission(
+    req: &mut axum::extract::Request,
+    access: &AdminAccess,
+    rule: OriginRule,
+) -> Result<Live, Box<Response>> {
     let fail = |e: AppError| Box::new(e.into_response());
     let app =
         req.extensions().get::<AppState>().cloned().ok_or_else(|| fail(AppError::internal("admin guard missing")))?;
@@ -216,7 +258,11 @@ pub(crate) async fn admit(req: &mut axum::extract::Request, access: &AdminAccess
     let auth = app.service::<AuthState>().ok_or_else(|| fail(AppError::internal("AuthProvider not registered")))?;
     let realtime = app.service::<Realtime>().ok_or_else(|| fail(AppError::internal("AuthProvider not registered")))?;
     let shutdown = app.service::<Shutdown>().ok_or_else(|| fail(AppError::internal("no Shutdown bound")))?;
-    check_streaming_origin(&auth, req.headers()).map_err(fail)?;
+    match rule {
+        OriginRule::Stream => check_streaming_origin(&auth, req.headers()),
+        OriginRule::Socket => socket::check_socket_origin(&auth, req.headers()),
+    }
+    .map_err(fail)?;
     if !shutdown.is_open() {
         return Err(Box::new(unavailable()));
     }
@@ -230,7 +276,7 @@ pub(crate) async fn admit(req: &mut axum::extract::Request, access: &AdminAccess
         .await
         .map_err(fail)?;
     let permits = realtime.acquire(caller.user.id).ok_or_else(|| fail(AppError::TooManyRequests { retry_after: 5 }))?;
-    let live = LiveSession {
+    Ok(Live {
         state: app.clone(),
         auth,
         realtime,
@@ -241,9 +287,7 @@ pub(crate) async fn admit(req: &mut axum::extract::Request, access: &AdminAccess
         access: access.clone(),
         principal: caller.principal,
         permits: Arc::new(permits),
-    };
-    req.extensions_mut().insert(Admission(Arc::new(Mutex::new(Some(live)))));
-    Ok(())
+    })
 }
 
 impl FromRequestParts<AppState> for LiveSession {
@@ -258,14 +302,14 @@ impl FromRequestParts<AppState> for LiveSession {
     }
 }
 
-fn unavailable() -> Response {
+pub(crate) fn unavailable() -> Response {
     let body = serde_json::json!({"message": "The server is stopping.", "code": "unavailable"});
     (StatusCode::SERVICE_UNAVAILABLE, axum::Json(body)).into_response()
 }
 
 /// Why a stream ended early (sent as `event: closed`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Closed {
+pub(crate) enum Closed {
     SignedOut,
     Forbidden,
     Shutdown,
@@ -274,7 +318,7 @@ enum Closed {
 }
 
 impl Closed {
-    fn reason(self) -> &'static str {
+    pub(crate) fn reason(self) -> &'static str {
         match self {
             Self::SignedOut => "signed_out",
             Self::Forbidden => "forbidden",
@@ -299,12 +343,12 @@ impl Closed {
 /// ```
 pub type TargetFuture = Pin<Box<dyn Future<Output = AppResult<()>> + Send>>;
 
-type TargetCheck = Arc<dyn Fn(Principal) -> TargetFuture + Send + Sync>;
+pub(crate) type TargetCheck = Arc<dyn Fn(Principal) -> TargetFuture + Send + Sync>;
 
 impl LiveSession {
     /// The user's principal when the stream was opened.
     pub fn principal(&self) -> &Principal {
-        &self.principal
+        &self.live.principal
     }
 
     /// The response streaming `events`, rechecked while open.
@@ -312,12 +356,27 @@ impl LiveSession {
     where
         S: Stream<Item = Event> + Send + 'static,
     {
-        EventStream { live: self, events: events.boxed(), target: None }
+        EventStream { live: self.live, events: events.boxed(), target: None }
+    }
+}
+
+impl Live {
+    pub(crate) fn principal(&self) -> &Principal {
+        &self.principal
+    }
+
+    pub(crate) fn config(&self) -> &RealtimeConfig {
+        &self.realtime.config
+    }
+
+    pub(crate) fn shutdown(&self) -> &Arc<Shutdown> {
+        &self.shutdown
     }
 
     /// Whether the stream may go on: the same session, user and credential
-    /// version, and a fresh principal passing the route's access and `target`.
-    async fn check(&self, target: Option<&TargetCheck>) -> Result<(), Closed> {
+    /// version, and a fresh principal passing the route's access and `target`
+    /// (returned).
+    async fn check(&self, target: Option<&TargetCheck>) -> Result<Principal, Closed> {
         let db = self.state.db();
         let signed_in = session::still_signed_in(db, &self.session_id, self.user_id, self.auth_version)
             .await
@@ -334,7 +393,7 @@ impl LiveSession {
             return Err(Closed::Forbidden);
         }
         if let Some(target) = target {
-            match target(principal).await {
+            match target(principal.clone()).await {
                 Ok(()) => {}
                 Err(AppError::Forbidden | AppError::NotFound | AppError::Unauthenticated) => {
                     return Err(Closed::Forbidden);
@@ -342,17 +401,17 @@ impl LiveSession {
                 Err(_) => return Err(Closed::Error),
             }
         }
-        Ok(())
+        Ok(principal)
     }
 
-    async fn check_in_time(&self, target: Option<&TargetCheck>) -> Result<(), Closed> {
+    pub(crate) async fn check_in_time(&self, target: Option<&TargetCheck>) -> Result<Principal, Closed> {
         tokio::time::timeout(CHECK_TIMEOUT, self.check(target)).await.unwrap_or(Err(Closed::Error))
     }
 }
 
 /// A stream of events for one admin page (see [`LiveSession::stream`]).
 pub struct EventStream {
-    live: LiveSession,
+    live: Live,
     events: futures_util::stream::BoxStream<'static, Event>,
     target: Option<TargetCheck>,
 }
@@ -419,7 +478,7 @@ async fn pump(stream: EventStream, tx: mpsc::Sender<Queued>, queued: Arc<AtomicU
         checked = live.check_in_time(target.as_ref()) => checked,
         () = tx.closed() => return,
     };
-    if let Err(reason) = first {
+    if let Err(reason) = first.map(drop) {
         let _ = tx.try_send(closed(reason));
         return;
     }
@@ -432,7 +491,7 @@ async fn pump(stream: EventStream, tx: mpsc::Sender<Queued>, queued: Arc<AtomicU
             _ = recheck.tick() => {
                 tokio::select! {
                     checked = live.check_in_time(target.as_ref()) => {
-                        if let Err(reason) = checked {
+                        if let Err(reason) = checked.map(drop) {
                             break Some(reason);
                         }
                     }

@@ -23,7 +23,8 @@ struct Assets;
 /// Marker in `admin-ui/index.html` replaced by the runtime configuration.
 const CONFIG_MARKER: &str = "<!-- rustcms:config -->";
 
-/// Content Security Policy of the panel.
+/// Content Security Policy of the panel, before its WebSocket sources (see
+/// [`content_security_policy`]). It is never loosened (ADR 0019).
 pub const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self'; \
      img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; \
      form-action 'self'; frame-ancestors 'none'";
@@ -31,6 +32,27 @@ pub const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'
 const PLACEHOLDER: &str = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Admin</title>\
      </head><body><h1>Admin assets are not built</h1><p>Run <code>just admin-build</code> \
      (Node 20+) to build <code>crates/rustcms-admin/assets</code>.</p></body></html>";
+
+/// The panel's policy: [`CONTENT_SECURITY_POLICY`] with `connect-src` also
+/// naming the WebSocket form of each of the panel's origins (`ws://` for
+/// `http://`, `wss://` for `https://`), for browsers whose `'self'` does not
+/// cover sockets. Nothing else is added.
+pub fn content_security_policy(origins: &[String]) -> String {
+    let sockets: Vec<String> = origins
+        .iter()
+        .filter_map(|o| {
+            o.strip_prefix("https://")
+                .map(|h| format!("wss://{h}"))
+                .or_else(|| o.strip_prefix("http://").map(|h| format!("ws://{h}")))
+        })
+        // Header-safe hosts only (origins are normalized already).
+        .filter(|s| s.bytes().all(|b| b.is_ascii_alphanumeric() || b".-:/[]".contains(&b)))
+        .collect();
+    if sockets.is_empty() {
+        return CONTENT_SECURITY_POLICY.to_owned();
+    }
+    CONTENT_SECURITY_POLICY.replacen("connect-src 'self'", &format!("connect-src 'self' {}", sockets.join(" ")), 1)
+}
 
 /// Panel pages and assets as `(method, path)` (for `route:list`).
 pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
@@ -117,22 +139,31 @@ pub(crate) fn router(
     extensions: Arc<Vec<Extension>>,
     locales: &Locales,
     theme: &ThemeConfig,
+    csp: &str,
 ) -> Router<AppState> {
+    let csp = HeaderValue::from_str(csp).expect("a header-safe policy");
     // `admin_path` is normalized by the auth config (`/admin`, never `/`).
     let base = admin_path.trim_end_matches('/').to_owned();
     let index: Arc<str> =
         render_index(Assets::get("index.html").map(|f| f.data), &base, &extensions, locales, theme).into();
     let (root, slash) = (index.clone(), index.clone());
+    let (csp_page, csp_slash, csp_root) = (csp.clone(), csp.clone(), csp);
     router
         .route(
             &format!("{base}/{{*rest}}"),
-            any(move |method: Method, Path(rest): Path<String>| page(method, rest, index, extensions)),
+            any(move |method: Method, Path(rest): Path<String>| page(method, rest, index, extensions, csp_page)),
         )
-        .route(&format!("{base}/"), any(move |method: Method| async move { shell(&method, &slash) }))
-        .route(&base, any(move |method: Method| async move { shell(&method, &root) }))
+        .route(&format!("{base}/"), any(move |method: Method| async move { shell(&method, &slash, &csp_slash) }))
+        .route(&base, any(move |method: Method| async move { shell(&method, &root, &csp_root) }))
 }
 
-async fn page(method: Method, rest: String, index: Arc<str>, extensions: Arc<Vec<Extension>>) -> Response {
+async fn page(
+    method: Method,
+    rest: String,
+    index: Arc<str>,
+    extensions: Arc<Vec<Extension>>,
+    csp: HeaderValue,
+) -> Response {
     // The admin API has its own JSON 404 (registered by the auth provider); this
     // guards the boundary should routes ever change.
     if rest == "api" || rest.starts_with("api/") {
@@ -143,31 +174,35 @@ async fn page(method: Method, rest: String, index: Arc<str>, extensions: Arc<Vec
     }
     if let Some(file) = rest.strip_prefix("assets/ext/") {
         return match extensions.iter().find(|e| e.file == file) {
-            Some(extension) => extension_asset(extension),
+            Some(extension) => extension_asset(extension, &csp),
             None => AppError::NotFound.into_response(),
         };
     }
     match rest.strip_prefix("assets/") {
-        Some(path) => asset(path),
+        Some(path) => asset(path, &csp),
         // Pages whose URL carries a token (in the fragment): no `Referer` at all.
         None if matches!(rest.as_str(), "reset-password" | "invitation") => {
-            let mut response = html(&index);
+            let mut response = html(&index, &csp);
             response.headers_mut().insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
             response
         }
-        None => html(&index),
+        None => html(&index, &csp),
     }
 }
 
-fn shell(method: &Method, index: &str) -> Response {
-    if matches!(*method, Method::GET | Method::HEAD) { html(index) } else { AppError::MethodNotAllowed.into_response() }
+fn shell(method: &Method, index: &str, csp: &HeaderValue) -> Response {
+    if matches!(*method, Method::GET | Method::HEAD) {
+        html(index, csp)
+    } else {
+        AppError::MethodNotAllowed.into_response()
+    }
 }
 
-fn asset(path: &str) -> Response {
+fn asset(path: &str, csp: &HeaderValue) -> Response {
     let Some(file) = Assets::get(&format!("assets/{path}")) else {
         return AppError::NotFound.into_response();
     };
-    let mut headers = security_headers();
+    let mut headers = security_headers(csp);
     let mime = file.metadata.mimetype();
     let mime = HeaderValue::from_str(mime).unwrap_or(HeaderValue::from_static("application/octet-stream"));
     headers.insert(header::CONTENT_TYPE, mime);
@@ -176,24 +211,24 @@ fn asset(path: &str) -> Response {
     (StatusCode::OK, headers, Body::from(file.data.into_owned())).into_response()
 }
 
-fn extension_asset(extension: &Extension) -> Response {
-    let mut headers = security_headers();
+fn extension_asset(extension: &Extension, csp: &HeaderValue) -> Response {
+    let mut headers = security_headers(csp);
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(extension.content_type));
     // The file name carries the content hash.
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
     (StatusCode::OK, headers, Body::from(extension.body.clone().into_owned())).into_response()
 }
 
-fn html(body: &str) -> Response {
-    let mut headers = security_headers();
+fn html(body: &str, csp: &HeaderValue) -> Response {
+    let mut headers = security_headers(csp);
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     (StatusCode::OK, headers, body.to_owned()).into_response()
 }
 
-fn security_headers() -> HeaderMap {
+fn security_headers(csp: &HeaderValue) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CONTENT_SECURITY_POLICY));
+    headers.insert(header::CONTENT_SECURITY_POLICY, csp.clone());
     headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     headers.insert(header::REFERRER_POLICY, HeaderValue::from_static("same-origin"));
@@ -254,6 +289,21 @@ mod tests {
 
     fn en() -> Locales {
         Locales { default: "en".into(), all: vec!["en".into(), "vi".into()], password_reset: false, remember: false }
+    }
+
+    #[test]
+    fn the_policy_adds_only_the_panels_socket_origins() {
+        let origins = ["https://cms.example.com".to_owned(), "http://localhost:8000".to_owned()];
+        let policy = content_security_policy(&origins);
+        assert_eq!(
+            policy,
+            CONTENT_SECURITY_POLICY
+                .replace("connect-src 'self'", "connect-src 'self' wss://cms.example.com ws://localhost:8000")
+        );
+        assert!(!policy.contains("unsafe"));
+        assert_eq!(content_security_policy(&[]), CONTENT_SECURITY_POLICY);
+        // Never anything that could end the directive.
+        assert_eq!(content_security_policy(&["https://a.test; script-src *".to_owned()]), CONTENT_SECURITY_POLICY);
     }
 
     #[test]
