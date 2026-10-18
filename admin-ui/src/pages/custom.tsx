@@ -12,8 +12,13 @@ export function CustomPage() {
   const config = usePanelConfig();
   // The sub-path from the raw (still encoded) address, checked with the
   // server's rules before the router's decoding is trusted.
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const raw = rawSubPath(config.basePath, slug, globalThis.location?.pathname ?? pathname);
+  const href = useRouterState({ select: (s) => s.location.href });
+  // The browser's raw path when it is the panel's (production), else the
+  // router's own (still encoded) href.
+  const browser = globalThis.location?.pathname ?? "";
+  const base = config.basePath.replace(/\/$/, "");
+  const pathname = browser.startsWith(`${base}/p/`) ? browser.slice(base.length) : href.split(/[?#]/)[0]!;
+  const raw = rawSubPath(slug, pathname);
   const path = raw === null ? "" : canonicalSubPath(raw);
   const page = useCustomPage(slug, path ?? "", { enabled: path !== null });
   if (path === null) return <NotFoundPage />;
@@ -29,9 +34,9 @@ export function CustomPage() {
   );
 }
 
-/** What follows `{basePath}/p/{slug}/` in `pathname`, or `null` when there is none. */
-function rawSubPath(basePath: string, slug: string, pathname: string): string | null {
-  const prefix = `${basePath.replace(/\/$/, "")}/p/${encodeURIComponent(slug)}`;
+/** What follows `/p/{slug}/` in `pathname` (panel-relative), or `null` when it is not this page. */
+function rawSubPath(slug: string, pathname: string): string | null {
+  const prefix = `/p/${encodeURIComponent(slug)}`;
   if (!pathname.startsWith(prefix)) return null;
   const rest = pathname.slice(prefix.length);
   return rest.startsWith("/") ? rest.slice(1) : rest === "" ? "" : null;
