@@ -209,7 +209,9 @@ fn main() -> ExitCode {
             let auth = clap::Command::new("auth").subcommands(rustcms_auth::commands::definitions());
             let admin = clap::Command::new("admin").subcommands(rustcms_admin::panel::provider::command_definitions());
             // Every application has the queue commands too.
-            let runtime = rustcms_core::console::command().subcommands(rustcms_core::queue::definitions());
+            let runtime = rustcms_core::console::command()
+                .subcommands(rustcms_core::queue::definitions())
+                .subcommands(rustcms_core::crypto::definitions());
             print!("{}", docs::markdown(&Cli::command(), &runtime, &auth, &admin));
             Ok(ExitCode::SUCCESS)
         }

@@ -154,7 +154,7 @@ async fn show(
     Path(group): Path<String>,
 ) -> AppResult<Json<SettingsResponse>> {
     let page = admit(registry(&state)?.as_ref(), &ctx.principal, &group, false)?;
-    let stored = settings::read(state.db(), &state.config().app.key, page.group(), false).await?;
+    let stored = settings::read(state.db(), state.keyring(), page.group(), false).await?;
     Ok(Json(response(&ctx, page.as_ref(), &stored)))
 }
 
@@ -295,7 +295,7 @@ async fn update(
         }
     })?;
     let (expected, data) = parse_body(&body)?;
-    let key = &state.config().app.key;
+    let key = state.keyring();
 
     // Values checked against their fields before any lock.
     let mut errors = ValidationErrors::new();

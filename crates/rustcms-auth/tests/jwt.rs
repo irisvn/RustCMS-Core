@@ -218,8 +218,11 @@ db_test!(rotating_the_app_key_ends_every_sign_in, migrate = Migrator, |db: TestD
     let same = TestApp::with_config(support::build, same, db.clone()).await;
     me(&same, &signed["accessToken"]).await.assert_status(StatusCode::OK);
 
-    // A new key: neither the access token nor the refresh token works.
-    let rotated = TestApp::new(support::build, db).await;
+    // A new key: neither the access token nor the refresh token works, even
+    // with the old one in `app.previous_keys` (it only opens encrypted values).
+    let mut rotated = rustcms_testing::test_config(db.url());
+    rotated.app.previous_keys = vec![app.state().config().app.key.clone()];
+    let rotated = TestApp::with_config(support::build, rotated, db).await;
     me(&rotated, &signed["accessToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
     refresh(&rotated, &signed["refreshToken"]).await.assert_status(StatusCode::UNAUTHORIZED);
     // The old key still works where it is configured (the sign-in was not revoked).

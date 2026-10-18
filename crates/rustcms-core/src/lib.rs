@@ -6,6 +6,7 @@ pub mod app;
 pub mod audit;
 pub mod config;
 pub mod console;
+pub mod crypto;
 pub mod database;
 pub mod db;
 pub mod error;

@@ -14,11 +14,15 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseTransaction, EntityTrait, QuerySelect};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
+    QuerySelect,
+};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
+use crate::crypto::Keyring;
 use crate::models::setting;
 use crate::{AppError, AppKey, AppResult, AppState};
 
@@ -183,8 +187,14 @@ fn decrypt(key: &AppKey, group: &str, field: &str, version: i64, stored: &str) -
     String::from_utf8(plain).ok()
 }
 
+/// The plaintext and whether the current key opened it: the current key
+/// first, then each previous one (settings ciphertexts carry no key id).
+fn decrypt_any(keyring: &Keyring, group: &str, field: &str, version: i64, stored: &str) -> Option<(String, bool)> {
+    keyring.all().enumerate().find_map(|(i, key)| decrypt(key, group, field, version, stored).map(|p| (p, i == 0)))
+}
+
 /// Reads group `group` (`lock`: for update, inside a write transaction).
-pub async fn read<C: ConnectionTrait>(conn: &C, key: &AppKey, group: &str, lock: bool) -> AppResult<Stored> {
+pub async fn read<C: ConnectionTrait>(conn: &C, keyring: &Keyring, group: &str, lock: bool) -> AppResult<Stored> {
     let mut find = setting::Entity::find_by_id(group.to_owned());
     if lock && conn.get_database_backend() != sea_orm::DbBackend::Sqlite {
         find = find.lock_exclusive();
@@ -205,8 +215,8 @@ pub async fn read<C: ConnectionTrait>(conn: &C, key: &AppKey, group: &str, lock:
         for (field, sealed) in stored {
             let state = sealed
                 .as_str()
-                .and_then(|s| decrypt(key, group, field, row.version, s))
-                .map_or(SecretState::Unreadable, SecretState::Set);
+                .and_then(|s| decrypt_any(keyring, group, field, row.version, s))
+                .map_or(SecretState::Unreadable, |(plain, _)| SecretState::Set(plain));
             secrets.insert(field.clone(), state);
         }
     }
@@ -218,7 +228,7 @@ pub async fn read<C: ConnectionTrait>(conn: &C, key: &AppKey, group: &str, lock:
 /// caller holds the lock and has checked the previous version.
 pub async fn write(
     txn: &DatabaseTransaction,
-    key: &AppKey,
+    keyring: &Keyring,
     group: &str,
     version: i64,
     values: Map<String, Value>,
@@ -227,7 +237,7 @@ pub async fn write(
 ) -> AppResult<()> {
     let mut sealed = Map::new();
     for (field, plain) in secrets {
-        sealed.insert(field.clone(), Value::String(encrypt(key, group, field, version, plain)?));
+        sealed.insert(field.clone(), Value::String(encrypt(keyring.current(), group, field, version, plain)?));
     }
     let row = setting::ActiveModel {
         name: Set(group.to_owned()),
@@ -278,13 +288,67 @@ pub fn typed<T: Settings>(stored: &Stored) -> AppResult<T> {
 
 /// Reads group `T` through `conn` (a connection, or a transaction to see its
 /// own writes).
-pub async fn load<T: Settings, C: ConnectionTrait>(conn: &C, key: &AppKey) -> AppResult<T> {
-    typed(&read(conn, key, T::GROUP, false).await?)
+pub async fn load<T: Settings, C: ConnectionTrait>(conn: &C, keyring: &Keyring) -> AppResult<T> {
+    typed(&read(conn, keyring, T::GROUP, false).await?)
 }
 
 /// Reads group `T`: one query; a change made on any instance is seen at once.
 pub async fn get<T: Settings>(state: &AppState) -> AppResult<T> {
-    load(state.db(), &state.config().app.key).await
+    load(state.db(), state.keyring()).await
+}
+
+/// What [`reseal`] did to one group.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Resealed {
+    /// Secrets moved to the current key.
+    pub moved: usize,
+    /// Secrets already under the current key (left byte for byte).
+    pub current: usize,
+    /// Secrets no key opens (left as they are).
+    pub unreadable: usize,
+}
+
+/// Moves the secrets of group `group` to the current key (`key:reencrypt`),
+/// in `txn` (a write transaction) under the group's row lock. Only the
+/// `secrets` column changes, and only when a secret was under a previous
+/// key: the version, the values, the attribution and unreadable entries are
+/// kept, so a second run writes nothing.
+pub async fn reseal(txn: &DatabaseTransaction, keyring: &Keyring, group: &str) -> AppResult<Resealed> {
+    let mut find = setting::Entity::find_by_id(group.to_owned());
+    if txn.get_database_backend() != sea_orm::DbBackend::Sqlite {
+        find = find.lock_exclusive();
+    }
+    let mut report = Resealed::default();
+    let Some(row) = find.one(txn).await? else { return Ok(report) };
+    let Some(Value::Object(stored)) = &row.secrets else { return Ok(report) };
+    let mut sealed = stored.clone();
+    for (field, value) in stored {
+        let opened = value.as_str().and_then(|s| decrypt_any(keyring, group, field, row.version, s));
+        match opened {
+            Some((_, true)) => report.current += 1,
+            Some((plain, false)) => {
+                let fresh = encrypt(keyring.current(), group, field, row.version, &plain)?;
+                sealed.insert(field.clone(), Value::String(fresh));
+                report.moved += 1;
+            }
+            None => report.unreadable += 1,
+        }
+    }
+    if report.moved > 0 {
+        setting::Entity::update_many()
+            .col_expr(setting::Column::Secrets, sea_orm::sea_query::Expr::value(Value::Object(sealed)))
+            .filter(setting::Column::Name.eq(group))
+            .exec(txn)
+            .await?;
+    }
+    Ok(report)
+}
+
+/// The groups stored (for `key:reencrypt`).
+pub async fn groups<C: ConnectionTrait>(conn: &C) -> AppResult<Vec<String>> {
+    let rows =
+        setting::Entity::find().select_only().column(setting::Column::Name).into_tuple::<String>().all(conn).await?;
+    Ok(rows)
 }
 
 #[cfg(test)]

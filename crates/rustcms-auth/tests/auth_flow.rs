@@ -68,8 +68,13 @@ db_test!(rotating_the_app_key_signs_everyone_out, migrate = Migrator, |db: TestD
     same.request(cookie_request(&me, &token)).await.assert_status(StatusCode::OK);
 
     // After `key:generate --force` (a new random key), the cookie is dead.
-    let rotated = rustcms_testing::TestApp::new(support::build, db).await;
+    let rotated = rustcms_testing::TestApp::new(support::build, db.clone()).await;
     rotated.request(cookie_request(&me, &token)).await.assert_status(StatusCode::UNAUTHORIZED);
+    // Also with the old key kept in `app.previous_keys`: they only open encrypted values.
+    let mut keeping = rustcms_testing::test_config(db.url());
+    keeping.app.previous_keys = vec![app.state().config().app.key.clone()];
+    let keeping = rustcms_testing::TestApp::with_config(support::build, keeping, db).await;
+    keeping.request(cookie_request(&me, &token)).await.assert_status(StatusCode::UNAUTHORIZED);
 });
 
 db_test!(state_changes_need_allowed_origin_and_csrf, migrate = Migrator, |db: TestDb| async move {

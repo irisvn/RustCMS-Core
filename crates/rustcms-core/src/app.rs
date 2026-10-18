@@ -30,6 +30,7 @@ impl ServiceMap {
 
 struct StateInner {
     config: Config,
+    keyring: crate::crypto::Keyring,
     db: DatabaseConnection,
     services: ServiceMap,
 }
@@ -42,6 +43,11 @@ impl AppState {
     /// Loaded configuration.
     pub fn config(&self) -> &Config {
         &self.0.config
+    }
+
+    /// `APP_KEY` and the keys it replaced, for [`crypto::Encrypted`](crate::crypto::Encrypted).
+    pub fn keyring(&self) -> &crate::crypto::Keyring {
+        &self.0.keyring
     }
 
     /// Database pool.
@@ -109,6 +115,7 @@ pub struct AppBuilder {
     described: Vec<RouteInfo>,
     body_limits: Vec<http::BodyLimit>,
     jobs: crate::queue::Jobs,
+    encrypted: crate::crypto::EncryptedColumns,
     seeders: crate::database::Seeders,
     #[cfg(feature = "mail")]
     mail_templates: crate::mail::MailTemplates,
@@ -141,6 +148,7 @@ impl AppBuilder {
                 Arc::new(crate::queue::QueueFailed),
                 Arc::new(crate::queue::QueueRetry),
                 Arc::new(crate::queue::QueueForget),
+                Arc::new(crate::crypto::KeyReencrypt),
             ],
             middleware: Vec::new(),
             described: vec![RouteInfo {
@@ -150,6 +158,7 @@ impl AppBuilder {
             }],
             body_limits: Vec::new(),
             jobs: crate::queue::Jobs::default(),
+            encrypted: crate::crypto::EncryptedColumns::default(),
             seeders: crate::database::Seeders::default(),
             #[cfg(feature = "mail")]
             mail_templates: crate::mail::MailTemplates::default(),
@@ -222,6 +231,26 @@ impl AppBuilder {
     pub fn body_limit(&mut self, method: axum::http::Method, path: impl Into<String>, bytes: usize) -> &mut Self {
         self.body_limits.push(http::BodyLimit { method, path: path.into(), bytes });
         self
+    }
+
+    /// Registers an encrypted column of `E` for `key:reencrypt` (the admin's
+    /// `Field::encrypted*` register theirs).
+    ///
+    /// # Panics
+    /// On a composite primary key, or the same column registered with another
+    /// binding.
+    pub fn encrypted_column<E: sea_orm::EntityTrait>(
+        &mut self,
+        column: E::Column,
+        binding: crate::crypto::Binding,
+    ) -> &mut Self {
+        self.encrypted.add(crate::crypto::EncryptedColumn::of::<E>(column, binding));
+        self
+    }
+
+    /// The encrypted columns registered so far.
+    pub fn encrypted_columns(&self) -> &crate::crypto::EncryptedColumns {
+        &self.encrypted
     }
 
     /// Registers a job the queue's workers run (see [`crate::queue::Job`]).
@@ -303,9 +332,11 @@ impl AppBuilder {
         }
         crate::queue::QueueConfig::of(&self.config)?;
         self.services.insert(self.jobs);
+        self.services.insert(self.encrypted);
         #[cfg(feature = "mail")]
         self.services.insert(self.mail_templates);
-        let state = AppState(Arc::new(StateInner { config: self.config, db, services: self.services }));
+        let keyring = crate::crypto::Keyring::new(self.config.app.key.clone(), self.config.app.previous_keys.clone())?;
+        let state = AppState(Arc::new(StateInner { config: self.config, keyring, db, services: self.services }));
         for provider in &self.providers {
             provider.boot(&state).await?;
         }

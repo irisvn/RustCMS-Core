@@ -52,6 +52,11 @@ pub struct AppConfig {
     pub url: String,
     /// Application key (`APP_KEY`). Required.
     pub key: AppKey,
+    /// Keys `APP_KEY` replaced (`APP_PREVIOUS_KEYS`, comma-separated, or a
+    /// TOML array): they only open encrypted values, until `key:reencrypt`
+    /// has moved them to `APP_KEY` (ADR 0030).
+    #[serde(deserialize_with = "previous_keys")]
+    pub previous_keys: Vec<AppKey>,
     /// Address `serve` listens on.
     pub listen: SocketAddr,
     /// Locale of the admin interface when neither the user nor the browser
@@ -114,11 +119,30 @@ pub struct ConfigError(#[from] Box<figment::Error>);
 fn defaults() -> serde_json::Value {
     serde_json::json!({
         "app": { "name": "rustcms", "env": "production", "debug": false, "url": "http://localhost:8000",
-                 "listen": "127.0.0.1:8000", "locale": "en", "locales": ["en", "vi"] },
+                 "listen": "127.0.0.1:8000", "locale": "en", "locales": ["en", "vi"], "previous_keys": [] },
         "database": { "max_connections": 10, "log_statements": false },
         "http": { "body_limit": 1_048_576, "timeout_secs": 30, "trusted_proxies": [] },
         "log": { "filter": "info", "json": false },
     })
+}
+
+/// `app.previous_keys`: a list, or one string of comma-separated keys (as the
+/// environment gives it). Errors never quote a key.
+fn previous_keys<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<AppKey>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Keys {
+        List(Vec<String>),
+        One(String),
+    }
+    let texts = match Keys::deserialize(deserializer)? {
+        Keys::List(list) => list,
+        Keys::One(one) => one.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect(),
+    };
+    texts
+        .iter()
+        .map(|t| AppKey::parse(t.trim()).map_err(|e| serde::de::Error::custom(format!("app.previous_keys: {e}"))))
+        .collect()
 }
 
 /// Largest secret file read (`<VAR>_FILE`).
@@ -228,6 +252,7 @@ impl Config {
             ("APP_DEBUG", "app.debug"),
             ("APP_URL", "app.url"),
             ("APP_KEY", "app.key"),
+            ("APP_PREVIOUS_KEYS", "app.previous_keys"),
             ("DATABASE_URL", "database.url"),
             ("REDIS_URL", "redis.url"),
         ];
@@ -265,6 +290,8 @@ impl Config {
             );
             return Err(ConfigError(Box::new(figment::Error::from(message))));
         }
+        crate::crypto::Keyring::new(app.key.clone(), app.previous_keys.clone())
+            .map_err(|e| ConfigError(Box::new(figment::Error::from(e.to_string()))))?;
         Ok(Self {
             app,
             database: get("database").extract().map_err(Box::new)?,
@@ -429,6 +456,33 @@ mod tests {
             jail.set_env("APP_KEY", "not-a-key");
             let err = Config::from_figment(Config::figment(Path::new("config")).unwrap()).unwrap_err();
             assert!(err.to_string().contains("base64:"), "{err}");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn previous_keys_come_from_a_list_or_the_environment() {
+        Jail::expect_with(|jail| {
+            let (current, a, b) = (AppKey::generate(), AppKey::generate(), AppKey::generate());
+            jail.set_env("APP_KEY", current.encode());
+            jail.set_env("DATABASE_URL", "sqlite::memory:");
+            assert!(load().unwrap().app.previous_keys.is_empty());
+            // A TOML list in config/app.toml.
+            jail.create_dir("config")?;
+            jail.create_file("config/app.toml", &format!("previous_keys = [\"{}\"]", b.encode()))?;
+            assert_eq!(load().unwrap().app.previous_keys, vec![b.clone()]);
+            // The environment wins, as a comma-separated list.
+            jail.set_env("APP_PREVIOUS_KEYS", format!("{}, {}", a.encode(), b.encode()));
+            assert_eq!(load().unwrap().app.previous_keys, vec![a.clone(), b.clone()]);
+            // Refused without quoting a key.
+            jail.set_env("APP_PREVIOUS_KEYS", format!("{},{}", a.encode(), a.encode()));
+            let err = load().unwrap_err().to_string();
+            assert!(err.contains("same key") && !err.contains(&a.encode()[7..]), "{err}");
+            jail.set_env("APP_PREVIOUS_KEYS", current.encode());
+            assert!(load().unwrap_err().to_string().contains("APP_KEY itself"));
+            jail.set_env("APP_PREVIOUS_KEYS", "base64:short");
+            let err = load().unwrap_err().to_string();
+            assert!(err.contains("previous_keys") && !err.contains("short"), "{err}");
             Ok(())
         });
     }
