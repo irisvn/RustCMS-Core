@@ -1123,6 +1123,30 @@ actor = "token"
 status = 401
 
 [[case]]
+route = "GET /admin/api/pages/{slug}/{*path}"
+path = "/admin/api/pages/nope/a/b"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/pages/{slug}/{*path}"
+path = "/admin/api/pages/nope/a/b"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/pages/{slug}/{*path}"
+path = "/admin/api/pages/nope/a%2Fb"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/pages/{slug}/{*path}"
+path = "/admin/api/pages/nope/%2e%2e"
+actor = "admin"
+status = 403
+
+[[case]]
 route = "GET /admin/api/slots"
 path = "/admin/api/slots?resource=posts&key={own}"
 actor = "guest"

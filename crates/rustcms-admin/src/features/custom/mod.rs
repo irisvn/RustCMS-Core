@@ -5,6 +5,7 @@
 mod html;
 mod http;
 mod page;
+mod subpath;
 mod template;
 mod theme;
 

@@ -28,6 +28,7 @@ pub struct AdminProvider {
     registry: Mutex<Option<Registry>>,
     media: bool,
     extensions: Vec<crate::spa::Extension>,
+    extension_timeout: std::time::Duration,
     translator: Translator,
     settings: crate::settings::SettingsRegistry,
     pages: Vec<std::sync::Arc<dyn crate::custom::DynPage>>,
@@ -50,6 +51,7 @@ impl Default for AdminProvider {
             registry: Mutex::new(Some(Registry::new())),
             media: false,
             extensions: Vec::new(),
+            extension_timeout: std::time::Duration::from_secs(10),
             translator,
             settings: crate::settings::SettingsRegistry::default(),
             pages: Vec::new(),
@@ -81,6 +83,30 @@ impl AdminProvider {
     /// On a name other than 1–64 of `a-z`, `0-9`, `-`, or a name used twice.
     pub fn extension_script(mut self, name: &str, js: &'static str) -> Self {
         self.add_extension(crate::spa::Extension::new(name, js, false));
+        self
+    }
+
+    /// A v2 script (React pages, slots and cells sharing the panel's React;
+    /// ADR 0032), built with the SDK's preset. `requires` is checked before
+    /// it runs: a mismatch leaves its views unavailable.
+    pub fn extension_script_v2(mut self, name: &str, js: &'static str, requires: crate::spa::Requires) -> Self {
+        let mut extension = crate::spa::Extension::new(name, js, false);
+        extension.requires = Some(requires);
+        self.add_extension(extension);
+        self
+    }
+
+    /// How long the panel waits for each extension script (1 to 60 s,
+    /// default 10); a script that misses it registers nothing.
+    ///
+    /// # Panics
+    /// Out of range.
+    pub fn extension_timeout(mut self, timeout: std::time::Duration) -> Self {
+        assert!(
+            (std::time::Duration::from_secs(1)..=std::time::Duration::from_secs(60)).contains(&timeout),
+            "extension_timeout must be 1 to 60 seconds"
+        );
+        self.extension_timeout = timeout;
         self
     }
 
@@ -303,6 +329,7 @@ impl ServiceProvider for AdminProvider {
         };
         // Same-origin sockets, also for browsers whose `'self'` misses `ws:`/`wss:`.
         let csp = spa::content_security_policy(auth.allowed_origins());
+        let extension_timeout = self.extension_timeout;
         app.routes(move |router| {
             spa::router(
                 crate::custom::router(
@@ -329,6 +356,7 @@ impl ServiceProvider for AdminProvider {
                 &locales,
                 &theme,
                 &csp,
+                extension_timeout,
             )
         });
         app.command(IdempotencyPrune);

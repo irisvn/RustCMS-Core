@@ -98,6 +98,26 @@ impl PanelPage for ReportPage {
     }
 }
 
+/// Echoes its sub-path (`Ctx::page_path`).
+struct PathPage;
+
+#[async_trait::async_trait]
+impl PanelPage for PathPage {
+    const SLUG: &'static str = "paths";
+
+    fn meta() -> PanelPageMeta {
+        PanelPageMeta::new("Paths").permission("ledger.view_any")
+    }
+
+    fn view() -> PageView {
+        PageView::Script("test/paths")
+    }
+
+    async fn data(ctx: &Ctx) -> AppResult<Value> {
+        Ok(json!({ "path": ctx.page_path() }))
+    }
+}
+
 /// Only for holders of its own permission (declared for `permission:sync`).
 struct ReservedPage;
 
@@ -186,6 +206,7 @@ fn build(config: rustcms_core::Config) -> rustcms_core::AppBuilder {
             .resource::<LedgerResource>()
             .page::<OverviewPage>()
             .page::<ReportPage>()
+            .page::<PathPage>()
             .page::<ReservedPage>()
             .slot::<CategoryAside>()
             .slot::<SecretAside>()
@@ -243,7 +264,7 @@ db_test!(pages_follow_permissions_and_never_probe, |db: TestDb| async move {
     let (app, users) = setup(db).await;
     let editor = app.acting_as(&users.editor).await;
     let slugs: Vec<Value> = pages(&app, &editor).await.as_array().unwrap().iter().map(|p| p["slug"].clone()).collect();
-    assert_eq!(slugs, [json!("overview"), json!("report")], "only pages the editor may open");
+    assert_eq!(slugs, [json!("overview"), json!("report"), json!("paths")], "only pages the editor may open");
     // A page the user may not open, or does not exist: 403 / 404 once they may open some.
     editor.get(&app.admin_api("pages/reserved")).await.assert_status(StatusCode::FORBIDDEN);
     editor.get(&app.admin_api("pages/nope")).await.assert_status(StatusCode::NOT_FOUND);
@@ -549,3 +570,50 @@ fn template_strings_are_listed_for_translation() {
         assert!(missing.contains(&label.to_owned()), "{label}: {missing:?}");
     }
 }
+
+db_test!(sub_pages_get_their_canonical_path_after_the_permissions, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    let editor = app.acting_as(&users.editor).await;
+    let path = |url: &str| {
+        let url = app.admin_api(url);
+        let editor = &editor;
+        async move { editor.get(&url).await }
+    };
+    assert_eq!(path("pages/paths").await.json()["content"]["data"]["path"], json!(""));
+    for (url, expected) in [
+        ("pages/paths/containers/web/logs", "containers/web/logs"),
+        ("pages/paths/containers/web/", "containers/web"),
+        ("pages/paths/a%2Db", "a-b"),
+    ] {
+        let response = path(url).await;
+        response.assert_status(StatusCode::OK);
+        assert_eq!(response.json()["content"]["data"]["path"], json!(expected), "{url}");
+    }
+    for bad in
+        ["pages/paths/a%2Fb", "pages/paths/%2e%2e", "pages/paths/%252e", "pages/paths/a%5Cb", "pages/paths/%C3%28"]
+    {
+        path(bad).await.assert_validation_error("path");
+    }
+    path(&format!("pages/paths/{}", "a/".repeat(17))).await.assert_validation_error("path");
+    // Unknown slugs and missing permissions come first (no probing by sub-path).
+    path("pages/nope/%2e%2e").await.assert_status(StatusCode::NOT_FOUND);
+    let member = app.acting_as(&users.member).await;
+    member.get(&app.admin_api("pages/paths/a%2Fb")).await.assert_status(StatusCode::FORBIDDEN);
+    app.client().get(&app.admin_api("pages/paths/x")).await.assert_status(StatusCode::UNAUTHORIZED);
+});
+
+db_test!(the_panel_lists_the_admin_permissions_the_user_holds, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    let editor = app.acting_as(&users.editor).await.get(&app.admin_api("panel")).await.json();
+    let held: Vec<&str> = editor["permissions"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+    assert!(held.contains(&"ledger.view_any"), "{held:?}");
+    assert!(!held.contains(&"reports.view"), "unheld names are left out: {held:?}");
+    let mut sorted = held.clone();
+    sorted.sort_unstable();
+    assert_eq!(held, sorted);
+    let member = app.acting_as(&users.member).await.get(&app.admin_api("panel")).await.json();
+    assert_eq!(member["permissions"], json!([]));
+    let admin = app.acting_as(&users.admin).await.get(&app.admin_api("panel")).await.json();
+    let all = admin["permissions"].as_array().unwrap();
+    assert!(all.iter().any(|p| p == "reports.view") && all.len() > held.len(), "a super admin: every declared one");
+});

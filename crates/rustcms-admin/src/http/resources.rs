@@ -31,6 +31,14 @@ pub(super) async fn panel(
             navigation.push(resource.info().translated(&ctx));
         }
     }
+    // Declared admin-guard names only: other guards and undeclared or
+    // orphaned grants are never listed.
+    let declared = state.service::<rustcms_auth::AuthState>().map(|auth| auth.permissions.all()).unwrap_or_default();
+    let permissions: Vec<String> = declared
+        .into_keys()
+        .filter(|(guard, name)| guard == rustcms_auth::ADMIN_GUARD && ctx.principal.can(name))
+        .map(|(_, name)| name)
+        .collect();
     Ok(Json(PanelResponse {
         brand: panel.brand.clone(),
         user: PanelUser { id: auth.user.id.to_string(), name: auth.user.name.clone(), email: auth.user.email.clone() },
@@ -38,6 +46,7 @@ pub(super) async fn panel(
         system: crate::system::SystemLinks::of(&ctx.principal),
         settings: panel.settings.links(&ctx),
         pages: crate::custom::links(&panel.custom, &ctx),
+        permissions,
     }))
 }
 

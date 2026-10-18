@@ -1332,7 +1332,13 @@ settings: Array<SettingsLink>,
 /**
  * Custom pages the user may open, in registration order.
  */
-pages: Array<PageLink>, };
+pages: Array<PageLink>, 
+/**
+ * The declared admin-guard permissions the user holds, sorted (every
+ * declared one for a super admin): for showing or hiding controls in
+ * extensions (`can`); the server checks every request.
+ */
+permissions: Array<string>, };
 
 export type DataResponse<T> = { 
 /**

@@ -44,6 +44,10 @@ pub struct PanelResponse {
     pub settings: Vec<crate::settings::SettingsLink>,
     /// Custom pages the user may open, in registration order.
     pub pages: Vec<crate::custom::PageLink>,
+    /// The declared admin-guard permissions the user holds, sorted (every
+    /// declared one for a super admin): for showing or hiding controls in
+    /// extensions (`can`); the server checks every request.
+    pub permissions: Vec<String>,
 }
 
 /// The signed-in user in [`PanelResponse`].

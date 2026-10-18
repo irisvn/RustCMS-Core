@@ -25,6 +25,7 @@ pub use engine::{context, idempotency, registry, wire};
 pub use features::{audit, custom, dashboard, exports, imports, media, queue, rich_text, settings, system};
 pub(crate) use panel::provider;
 pub use panel::spa;
+pub use panel::spa::Requires;
 pub use resources::{action, field, links, policy, resource};
 pub use settings::{SettingField, SettingKind, SettingsMeta, SettingsPage};
 

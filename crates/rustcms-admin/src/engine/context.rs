@@ -36,6 +36,9 @@ pub struct Ctx {
     /// `APP_KEY` and the keys it replaced, for encrypted fields (see
     /// [`Ctx::keyring`]).
     pub keyring: Option<rustcms_core::crypto::Keyring>,
+    /// The sub-path of a custom page (`containers/web` of
+    /// `/p/docker/containers/web`), canonical; empty otherwise.
+    pub page_path: String,
 }
 
 /// A create or update writing row `row` of import `import`: its transaction
@@ -64,6 +67,7 @@ impl Ctx {
             audit_context,
             import_row: None,
             keyring: None,
+            page_path: String::new(),
         }
     }
 
@@ -72,6 +76,13 @@ impl Ctx {
     pub fn with_keyring(mut self, keyring: rustcms_core::crypto::Keyring) -> Self {
         self.keyring = Some(keyring);
         self
+    }
+
+    /// The sub-path of the custom page being drawn, canonical: `""` without
+    /// one. The page's permissions apply to every
+    /// sub-path; check more in `PanelPage::data` if a sub-path needs it.
+    pub fn page_path(&self) -> &str {
+        &self.page_path
     }
 
     /// The keyring, to open or seal `Encrypted` values in hooks and actions.

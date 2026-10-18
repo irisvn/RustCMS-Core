@@ -16,12 +16,19 @@ use crate::policy::ability;
 /// Every custom-page route as `(method, path)`.
 pub(crate) fn routes(admin_path: &str) -> Vec<(Method, String)> {
     let base = format!("{}/api", admin_path.trim_end_matches('/'));
-    vec![(Method::GET, format!("{base}/pages/{{slug}}")), (Method::GET, format!("{base}/slots"))]
+    vec![
+        (Method::GET, format!("{base}/pages/{{slug}}")),
+        (Method::GET, format!("{base}/pages/{{slug}}/{{*path}}")),
+        (Method::GET, format!("{base}/slots")),
+    ]
 }
 
 pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppState> {
     let base = format!("{}/api", admin_path.trim_end_matches('/'));
-    router.route(&format!("{base}/pages/{{slug}}"), get(page)).route(&format!("{base}/slots"), get(slots))
+    router
+        .route(&format!("{base}/pages/{{slug}}"), get(page))
+        .route(&format!("{base}/pages/{{slug}}/{{*path}}"), get(sub_page))
+        .route(&format!("{base}/slots"), get(slots))
 }
 
 /// A custom page in the navigation.
@@ -143,7 +150,33 @@ async fn page(
     AdminCtx(ctx): AdminCtx,
     Path(slug): Path<String>,
 ) -> AppResult<Json<CustomPageResponse>> {
-    let custom = custom(&state)?;
+    serve_page(&state, ctx, slug, None).await
+}
+
+/// `GET pages/{slug}/{*path}`: the same, for a sub-page. The sub-path is read
+/// from the raw request path (never axum's decoded one) and checked after the
+/// page's permissions (400 when it is not one).
+async fn sub_page(
+    State(state): State<AppState>,
+    AdminCtx(ctx): AdminCtx,
+    // Raw, without axum's path extractors: they decode (and refuse invalid
+    // UTF-8) before the permissions are checked.
+    axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
+) -> AppResult<Json<CustomPageResponse>> {
+    let auth = state.service::<rustcms_auth::AuthState>().ok_or_else(|| AppError::internal("AuthProvider missing"))?;
+    let prefix = format!("{}/api/pages/", auth.config.admin_path.trim_end_matches('/'));
+    let rest = uri.path().strip_prefix(&prefix).ok_or(AppError::NotFound)?;
+    let (slug, path) = rest.split_once('/').unwrap_or((rest, ""));
+    serve_page(&state, ctx, slug.to_owned(), Some(path.to_owned())).await
+}
+
+async fn serve_page(
+    state: &AppState,
+    mut ctx: Ctx,
+    slug: String,
+    raw_path: Option<String>,
+) -> AppResult<Json<CustomPageResponse>> {
+    let custom = custom(state)?;
     let any = custom.pages.iter().any(|p| allowed(&ctx, &p.meta().permissions));
     let page = match custom.pages.iter().find(|p| p.slug() == slug) {
         Some(page) if allowed(&ctx, &page.meta().permissions) => page.clone(),
@@ -151,6 +184,9 @@ async fn page(
         None if any => return Err(AppError::NotFound),
         None => return Err(AppError::Forbidden),
     };
+    if let Some(raw) = raw_path {
+        ctx.page_path = super::subpath::canonical(&raw).ok_or_else(|| ValidationErrors::field("path", "is invalid"))?;
+    }
     let data = page.data(&ctx).await?;
     let content = draw(&custom, &ctx, &format!("page:{slug}"), page.view(), data)?;
     Ok(Json(CustomPageResponse { slug, title: ctx.t(&page.meta().label), content }))

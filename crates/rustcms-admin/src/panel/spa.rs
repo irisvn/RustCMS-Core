@@ -69,6 +69,22 @@ pub struct Extension {
     pub(crate) style: bool,
     pub(crate) content_type: &'static str,
     pub(crate) body: std::borrow::Cow<'static, [u8]>,
+    /// A v2 script's requirements (checked before it runs).
+    pub(crate) requires: Option<Requires>,
+}
+
+/// What a v2 extension script needs from the panel (ADR 0032), checked
+/// before the script runs: `react` and `react_query` as `"major.minor"`
+/// (the panel must have the same major and at least that minor), `ui` the
+/// UI module's version exactly. The host API version is 2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Requires {
+    /// React, `"19.3"`.
+    pub react: &'static str,
+    /// React Query, `"5.104"`.
+    pub react_query: &'static str,
+    /// The `ui` module, `1`.
+    pub ui: u32,
 }
 
 impl Extension {
@@ -106,7 +122,7 @@ impl Extension {
         );
         use sha2::Digest;
         let hash = hex::encode(sha2::Sha256::digest(&body));
-        Self { file: format!("{name}.{}.{extension}", &hash[..8]), style: false, content_type, body }
+        Self { file: format!("{name}.{}.{extension}", &hash[..8]), style: false, content_type, body, requires: None }
     }
 
     pub(crate) fn is_script(&self) -> bool {
@@ -140,12 +156,14 @@ pub(crate) fn router(
     locales: &Locales,
     theme: &ThemeConfig,
     csp: &str,
+    extension_timeout: std::time::Duration,
 ) -> Router<AppState> {
     let csp = HeaderValue::from_str(csp).expect("a header-safe policy");
     // `admin_path` is normalized by the auth config (`/admin`, never `/`).
     let base = admin_path.trim_end_matches('/').to_owned();
     let index: Arc<str> =
-        render_index(Assets::get("index.html").map(|f| f.data), &base, &extensions, locales, theme).into();
+        render_index(Assets::get("index.html").map(|f| f.data), &base, &extensions, locales, theme, extension_timeout)
+            .into();
     let (root, slash) = (index.clone(), index.clone());
     let (csp_page, csp_slash, csp_root) = (csp.clone(), csp.clone(), csp);
     router
@@ -243,6 +261,7 @@ fn render_index(
     extensions: &[Extension],
     locales: &Locales,
     theme: &ThemeConfig,
+    extension_timeout: std::time::Duration,
 ) -> String {
     let Some(template) = template else {
         return PLACEHOLDER.to_owned();
@@ -257,7 +276,21 @@ fn render_index(
         config["signIn"] = serde_json::json!({ "passwordReset": locales.password_reset, "remember": locales.remember });
     }
     if !scripts.is_empty() || !styles.is_empty() {
-        config["extensions"] = serde_json::json!({ "scripts": scripts, "styles": styles });
+        // v2 scripts: what each needs, checked before it is inserted.
+        let v2: serde_json::Map<String, serde_json::Value> = extensions
+            .iter()
+            .filter(|e| e.is_script())
+            .filter_map(|e| {
+                let r = e.requires?;
+                Some((
+                    format!("assets/ext/{}", e.file),
+                    serde_json::json!({ "api": 2, "react": r.react, "reactQuery": r.react_query, "ui": r.ui }),
+                ))
+            })
+            .collect();
+        let timeout = u64::try_from(extension_timeout.as_millis()).unwrap_or(u64::MAX);
+        config["extensions"] =
+            serde_json::json!({ "scripts": scripts, "styles": styles, "v2": v2, "timeoutMs": timeout });
     }
     let mut look = serde_json::json!({ "colorScheme": if theme.scheme.is_empty() { "system" } else { theme.scheme } });
     if let Some(logo) = &theme.logo {
@@ -287,6 +320,8 @@ fn escape_attr(value: &str) -> String {
 mod tests {
     use super::*;
 
+    const TEN: std::time::Duration = std::time::Duration::from_secs(10);
+
     fn en() -> Locales {
         Locales { default: "en".into(), all: vec!["en".into(), "vi".into()], password_reset: false, remember: false }
     }
@@ -309,15 +344,16 @@ mod tests {
     #[test]
     fn index_gets_base_and_escaped_config() {
         let template = b"<head><!-- rustcms:config --><script src=\"./assets/a.js\"></script></head>";
-        let html = render_index(Some(template.as_slice().into()), "/back-office", &[], &en(), &ThemeConfig::default());
+        let html =
+            render_index(Some(template.as_slice().into()), "/back-office", &[], &en(), &ThemeConfig::default(), TEN);
         assert_eq!(
             html,
             "<head><base href=\"/back-office/\"><meta name=\"rustcms-admin\" \
              content=\"{&quot;basePath&quot;:&quot;/back-office&quot;,&quot;locale&quot;:&quot;en&quot;,&quot;locales&quot;:[&quot;en&quot;,&quot;vi&quot;],&quot;theme&quot;:{&quot;colorScheme&quot;:&quot;system&quot;}}\"><link rel=\"icon\" href=\"data:,\"><script src=\"./assets/a.js\"></script></head>"
         );
-        assert!(render_index(None, "/admin", &[], &en(), &ThemeConfig::default()).contains("not built"));
+        assert!(render_index(None, "/admin", &[], &en(), &ThemeConfig::default(), TEN).contains("not built"));
         let ext = [Extension::new("acme", "x", false), Extension::new("acme", "y", true)];
-        let html = render_index(Some(template.as_slice().into()), "/admin", &ext, &en(), &ThemeConfig::default());
+        let html = render_index(Some(template.as_slice().into()), "/admin", &ext, &en(), &ThemeConfig::default(), TEN);
         assert!(html.contains("&quot;scripts&quot;:[&quot;assets/ext/acme.2d711642.js&quot;]"), "{html}");
         assert_eq!(escape_attr("\"'<&>"), "&quot;&#39;&lt;&amp;&gt;");
     }
