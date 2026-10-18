@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-18
+
 ### Changed (tooling)
 - Test servers (docker compose PostgreSQL and MySQL) keep their data in
   memory and never fsync: the test matrix runs in 158 s instead of 360 s

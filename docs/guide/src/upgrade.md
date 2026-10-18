@@ -29,6 +29,24 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.3.2 to 0.4.0
+
+`rustcms self-update`, then `rustcms upgrade` in each application. Nothing
+needs to change in your code.
+
+- New `[realtime]` keys, all optional: `socket_revalidate_secs`,
+  `max_message_bytes`, `send_timeout_secs`
+  ([Configuration](getting-started/configuration.md)). The other keys already
+  existed.
+- The admin page's CSP now also lists `ws(s)://` for the panel's origins in
+  `connect-src`. A test that compares the header with
+  `rustcms::admin::spa::CONTENT_SECURITY_POLICY` should use
+  `content_security_policy(&origins)` instead.
+- `{admin}/api/x` belongs to your `AdminRoutes`: nothing built in lives
+  there.
+- Behind a proxy, if you add WebSocket routes, see the
+  [production checklist](security/production.md).
+
 ## From 0.3.1 to 0.3.2
 
 Only the command changed (new `doctor`, `upgrade`, `self-update`, `docs`).

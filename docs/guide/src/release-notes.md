@@ -1,7 +1,41 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.3.0** ("LMS-ready
-admin"); 0.1.0-alpha.0 was the first published one.
+RustCMS is in pre-release. The current version is **0.4.0** ("panel
+platform"); 0.1.0-alpha.0 was the first published one.
+
+## 0.4.0
+
+- **Admin routes**: JSON routes for your own panel pages under
+  `{admin}/api/x`, on the admin session, each with a declared
+  `AdminAccess` checked before extractors (`AdminRoutes`,
+  `AuthProvider::admin_permissions`); `assert_access` tests every route
+  against a table of actors ([Admin routes](admin/admin-routes.md)).
+- **Server-sent events**: `AdminRoutes::events` streams live data to a
+  page.
+  - It is rechecked while open: the session, the user, the permissions and a
+    per-target check.
+  - Limits are per user and per instance, slow clients are dropped, and
+    streams end cleanly on shutdown.
+  - A process-local `Hub` shares one producer between viewers, with `resync`
+    when a viewer falls behind.
+  - Script pages read streams with `ctx.realtime.events`
+    ([Realtime](admin/realtime.md)).
+- **WebSocket**: `AdminRoutes::socket` for terminals and consoles.
+  - Admission: the exact `Origin` and the session's CSRF token as a
+    subprotocol.
+  - A supervised, rechecked socket with bounded queues both ways.
+  - `AdminSocket::authorize()` checks a command when it runs.
+  - Script pages use `ctx.realtime.socket`
+    ([Realtime](admin/realtime.md#websocket)).
+- **Content Security Policy**: unchanged, except that `connect-src` also
+  names the panel's own `ws(s)://` origins.
+- **Secrets from files**: every variable also reads `<VAR>_FILE` (Docker
+  and Kubernetes secrets) ([Configuration](getting-started/configuration.md)).
+- **Testing**: `TestApp::new` takes a closure, so tests can bind doubles.
+  `RUSTCMS_TEST_BACKENDS` picks the databases, and `TestClient::socket`
+  opens WebSocket connections ([Testing](basics/testing.md)).
+- **Tooling**: the test servers run in memory (the matrix is about twice as
+  fast), and `just test-fast` runs every test on SQLite only.
 
 ## 0.3.0
 
