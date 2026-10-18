@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-10-18
+
 ### Added (0.4.1 — W4)
 - The scheduler (ADR 0031): `AppBuilder::schedule`, with `Schedule::every`
   and `Schedule::cron` (UTC, five fields) and the actions `.job(make)` and

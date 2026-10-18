@@ -1,7 +1,33 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.4.0** ("panel
-platform"); 0.1.0-alpha.0 was the first published one.
+RustCMS is in pre-release. The current version is **0.4.1**; 0.1.0-alpha.0
+was the first published one.
+
+## 0.4.1
+
+- **Encrypted columns**: `rustcms::crypto::Encrypted<T>` keeps secrets of your
+  own tables (tokens, environment variables, credentials) sealed with
+  `APP_KEY`, bound to their table and column.
+  - Values are never serialized, logged or deserialized from JSON; you
+    `seal` and `open` them explicitly
+    ([Encrypted columns](digging-deeper/encryption.md)).
+- **Key rotation**: `APP_PREVIOUS_KEYS` keeps old keys for opening only, and
+  `rustcms key:reencrypt` moves every encrypted column and settings secret
+  to the new key, safely and resumably
+  ([Rotating APP_KEY](operations/app-key.md)).
+- **Encrypted fields in the panel**: `Field::encrypted()` (a secret string)
+  and `Field::encrypted_map()` (named secrets).
+  - Write-only: the panel shows names and states, never values.
+  - Each value is kept, replaced or removed; a save over someone else's
+    change is refused.
+  - Always redacted in the audit log
+    ([Forms](admin/forms.md#encrypted-fields)).
+- **Scheduling**: `AppBuilder::schedule` runs periodic work every N seconds
+  or on a cron (UTC), as queue jobs or in the process.
+  - Each slot runs once across all instances, with or without Redis, and
+    `.without_overlapping()` is available.
+  - Only `serve` runs schedules; `schedule:list` and `schedule:run`
+    ([Scheduling](digging-deeper/scheduling.md)).
 
 ## 0.4.0
 
