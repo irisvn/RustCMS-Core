@@ -18,18 +18,25 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
     SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// The built command: where nextest put it when run from an archive (CI),
+/// else where cargo built it.
+fn command() -> PathBuf {
+    std::env::var_os("NEXTEST_BIN_EXE_rustcms")
+        .map_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_rustcms")), PathBuf::from)
+}
+
 /// `<root>/bin/rustcms` (a copy of the built command) and `<root>/install.json`.
 fn installed(root: &Path) -> PathBuf {
     let bin = root.join("bin/rustcms");
     std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
-    std::fs::copy(env!("CARGO_BIN_EXE_rustcms"), &bin).unwrap();
+    std::fs::copy(command(), &bin).unwrap();
     std::fs::write(root.join("install.json"), r#"{"version":"v0.0.0","installer":"install.sh"}"#).unwrap();
     bin
 }
 
 /// The target in `rustcms 0.3.1 (aarch64-apple-darwin)`.
 fn target() -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_rustcms")).arg("--version").output().unwrap();
+    let out = Command::new(command()).arg("--version").output().unwrap();
     let text = String::from_utf8(out.stdout).unwrap();
     text.split('(').nth(1).unwrap().trim_end().trim_end_matches(')').to_owned()
 }
