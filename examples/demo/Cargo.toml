@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [package.metadata.rustcms]
-version = "0.4.1"
+version = "0.5.0"
 
 [dependencies]
 rustcms = { path = "../../crates/rustcms" }

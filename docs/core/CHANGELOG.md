@@ -6,7 +6,9 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
-### Added (W5)
+## [0.5.0] — 2026-10-18
+
+### Added (0.5.0 — W5)
 - Extension host API v2 (ADR 0032): React pages, slots and cells rendered
   inside the panel, on its React, React Query, UI kit, theme and router.
   - `AdminProvider::extension_script_v2(name, js, Requires { … })`: the

@@ -1,7 +1,23 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.4.1**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.5.0**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.5.0
+
+- **React pages**: a page, slot or cell can be a React component rendered
+  inside the panel, on its React, React Query, UI kit, theme and router
+  (`extension_script_v2`, `rustcms make:page <Name> --react`).
+  - Props carry the page data, the sub-path, `can(permission)`, an API
+    client with the session and CSRF token, and realtime streams; hooks
+    `useAdminQuery`, `useAdminMutation`, `useEvents`, `useSocket`.
+  - A bundle built for another React or UI version is refused before it
+    runs; a view that throws shows Retry; the CSP is unchanged.
+  - Built files are committed, so building the app needs no Node
+    ([React pages](admin/react-pages.md)).
+- **Sub-pages**: `/admin/p/<slug>/<sub/path>` opens the same page, with
+  `ctx.page_path()` in `data`.
+- Plain script extensions (v1) work as before.
 
 ## 0.4.1
 
