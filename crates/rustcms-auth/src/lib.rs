@@ -33,6 +33,6 @@ pub use http::admin_routes::{AdminAccess, AdminRoutes};
 pub use http::api::{Access, ApiRoutes, Throttle};
 pub use provider::{AuthProvider, BUILT_IN_PERMISSIONS};
 pub use rbac::{Actor, Grants, NewUser, PermissionResolver, RbacService};
-pub use realtime::{EventStream, LiveSession, RealtimeConfig};
+pub use realtime::{EventStream, LiveSession, RealtimeConfig, TargetFuture};
 pub use session::Session;
 pub use state::{ADMIN_GUARD, API_GUARD, AuthState, Gate, PermissionRegistry};

@@ -12,6 +12,9 @@ All notable changes are documented here. The format follows
 - inout 0.2.2 (aes-gcm's dependency): 0.2.3 was yanked.
 
 ### Added (0.4 — W2a, W3)
+- `Event::resync()`: a producer asks pages to reload (as the hub does for a
+  subscriber that fell behind); `rustcms::auth::TargetFuture` for reusable
+  target checks. From rust-panel's integration feedback.
 - Server-sent events on admin routes (ADR 0027): `AdminRoutes::events`,
   `LiveSession`, `EventStream::target`.
   - Admission on the panel's own origin without a CSRF token.

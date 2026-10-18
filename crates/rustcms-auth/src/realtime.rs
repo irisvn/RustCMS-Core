@@ -285,7 +285,21 @@ impl Closed {
     }
 }
 
-type TargetCheck = Arc<dyn Fn(Principal) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send>> + Send + Sync>;
+/// What a target check returns, boxed: for a check written once and reused
+/// by several streams.
+///
+/// ```rust,ignore
+/// fn sees_container(docker: Docker, id: String) -> impl Fn(Principal) -> TargetFuture + Send + Sync + 'static {
+///     move |principal| {
+///         let (docker, id) = (docker.clone(), id.clone());
+///         Box::pin(async move { docker.authorize(&principal, &id).await })
+///     }
+/// }
+/// // live.stream(events).target(sees_container(docker, id))
+/// ```
+pub type TargetFuture = Pin<Box<dyn Future<Output = AppResult<()>> + Send>>;
+
+type TargetCheck = Arc<dyn Fn(Principal) -> TargetFuture + Send + Sync>;
 
 impl LiveSession {
     /// The user's principal when the stream was opened.

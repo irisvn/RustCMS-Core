@@ -46,6 +46,20 @@ pub async fn stats(live: LiveSession, Path(id): Path<String>, Inject(docker): In
   event and at every recheck; `Err(Forbidden)` or `Err(NotFound)` ends the
   stream. The route's `AdminAccess` gates the route, while `target` decides
   for this container, site or record.
+- A check written once for several streams returns a `TargetFuture` (a
+  boxed future):
+
+  ```rust,ignore
+  use rustcms::auth::TargetFuture;
+
+  fn sees_container(docker: Docker, id: String) -> impl Fn(Principal) -> TargetFuture + Send + Sync + 'static {
+      move |principal| {
+          let (docker, id) = (docker.clone(), id.clone());
+          Box::pin(async move { docker.authorize(&principal, &id).await })
+      }
+  }
+  // live.stream(events).target(sees_container(docker, id))
+  ```
 - A stream must not change anything. Use a POST route for that.
 - `rustcms::realtime` re-exports what producers need: `stream`
   (`unfold`, `once`, `iter`), `StreamExt` (`.chain`, `.map`) and `time`
@@ -68,7 +82,9 @@ Ok(live.stream(subscription.into_events()).target(/* … */))
 - `hub.publish(&key, event)` sends to current subscribers, for example after
   a POST changed something.
 - A viewer that falls behind gets `event: resync`: reload what the page
-  shows.
+  shows. A producer whose own source lost events (an upstream broadcast
+  that lagged, a reconnect to the source) yields `Event::resync()`, so pages
+  handle both the same way.
 - The hub knows no users. A key must hold everything that decides its data
   (`container:<id>`). Never share a key between users who should see
   different data.

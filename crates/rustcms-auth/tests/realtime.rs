@@ -5,12 +5,15 @@
 mod support;
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use axum::extract::Path;
 use rustcms_auth::entities::session as session_entity;
-use rustcms_auth::{ADMIN_GUARD, Actor, AdminAccess, AdminRoutes, AuthState, EventStream, LiveSession, RbacService};
+use rustcms_auth::{
+    ADMIN_GUARD, Actor, AdminAccess, AdminRoutes, AuthState, EventStream, LiveSession, RbacService, TargetFuture,
+};
 use rustcms_core::realtime::Event;
 use rustcms_core::{AppBuilder, AppError, AppResult, AppState, Config, Inject};
 use rustcms_migration::Migrator;
@@ -23,16 +26,23 @@ use tokio::net::TcpStream;
 /// Whether the stream's target may still be seen (the per-target check).
 struct Visible(AtomicBool);
 
+/// A target check written once, reused by any stream (`TargetFuture`).
+fn while_visible(visible: Arc<Visible>) -> impl Fn(rustcms_core::Principal) -> TargetFuture + Send + Sync + 'static {
+    move |_principal| {
+        let visible = visible.clone();
+        Box::pin(async move { if visible.0.load(Ordering::SeqCst) { Ok(()) } else { Err(AppError::Forbidden) } })
+    }
+}
+
 async fn ticks(live: LiveSession, Path(id): Path<String>, Inject(visible): Inject<Visible>) -> AppResult<EventStream> {
     let ticks = futures::stream::unfold(0u64, move |n| async move {
         tokio::time::sleep(Duration::from_millis(100)).await;
-        Some((Event::json("tick", &n).unwrap(), n + 1))
+        // Every fifth, as a producer that lost events upstream would.
+        let event = if n % 5 == 4 { Event::resync() } else { Event::json("tick", &n).unwrap() };
+        Some((event, n + 1))
     });
     let _ = id;
-    Ok(live.stream(ticks).target(move |_principal| {
-        let visible = visible.clone();
-        async move { if visible.0.load(Ordering::SeqCst) { Ok(()) } else { Err(AppError::Forbidden) } }
-    }))
+    Ok(live.stream(ticks).target(while_visible(visible)))
 }
 
 async fn silent(live: LiveSession) -> AppResult<EventStream> {
@@ -227,7 +237,13 @@ db_test!(admission_needs_the_panels_own_origin_and_the_permission, migrate = Mig
         last = stream.next(Duration::from_secs(2)).await;
         assert!(last.is_some(), "the stream stopped");
     }
-    assert_eq!(last.unwrap().0, "tick");
+    assert!(last.is_some());
+    // A producer's own resync reaches the page as `event: resync`.
+    let mut names = Vec::new();
+    for _ in 0..6 {
+        names.push(stream.next(Duration::from_secs(2)).await.unwrap().0);
+    }
+    assert!(names.contains(&"resync".to_owned()) && names.contains(&"tick".to_owned()), "{names:?}");
 });
 
 db_test!(an_open_stream_stops_when_access_ends, migrate = Migrator, |db: TestDb| async move {

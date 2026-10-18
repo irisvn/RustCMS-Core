@@ -118,6 +118,13 @@ impl Event {
         Ok(Self { name: name.to_owned(), data: data.into() })
     }
 
+    /// `event: resync`: the page reloads what it shows. The hub sends it to a
+    /// subscriber that fell behind; a producer yields it when its own source
+    /// lost events (an upstream broadcast that lagged, a reconnect).
+    pub fn resync() -> Self {
+        Self { name: "resync".to_owned(), data: "{}".into() }
+    }
+
     /// The event's name.
     pub fn name(&self) -> &str {
         &self.name
@@ -448,6 +455,7 @@ mod tests {
         let ok = Event::json("container.stats", &serde_json::json!({"cpu": 1})).unwrap();
         assert_eq!((ok.name(), ok.data()), ("container.stats", r#"{"cpu":1}"#));
         assert!(Event::json("Bad Name", &1).is_err());
+        assert_eq!((Event::resync().name(), Event::resync().data()), ("resync", "{}"));
         assert!(Event::json("", &1).is_err());
         let big = "x".repeat(MAX_EVENT_BYTES);
         let err = Event::json("big", &big).unwrap_err().to_string();
