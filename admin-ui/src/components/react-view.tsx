@@ -95,10 +95,14 @@ function Instance({ component, place, data, record, props, reload, epoch }: View
   const permissions = panel.data && !panel.isPlaceholderData ? panel.data.permissions : undefined;
   const namespace = namespaceOf(place);
   const api: ExtensionApi = useMemo(() => extensionApi(session, mount, namespace), [session, mount, namespace]);
-  const built = useMemo(() => {
-    const guard = <A extends unknown[]>(f: (...args: A) => void) => (...args: A) => {
+  const guard = useCallback(
+    <A extends unknown[]>(f: (...args: A) => void) => (...args: A) => {
       if (live()) f(...args);
-    };
+    },
+    [live],
+  );
+  // Stable for the instance: hooks keyed on it never reopen their streams.
+  const realtime = useMemo(() => {
     // A throwing extension handler is logged; the stream goes on.
     const safe = <H extends object>(handlers: H): H =>
       Object.fromEntries(
@@ -125,7 +129,7 @@ function Instance({ component, place, data, record, props, reload, epoch }: View
       };
       return { ...handle, close } as T;
     };
-    const realtime = Object.freeze({
+    return Object.freeze({
       events: (path: string, handlers: EventsHandlers): EventsHandle => {
         if (!live()) return { close() {} };
         return track(() => openEvents(session.api, path, safe(handlers)));
@@ -135,6 +139,8 @@ function Instance({ component, place, data, record, props, reload, epoch }: View
         return track(() => openSocket(session.api, path, safe(handlers), { reconnect: options?.reconnect === true }));
       },
     });
+  }, [live, mount, session]);
+  const built = useMemo(() => {
     const common = {
       locale,
       t: translateExtension,
@@ -174,7 +180,7 @@ function Instance({ component, place, data, record, props, reload, epoch }: View
       case "cell":
         return { ...common, value: copy(data), record: copy(record), props: copy(props) };
     }
-  }, [place, data, record, props, reload, locale, namespace, mount, permissions, searchStr, api, live, navigate, session]);
+  }, [place, data, record, props, reload, locale, namespace, mount, permissions, searchStr, api, live, navigate, guard, realtime]);
   const View = component as ComponentType<typeof built>;
   return <View {...built} />;
 }

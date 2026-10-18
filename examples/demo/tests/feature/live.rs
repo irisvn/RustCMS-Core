@@ -33,6 +33,10 @@ db_test!(only_allowed_users_reach_the_live_routes, migrate = Migrator, |db: Test
                 .expect("visitor", &visitor, StatusCode::UNAUTHORIZED)
                 .expect("editor", &editor, StatusCode::FORBIDDEN)
                 .expect("admin", &admin, StatusCode::BAD_REQUEST),
+            Case::new(Method::GET, "/demo/hello")
+                .expect("visitor", &visitor, StatusCode::UNAUTHORIZED)
+                .expect("editor", &editor, StatusCode::FORBIDDEN)
+                .expect("admin", &admin, StatusCode::OK),
             Case::new(Method::POST, "/demo/ticks/reset")
                 .expect("visitor", &visitor, StatusCode::UNAUTHORIZED)
                 .expect("editor", &editor, StatusCode::FORBIDDEN)

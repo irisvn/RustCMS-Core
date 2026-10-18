@@ -39,3 +39,8 @@ pub async fn echo(live: LiveSocket) -> SocketResponse {
         }
     })
 }
+
+/// `GET /admin/api/x/demo/hello`: read by the React demo page (`useAdminQuery`).
+pub async fn hello() -> Json<serde_json::Value> {
+    Json(json!({ "message": "Hello from AdminRoutes" }))
+}

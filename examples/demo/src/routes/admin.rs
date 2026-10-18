@@ -10,4 +10,5 @@ pub fn routes() -> AdminRoutes {
         .events("/ticks", AdminAccess::can("demo.live"), live_controller::ticks)
         .post("/ticks/reset", AdminAccess::can("demo.live"), live_controller::reset)
         .socket("/echo", AdminAccess::can("demo.live"), live_controller::echo)
+        .get("/hello", AdminAccess::can("demo.live"), live_controller::hello)
 }

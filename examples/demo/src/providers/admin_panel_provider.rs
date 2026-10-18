@@ -1,6 +1,7 @@
 //! The admin panel at `/admin` (like a Filament panel provider): its
 //! resources (`rustcms make:resource`), pages (`make:settings`) and labels.
 
+use rustcms::admin::Requires;
 use rustcms::prelude::*;
 
 use crate::admin::resources::{
@@ -31,6 +32,7 @@ pub fn provider() -> AdminProvider {
         )
         .page::<crate::admin::pages::post_stats_page::PostStatsPage>()
         .page::<crate::admin::pages::live_page::LivePage>()
+        .page::<crate::admin::pages::react_page::ReactPage>()
         // rustcms:pages
         .slot::<crate::admin::slots::post_summary_slot::PostSummarySlot>()
         // The `demo/color` widget of the category form.
@@ -38,6 +40,13 @@ pub fn provider() -> AdminProvider {
         .extension_style("demo-color", include_str!("../../resources/admin/css/demo/color.css"))
         // The live page (`LivePage`, server-sent events).
         .extension_script("demo-live", include_str!("../../resources/admin/js/demo/live.js"))
+        // The React demo page (v2, built by `npm run build` in resources/admin).
+        .extension_script_v2(
+            "demo-react",
+            include_str!("../../resources/admin/js/demo/react.js"),
+            Requires { react: "19.3", react_query: "5.104", ui: 1 },
+        )
+        .extension_style("demo-react", include_str!("../../resources/admin/css/demo/react.css"))
         // rustcms:extensions
         // Vietnamese labels (`cargo run -- lang:missing vi` lists what is missing).
         .translations("vi", include_str!("../../lang/vi.toml"))
