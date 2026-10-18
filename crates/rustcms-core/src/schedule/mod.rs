@@ -285,7 +285,8 @@ impl Default for ScheduleConfig {
 impl ScheduleConfig {
     /// The `[schedule]` section, validated.
     pub fn of(config: &crate::Config) -> anyhow::Result<Self> {
-        let section: Self = config.section("schedule").unwrap_or_default();
+        // An absent section is the defaults; a malformed one is an error.
+        let section: Self = config.section("schedule").map_err(|e| anyhow::anyhow!("invalid [schedule]: {e}"))?;
         anyhow::ensure!((1..=300).contains(&section.grace_secs), "schedule.grace_secs must be 1 to 300");
         Ok(section)
     }
@@ -392,7 +393,7 @@ pub mod testing {
         let schedules = state.service::<Schedules>().expect("schedules");
         let schedule = schedules.get(name).expect("a registered schedule").clone();
         claim::ensure_state(state.db(), name).await?;
-        claim::claim(state, &schedule, slot, grace, &SystemClock, &uuid::Uuid::now_v7().to_string()).await
+        claim::claim(state, &schedule, slot, grace, &SystemClock, &tokio_util::sync::CancellationToken::new()).await
     }
 
     /// Prunes claims older than `before`.

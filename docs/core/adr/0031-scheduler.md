@@ -47,8 +47,12 @@ unless Redis was configured.
      `active_job_id` is a job still pending or running.
   5. For `.job`, dispatch the job in the same transaction and record its id.
   6. Commit.
-  - Transient failures are retried with the same slot while within the
-    grace. An ambiguous commit is resolved by reading the claim row.
+  - A failed or timed-out attempt is retried with the same slot while within
+    the grace and not stopping. Each claim call carries its own token (stored
+    in the claim row and kept across its retries), and every failure is first
+    reconciled from the row: only a row with this call's token counts as its
+    own commit. A revisited slot, after the clock went back, therefore never
+    runs twice.
 - **Guarantee:** at most one committed enqueue (or `.run` invocation) per slot
   while its claim is kept. Jobs still run at least once, as queue jobs do. A
   crash after the commit leaves the job, which is durable; a `.run` can be

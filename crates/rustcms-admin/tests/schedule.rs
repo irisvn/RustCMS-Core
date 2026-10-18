@@ -201,6 +201,36 @@ db_test!(old_claims_are_pruned, |db: TestDb| async move {
     assert_eq!(schedule_slot::Entity::find().count(app.state().db()).await.unwrap(), 1);
 });
 
+db_test!(pruning_handles_more_than_a_batch, |db: TestDb| async move {
+    let app = app(db).await;
+    let now = Utc.timestamp_opt(Utc::now().timestamp(), 0).unwrap();
+    let old = now - chrono::Duration::days(10);
+    let rows: Vec<schedule_slot::ActiveModel> = (0..1200)
+        .map(|n| schedule_slot::ActiveModel {
+            name: Set("tick".into()),
+            slot_at: Set(old - chrono::Duration::seconds(n)),
+            claimed_at: Set(old),
+            instance: Set("old".into()),
+            job_id: Set(None),
+        })
+        .collect();
+    for chunk in rows.chunks(200) {
+        schedule_slot::Entity::insert_many(chunk.to_vec()).exec_without_returning(app.state().db()).await.unwrap();
+    }
+    assert_eq!(testing::prune(app.state(), now - chrono::Duration::days(7)).await.unwrap(), 1200);
+    assert_eq!(schedule_slot::Entity::find().count(app.state().db()).await.unwrap(), 0);
+});
+
+#[test]
+fn a_malformed_schedule_section_is_an_error() {
+    let config = rustcms_testing::test_config("sqlite::memory:").with("schedule.grace_secs", "soon").unwrap();
+    assert!(rustcms_core::schedule::ScheduleConfig::of(&config).is_err());
+    let config = rustcms_testing::test_config("sqlite::memory:").with("schedule.grace_secs", 0).unwrap();
+    assert!(rustcms_core::schedule::ScheduleConfig::of(&config).is_err());
+    let config = rustcms_testing::test_config("sqlite::memory:");
+    assert!(rustcms_core::schedule::ScheduleConfig::of(&config).unwrap().enabled);
+}
+
 db_test!(schedule_run_enqueues_without_a_claim, |db: TestDb| async move {
     let app = app(db).await;
     let args = ScheduleRun.definition().get_matches_from(["schedule:run", "tick"]);

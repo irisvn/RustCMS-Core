@@ -67,12 +67,11 @@ pub(crate) fn start_with(
 ) -> Scheduler {
     let cancel = CancellationToken::new();
     let mut tasks = JoinSet::new();
-    let instance = uuid::Uuid::now_v7().to_string();
     let slot_grace = Duration::from_secs(config.grace_secs);
     for schedule in schedules {
-        let (state, cancel, clock, instance) = (state.clone(), cancel.clone(), clock.clone(), instance.clone());
+        let (state, cancel, clock) = (state.clone(), cancel.clone(), clock.clone());
         tasks.spawn(async move {
-            run_schedule(state, schedule, slot_grace, shutdown_grace, clock, instance, cancel).await;
+            run_schedule(state, schedule, slot_grace, shutdown_grace, clock, cancel).await;
         });
     }
     let (state, prune_cancel) = (state.clone(), cancel.clone());
@@ -101,13 +100,18 @@ async fn run_schedule(
     grace: Duration,
     shutdown_grace: Duration,
     clock: Arc<dyn Clock>,
-    instance: String,
     cancel: CancellationToken,
 ) {
     let name = schedule.name.clone();
-    if let Err(err) = claim::ensure_state(state.db(), &name).await {
-        tracing::error!(schedule = %name, %err, "schedule state unavailable; the schedule will not run");
-        return;
+    // The state row, retried with backoff (a busy or unreachable database at start).
+    let mut wait = Duration::from_secs(1);
+    while let Err(err) = claim::ensure_state(state.db(), &name).await {
+        tracing::warn!(schedule = %name, %err, "schedule state unavailable; retrying");
+        tokio::select! {
+            () = cancel.cancelled() => return,
+            () = tokio::time::sleep(wait) => {}
+        }
+        wait = (wait * 2).min(MAX_SLEEP);
     }
     // Runs of this schedule: aborted when this task is (the owner dropped).
     let mut runs: JoinSet<()> = JoinSet::new();
@@ -142,10 +146,11 @@ async fn run_schedule(
             tracing::info!(schedule = %name, %slot, "previous run still in progress: slot skipped");
             continue;
         }
-        match claim::claim(&state, &schedule, slot, grace, clock.as_ref(), &instance).await {
+        match claim::claim(&state, &schedule, slot, grace, clock.as_ref(), &cancel).await {
             Ok(Claimed::Mine(job)) => {
                 tracing::debug!(schedule = %name, %slot, ?job, "slot claimed");
-                if let Some(Action::Run(run)) = &schedule.action {
+                // Claimed as the stop came: the slot is spent, nothing new starts.
+                if let Some(Action::Run(run)) = schedule.action.as_ref().filter(|_| !cancel.is_cancelled()) {
                     let (run, state, name) = (run.clone(), state.clone(), name.clone());
                     runs.spawn(async move {
                         let outcome =

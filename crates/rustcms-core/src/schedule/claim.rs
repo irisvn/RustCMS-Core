@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use sea_orm::sea_query::{Expr, ExprTrait, OnConflict};
+use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait, QueryFilter,
     QuerySelect, SqlErr,
@@ -58,39 +58,45 @@ pub(crate) async fn ensure_state<C: ConnectionTrait>(db: &C, name: &str) -> AppR
     }
 }
 
-/// Claims `slot` of `schedule`, retrying transient failures (with the same
-/// slot) while it is within `grace`.
+/// Claims `slot` of `schedule`. A failed or timed-out attempt (a lost
+/// connection, a busy database, a commit whose answer was lost) is
+/// reconciled from the claim row, by this call's own token, then retried with
+/// the same slot while within `grace` and not `cancelled`.
 pub(crate) async fn claim(
     state: &AppState,
     schedule: &Schedule,
     slot: DateTime<Utc>,
     grace: Duration,
     clock: &dyn Clock,
-    instance: &str,
+    cancelled: &tokio_util::sync::CancellationToken,
 ) -> AppResult<Claimed> {
+    // Unique to this logical claim (kept across its retries): only a row
+    // carrying it was committed by this call.
+    let token = uuid::Uuid::now_v7().to_string();
     let late = |now: DateTime<Utc>| (now - slot).to_std().is_ok_and(|elapsed| elapsed > grace);
+    let mut last_error = None;
     loop {
         if late(clock.now()) {
-            return Ok(Claimed::Late);
+            return last_error.map_or(Ok(Claimed::Late), Err);
         }
-        match tokio::time::timeout(CLAIM_TIMEOUT, attempt(state, schedule, slot, grace, clock, instance)).await {
+        if cancelled.is_cancelled() {
+            return last_error.map_or(Ok(Claimed::Taken), Err);
+        }
+        match tokio::time::timeout(CLAIM_TIMEOUT, attempt(state, schedule, slot, grace, clock, &token)).await {
             Ok(Ok(claimed)) => return Ok(claimed),
-            Ok(Err(err)) if !transient(&err) => return Err(err),
-            Ok(Err(err)) => tracing::warn!(schedule = %schedule.name, %err, "slot claim failed; retrying"),
+            Ok(Err(err)) => {
+                tracing::warn!(schedule = %schedule.name, %err, "slot claim failed; retrying");
+                last_error = Some(err);
+            }
             Err(_) => tracing::warn!(schedule = %schedule.name, "slot claim timed out; retrying"),
         }
-        // An ambiguous commit: the claim row says whether it went through.
-        if let Some(row) =
-            schedule_slot::Entity::find_by_id((schedule.name.clone(), slot)).one(state.db()).await.ok().flatten()
-        {
-            return Ok(if row.instance == instance { Claimed::Mine(row.job_id) } else { Claimed::Taken });
+        // The attempt may have committed before failing to answer.
+        let row = schedule_slot::Entity::find_by_id((schedule.name.clone(), slot)).one(state.db()).await;
+        if let Ok(Some(row)) = row {
+            return Ok(if row.instance == token { Claimed::Mine(row.job_id) } else { Claimed::Taken });
         }
         tokio::time::sleep(RETRY_WAIT).await;
     }
-}
-
-fn transient(err: &AppError) -> bool {
-    matches!(err, AppError::Conflict { .. })
 }
 
 async fn attempt(
@@ -99,10 +105,10 @@ async fn attempt(
     slot: DateTime<Utc>,
     grace: Duration,
     clock: &dyn Clock,
-    instance: &str,
+    token: &str,
 ) -> AppResult<Claimed> {
     let txn = crate::db::begin_write(state.db()).await?;
-    let outcome = claim_in(&txn, schedule, slot, grace, clock, instance).await;
+    let outcome = claim_in(&txn, schedule, slot, grace, clock, token).await;
     match outcome {
         Ok(claimed @ Claimed::Mine(_)) => {
             txn.commit().await?;
@@ -125,7 +131,7 @@ async fn claim_in(
     slot: DateTime<Utc>,
     grace: Duration,
     clock: &dyn Clock,
-    instance: &str,
+    token: &str,
 ) -> AppResult<Claimed> {
     let name = schedule.name.as_str();
     // The state row serializes the claims of one schedule (adjacent slots
@@ -142,7 +148,7 @@ async fn claim_in(
         name: Set(name.to_owned()),
         slot_at: Set(slot),
         claimed_at: Set(crate::queue::now()),
-        instance: Set(instance.to_owned()),
+        instance: Set(token.to_owned()),
         job_id: Set(None),
     };
     let inserted = if txn.get_database_backend() == DbBackend::MySql {
@@ -216,11 +222,18 @@ pub(crate) async fn prune<C: ConnectionTrait>(db: &C, before: DateTime<Utc>) -> 
         if keys.is_empty() {
             return Ok(deleted);
         }
-        let mut any = sea_orm::Condition::any();
-        for (name, slot) in &keys {
-            any = any.add(schedule_slot::Column::Name.eq(name.clone()).and(schedule_slot::Column::SlotAt.eq(*slot)));
+        // Small OR groups: SQLite limits the depth of an expression (1,000).
+        for chunk in keys.chunks(100) {
+            let mut any = sea_orm::Condition::any();
+            for (name, slot) in chunk {
+                any = any.add(
+                    sea_orm::Condition::all()
+                        .add(schedule_slot::Column::Name.eq(name.clone()))
+                        .add(schedule_slot::Column::SlotAt.eq(*slot)),
+                );
+            }
+            deleted += schedule_slot::Entity::delete_many().filter(any).exec(db).await?.rows_affected;
         }
-        deleted += schedule_slot::Entity::delete_many().filter(any).exec(db).await?.rows_affected;
     }
 }
 

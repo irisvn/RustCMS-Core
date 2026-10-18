@@ -14,7 +14,8 @@ pub struct Model {
     pub slot_at: DateTimeUtc,
     /// When it was claimed.
     pub claimed_at: DateTimeUtc,
-    /// Which instance claimed it.
+    /// The token of the claim call that made it (unique per claim, kept
+    /// across its retries: how a retry knows its own commit went through).
     pub instance: String,
     /// The job it enqueued (`.job` schedules).
     pub job_id: Option<Uuid>,
