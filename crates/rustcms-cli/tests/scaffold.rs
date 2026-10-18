@@ -102,8 +102,25 @@ impl ActiveModelBehavior for ActiveModel {}
         &["make:test", "AdminResource"],
         &["make:page", "ReportPage"],
         &["make:page", "ChartPage", "--script"],
+        &["make:page", "StatsPage", "--react"],
     ] {
         rustcms(&app).args(args).assert().success();
+    }
+    // The React page builds with the SDK the CLI wrote (needs npm; CI installs Node).
+    if Command::new("npm").arg("--version").output().is_ok_and(|o| o.status.success()) {
+        let admin = app.join("resources/admin");
+        let npm = |args: &[&str]| {
+            let status = Command::new("npm").current_dir(&admin).args(args).status().unwrap();
+            assert!(status.success(), "npm {args:?} failed");
+        };
+        npm(&["install", "--no-audit", "--no-fund"]);
+        std::fs::remove_dir_all(admin.join("node_modules")).unwrap();
+        npm(&["ci", "--no-audit", "--no-fund"]);
+        npm(&["run", "typecheck"]);
+        npm(&["run", "build"]);
+        std::fs::remove_dir_all(admin.join("node_modules")).unwrap();
+        let built = std::fs::read_to_string(admin.join("js/blog/stats.js")).unwrap();
+        assert!(built.contains("\"blog/stats\""), "built page:\n{built}");
     }
     // A generated test module, replaced by these checks.
     std::fs::write(
@@ -167,6 +184,8 @@ db_test!(generated_settings_and_seeders_run, migrate = Migrator, |db: TestDb| as
     assert!(report.json()["content"]["html"].as_str().unwrap().contains("<h2 class=\"rc-title\">Report</h2>"));
     let chart = app.acting_as(&user).await.get("/admin/api/pages/chart").await;
     chart.assert_status(StatusCode::OK).assert_json("/content/script", json!("blog/chart"));
+    let stats = app.acting_as(&user).await.get("/admin/api/pages/stats/sub/path").await;
+    stats.assert_status(StatusCode::OK).assert_json("/content/script", json!("blog/stats"));
 });
 
 fn chrono_now() -> sea_orm::prelude::DateTimeUtc {

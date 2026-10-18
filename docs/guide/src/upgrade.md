@@ -29,6 +29,20 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.4.1 to 0.5.0
+
+Nothing needs to change: v1 scripts (`extension_script`,
+`window.rustcms.registerPage` with `apiVersion: 1`) work as before.
+
+- New, optional: [React pages](admin/react-pages.md)
+  (`rustcms make:page <Name> --react`, `extension_script_v2`). They need Node
+  20.19+ or 22.12+ to build, not to compile or deploy the app.
+- `GET {admin}/api/panel` has a new `permissions` list; a test that compares
+  the whole response should expect it.
+- `{admin}/api/pages/{slug}/{*path}` is new: a page now answers its
+  sub-paths too (with the page's permissions; read `ctx.page_path()` in
+  `data` to tell them apart).
+
 ## From 0.4.0 to 0.4.1
 
 - `rustcms migrate`: two new tables, `schedule_states` and `schedule_slots`.

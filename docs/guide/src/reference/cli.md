@@ -126,6 +126,11 @@ Create a custom admin page: `src/admin/pages` + a template in `resources/views/a
 |---|---|
 | `<name>` | Name ending in `Page`, e.g. `CourseOverviewPage` |
 | `--script` | Draw it with an extension script (`resources/admin/js`) instead of a template |
+| `--react` | Draw it with a React component (`resources/admin/src`, host API v2, built with npm) |
+
+### `make:sdk`
+
+Install or update the admin SDK in `resources/admin/sdk` (edited files are kept)
 
 ### `make:widget`
 

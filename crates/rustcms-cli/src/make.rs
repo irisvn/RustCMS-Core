@@ -22,6 +22,19 @@ const COMMAND: &str = include_str!("../templates/stubs/command.rs.tmpl");
 const PAGE: &str = include_str!("../templates/stubs/page.rs.tmpl");
 const PAGE_HTML: &str = include_str!("../templates/stubs/page.html.tmpl");
 const PAGE_JS: &str = include_str!("../templates/stubs/page.js.tmpl");
+const PAGE_TSX: &str = include_str!("../templates/stubs/page.tsx.tmpl");
+const PAGE_CSS: &str = include_str!("../templates/stubs/page.css.tmpl");
+
+/// How a custom page is drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageKind {
+    /// A server template (`resources/views/admin`).
+    Template,
+    /// A v1 script (`resources/admin/js`).
+    Script,
+    /// A v2 React page (`resources/admin/src`, built with the SDK).
+    React,
+}
 
 const APP_PROVIDER: &str = "providers/app_service_provider.rs";
 const ADMIN_PROVIDER: &str = "providers/admin_panel_provider.rs";
@@ -173,7 +186,9 @@ pub fn make_command(project: &Project, command: &str) -> anyhow::Result<ExitCode
     Ok(ExitCode::SUCCESS)
 }
 
-pub fn make_page(project: &Project, name: &str, script: bool) -> anyhow::Result<ExitCode> {
+pub fn make_page(project: &Project, name: &str, kind: PageKind) -> anyhow::Result<ExitCode> {
+    let script = kind != PageKind::Template;
+    let react = kind == PageKind::React;
     let stem = suffixed(name, "Page")?;
     let snake = snake_case(stem);
     let module = snake_case(name);
@@ -202,8 +217,14 @@ pub fn make_page(project: &Project, name: &str, script: bool) -> anyhow::Result<
         "script": if script { Some(script_name.clone()) } else { None },
     });
     let page_file = project.src(layout::PAGES.path).join(format!("{module}.rs"));
-    let asset = if script {
-        project.root.join(format!("resources/admin/js/{vendor}/{slug}.js"))
+    let admin = project.root.join("resources/admin");
+    let built_js = admin.join(format!("js/{vendor}/{slug}.js"));
+    let built_css = admin.join(format!("css/{vendor}/{slug}.css"));
+    let source_css = admin.join(format!("src/{vendor}/{slug}.css"));
+    let asset = if react {
+        admin.join(format!("src/{vendor}/{slug}.tsx"))
+    } else if script {
+        built_js.clone()
     } else {
         project.root.join(format!("resources/views/admin/{snake}.html"))
     };
@@ -212,15 +233,55 @@ pub fn make_page(project: &Project, name: &str, script: bool) -> anyhow::Result<
         anchors.push((project.src(ADMIN_PROVIDER), "// rustcms:extensions"));
     }
     let checks: Vec<(&std::path::Path, &str)> = anchors.iter().map(|(f, a)| (f.as_path(), *a)).collect();
-    preflight(&[&page_file, &asset], &checks)?;
+    let mut new: Vec<&std::path::Path> = vec![&page_file, &asset];
+    if react {
+        new.extend([built_js.as_path(), built_css.as_path(), source_css.as_path()]);
+    }
+    preflight(&new, &checks)?;
+    let fresh_setup = if react { crate::react::ensure_setup(&admin)? } else { false };
     let index = project.prepare_module(&layout::PAGES)?;
     std::fs::create_dir_all(asset.parent().expect("a file"))?;
     write_new(&page_file, &render(PAGE, &vars)?)?;
-    write_new(&asset, &render(if script { PAGE_JS } else { PAGE_HTML }, &vars)?)?;
+    write_new(
+        &asset,
+        &render(
+            if react {
+                PAGE_TSX
+            } else if script {
+                PAGE_JS
+            } else {
+                PAGE_HTML
+            },
+            &vars,
+        )?,
+    )?;
+    if react {
+        // Until `npm run build`: the page shows as unavailable, the app builds.
+        std::fs::create_dir_all(built_js.parent().expect("a file"))?;
+        std::fs::create_dir_all(built_css.parent().expect("a file"))?;
+        write_new(&built_js, "// Built by `npm run build` in resources/admin (rustcms-build).\n")?;
+        write_new(&built_css, "")?;
+        write_new(&source_css, &render(PAGE_CSS, &vars)?)?;
+    }
     register(&index, layout::PAGES.anchor, &format!("pub mod {module};"))?;
     let provider = project.src(ADMIN_PROVIDER);
     register(&provider, "// rustcms:pages", &format!(".page::<crate::admin::pages::{module}::{name}>()"))?;
-    if script {
+    if react {
+        let manifest = "concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/resources/admin";
+        register(
+            &provider,
+            "// rustcms:extensions",
+            &format!(
+                ".extension_script_v2(\"{slug}\", include_str!({manifest}/js/{vendor}/{slug}.js\")), {})",
+                crate::react::REQUIRES
+            ),
+        )?;
+        register(
+            &provider,
+            "// rustcms:extensions",
+            &format!(".extension_style(\"{slug}\", include_str!({manifest}/css/{vendor}/{slug}.css\")))"),
+        )?;
+    } else if script {
         register(
             &provider,
             "// rustcms:extensions",
@@ -228,6 +289,15 @@ pub fn make_page(project: &Project, name: &str, script: bool) -> anyhow::Result<
                 ".extension_script(\"{slug}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/resources/admin/js/{vendor}/{slug}.js\")))"
             ),
         )?;
+    }
+    if react {
+        if fresh_setup {
+            println!(
+                "Build it: cd resources/admin && npm install && npm run build, then commit package-lock.json and the built js/ and css/ files."
+            );
+        } else {
+            println!("Build it: cd resources/admin && npm ci && npm run build, then commit the built files.");
+        }
     }
     println!("`{snake}.view` is declared; run `rustcms permission:sync` and grant it through a role.");
     Ok(ExitCode::SUCCESS)
@@ -299,7 +369,7 @@ mod tests {
                 .contains(".settings::<crate::settings::school_settings::SchoolSettings>()")
         );
 
-        make_page(&project, "SeatOverviewPage", false).unwrap();
+        make_page(&project, "SeatOverviewPage", PageKind::Template).unwrap();
         let page = read(&dir, "src/admin/pages/seat_overview_page.rs");
         assert!(
             page.contains("const SLUG: &'static str = \"seat-overview\";")
@@ -311,19 +381,35 @@ mod tests {
             read(&dir, "src/providers/admin_panel_provider.rs")
                 .contains(".page::<crate::admin::pages::seat_overview_page::SeatOverviewPage>()")
         );
-        make_page(&project, "ProgressPage", true).unwrap();
+        make_page(&project, "ProgressPage", PageKind::Script).unwrap();
         assert!(read(&dir, "src/admin/pages/progress_page.rs").contains("PageView::Script(\"lms/progress\")"));
         assert!(read(&dir, "resources/admin/js/lms/progress.js").contains("registerPage(\"lms/progress\""));
         assert!(read(&dir, "src/providers/admin_panel_provider.rs").contains("/resources/admin/js/lms/progress.js"));
-        assert!(make_page(&project, "SeatOverviewPage", false).is_err(), "never twice");
-        assert!(make_page(&project, "Overview", false).is_err(), "names end with Page");
+        assert!(make_page(&project, "SeatOverviewPage", PageKind::Template).is_err(), "never twice");
+        assert!(make_page(&project, "Overview", PageKind::Template).is_err(), "names end with Page");
         let long = "AVeryLongNameForAScriptPageThatIsTooLongPage";
-        assert!(make_page(&project, long, true).is_err(), "script names the panel would refuse");
+        assert!(make_page(&project, long, PageKind::Script).is_err(), "script names the panel would refuse");
         assert!(
             !dir.path().join("src/admin/pages/a_very_long_name_for_a_script_page_that_is_too_long_page.rs").exists()
         );
+        // A React page: the source, placeholders for the build, the setup once.
+        make_page(&project, "StatsPage", PageKind::React).unwrap();
+        assert!(read(&dir, "src/admin/pages/stats_page.rs").contains("PageView::Script(\"lms/stats\")"));
+        assert!(read(&dir, "resources/admin/src/lms/stats.tsx").contains("registerPage(\"lms/stats\", StatsPage)"));
+        assert!(dir.path().join("resources/admin/js/lms/stats.js").exists());
+        assert!(dir.path().join("resources/admin/css/lms/stats.css").exists());
+        assert!(dir.path().join("resources/admin/sdk/index.d.ts").exists());
+        let provider = read(&dir, "src/providers/admin_panel_provider.rs");
+        assert!(provider.contains(".extension_script_v2(\"stats\"") && provider.contains("rustcms::admin::Requires"));
+        assert!(provider.contains("/resources/admin/css/lms/stats.css"));
+        // A second page leaves the setup (even edited) and the first page alone.
+        std::fs::write(dir.path().join("resources/admin/package.json"), "{\"edited\": true}").unwrap();
+        make_page(&project, "ChartsPage", PageKind::React).unwrap();
+        assert_eq!(read(&dir, "resources/admin/package.json"), "{\"edited\": true}");
+        assert!(dir.path().join("resources/admin/src/lms/stats.tsx").exists());
+        assert!(make_page(&project, "StatsPage", PageKind::React).is_err(), "never twice");
         let upper = Project { root: dir.path().to_path_buf(), package: "My_Lms".into() };
-        assert!(make_page(&upper, "CalendarPage", true).is_err(), "the vendor comes from the package name");
+        assert!(make_page(&upper, "CalendarPage", PageKind::Script).is_err(), "the vendor comes from the package name");
 
         make_command(&project, "lms:report").unwrap();
         for own in ["doctor", "upgrade", "self-update", "docs", "new"] {

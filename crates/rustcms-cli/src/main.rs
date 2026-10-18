@@ -10,6 +10,7 @@ mod layout;
 mod make;
 mod naming;
 mod project;
+mod react;
 mod release;
 mod resource;
 mod scaffold;
@@ -134,9 +135,15 @@ enum Command {
         /// Name ending in `Page`, e.g. `CourseOverviewPage`
         name: String,
         /// Draw it with an extension script (`resources/admin/js`) instead of a template
-        #[arg(long)]
+        #[arg(long, conflicts_with = "react")]
         script: bool,
+        /// Draw it with a React component (`resources/admin/src`, host API v2, built with npm)
+        #[arg(long)]
+        react: bool,
     },
+    /// Install or update the admin SDK in `resources/admin/sdk` (edited files are kept)
+    #[command(name = "make:sdk")]
+    MakeSdk,
     /// Create an admin widget script in `resources/admin/js`
     #[command(name = "make:widget")]
     MakeWidget {
@@ -197,7 +204,24 @@ fn main() -> ExitCode {
         Command::MakeFactory { model } => app().and_then(|p| make::make_factory(&p, &model)),
         Command::MakeSettings { name } => app().and_then(|p| make::make_settings(&p, &name)),
         Command::MakeConsole { name } => app().and_then(|p| make::make_command(&p, &name)),
-        Command::MakePage { name, script } => app().and_then(|p| make::make_page(&p, &name, script)),
+        Command::MakePage { name, script, react } => app().and_then(|p| {
+            let kind = if react {
+                make::PageKind::React
+            } else if script {
+                make::PageKind::Script
+            } else {
+                make::PageKind::Template
+            };
+            make::make_page(&p, &name, kind)
+        }),
+        Command::MakeSdk => app().and_then(|p| {
+            let kept = react::install_sdk(&p.root.join("resources/admin/sdk"))?;
+            for file in &kept {
+                println!("kept resources/admin/sdk/{file} (edited): compare it with the new one yourself");
+            }
+            println!("SDK {} in resources/admin/sdk; run `npm run build` in resources/admin.", react::sdk_version());
+            Ok(std::process::ExitCode::SUCCESS)
+        }),
         Command::MakeWidget { name } => app().and_then(|p| generate::make_widget(&p, &name)),
         Command::Doctor => doctor::run(),
         Command::Upgrade { dry_run, force } => {

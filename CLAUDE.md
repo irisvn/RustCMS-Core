@@ -41,6 +41,10 @@
   as `AdminRoutes::events` with `LiveSession` first (ADR 0027): read-only, rechecked, bounded; sockets only as
   `AdminRoutes::socket` with `LiveSocket` (ADR 0029): commands call `AdminSocket::authorize` when they run; never add
   raw SSE or WebSocket routes.
+- v2 extensions (ADR 0032): rendered by the host, never `createRoot`; import only the ids the SDK preset maps;
+  built `resources/admin/{js,css}` are committed; every extension path goes through `admin-ui/src/lib/paths.ts`.
+  `admin-ui/sdk` is canonical: copy it to `crates/rustcms-cli/templates/sdk` and `examples/demo/resources/admin/sdk`
+  (`just generated` checks).
 - Admin UI text goes through `admin-ui/src/i18n` (`t()`, lint `i18n/no-literal-text`); new server validation
   messages need a template in `rustcms_core::i18n::TEMPLATES` (checked by `crates/rustcms-admin/tests/issues.rs`).
 - `fixtures/contract/*.json` is the server↔SPA contract: regenerate with `UPDATE_CONTRACT=1 cargo test -p rustcms-admin` and review the diff.

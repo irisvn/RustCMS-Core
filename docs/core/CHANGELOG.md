@@ -6,6 +6,30 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (W5)
+- Extension host API v2 (ADR 0032): React pages, slots and cells rendered
+  inside the panel, on its React, React Query, UI kit, theme and router.
+  - `AdminProvider::extension_script_v2(name, js, Requires { … })`: the
+    requirements are checked before the script runs; incompatible bundles
+    never load. `extension_timeout(Duration)` (1–60 s).
+  - `window.rustcms.v2` (`modules`, `versions`, `registerPage/Slot/Cell`);
+    `window.rustcms.apiVersion` stays 1 and v1 scripts are unchanged.
+  - Props: `data`, `path`, `search`, `scope`, `can`, `api` (CSRF, unknown
+    write outcomes paused per view), `realtime`; views are remounted per
+    session epoch and have an error boundary with Retry.
+  - Sub-pages: `GET {admin}/api/pages/{slug}/{*path}` (raw-path validation),
+    route `/p/{slug}/{*path}` in the panel, `Ctx::page_path()`.
+  - `GET {admin}/api/panel` lists the admin permissions the user holds
+    (`permissions`).
+- The admin SDK (`@rustcms/admin-sdk`): types, `useAdminQuery`,
+  `useAdminMutation`, `useEvents`, `useSocket`, the Vite preset and
+  `rustcms-build` (one IIFE and one CSS file per `src/<vendor>/<name>.tsx`,
+  no runtime CSS injection).
+- CLI: `make:page --react` (sources, build setup, provider registration),
+  `make:sdk`; `rustcms upgrade` warns about an older SDK.
+- Demo: a React page with sub-pages, an admin route, a stream, a CSRF write
+  and a dialog.
+
 ## [0.4.1] — 2026-10-18
 
 ### Added (0.4.1 — W4)

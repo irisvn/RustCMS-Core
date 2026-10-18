@@ -24,6 +24,10 @@ pub fn run(project: &Project, options: &Options) -> anyhow::Result<ExitCode> {
 
 /// `cargo`: the command Cargo is run with (tests: offline, empty home).
 fn run_with(project: &Project, options: &Options, cargo: &dyn Fn() -> Command) -> anyhow::Result<ExitCode> {
+    // An older vendored SDK, whether or not Cargo.toml needs changing.
+    if let Some(warning) = crate::react::sdk_warning(&project.root) {
+        println!("warning: {warning}");
+    }
     let manifest_path = project.root.join("Cargo.toml");
     let before = std::fs::read_to_string(&manifest_path)?;
     let Some(after) = upgraded(&before, &release::tag(), options.force)? else {

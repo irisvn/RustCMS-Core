@@ -216,6 +216,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # make:page --react is built with npm in the scaffold test.
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
       # Every test of the command (unit, self-update), the generated app included.
       - run: cargo test -p rustcms-cli -- --include-ignored
 

@@ -90,6 +90,10 @@ generated:
     cargo run -q -p rustcms-cli -- docs:cli > docs/guide/src/reference/cli.md
     UPDATE_TYPES=1 cargo test -q -p rustcms-admin --features ts --test typescript
     cd admin-ui && npm run build
+    diff -r admin-ui/sdk crates/rustcms-cli/templates/sdk
+    diff -r admin-ui/sdk examples/demo/resources/admin/sdk
+    cd examples/demo/resources/admin && npm ci --no-audit --no-fund && npm run build
+    test -z "$(git status --porcelain -- examples/demo/resources/admin)"
     test -z "$(git status --porcelain -- docs/guide/src/reference/cli.md admin-ui/src/api/types.gen.ts crates/rustcms-admin/assets fixtures)"
 
 # Admin SPA: install dependencies (Node 20+).

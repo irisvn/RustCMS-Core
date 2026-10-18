@@ -143,6 +143,14 @@ impl PanelPage for CourseOverviewPage {
 
 ### Script pages
 
+Two kinds of scripts exist:
+
+- **v1** (`extension_script`, below): `mount(element, ctx)` gets an element
+  and builds DOM by hand. No build step.
+- **v2** ([React pages](react-pages.md), `extension_script_v2`): a React
+  component rendered inside the panel, with its UI kit, React Query, the API
+  client, sub-pages and `can()`. Built with npm, committed.
+
 ```rust,ignore
 fn view() -> PageView { PageView::Script("lms/calendar") }    // `rustcms make:page CalendarPage --script`
 ```

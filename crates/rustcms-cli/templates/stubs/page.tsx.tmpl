@@ -1,0 +1,26 @@
+// The `{{ slug }}` page (`/admin/p/{{ slug }}`), a React page on the panel's
+// own React, React Query and UI kit (host API v2). Build it with
+// `npm run build` in resources/admin; commit the built files.
+import { type PageProps, registerPage, useAdminQuery } from "@rustcms/admin-sdk";
+import { Card, CardContent } from "@rustcms/admin-sdk/ui";
+import "./{{ slug }}.css";
+
+type Data = { user: string };
+
+function {{ name }}(props: PageProps<Data>) {
+  // Your `AdminRoutes` under `{admin}/api/x` (e.g. `.get("/{{ slug }}", …)`):
+  // const items = useAdminQuery<Item[]>(props, "/{{ slug }}");
+  void useAdminQuery;
+  return (
+    <Card>
+      <CardContent className="{{ slug }}-body">
+        <p>
+          {props.t("Signed in as user")} {props.data.user}
+        </p>
+        {props.path && <p>{props.path}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+registerPage("{{ script }}", {{ name }});
