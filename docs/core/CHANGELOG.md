@@ -6,6 +6,10 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- ammonia 4.2.4 (RUSTSEC-2026-0373: case-insensitive CSS `url(` in style
+  attributes). Not reachable here: the HTML allowlist drops `style`.
+
 ### Added (0.4 — W2a, W3)
 - Server-sent events on admin routes (ADR 0027): `AdminRoutes::events`,
   `LiveSession`, `EventStream::target`.
