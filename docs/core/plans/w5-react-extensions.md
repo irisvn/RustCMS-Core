@@ -1,4 +1,4 @@
-# W5 plan: extension host API v2, React pages that share the SPA (round 3, 2026-10-18; Codex rounds 1–2 applied)
+# W5 plan: extension host API v2, React pages that share the SPA (round 4, 2026-10-18; Codex rounds 1–3 applied; ready to implement)
 
 Builds on the 0.4.0 draft (`v0.4.0-panel-platform.md`, "W5") and keeps its
 review notes:
@@ -127,11 +127,16 @@ Script pages (v1) get an element and build DOM by hand. RDockPanel's pages
   - **A response that arrives after the mount went stale** also rejects
     with `session_changed`; its data is never delivered. The hooks
     suppress their callbacks separately.
-  - **Unknown write outcomes:** when the client classifies a write as
-    `outcome_unknown`, the facade records it in the host's pending-write
-    store (`api/queries.ts`, namespace `x:<namespace>`) **before** rejecting.
-    The panel's "paused write" banner shows it, as it does for built-in
-    writes. Nothing is retried automatically.
+  - **Unknown write outcomes:** facade writes go through the host's
+    `guardedWrite` under the scope `x:<namespace>`, as built-in writes do.
+    - Every `ApiError` with `maybeApplied` (`outcome_unknown`,
+      `incomplete_response`, a network failure with `outcomeUnknown`) is
+      recorded **before** any stale-delivery conversion.
+    - Later writes in that scope are refused until the user resolves it.
+      The panel's "paused write" banner shows it.
+    - It is kept across a same-user credential rotation and never carried
+      to another user.
+    - Nothing is retried automatically.
 - **Paths:** written as `/docker/containers` (exactly one leading slash, as
   v1 realtime paths already are), relative to `{admin}/api/x`. One shared
   function validates them for `api` and `realtime`. The v1
@@ -280,9 +285,11 @@ Script pages (v1) get an element and build DOM by hand. RDockPanel's pages
     - for a new setup: `cd resources/admin && npm install && npm run
       build`, then commit `package-lock.json` and the outputs;
     - afterwards: `npm ci && npm run build`.
-- **CI:** the CLI job provisions Node 22. The scaffold test generates a React
-  page, runs `npm ci && npm run build`, then `cargo build` with
-  `node_modules` removed.
+- **CI:** the CLI job provisions Node 22. The scaffold test:
+  1. generates a React page;
+  2. runs `npm install` once (it writes the lockfile);
+  3. removes `node_modules`, then runs `npm ci && npm run build`;
+  4. removes `node_modules` again and checks that `cargo build` passes.
 
 ### SDK (vendored) and drift
 - **One canonical source:** `admin-ui/sdk/`. The CLI's template copy
@@ -335,7 +342,12 @@ Script pages (v1) get an element and build DOM by hand. RDockPanel's pages
     - a CSRF failure (`csrf_mismatch`) refreshes the token and the call can
       be retried by the extension;
     - stale calls and stale responses reject with `session_changed`;
-    - an `outcome_unknown` write appears in the pending-write store.
+    - a network failure, a truncated success and an `outcome_unknown` write
+      are each recorded, and a later write in the scope is refused until
+      resolved;
+    - two concurrent writes;
+    - an account change drops the record, while a same-user rotation keeps
+      it.
   - **Query keys:** pairs serialized deterministically, duplicates kept,
     two different queries never share a key.
   - **Errors:**
@@ -362,8 +374,8 @@ Script pages (v1) get an element and build DOM by hand. RDockPanel's pages
   - `make:page --react` files, collisions, and that it is exclusive;
   - a second page;
   - existing config left alone;
-  - the scaffold build with Node, then `cargo build` without
-    `node_modules`;
+  - the scaffold build: `npm install`, then `npm ci` from the lockfile and
+    `npm run build`, then `cargo build` without `node_modules`;
   - the SDK copy equals `admin-ui/sdk/`; `make:sdk --update` keeps edited
     files;
   - `rustcms-build` with two CSS-bearing entries: a rebuild keeps both,
