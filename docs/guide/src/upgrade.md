@@ -31,6 +31,10 @@
 
 ## From 0.4.0 to 0.4.1
 
+- `rustcms migrate`: two new tables, `schedule_states` and `schedule_slots`.
+- Periodic work can move from your own `tokio::spawn` loops to
+  [schedules](digging-deeper/scheduling.md), which run once per slot across
+  instances and only in `serve`.
 - `rustcms::settings::{read, load, write}` take the keyring
   (`state.keyring()`) instead of `&state.config().app.key`.
   `settings::get(&state)` is unchanged.

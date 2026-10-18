@@ -113,6 +113,15 @@ fail closed (500). See [Several instances](../digging-deeper/instances.md).
 | `realtime.max_message_bytes` | `65536` | largest WebSocket message, either way (1009 beyond) |
 | `realtime.send_timeout_secs` | `10` | longest wait of a WebSocket send for a slow client (then `lagging`) |
 
+### `[schedule]` (`config/schedule.toml`)
+
+[Scheduling](../digging-deeper/scheduling.md), run by `serve` only.
+
+| Key | Default | |
+|---|---|---|
+| `schedule.enabled` | `true` | run the schedules on this instance |
+| `schedule.grace_secs` | `30` | how late (1–300 s) a slot may still be claimed; older slots are skipped |
+
 ## Your own sections
 
 ```rust,ignore

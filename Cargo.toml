@@ -27,6 +27,8 @@ sea-orm-migration = { version = "=2.0.4", default-features = false, features = [
 axum = { version = "0.8.9", features = ["macros", "multipart", "ws"] }
 # The version axum's `ws` uses (clients in tests, error kinds on the server).
 tokio-tungstenite = { version = "0.29", default-features = false }
+# 5-field cron expressions of `AppBuilder::schedule` (UTC).
+croner = { version = "4.0", default-features = false, features = ["chrono"] }
 tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.7.1", features = ["trace", "request-id", "timeout", "limit", "util"] }
 http-body-util = "0.1"

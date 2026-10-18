@@ -275,6 +275,18 @@ Seal every encrypted column and settings secret with APP_KEY (after a rotation)
 | `--list` | List the encrypted columns and exit |
 | `--batch` | Rows read at a time (default: `500`) |
 
+### `schedule:list`
+
+List the schedules, their next slot and their last claimed slot
+
+### `schedule:run`
+
+Run a schedule now (a manual run: no slot claim, no grace, no without_overlapping; a job is enqueued for the workers, a run runs here)
+
+| Argument | Description |
+|---|---|
+| `<name>` | The schedule's name |
+
 ## Auth commands
 
 Added by `AuthProvider` (registered in new applications).

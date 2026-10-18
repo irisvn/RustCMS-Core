@@ -211,7 +211,8 @@ fn main() -> ExitCode {
             // Every application has the queue commands too.
             let runtime = rustcms_core::console::command()
                 .subcommands(rustcms_core::queue::definitions())
-                .subcommands(rustcms_core::crypto::definitions());
+                .subcommands(rustcms_core::crypto::definitions())
+                .subcommands(rustcms_core::schedule::definitions());
             print!("{}", docs::markdown(&Cli::command(), &runtime, &auth, &admin));
             Ok(ExitCode::SUCCESS)
         }

@@ -6,6 +6,20 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (0.4.1 — W4)
+- The scheduler (ADR 0031): `AppBuilder::schedule`, with `Schedule::every`
+  and `Schedule::cron` (UTC, five fields) and the actions `.job(make)` and
+  `.run(f)`.
+  - Aligned slots, each claimed once in the database (`schedule_slots`,
+    `schedule_states`) in the transaction of its job.
+  - `.without_overlapping()` holds a slot back while the previous job is
+    still pending or running.
+  - Missed slots are skipped (`[schedule] grace_secs`).
+  - Only `serve` runs it (never commands or tests); `[schedule] enabled`.
+  - `schedule:list`, `schedule:run`; claims are pruned after 7 days.
+- Registering the same job type twice is a no-op; two types sharing a `KIND`
+  still panic.
+
 ### Added (0.4.1 — W8)
 - Encrypted columns (ADR 0030):
   - `rustcms::crypto::Encrypted<T>`, a SeaORM value type holding only

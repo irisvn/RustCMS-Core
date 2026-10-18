@@ -322,29 +322,31 @@ fn cut(text: &str, max: usize) -> String {
 /// The jobs an application handles (see [`crate::AppBuilder::job`]).
 #[derive(Default, Clone)]
 pub struct Jobs {
-    handlers: BTreeMap<&'static str, Arc<dyn Handler>>,
+    handlers: BTreeMap<&'static str, (std::any::TypeId, Arc<dyn Handler>)>,
 }
 
 impl Jobs {
-    /// Registers `J`.
+    /// Registers `J`. Registering the same type again does nothing (a
+    /// schedule's `.job` registers its job too).
     ///
     /// # Panics
-    /// On an invalid or repeated kind, or limits out of range.
+    /// On an invalid kind, a kind taken by another type, or limits out of range.
     pub fn register<J: Job>(&mut self) {
         assert!(valid_kind(J::KIND), "job `{}`: kinds are 1–64 of `a-z`, `0-9`, `_`, `.`", J::KIND);
         assert!(valid_queue(J::QUEUE), "job `{}`: invalid queue `{}`", J::KIND, J::QUEUE);
         assert!((1..=100).contains(&J::max_attempts()), "job `{}`: max_attempts must be 1 to 100", J::KIND);
         assert!(J::VERSION >= 1 && J::VERSION <= i32::MAX as u32, "job `{}`: VERSION must be at least 1", J::KIND);
         assert!(!J::timeout().is_zero(), "job `{}`: the timeout must not be zero", J::KIND);
-        assert!(
-            self.handlers.insert(J::KIND, Arc::new(Typed::<J>(std::marker::PhantomData))).is_none(),
-            "job `{}` registered twice",
-            J::KIND
-        );
+        let id = std::any::TypeId::of::<J>();
+        if let Some((existing, _)) = self.handlers.get(J::KIND) {
+            assert!(*existing == id, "job `{}` registered twice, by two types", J::KIND);
+            return;
+        }
+        self.handlers.insert(J::KIND, (id, Arc::new(Typed::<J>(std::marker::PhantomData))));
     }
 
     pub(crate) fn get(&self, kind: &str) -> Option<&Arc<dyn Handler>> {
-        self.handlers.get(kind)
+        self.handlers.get(kind).map(|(_, handler)| handler)
     }
 
     /// Whether no job is registered.
@@ -460,10 +462,27 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "registered twice")]
-    fn a_kind_is_registered_once() {
+    fn the_same_job_registers_once() {
         let mut jobs = Jobs::default();
         jobs.register::<Noop>();
+        jobs.register::<Noop>();
+        assert!(jobs.get(Noop::KIND).is_some());
+    }
+
+    #[test]
+    #[should_panic(expected = "registered twice, by two types")]
+    fn two_types_cannot_share_a_kind() {
+        #[derive(Serialize, Deserialize)]
+        struct Other;
+        #[async_trait]
+        impl Job for Other {
+            const KIND: &'static str = Noop::KIND;
+            async fn handle(self, _: JobCtx) -> anyhow::Result<()> {
+                Ok(())
+            }
+        }
+        let mut jobs = Jobs::default();
+        jobs.register::<Other>();
         jobs.register::<Noop>();
     }
 

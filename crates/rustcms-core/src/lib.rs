@@ -22,6 +22,7 @@ pub mod queue;
 pub mod realtime;
 #[cfg(feature = "redis")]
 pub mod redis;
+pub mod schedule;
 pub mod settings;
 pub mod storage;
 pub mod telemetry;

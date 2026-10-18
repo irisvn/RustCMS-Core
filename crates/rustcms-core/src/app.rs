@@ -115,6 +115,7 @@ pub struct AppBuilder {
     described: Vec<RouteInfo>,
     body_limits: Vec<http::BodyLimit>,
     jobs: crate::queue::Jobs,
+    schedules: crate::schedule::Schedules,
     encrypted: crate::crypto::EncryptedColumns,
     seeders: crate::database::Seeders,
     #[cfg(feature = "mail")]
@@ -149,6 +150,8 @@ impl AppBuilder {
                 Arc::new(crate::queue::QueueRetry),
                 Arc::new(crate::queue::QueueForget),
                 Arc::new(crate::crypto::KeyReencrypt),
+                Arc::new(crate::schedule::ScheduleList),
+                Arc::new(crate::schedule::ScheduleRun),
             ],
             middleware: Vec::new(),
             described: vec![RouteInfo {
@@ -158,6 +161,7 @@ impl AppBuilder {
             }],
             body_limits: Vec::new(),
             jobs: crate::queue::Jobs::default(),
+            schedules: crate::schedule::Schedules::default(),
             encrypted: crate::crypto::EncryptedColumns::default(),
             seeders: crate::database::Seeders::default(),
             #[cfg(feature = "mail")]
@@ -230,6 +234,17 @@ impl AppBuilder {
     /// path (e.g. an upload route); every other request keeps `http.body_limit`.
     pub fn body_limit(&mut self, method: axum::http::Method, path: impl Into<String>, bytes: usize) -> &mut Self {
         self.body_limits.push(http::BodyLimit { method, path: path.into(), bytes });
+        self
+    }
+
+    /// Adds a schedule (see [`crate::schedule`]): run only by `serve`, each
+    /// slot claimed once across instances. A `.job` schedule registers its
+    /// job.
+    ///
+    /// # Panics
+    /// On an invalid, reserved or repeated name, or a schedule without action.
+    pub fn schedule(&mut self, schedule: crate::schedule::Schedule) -> &mut Self {
+        self.schedules.add(schedule, &mut self.jobs);
         self
     }
 
@@ -340,7 +355,9 @@ impl AppBuilder {
             anyhow::bail!("[redis] url is set, but rustcms was built without its `redis` feature");
         }
         crate::queue::QueueConfig::of(&self.config)?;
+        crate::schedule::ScheduleConfig::of(&self.config)?;
         self.services.insert(self.jobs);
+        self.services.insert(self.schedules);
         self.services.insert(self.encrypted);
         #[cfg(feature = "mail")]
         self.services.insert(self.mail_templates);
@@ -400,6 +417,9 @@ impl App {
         let grace = std::time::Duration::from_secs(
             self.state.config().section::<RealtimeShutdown>("realtime").map_or(5, |r| r.shutdown_grace_secs),
         );
+        // Schedules: only here, never in console commands or tests. Owned by
+        // `drain` below: dropped (a server error), it aborts everything it runs.
+        let scheduler = crate::schedule::start(&self.state, grace)?;
         let long_lived = self.state.service::<crate::realtime::Shutdown>();
         let listen = tokio::spawn(async move {
             stop.await;
@@ -418,9 +438,17 @@ impl App {
             });
         let drain = async move {
             let _ = worker_signal.wait_for(|s| *s).await;
-            if let Some(workers) = workers {
-                workers.shutdown().await;
-            }
+            let workers = async {
+                if let Some(workers) = workers {
+                    workers.shutdown().await;
+                }
+            };
+            let schedules = async {
+                if let Some(scheduler) = scheduler {
+                    scheduler.shutdown(grace).await;
+                }
+            };
+            tokio::join!(workers, schedules);
         };
         let mut bounded_signal = signal.clone();
         let mut server = std::pin::pin!(async move {
