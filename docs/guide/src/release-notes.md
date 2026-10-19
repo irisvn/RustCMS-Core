@@ -1,7 +1,15 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.5.0**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.5.1**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.5.1
+
+- **Home page**: `AdminProvider::home(slug)` opens one of your pages at
+  `/admin` ([Navigation](admin/overview.md#home-page)).
+- **Order**: `.sort(n)` on resources and pages orders the sidebar.
+- **Hidden resources**: `ResourceMeta::navigation(false)` keeps a resource's
+  routes and API without a sidebar entry.
 
 ## 0.5.0
 

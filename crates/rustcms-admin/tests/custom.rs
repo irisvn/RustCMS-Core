@@ -62,6 +62,8 @@ impl Resource for LedgerResource {
     fn meta() -> ResourceMeta {
         ResourceMeta::new("Ledger")
             .title("title")
+            .navigation(false)
+            .sort(2)
             .key(KeyStrategy::AppGenerated(|| SqlValue::Uuid(Some(uuid::Uuid::now_v7()))))
     }
 
@@ -106,7 +108,7 @@ impl PanelPage for PathPage {
     const SLUG: &'static str = "paths";
 
     fn meta() -> PanelPageMeta {
-        PanelPageMeta::new("Paths").permission("ledger.view_any")
+        PanelPageMeta::new("Paths").permission("ledger.view_any").sort(3)
     }
 
     fn view() -> PageView {
@@ -210,6 +212,7 @@ fn build(config: rustcms_core::Config) -> rustcms_core::AppBuilder {
             .page::<ReservedPage>()
             .slot::<CategoryAside>()
             .slot::<SecretAside>()
+            .home("reserved")
             .translations(
                 "vi",
                 "\"Categories\" = \"Danh mục\"\n\"About\" = \"Giới thiệu\"\n\"Overview\" = \"Tổng quan\"",
@@ -557,6 +560,8 @@ fn misdeclared_pages_and_slots_stop_the_boot() {
     assert!(boot(|| AdminProvider::new().slot::<Elsewhere>()));
     assert!(boot(|| AdminProvider::new().page::<OverviewPage>().page::<OverviewPage>()));
     assert!(!boot(|| all_resources().page::<OverviewPage>()));
+    assert!(boot(|| AdminProvider::new().page::<OverviewPage>().home("nope")), "an unknown home");
+    assert!(!boot(|| AdminProvider::new().page::<OverviewPage>().home("overview")));
 }
 
 #[test]
@@ -616,4 +621,34 @@ db_test!(the_panel_lists_the_admin_permissions_the_user_holds, |db: TestDb| asyn
     let admin = app.acting_as(&users.admin).await.get(&app.admin_api("panel")).await.json();
     let all = admin["permissions"].as_array().unwrap();
     assert!(all.iter().any(|p| p == "reports.view") && all.len() > held.len(), "a super admin: every declared one");
+});
+
+db_test!(home_sort_and_hidden_resources_are_navigation_only, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    // The home is told only to users who may open it (no slug, label or icon otherwise).
+    let editor = app.acting_as(&users.editor).await;
+    let panel = editor.get(&app.admin_api("panel")).await.json();
+    assert!(panel.get("home").is_none(), "{panel}");
+    assert!(!panel.to_string().contains("reserved") && !panel.to_string().contains("Reserved"), "{panel}");
+    let admin = app.acting_as(&users.admin).await.get(&app.admin_api("panel")).await.json();
+    assert_eq!(admin["home"], json!("reserved"));
+    // `sort` and `nav` are sent only when set.
+    let pages = panel["pages"].as_array().unwrap();
+    assert_eq!(pages[0], json!({"slug": "overview", "label": "Overview", "icon": "layers", "group": "Reports"}));
+    assert_eq!(pages[2], json!({"slug": "paths", "label": "Paths", "sort": 3}));
+    let navigation = panel["navigation"].as_array().unwrap();
+    let ledger = navigation.iter().find(|r| r["slug"] == "ledger").unwrap();
+    assert_eq!(
+        ledger,
+        &json!({"slug": "ledger", "label": "Ledger", "pluralLabel": "Ledgers", "titleField": "title", "sort": 2, "nav": false})
+    );
+    let categories = navigation.iter().find(|r| r["slug"] == "categories").unwrap();
+    assert!(categories.get("sort").is_none() && categories.get("nav").is_none(), "{categories}");
+    // Hidden from the navigation only: listed with `view_any`, its API answers, and is refused without it.
+    editor.get(&app.admin_api("resources/ledger/records")).await.assert_status(StatusCode::OK);
+    let member = app.acting_as(&users.member).await;
+    let listed = member.get(&app.admin_api("panel")).await.json();
+    assert!(!listed["navigation"].as_array().unwrap().iter().any(|r| r["slug"] == "ledger"));
+    assert!(listed.get("home").is_none());
+    member.get(&app.admin_api("resources/ledger/records")).await.assert_status(StatusCode::FORBIDDEN);
 });

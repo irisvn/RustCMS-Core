@@ -47,6 +47,10 @@ pub struct PageLink {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    /// Navigation position (`PanelPageMeta::sort`), absent when 0.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort: Option<i32>,
 }
 
 /// What a page or slot shows: sanitized HTML, or a script and its data.
@@ -127,6 +131,13 @@ fn draw(custom: &CustomPanel, ctx: &Ctx, name: &str, view: PageView, data: Value
     })
 }
 
+/// The home page's slug, when `ctx` may open it.
+pub(crate) fn home(custom: &CustomPanel, ctx: &Ctx) -> Option<String> {
+    let slug = custom.home.as_deref()?;
+    let page = custom.pages.iter().find(|p| p.slug() == slug)?;
+    allowed(ctx, &page.meta().permissions).then(|| slug.to_owned())
+}
+
 /// Pages `ctx` may open, for the navigation.
 pub(crate) fn links(custom: &CustomPanel, ctx: &Ctx) -> Vec<PageLink> {
     custom
@@ -138,6 +149,7 @@ pub(crate) fn links(custom: &CustomPanel, ctx: &Ctx) -> Vec<PageLink> {
             label: ctx.t(&p.meta().label),
             icon: p.meta().icon.clone(),
             group: p.meta().group.as_deref().map(|g| ctx.t(g)),
+            sort: (p.meta().sort != 0).then_some(p.meta().sort),
         })
         .collect()
 }

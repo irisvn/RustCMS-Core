@@ -65,6 +65,7 @@ pub struct PanelPageMeta {
     pub(crate) label: String,
     pub(crate) icon: Option<String>,
     pub(crate) group: Option<String>,
+    pub(crate) sort: i32,
     pub(crate) permissions: Vec<String>,
     pub(crate) declared: Vec<String>,
 }
@@ -72,7 +73,7 @@ pub struct PanelPageMeta {
 impl PanelPageMeta {
     /// A page titled `label`.
     pub fn new(label: impl Into<String>) -> Self {
-        Self { label: label.into(), icon: None, group: None, permissions: Vec::new(), declared: Vec::new() }
+        Self { label: label.into(), icon: None, group: None, sort: 0, permissions: Vec::new(), declared: Vec::new() }
     }
 
     /// Navigation icon (as resources').
@@ -84,6 +85,13 @@ impl PanelPageMeta {
     /// Navigation group.
     pub fn group(mut self, group: impl Into<String>) -> Self {
         self.group = Some(group.into());
+        self
+    }
+
+    /// Position in the navigation: entries by `(sort, base order)`, groups by
+    /// their smallest `sort` (default 0).
+    pub fn sort(mut self, sort: i32) -> Self {
+        self.sort = sort;
         self
     }
 

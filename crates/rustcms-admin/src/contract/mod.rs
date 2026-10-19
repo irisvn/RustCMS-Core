@@ -36,6 +36,15 @@ pub struct ResourceInfo {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title_field: Option<String>,
+    /// Navigation position (`ResourceMeta::sort`), absent when 0.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort: Option<i32>,
+    /// `false` for a resource with no navigation entry
+    /// (`ResourceMeta::navigation(false)`), absent otherwise.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nav: Option<bool>,
 }
 
 impl ResourceInfo {

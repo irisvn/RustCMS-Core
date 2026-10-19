@@ -36,7 +36,8 @@ pub struct PanelResponse {
     pub brand: String,
     /// Signed-in user.
     pub user: PanelUser,
-    /// Resources the user may list (`view_any`), in registration order.
+    /// Resources the user may list (`view_any`), by slug (hidden ones too:
+    /// `nav: false`).
     pub navigation: Vec<crate::ResourceInfo>,
     /// System pages the user may open.
     pub system: crate::system::SystemLinks,
@@ -44,6 +45,11 @@ pub struct PanelResponse {
     pub settings: Vec<crate::settings::SettingsLink>,
     /// Custom pages the user may open, in registration order.
     pub pages: Vec<crate::custom::PageLink>,
+    /// The custom page `/admin` opens (`AdminProvider::home`), only when the
+    /// user may open it.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home: Option<String>,
     /// The declared admin-guard permissions the user holds, sorted (every
     /// declared one for a super admin): for showing or hiding controls in
     /// extensions (`can`); the server checks every request.

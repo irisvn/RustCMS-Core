@@ -1,4 +1,4 @@
-import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import { ArrowUpRight, ChevronRight, Home, LogOut, Menu, PanelLeftClose, PanelLeftOpen, PanelsTopLeft, Settings2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError } from "@/api/client";
@@ -22,16 +22,26 @@ const activeProps = { "aria-current": "page" as const };
 
 type NavEntry = { kind: "resource"; item: ResourceInfo } | { kind: "page"; item: PageLink };
 
-/** Resources and custom pages by group, in registration order (resources first in a group). */
-function groups(navigation: ResourceInfo[], pages: PageLink[]): [string, NavEntry[]][] {
+const sortOf = (entry: NavEntry) => entry.item.sort ?? 0;
+
+/**
+ * Resources (by slug) and custom pages (in registration order) by group,
+ * resources first in a group; then entries by `sort` and groups by their
+ * smallest `sort` (stable: the same order when nothing is set). Hidden
+ * resources and the home page are left out and rank nothing.
+ */
+export function groups(navigation: ResourceInfo[], pages: PageLink[], home?: string): [string, NavEntry[]][] {
   const out = new Map<string, NavEntry[]>();
   const add = (group: string | undefined, entry: NavEntry) => {
     const g = group ?? "";
     out.set(g, [...(out.get(g) ?? []), entry]);
   };
-  for (const r of navigation) add(r.group, { kind: "resource", item: r });
-  for (const p of pages) add(p.group, { kind: "page", item: p });
-  return [...out.entries()];
+  for (const r of navigation) if (r.nav !== false) add(r.group, { kind: "resource", item: r });
+  for (const p of pages) if (p.slug !== home) add(p.group, { kind: "page", item: p });
+  return [...out.entries()]
+    .map(([group, items], index) => ({ group, items: [...items].sort((a, b) => sortOf(a) - sortOf(b)), rank: Math.min(...items.map(sortOf)), index }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(({ group, items }) => [group, items]);
 }
 
 /** The theme's logo, or the default mark. */
@@ -45,15 +55,23 @@ function Navigation({ panel, collapsed = false, onNavigate }: { panel: PanelResp
   const t = useT();
   const groupLabel = (label: string) => <p className={cn("px-3 pb-1 pt-3 text-xs font-medium text-muted-foreground", collapsed && "sr-only")}>{label}</p>;
   const linkStyle = cn(navLink, collapsed && "justify-center px-2");
+  // With a home page, the first entry opens it (with its label and icon).
+  const home = panel.home ? (panel.pages ?? []).find((p) => p.slug === panel.home) : undefined;
   return (
     <nav aria-label={t("nav.resources")} onClick={(e) => { if ((e.target as Element).closest("a")) onNavigate?.(); }} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
       <div className="space-y-1">
         {!collapsed && groupLabel(t("nav.workspace"))}
-        <Link to="/" className={linkStyle} activeProps={activeProps} activeOptions={{ exact: true }} title={collapsed ? t("nav.overview") : undefined}>
-          <Home className="size-4 shrink-0" /><span className={cn("truncate", collapsed && "sr-only")}>{t("nav.overview")}</span>
-        </Link>
+        {home ? (
+          <Link to="/p/$slug" params={{ slug: home.slug }} className={linkStyle} activeProps={activeProps} title={collapsed ? home.label : undefined}>
+            {home.icon ? <ResourceIcon name={home.icon} /> : <Home className="size-4 shrink-0" />}<span className={cn("truncate", collapsed && "sr-only")}>{home.label}</span>
+          </Link>
+        ) : (
+          <Link to="/" className={linkStyle} activeProps={activeProps} activeOptions={{ exact: true }} title={collapsed ? t("nav.overview") : undefined}>
+            <Home className="size-4 shrink-0" /><span className={cn("truncate", collapsed && "sr-only")}>{t("nav.overview")}</span>
+          </Link>
+        )}
       </div>
-      {groups(panel.navigation, panel.pages ?? []).map(([group, items]) => (
+      {groups(panel.navigation, panel.pages ?? [], home?.slug).map(([group, items]) => (
         <div key={group} className="space-y-1">
           {group && groupLabel(group)}
           {items.map((entry) =>
@@ -158,7 +176,8 @@ export function Shell() {
   const path = pathname.startsWith(session.config.basePath + "/") ? pathname.slice(session.config.basePath.length) : pathname;
   const resource = p.navigation.find((r) => path.startsWith(`/r/${r.slug}/`) || path === `/r/${r.slug}`);
   const settingsPage = (p.settings ?? []).find((s) => path === `/settings/${s.group}`);
-  const customPage = (p.pages ?? []).find((c) => path === `/p/${c.slug}`);
+  // Sub-pages (`/p/{slug}/…`) belong to their page.
+  const customPage = (p.pages ?? []).find((c) => path === `/p/${c.slug}` || path.startsWith(`/p/${c.slug}/`));
   const current = resource?.pluralLabel ?? settingsPage?.label ?? customPage?.label ?? (path.startsWith("/system/users") ? t("nav.users") : path.startsWith("/system/roles") ? t("nav.roles") : path.startsWith("/system/audit") ? t("nav.audit") : path.startsWith("/system/queue") ? t("nav.queue") : path.startsWith("/account") ? t("nav.account") : t("nav.overview"));
   const detail = /\/create$/.test(path) ? t("crumb.create") : /\/edit$/.test(path) ? t("crumb.edit") : resource && path.includes("/records/") ? t("crumb.details") : undefined;
   const footer = { panel: p, leaving, logout: () => void logout(), error: error === null ? null : show(error) };
@@ -200,11 +219,21 @@ export function Shell() {
   );
 }
 
+/** `/`: the home page when the user may open one, else the dashboard. */
 export function Dashboard() {
+  const panel = usePanel();
+  // The shell renders only once the panel is loaded: no dashboard request before this.
+  if (!panel.data) return <Loading />;
+  if (panel.data.home) return <Navigate to="/p/$slug" params={{ slug: panel.data.home }} replace />;
+  return <DefaultDashboard />;
+}
+
+function DefaultDashboard() {
   const t = useT();
   const panel = usePanel();
   const dashboard = useDashboard();
   const p = panel.data;
+  const cards = (p?.navigation ?? []).filter((r) => r.nav !== false);
   const links = dashboard.data?.resourceLinks ?? true;
   return (
     <Page>
@@ -212,9 +241,9 @@ export function Dashboard() {
       {dashboard.data && <DashboardWidgets widgets={dashboard.data.widgets} />}
       {links && <section className="mt-2">
         <div className="mb-4 flex items-center gap-3"><h2 className="text-sm font-semibold">{t("dashboard.resources")}</h2><span className="h-px flex-1 bg-border" /></div>
-        {p?.navigation.length ? (
-          <div className={cn("grid gap-4 sm:grid-cols-2", p.navigation.length > 2 && "xl:grid-cols-3")}>
-            {p.navigation.map((r) => (
+        {cards.length ? (
+          <div className={cn("grid gap-4 sm:grid-cols-2", cards.length > 2 && "xl:grid-cols-3")}>
+            {cards.map((r) => (
               <Link key={r.slug} to="/r/$slug" params={{ slug: r.slug }} className="group flex min-w-0 flex-col gap-5 rounded-xl border border-border bg-card p-5 shadow-xs transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 <div className="flex items-center justify-between"><span className="flex size-10 items-center justify-center rounded-lg border border-border bg-background"><ResourceIcon name={r.icon} /></span><ArrowUpRight className="size-4 text-muted-foreground group-hover:text-foreground" /></div>
                 <div className="space-y-1"><h3 className="break-words text-base font-semibold tracking-tight">{r.pluralLabel}</h3><p className="text-sm text-muted-foreground">{t("dashboard.manage", { resource: r.pluralLabel.toLocaleLowerCase() })}</p></div>

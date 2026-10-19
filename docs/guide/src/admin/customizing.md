@@ -58,6 +58,10 @@ AdminProvider::new().theme(
 
 ## Custom pages
 
+A page's place in the sidebar follows `PanelPageMeta::group` and
+[`sort`](overview.md#order); `AdminProvider::home(slug)` makes one the
+[home page](overview.md#home-page).
+
 ```rust,ignore
 // src/admin/pages/course_overview_page.rs (`rustcms make:page CourseOverviewPage`)
 pub struct CourseOverviewPage;

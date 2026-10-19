@@ -6,6 +6,18 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-10-19
+
+### Added (0.5.1 — W9 part A)
+- `AdminProvider::home(slug)`: `/admin` opens that custom page for users who
+  may open it (`PanelResponse.home`); others see the dashboard. The home is
+  the first sidebar entry.
+- `PanelPageMeta::sort` and `ResourceMeta::sort`: sidebar order (entries by
+  sort, groups by their smallest sort; unchanged when not set).
+- `ResourceMeta::navigation(false)`: no sidebar entry or dashboard card;
+  routes, record pages and the API stay (`ResourceInfo.nav`).
+- Breadcrumbs name a custom page on its sub-paths.
+
 ## [0.5.0] — 2026-10-18
 
 ### Added (0.5.0 — W5)

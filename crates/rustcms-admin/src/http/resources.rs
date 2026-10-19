@@ -46,6 +46,7 @@ pub(super) async fn panel(
         system: crate::system::SystemLinks::of(&ctx.principal),
         settings: panel.settings.links(&ctx),
         pages: crate::custom::links(&panel.custom, &ctx),
+        home: crate::custom::home(&panel.custom, &ctx),
         permissions,
     }))
 }

@@ -35,6 +35,7 @@ pub struct AdminProvider {
     slots: Vec<std::sync::Arc<dyn crate::custom::DynSlot>>,
     theme: Option<crate::custom::Theme>,
     dashboard: crate::dashboard::Dashboard,
+    home: Option<String>,
 }
 
 /// Locales the panel's interface is written in (`admin-ui/src/i18n`).
@@ -58,6 +59,7 @@ impl Default for AdminProvider {
             slots: Vec::new(),
             theme: None,
             dashboard: crate::dashboard::Dashboard::default(),
+            home: None,
         }
     }
 }
@@ -186,6 +188,16 @@ impl AdminProvider {
         self
     }
 
+    /// The custom page `/admin` opens instead of the dashboard, for users who
+    /// may open it (others see the dashboard).
+    ///
+    /// # Panics
+    /// At boot, when no page has this slug.
+    pub fn home(mut self, slug: impl Into<String>) -> Self {
+        self.home = Some(slug.into());
+        self
+    }
+
     /// Adds a slot beside a resource's records.
     ///
     /// # Panics
@@ -249,13 +261,16 @@ impl ServiceProvider for AdminProvider {
             }
         }
         let admin_path = auth.config.admin_path.clone();
-        let custom = std::sync::Arc::new(crate::custom::CustomPanel::new(
-            &admin_path,
-            self.pages.clone(),
-            self.slots.clone(),
-            &registry,
-            app.config().app.env == rustcms_core::Environment::Local,
-        ));
+        let custom = std::sync::Arc::new(
+            crate::custom::CustomPanel::new(
+                &admin_path,
+                self.pages.clone(),
+                self.slots.clone(),
+                &registry,
+                app.config().app.env == rustcms_core::Environment::Local,
+            )
+            .with_home(self.home.clone()),
+        );
         for permission in custom.declared_permissions() {
             auth.permissions.declare(ADMIN_GUARD, &permission, Some("pages"));
         }

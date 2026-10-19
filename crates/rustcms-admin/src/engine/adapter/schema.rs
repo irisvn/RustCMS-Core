@@ -143,6 +143,8 @@ impl<R: Resource> ResourceAdapter<R> {
             icon: self.meta.icon.clone(),
             group: self.meta.group.clone(),
             title_field: self.meta.title_field.clone(),
+            sort: (self.meta.sort != 0).then_some(self.meta.sort),
+            nav: (!self.meta.navigation).then_some(false),
         }
     }
 

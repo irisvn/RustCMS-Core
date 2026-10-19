@@ -44,6 +44,37 @@ ResourceMeta::new("Post").plural("Posts").group("Content").icon("file-text")
 Icons: `box`, `file-text`, `folder`, `history`, `image`, `layers`,
 `settings`, `shield`, `shopping-cart`, `tag`, `users`.
 
+### Order
+
+By default, resources come by slug, then [custom pages](customizing.md#custom-pages)
+in registration order, resources first in a group. `.sort(n)` on
+`ResourceMeta` or `PanelPageMeta` (default 0) changes it:
+
+- entries are ordered by `sort`, then by that default order;
+- groups are ordered by the smallest `sort` among their entries, then by
+  first appearance;
+- System and Settings always come last.
+
+```rust,ignore
+PanelPageMeta::new("Templates").permission("templates.view").sort(1)
+ResourceMeta::new("Project").group("Docker").sort(10)
+```
+
+### Hiding a resource
+
+`ResourceMeta::navigation(false)` removes the sidebar entry and the
+dashboard card. The resource keeps its routes, record pages, API, relations
+and breadcrumbs, for example when your own [React pages](react-pages.md)
+replace its list. This is only presentation: users still need `view_any`, as
+always.
+
+### Home page
+
+`AdminProvider::home("dashboard")` makes `/admin` open the custom page
+`dashboard` instead of the default dashboard, with that page as the first
+sidebar entry. Users who may not open it see the default dashboard. An
+unknown slug stops the boot.
+
 ## What users get
 
 - **Lists**: search, sortable columns, filters and pagination, kept in the URL;

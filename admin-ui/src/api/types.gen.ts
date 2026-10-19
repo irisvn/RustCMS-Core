@@ -44,7 +44,16 @@ group?: string,
 /**
  * Field used as record title.
  */
-titleField?: string, };
+titleField?: string, 
+/**
+ * Navigation position (`ResourceMeta::sort`), absent when 0.
+ */
+sort?: number, 
+/**
+ * `false` for a resource with no navigation entry
+ * (`ResourceMeta::navigation(false)`), absent otherwise.
+ */
+nav?: boolean, };
 
 export type SchemaOperation = "create" | "edit" | "view";
 
@@ -1258,7 +1267,11 @@ icon?: string,
 /**
  * Navigation group.
  */
-group?: string, };
+group?: string, 
+/**
+ * Navigation position (`PanelPageMeta::sort`), absent when 0.
+ */
+sort?: number, };
 
 export type CustomContent = { "kind": "html", 
 /**
@@ -1318,7 +1331,8 @@ brand: string,
  */
 user: PanelUser, 
 /**
- * Resources the user may list (`view_any`), in registration order.
+ * Resources the user may list (`view_any`), by slug (hidden ones too:
+ * `nav: false`).
  */
 navigation: Array<ResourceInfo>, 
 /**
@@ -1333,6 +1347,11 @@ settings: Array<SettingsLink>,
  * Custom pages the user may open, in registration order.
  */
 pages: Array<PageLink>, 
+/**
+ * The custom page `/admin` opens (`AdminProvider::home`), only when the
+ * user may open it.
+ */
+home?: string, 
 /**
  * The declared admin-guard permissions the user holds, sorted (every
  * declared one for a super admin): for showing or hiding controls in

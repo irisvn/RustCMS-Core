@@ -56,6 +56,8 @@ pub struct ResourceMeta {
     pub(crate) plural_label: Option<String>,
     pub(crate) icon: Option<String>,
     pub(crate) group: Option<String>,
+    pub(crate) sort: i32,
+    pub(crate) navigation: bool,
     pub(crate) key: KeyStrategy,
     pub(crate) title_field: Option<String>,
     pub(crate) constraints: Vec<ConstraintMap>,
@@ -75,6 +77,8 @@ impl ResourceMeta {
             plural_label: None,
             icon: None,
             group: None,
+            sort: 0,
+            navigation: true,
             key: KeyStrategy::DbGenerated,
             title_field: None,
             constraints: Vec::new(),
@@ -187,6 +191,20 @@ impl ResourceMeta {
     /// Navigation group.
     pub fn group(mut self, group: impl Into<String>) -> Self {
         self.group = Some(group.into());
+        self
+    }
+
+    /// Position in the navigation: entries by `(sort, base order)`, groups by
+    /// their smallest `sort` (default 0).
+    pub fn sort(mut self, sort: i32) -> Self {
+        self.sort = sort;
+        self
+    }
+
+    /// `false`: no navigation entry and no dashboard card. Routes, record
+    /// pages and the API stay, authorized as always (UX only).
+    pub fn navigation(mut self, shown: bool) -> Self {
+        self.navigation = shown;
         self
     }
 

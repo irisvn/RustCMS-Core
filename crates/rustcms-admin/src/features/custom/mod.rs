@@ -12,7 +12,7 @@ mod theme;
 use std::sync::Arc;
 
 pub use http::{CustomContent, CustomPageResponse, PageLink, SlotContent, SlotsResponse};
-pub(crate) use http::{links, router, routes};
+pub(crate) use http::{home, links, router, routes};
 pub(crate) use page::{DynPage, DynSlot, PageAdapter, SlotAdapter};
 pub use page::{PageView, PanelPage, PanelPageMeta, PanelSlot, Placement, SlotMeta, TemplateFile};
 pub use theme::{ColorScheme, Palette, TOKENS, Theme};
@@ -27,6 +27,8 @@ pub struct CustomPanel {
     pub(crate) templates: template::Templates,
     pub(crate) sanitizer: html::Sanitizer,
     pub(crate) base: String,
+    /// The page `/admin` opens (`AdminProvider::home`).
+    pub(crate) home: Option<String>,
     sources: Vec<&'static str>,
 }
 
@@ -86,8 +88,21 @@ impl CustomPanel {
             templates,
             sanitizer: html::Sanitizer::new(base),
             base: base.trim_end_matches('/').to_owned(),
+            home: None,
             sources,
         }
+    }
+
+    /// Opens `slug` at `/admin`.
+    ///
+    /// # Panics
+    /// On a slug no page has.
+    pub(crate) fn with_home(mut self, home: Option<String>) -> Self {
+        if let Some(slug) = &home {
+            assert!(self.pages.iter().any(|p| p.slug() == slug), "home: no page `{slug}`");
+        }
+        self.home = home;
+        self
     }
 
     /// No pages and no slots (panels built by hand, tests).

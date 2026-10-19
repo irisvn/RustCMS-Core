@@ -29,6 +29,12 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.5.0 to 0.5.1
+
+Nothing needs to change. `PanelResponse` (`home`), `ResourceInfo` (`sort`,
+`nav`) and `PageLink` (`sort`) have new fields: code that builds these
+structs with a literal must add them (they are normally only read).
+
 ## From 0.4.1 to 0.5.0
 
 Nothing needs to change: v1 scripts (`extension_script`,

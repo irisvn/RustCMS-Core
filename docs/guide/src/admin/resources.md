@@ -73,6 +73,7 @@ fields as columns.
 | `.plural("Posts")` | plural label (default: label + `s`) |
 | `.title("title")` | the field used as a record's title |
 | `.group("Content")`, `.icon("file-text")` | [navigation](overview.md#navigation) |
+| `.sort(10)`, `.navigation(false)` | [order](overview.md#order), [hidden from the navigation](overview.md#hiding-a-resource) |
 | `.key(KeyStrategy::…)` | [primary keys](#primary-keys) |
 | `.unique(constraint, &[columns], message)` | maps a unique constraint to a field error |
 | `.soft_deletes()`, `.soft_deletes_column("removed_at")` | [soft deletes](#soft-deletes) |
