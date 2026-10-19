@@ -16,7 +16,8 @@ deny-by-default authorization and field read rules everywhere.
   font-family names, raster logo/favicon checked against their bytes),
   compiled at boot into a hashed stylesheet and images under
   `assets/ext/`. Dark mode follows `data-scheme` on `<html>` (set from
-  `ColorScheme`; `system` follows the OS) with an OS fallback before the SPA
+  the browser's saved choice, falling back to `ColorScheme`; `system` follows
+  the OS) with an OS fallback before the SPA
   runs. SVG logos, `data:` images and web fonts are deferred.
 - **Pages and slots** (`PanelPage`, `PanelSlot`, `Placement::RecordAside`):
   declared in Rust with mandatory permissions (boot fails otherwise),

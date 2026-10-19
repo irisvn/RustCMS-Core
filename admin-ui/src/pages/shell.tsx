@@ -1,6 +1,6 @@
 import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
-import { ArrowUpRight, ChevronRight, Home, LogOut, Menu, PanelLeftClose, PanelLeftOpen, PanelsTopLeft, Settings2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowUpRight, ChevronRight, Home, LogOut, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelsTopLeft, Settings2, Sun, X } from "lucide-react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { ApiError } from "@/api/client";
 import { usePanelConfig, useSession } from "@/api/context";
 import { meQuery, usePanel } from "@/api/queries";
@@ -20,6 +20,7 @@ import { ToastRegion } from "@/components/toast";
 import { useEpoch } from "@/lib/epoch";
 import { canonicalSubPath } from "@/lib/paths";
 import { usePageTitle } from "@/lib/title";
+import { type SchemeChoice, chooseScheme, schemeChoice, subscribeScheme } from "@/lib/theme";
 
 const navLink = "flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&.active]:bg-muted [&.active]:font-medium [&.active]:text-foreground data-[status=active]:bg-muted data-[status=active]:font-medium data-[status=active]:text-foreground";
 const activeProps = { "aria-current": "page" as const };
@@ -114,12 +115,45 @@ function Navigation({ panel, collapsed = false, onNavigate }: { panel: PanelResp
   );
 }
 
+const SCHEMES = [
+  { value: "light", icon: Sun, label: "scheme.light" },
+  { value: "dark", icon: Moon, label: "scheme.dark" },
+  { value: "system", icon: Monitor, label: "scheme.system" },
+] as const;
+
+/** Light, Dark or System, for this browser. */
+function SchemeSwitch({ collapsed }: { collapsed?: boolean }) {
+  const t = useT();
+  const current = useSyncExternalStore(subscribeScheme, schemeChoice);
+  return (
+    <div role="group" aria-label={t("scheme.label")} className={cn("flex gap-1 rounded-md border border-border p-0.5", collapsed && "flex-col")}>
+      {SCHEMES.map(({ value, icon: Icon, label }) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={current === value}
+          aria-label={t(label)}
+          title={t(label)}
+          onClick={() => chooseScheme(value as SchemeChoice)}
+          className={cn(
+            "flex min-h-8 flex-1 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            current === value && "bg-muted text-foreground",
+          )}
+        >
+          <Icon className="size-4" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function UserFooter({ panel, collapsed, leaving, logout, error, onNavigate }: {
   panel: PanelResponse; collapsed?: boolean; leaving: boolean; logout: () => void; error: string | null; onNavigate?: () => void;
 }) {
   const t = useT();
   return (
     <div className="mt-auto shrink-0 space-y-2 border-t border-border pt-3">
+      <SchemeSwitch collapsed={collapsed} />
       <Link to="/account" onClick={onNavigate} activeProps={activeProps} title={panel.user.email} className={cn(navLink, collapsed && "justify-center px-2")}>
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-xs font-semibold text-foreground" aria-hidden="true">{panel.user.name.slice(0, 2).toUpperCase()}</span>
         <span className={cn("min-w-0 flex-1", collapsed && "sr-only")}><span className="block truncate font-medium text-foreground">{panel.user.name}</span><span className="block truncate text-xs">{panel.user.email}</span></span>

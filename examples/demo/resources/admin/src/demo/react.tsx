@@ -6,6 +6,7 @@ import {
   fieldErrors,
   registerPage,
   useAdminMutation,
+  useColorScheme,
   useAdminQuery,
   useEvents,
   useResource,
@@ -106,6 +107,7 @@ function ReactDemo(props: PageProps<Data>) {
 }
 
 function Overview(props: PageProps<Data>) {
+  const scheme = useColorScheme();
   const hello = useAdminQuery<{ message: string }>(props, "/demo/hello");
   const reset = useAdminMutation(props, "/demo/ticks/reset", "post");
   const [count, setCount] = useState<number | null>(null);
@@ -140,6 +142,9 @@ function Overview(props: PageProps<Data>) {
         <Dialog open={open} onClose={() => setOpen(false)} title={props.t("Demo dialog")}>
           <p className="demo-react-dialog">{props.t("Styled by the extension")}</p>
         </Dialog>
+        <p className="demo-react-can">
+          {props.t("Color scheme")}: <span aria-label="React scheme">{scheme}</span>
+        </p>
         {props.can("demo.live") && <p className="demo-react-can">{props.t("You may watch the live counter.")}</p>}
       </CardContent>
     </Card>

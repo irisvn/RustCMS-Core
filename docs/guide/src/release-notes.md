@@ -1,7 +1,15 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.6.0**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.6.1**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.6.1
+
+- **Light, Dark or System per user**: a switch at the bottom of the sidebar,
+  kept in the browser; the app's color scheme stays the default
+  ([Theme](admin/customizing.md#theme)).
+- React pages: `useColorScheme()` to redraw canvas charts in the current
+  scheme ([React pages](admin/react-pages.md#calling-your-routes)).
 
 ## 0.6.0
 

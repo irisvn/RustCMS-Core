@@ -210,3 +210,6 @@ export declare function useResourceMutation<O extends ResourceOperation, T = unk
   options?: Omit<UseMutationOptions<T, Error, ResourceVariables[O]>, "mutationFn">,
 ): UseMutationResult<T, Error, ResourceVariables[O]>;
 
+/** The panel's color scheme, re-rendering when it changes (canvas colors, charts). */
+export declare function useColorScheme(): "light" | "dark";
+

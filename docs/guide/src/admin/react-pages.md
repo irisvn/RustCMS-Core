@@ -125,6 +125,10 @@ Hooks wrap them with React Query:
   user, and the view's next writes wait.
 - `useEvents(props, path, handlers)` and `useSocket(props, path, handlers,
   { reconnect })` open a [stream](realtime.md) while mounted.
+- `useColorScheme()` returns `"light"` or `"dark"` and re-renders when the
+  user or the system changes it, e.g. to redraw a canvas chart. CSS needs
+  nothing: the theme's variables follow it. It reads the panel's
+  `data-scheme`, so it works on any 0.6 panel.
 
 When the session changes (sign-in, sign-out, another tab), the view is
 mounted again for the new session; calls and callbacks of the old one do

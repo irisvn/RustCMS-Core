@@ -77,7 +77,8 @@ periodic work; runs can overlap), `redis` with feature `redis`). Other directori
 - `src/lib/`: `host` (the v2 host: modules, versions, `incompatibility`),
   `widgets` (v1/v2 registration, script loading and `ui` levels), `facade`
   (`props.api` and `props.resources`), `paths` (extension, sub-page and
-  resource path validation), `realtime`, `toast` (the toast store).
+  resource path validation), `realtime`, `toast` (the toast store), `theme` (favicon, the browser's
+  color-scheme choice and cross-tab sync), `title` (`props.title`).
 - `src/components/`: `react-view` (v2 views: epoch, boundary, props), `toast`
   (the region), `ui/` (the kit; `portal`, `tabs`, `menu`, `misc` are `ui` 2).
 - `sdk/`: `@rustcms/admin-sdk`, canonical; copied to the CLI template and the

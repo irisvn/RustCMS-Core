@@ -6,6 +6,15 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-10-19
+
+### Added (0.6.1)
+- A per-user color scheme switch (Light / Dark / System) at the bottom of the
+  sidebar. It is kept in the browser (localStorage, other tabs follow); the
+  app's `Theme::color_scheme` stays the default until the user chooses.
+- The SDK's `useColorScheme()` (`"light"` / `"dark"`, re-rendering on change),
+  for canvas charts. No host API change; SDK 0.6.1.
+
 ## [0.6.0] — 2026-10-19
 
 ### Added (0.6.0 — W9 part B)

@@ -29,6 +29,13 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.6.0 to 0.6.1
+
+Nothing needs to change. Users can now pick Light, Dark or System; your
+`Theme::color_scheme` is the default until they do. To use `useColorScheme()`
+in a React page, run `rustcms make:sdk`, then `npm run build` in
+`resources/admin`.
+
 ## From 0.5.1 to 0.6.0
 
 Nothing needs to change: React pages built with `ui: 1` keep working.

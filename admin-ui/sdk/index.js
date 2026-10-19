@@ -1,7 +1,7 @@
 // @rustcms/admin-sdk: hooks and registration helpers for host API v2 (ADR
 // 0032). Bundled into the extension; `react` and `@tanstack/react-query` stay
 // external (the panel's own instances, mapped by the preset).
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 function host() {
@@ -228,5 +228,22 @@ export function useResourceMutation(props, slug, op, options = {}) {
     onError: (...args) => (alive.current ? onError?.(...args) : undefined),
     onSettled: (...args) => (alive.current ? onSettled?.(...args) : undefined),
   });
+}
+
+function subscribeScheme(listener) {
+  const observer = new MutationObserver(listener);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-scheme"] });
+  return () => observer.disconnect();
+}
+
+const readScheme = () => (document.documentElement.dataset.scheme === "dark" ? "dark" : "light");
+
+/**
+ * The panel's color scheme now, `"light"` or `"dark"`, re-rendering when the
+ * user or the system changes it (e.g. to redraw a canvas chart). Styles need
+ * nothing: the theme's CSS variables follow it.
+ */
+export function useColorScheme() {
+  return useSyncExternalStore(subscribeScheme, readScheme, () => "light");
 }
 

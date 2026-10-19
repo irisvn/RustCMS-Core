@@ -47,8 +47,11 @@ AdminProvider::new().theme(
   spaces, dashes; each is quoted for you). Anything else stops the boot: no
   text of yours is copied into CSS as written.
 - `dark(…)` sets tokens of the dark scheme; tokens it leaves out keep the
-  panel's dark defaults. `ColorScheme::Light` / `Dark` forces one scheme;
-  `System` (default) follows the operating system and its changes.
+  panel's dark defaults. `ColorScheme` is the default scheme: `Light`,
+  `Dark`, or `System` (default), which follows the operating system and its
+  changes. Each user can choose Light, Dark or System at the bottom of the
+  sidebar. The choice is kept in that browser (other tabs follow), and the
+  app's `ColorScheme` applies until they choose.
 - Logo and favicon are PNG, WebP or ICO up to 512 KiB, checked against their
   bytes. SVG and web fonts are not supported yet.
 - The theme becomes a stylesheet and images served from
