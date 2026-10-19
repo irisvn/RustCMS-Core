@@ -15,6 +15,9 @@ create could duplicate it. 0.2 lets clients retry safely.
   the writes whose repetition duplicates. Updates and deletes converge when
   repeated; system creates are guarded by unique email/name; token issuance and
   credential changes rotate secrets and stay pause-only.
+- Later additions use the same claims: media uploads, CSV import uploads
+  (a retry of the same file answers with the same import) and background
+  export requests (the same export).
 - The key is claimed **inside the write's transaction**, before hooks run, with
   `INSERT … ON CONFLICT DO NOTHING` into `idempotency_keys`; the result (the
   created key, or the action outcome) is stored before commit. Claim and write

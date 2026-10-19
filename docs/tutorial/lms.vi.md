@@ -8,7 +8,7 @@ import/export, mail, mời người dùng và dashboard. Mã nguồn hoàn chỉ
 Lệnh tạo mã (`rustcms new`, `rustcms make:*`) là của CLI `rustcms`; lệnh của
 app (`migrate`, `db:seed`, `serve`, `permission:sync`…) chạy bằng `cargo run --`.
 
-Yêu cầu: Rust (rustup), Node 20+ chỉ khi sửa giao diện admin, Docker nếu muốn
+Yêu cầu: Rust (rustup), Node 22.12+ chỉ khi sửa giao diện admin (Node 20.19+ đủ để build trang React của app), Docker nếu muốn
 dùng PostgreSQL/MySQL/Mailpit. Hướng dẫn dùng SQLite.
 
 ## 1. Tạo app
@@ -79,16 +79,17 @@ bên trong cùng khoá, đánh số lại 1…n và ghi audit từng bài thay �
 
 ## 6. Import và export CSV
 
-- Học viên import được theo email: `ResourceMeta::importable().import_key("email")`.
-- Ghi danh export được: `ResourceMeta::exportable()`; quyền
+- Học viên import được theo email: `ResourceMeta::new("Learner").import_key("email")`.
+- Ghi danh export được: `ResourceMeta::new("Enrollment").exportable()`; quyền
   `enrollments.export`. Xem [Import and export](../guide/src/admin/import-export.md).
 
 ## 7. Mail và job
 
 - Cấu hình `config/mail.toml` (driver `log` khi phát triển; `smtp` khi chạy
   thật, server nhập ở **Settings → Mail**, giới hạn bằng `allowed_hosts`).
-- Job `src/jobs/send_welcome.rs` gửi mail chào mừng mỗi ghế một lần
-  (template `resources/views/mail/{vi,en}/welcome.*`). Ghi danh dispatch job
+- Job `src/jobs/send_welcome.rs` gửi mail chào mừng cho từng cặp khoá
+  học/học viên rồi ghi receipt (template `resources/views/mail/{vi,en}/welcome.*`);
+  nếu bị ngắt sau khi gửi, lần chạy lại có thể gửi trùng. Ghi danh dispatch job
   trong cùng transaction.
 - Dev: `docker compose up mailpit`, xem thư ở <http://localhost:58025>.
 

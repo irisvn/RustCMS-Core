@@ -135,7 +135,7 @@ fn draw(custom: &CustomPanel, ctx: &Ctx, name: &str, view: PageView, data: Value
 pub(crate) fn home(custom: &CustomPanel, ctx: &Ctx) -> Option<String> {
     let slug = custom.home.as_deref()?;
     let page = custom.pages.iter().find(|p| p.slug() == slug)?;
-    allowed(ctx, &page.meta().permissions).then(|| slug.to_owned())
+    page.meta().allows(ctx).then(|| slug.to_owned())
 }
 
 /// Pages `ctx` may open, for the navigation.
@@ -143,7 +143,7 @@ pub(crate) fn links(custom: &CustomPanel, ctx: &Ctx) -> Vec<PageLink> {
     custom
         .pages
         .iter()
-        .filter(|p| allowed(ctx, &p.meta().permissions))
+        .filter(|p| p.meta().allows(ctx))
         .map(|p| PageLink {
             slug: p.slug().to_owned(),
             label: ctx.t(&p.meta().label),
@@ -189,9 +189,9 @@ async fn serve_page(
     raw_path: Option<String>,
 ) -> AppResult<Json<CustomPageResponse>> {
     let custom = custom(state)?;
-    let any = custom.pages.iter().any(|p| allowed(&ctx, &p.meta().permissions));
+    let any = custom.pages.iter().any(|p| p.meta().allows(&ctx));
     let page = match custom.pages.iter().find(|p| p.slug() == slug) {
-        Some(page) if allowed(&ctx, &page.meta().permissions) => page.clone(),
+        Some(page) if page.meta().allows(&ctx) => page.clone(),
         Some(_) => return Err(AppError::Forbidden),
         None if any => return Err(AppError::NotFound),
         None => return Err(AppError::Forbidden),

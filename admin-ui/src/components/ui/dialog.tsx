@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
+import { PortalContainer } from "./portal";
 
 /**
  * Modal built on the native <dialog> (focus trap, Escape, inert background)
@@ -20,6 +21,8 @@ export function Dialog({
   className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // Menus and tooltips inside render into the dialog (the top layer).
+  const [element, setElement] = useState<HTMLDialogElement | null>(null);
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
@@ -33,7 +36,10 @@ export function Dialog({
   }, [open]);
   return (
     <dialog
-      ref={ref}
+      ref={(el) => {
+        ref.current = el;
+        setElement(el);
+      }}
       aria-label={title}
       onCancel={(e) => {
         e.preventDefault();
@@ -45,10 +51,12 @@ export function Dialog({
       )}
     >
       {open && (
-        <div className="flex flex-col gap-4 p-5">
-          <h2 className="text-base font-semibold">{title}</h2>
-          {children}
-        </div>
+        <PortalContainer.Provider value={element}>
+          <div className="flex flex-col gap-4 p-5">
+            <h2 className="text-base font-semibold">{title}</h2>
+            {children}
+          </div>
+        </PortalContainer.Provider>
       )}
     </dialog>
   );

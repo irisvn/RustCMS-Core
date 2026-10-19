@@ -12,7 +12,7 @@ pub static SDK: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/templates/sdk");
 static SETUP: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/templates/admin");
 
 /// What a page built with this SDK needs from the panel.
-pub const REQUIRES: &str = "rustcms::admin::Requires { react: \"19.3\", react_query: \"5.104\", ui: 1 }";
+pub const REQUIRES: &str = "rustcms::admin::Requires { react: \"19.3\", react_query: \"5.104\", ui: 2 }";
 
 fn digest(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
@@ -82,6 +82,63 @@ pub fn ensure_setup(admin: &Path) -> anyhow::Result<bool> {
     Ok(new)
 }
 
+/// The level this command's SDK is built for (`SDK_UI` in `sdk/index.js`).
+pub const SDK_UI: u32 = 2;
+
+/// Labels of the `extension_script_v2` registrations in `provider` (or of a
+/// shared `Requires` constant) that declare a `ui`
+/// below [`SDK_UI`]: after `make:sdk`, their next build would be refused at
+/// registration until the provider says `ui: 2`.
+pub fn older_registrations(provider: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = provider;
+    while let Some(at) = rest.find("extension_script_v2(") {
+        rest = &rest[at + "extension_script_v2(".len()..];
+        let name = rest.trim_start().strip_prefix('"').and_then(|r| r.split_once('"')).map(|(n, _)| n.to_owned());
+        // The `Requires { … }` of this call: up to the next registration.
+        let call = rest.find("extension_script_v2(").map_or(rest, |next| &rest[..next]);
+        let level = call
+            .split_once("ui:")
+            .and_then(|(_, r)| r.trim_start().split(|c: char| !c.is_ascii_digit()).next())
+            .and_then(|n| n.parse::<u32>().ok());
+        if let (Some(name), Some(level)) = (name, level)
+            && level < SDK_UI
+        {
+            out.push(format!("`extension_script_v2(\"{name}\", …)`"));
+        }
+    }
+    // A `Requires` written elsewhere (a shared constant): named by its line.
+    let inline: usize = out.len();
+    let literals = provider.matches("Requires {").count();
+    let older = provider
+        .split("Requires {")
+        .skip(1)
+        .filter(|r| {
+            r.split_once('}')
+                .and_then(|(body, _)| body.split_once("ui:"))
+                .and_then(|(_, n)| n.trim_start().split(|c: char| !c.is_ascii_digit()).next()?.parse::<u32>().ok())
+                .is_some_and(|level| level < SDK_UI)
+        })
+        .count();
+    if older > inline && literals > 0 {
+        out.push("a shared `Requires` constant".to_owned());
+    }
+    out
+}
+
+/// Lines telling which registrations to move to `ui: 2`.
+pub fn older_registrations_hint(root: &Path) -> Vec<String> {
+    let provider = std::fs::read_to_string(root.join("src/providers/admin_panel_provider.rs")).unwrap_or_default();
+    older_registrations(&provider)
+        .into_iter()
+        .map(|name| {
+            format!(
+                "src/providers/admin_panel_provider.rs: {name} declares an older ui: set `ui: {SDK_UI}` in its `Requires` before rebuilding with this SDK"
+            )
+        })
+        .collect()
+}
+
 /// The warning `rustcms upgrade` prints when the app's SDK copy is older.
 pub fn sdk_warning(root: &Path) -> Option<String> {
     let version = std::fs::read_to_string(root.join("resources/admin/sdk/VERSION")).ok()?;
@@ -126,6 +183,28 @@ mod tests {
             assert_eq!(app["devDependencies"][name].as_str(), host_version, "{name}");
         }
         assert!(REQUIRES.contains("\"19.3\"") && REQUIRES.contains("\"5.104\""));
+    }
+
+    #[test]
+    fn older_registrations_are_found() {
+        let provider = r#"
+            .extension_script_v2("old", include_str!("a.js"), Requires { react: "19.3", react_query: "5.104", ui: 1 })
+            .extension_style("old", include_str!("a.css"))
+            .extension_script_v2(
+                "new",
+                include_str!("b.js"),
+                Requires { react: "19.3", react_query: "5.104", ui: 2 },
+            )
+        "#;
+        assert_eq!(older_registrations(provider), ["`extension_script_v2(\"old\", …)`"]);
+        let shared = r#"
+            const REQUIRES: Requires = Requires { react: "19.3", react_query: "5.104", ui: 1 };
+            .extension_script_v2("dock", include_str!("d.js"), REQUIRES)
+        "#;
+        assert_eq!(older_registrations(shared), ["a shared `Requires` constant"]);
+        assert!(REQUIRES.contains(&format!("ui: {SDK_UI}")));
+        let sdk = std::str::from_utf8(SDK.get_file("index.js").unwrap().contents()).unwrap();
+        assert!(sdk.contains(&format!("export const SDK_UI = {SDK_UI};")));
     }
 
     #[test]

@@ -6,6 +6,39 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-19
+
+### Added (0.6.0 — W9 part B)
+- `ui` level 2 for v2 extensions (ADR 0032 amended):
+  - `props.resources` (`list`, `get`, `create`, `update`, `delete`,
+    `restore`, `forceDelete`, `action`) through the resource routes, with
+    idempotency keys, the shared paused-write scope and its banner in the
+    view, and cross-view refresh;
+  - `props.toast` (`success`, `error`);
+  - `props.title(text | null)` on pages: the heading and breadcrumb of the
+    current sub-path;
+  - the SDK's `useResource`, `useRecord`, `useResourceMutation`,
+    `fieldErrors` and `resourceKey`;
+  - components: `Tabs*`, `DropdownMenu*`, `Tooltip`, `Table*`, `Skeleton`,
+    `Separator`, `CodeBlock`. Menus and tooltips work inside dialogs and
+    keep the CSP.
+- `PanelPageMeta::permission_any([…])`: a page for holders of at least one
+  of the listed permissions (any-of), combined with `.permission` (all-of);
+  checked for the navigation, `home`, the page and its sub-paths.
+- More navigation icons (home, dashboard, server, network, container,
+  hard-drive, bell, git-branch, database, terminal, …).
+- `make:sdk` lists the older `ui` declarations it finds in
+  `src/providers/admin_panel_provider.rs` (inline, or a shared `Requires`
+  constant); `rustcms upgrade` does so when the vendored SDK's VERSION
+  differs from its own.
+
+### Changed (0.6.0)
+- `Requires.ui` is a minimum: the panel accepts a level up to its own
+  (it was an exact match). `ui: 1` bundles keep working.
+- `make:page --react` writes `ui: 2`. A bundle built with the new SDK
+  refuses to register on an older panel, or when its `Requires` declares
+  `ui: 1`.
+
 ## [0.5.1] — 2026-10-19
 
 ### Added (0.5.1 — W9 part A)

@@ -120,6 +120,43 @@ impl PanelPage for PathPage {
     }
 }
 
+/// For holders of any one of its permissions.
+struct AnyPage;
+
+#[async_trait::async_trait]
+impl PanelPage for AnyPage {
+    const SLUG: &'static str = "any";
+
+    fn meta() -> PanelPageMeta {
+        PanelPageMeta::new("Any").permission_any(["reports.view", "ledger.view_any"])
+    }
+
+    fn view() -> PageView {
+        PageView::Template("<p>Any</p>")
+    }
+}
+
+/// Every `permission`, and one of each `permission_any` group.
+struct BothPage;
+
+#[async_trait::async_trait]
+impl PanelPage for BothPage {
+    const SLUG: &'static str = "both";
+
+    fn meta() -> PanelPageMeta {
+        PanelPageMeta::new("Both").permission("categories.view_any").permission_any(["reports.view", "tags.view_any"])
+    }
+
+    fn view() -> PageView {
+        PageView::Template("<p>Both</p>")
+    }
+
+    async fn data(ctx: &Ctx) -> AppResult<Value> {
+        assert!(ctx.can("reports.view") || ctx.can("tags.view_any"), "never called without one of the group");
+        Ok(Value::Null)
+    }
+}
+
 /// Only for holders of its own permission (declared for `permission:sync`).
 struct ReservedPage;
 
@@ -210,6 +247,8 @@ fn build(config: rustcms_core::Config) -> rustcms_core::AppBuilder {
             .page::<ReportPage>()
             .page::<PathPage>()
             .page::<ReservedPage>()
+            .page::<AnyPage>()
+            .page::<BothPage>()
             .slot::<CategoryAside>()
             .slot::<SecretAside>()
             .home("reserved")
@@ -267,7 +306,11 @@ db_test!(pages_follow_permissions_and_never_probe, |db: TestDb| async move {
     let (app, users) = setup(db).await;
     let editor = app.acting_as(&users.editor).await;
     let slugs: Vec<Value> = pages(&app, &editor).await.as_array().unwrap().iter().map(|p| p["slug"].clone()).collect();
-    assert_eq!(slugs, [json!("overview"), json!("report"), json!("paths")], "only pages the editor may open");
+    assert_eq!(
+        slugs,
+        [json!("overview"), json!("report"), json!("paths"), json!("any")],
+        "only pages the editor may open"
+    );
     // A page the user may not open, or does not exist: 403 / 404 once they may open some.
     editor.get(&app.admin_api("pages/reserved")).await.assert_status(StatusCode::FORBIDDEN);
     editor.get(&app.admin_api("pages/nope")).await.assert_status(StatusCode::NOT_FOUND);
@@ -561,6 +604,18 @@ fn misdeclared_pages_and_slots_stop_the_boot() {
     assert!(boot(|| AdminProvider::new().page::<OverviewPage>().page::<OverviewPage>()));
     assert!(!boot(|| all_resources().page::<OverviewPage>()));
     assert!(boot(|| AdminProvider::new().page::<OverviewPage>().home("nope")), "an unknown home");
+    struct EmptyAny;
+    #[async_trait::async_trait]
+    impl PanelPage for EmptyAny {
+        const SLUG: &'static str = "empty-any";
+        fn meta() -> PanelPageMeta {
+            PanelPageMeta::new("Empty").permission_any(Vec::<String>::new())
+        }
+        fn view() -> PageView {
+            PageView::Template("x")
+        }
+    }
+    assert!(boot(|| AdminProvider::new().page::<EmptyAny>()), "an empty permission_any");
     assert!(!boot(|| AdminProvider::new().page::<OverviewPage>().home("overview")));
 }
 
@@ -651,4 +706,20 @@ db_test!(home_sort_and_hidden_resources_are_navigation_only, |db: TestDb| async 
     assert!(!listed["navigation"].as_array().unwrap().iter().any(|r| r["slug"] == "ledger"));
     assert!(listed.get("home").is_none());
     member.get(&app.admin_api("resources/ledger/records")).await.assert_status(StatusCode::FORBIDDEN);
+});
+
+db_test!(permission_any_needs_one_of_each_group, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    // The editor holds `ledger.view_any` (one of `any`), and `categories.view_any`
+    // but none of `both`'s group.
+    let editor = app.acting_as(&users.editor).await;
+    editor.get(&app.admin_api("pages/any")).await.assert_status(StatusCode::OK);
+    editor.get(&app.admin_api("pages/any/a/b")).await.assert_status(StatusCode::OK);
+    editor.get(&app.admin_api("pages/both")).await.assert_status(StatusCode::FORBIDDEN);
+    // Without any of them: refused, and not listed.
+    let member = app.acting_as(&users.member).await;
+    member.get(&app.admin_api("pages/any")).await.assert_status(StatusCode::FORBIDDEN);
+    // The super admin holds everything.
+    let admin = app.acting_as(&users.admin).await;
+    admin.get(&app.admin_api("pages/both")).await.assert_status(StatusCode::OK);
 });

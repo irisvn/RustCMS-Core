@@ -87,3 +87,44 @@ export function canonicalSubPath(raw: string): string | null {
 export function encodeSubPath(path: string): string {
   return path === "" ? "" : path.split("/").map(encodeURIComponent).join("/");
 }
+
+const RESOURCE_NAME = /^[a-z0-9_-]{1,64}$/;
+const KEY_MAX_BYTES = 256;
+
+/** A resource slug or action name for `props.resources`, or throws. */
+export function resourceName(name: unknown, what = "resource"): string {
+  if (typeof name !== "string" || !RESOURCE_NAME.test(name)) throw new Error(`invalid ${what} ${JSON.stringify(name)}`);
+  return name;
+}
+
+/** A record key for `props.resources`: never `.`/`..` (a URL would drop or climb them). */
+export function recordKey(key: unknown): string {
+  if (
+    typeof key !== "string" ||
+    key === "" ||
+    key === "." ||
+    key === ".." ||
+    // eslint-disable-next-line no-control-regex
+    /[\u0000-\u001f\u007f]/.test(key) ||
+    new TextEncoder().encode(key).length > KEY_MAX_BYTES
+  ) {
+    throw new Error(`invalid record key ${JSON.stringify(key)}`);
+  }
+  return key;
+}
+
+/**
+ * `/resources/{segments}` relative to `apiPath`, each segment already checked
+ * and encoded here; the built URL must parse back to exactly those segments
+ * under `{apiPath}/resources/` (nothing normalized away), or this throws.
+ */
+export function resourcePath(apiPath: string, segments: string[], origin = globalThis.location?.origin ?? "http://localhost"): string {
+  const path = `/resources/${segments.map(encodeURIComponent).join("/")}`;
+  const prefix = apiPath.replace(/\/$/, "");
+  const expected = `${new URL(prefix, origin).pathname.replace(/\/$/, "")}${path}`;
+  const url = new URL(`${prefix}${path}`, origin);
+  if (url.origin !== new URL(prefix, origin).origin || url.pathname !== expected) {
+    throw new Error(`invalid resource path ${JSON.stringify(segments)}`);
+  }
+  return path;
+}

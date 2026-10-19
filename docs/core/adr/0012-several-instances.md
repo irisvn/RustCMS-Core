@@ -21,8 +21,9 @@ application.
   windows start when their key is created and refunds never extend them or go
   below zero. If Redis does not answer, limits fail closed.
 - **Periodic jobs** take a Redis lease (random owner token, compare-and-delete
-  release) so two instances never run one job at the same time (each may still
-  run it in its own interval). Leases only avoid duplicate work:
+  release) to reduce duplicate runs: runs can still overlap after a lease
+  expires, and the job runs anyway when Redis does not answer. Leases only
+  avoid duplicate work:
   every job stays correct when two run, e.g. media deletions are claimed with
   `FOR UPDATE SKIP LOCKED` on PostgreSQL and MySQL.
 - **Scope:** one standalone Redis (no Cluster), one key prefix per deployment;

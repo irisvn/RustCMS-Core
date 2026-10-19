@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*", "examples/demo", "examples/lms"]
 
 [workspace.package]
-version = "0.5.1"
+version = "0.6.0"
 edition = "2024"
 rust-version = "1.94"
 license = "MIT OR Apache-2.0"
@@ -13,11 +13,11 @@ keywords = ["cms", "admin", "framework", "axum", "seaorm"]
 categories = ["web-programming", "web-programming::http-server"]
 
 [workspace.dependencies]
-rustcms-core = { path = "crates/rustcms-core", version = "0.5.1" }
-rustcms-admin = { path = "crates/rustcms-admin", version = "0.5.1", default-features = false }
-rustcms-migration = { path = "crates/rustcms-migration", version = "0.5.1" }
-rustcms-testing = { path = "crates/rustcms-testing", version = "0.5.1" }
-rustcms-auth = { path = "crates/rustcms-auth", version = "0.5.1" }
+rustcms-core = { path = "crates/rustcms-core", version = "0.6.0" }
+rustcms-admin = { path = "crates/rustcms-admin", version = "0.6.0", default-features = false }
+rustcms-migration = { path = "crates/rustcms-migration", version = "0.6.0" }
+rustcms-testing = { path = "crates/rustcms-testing", version = "0.6.0" }
+rustcms-auth = { path = "crates/rustcms-auth", version = "0.6.0" }
 
 # Pinned: SeaORM API churns between majors (see docs/core/adr/0001).
 sea-orm = { version = "=2.0.4", default-features = false, features = [

@@ -117,6 +117,8 @@ A message that follows none of these templates has the code `custom` and
 | `write_conflict` | 409 | `busy` (another change in progress), `upload_expired`, `receipt_expired`; queue actions: `not_failed`, `not_waiting`, `running` |
 | `export_not_ready` | 409 | `pending` (the background export has not finished) |
 | `export_stale` | 409 | `stale` (access changed since the export was made: export again) |
+| `secret_stale` | 409 | `stale` (an encrypted map changed meanwhile: reload before retrying) |
+| `import_started` | 409 | `started` (the import has already started) |
 | `payload_too_large` | 413 | |
 | `validation_failed` | 422 | |
 | `too_many_requests` | 429 | |

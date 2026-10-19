@@ -12,7 +12,8 @@ disabling) and sessions must survive a leaked database dump.
 ## Decision
 
 - A small session store in `rustcms-auth` instead of `tower-sessions`: the cookie
-  carries a random token, the `sessions` table its SHA-256; ids regenerate at
+  carries a random token, the `sessions` table its HMAC-SHA-256 keyed directly by
+  `APP_KEY`; ids regenerate at
   sign-in and on credential changes; sliding expiry with hourly pruning.
 - CSRF uses a synchronizer token stored in the session plus a strict
   `Origin`/`Referer` allowlist, on every state-changing admin request including

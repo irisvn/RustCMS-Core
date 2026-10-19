@@ -22,8 +22,11 @@ Optional features are enabled on the `rustcms` dependency:
 | `s3` | off | uploads on S3-compatible storage (`storage.disk = "s3"`) |
 
 ```toml
-rustcms = { version = "…", features = ["redis", "s3"] }
+rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.6.0", features = ["redis", "s3"] }
 ```
+
+Keep the tag your application already uses (`rustcms upgrade` sets it) when
+adding features.
 
 Build for the server's platform: on a Linux CI runner, or in Docker (below).
 

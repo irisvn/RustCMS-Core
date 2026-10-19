@@ -62,8 +62,9 @@ is called when the language changes ([i18n](i18n.md#extensions)).
 
 ## Failures
 
-A script that fails to load, or takes more than 10 seconds, is skipped (the
-error is in the browser console). A widget that throws, returns no
+A script that fails to load, or takes longer than
+`AdminProvider::extension_timeout` (10 seconds by default, 1–60), is skipped
+(the error is in the browser console). A widget that throws, returns no
 `{update, unmount}`, or reports a number JSON cannot carry exactly (`NaN`,
 `Infinity`, an integer beyond 2^53) is disabled for the rest of the page's
 life, in every field that uses it. In both cases its fields are shown read-only (the stored

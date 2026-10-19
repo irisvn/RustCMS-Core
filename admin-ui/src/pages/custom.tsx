@@ -4,7 +4,9 @@ import { useCustomPage } from "@/api/custom";
 import { CustomContentView } from "@/components/custom";
 import { Page, PageHeader } from "@/components/layout";
 import { ErrorState, Loading, NotFoundPage } from "@/components/states";
-import { usePanelConfig } from "@/api/context";
+import { usePanelConfig, useSession } from "@/api/context";
+import { useEpoch } from "@/lib/epoch";
+import { usePageTitle } from "@/lib/title";
 import { canonicalSubPath } from "@/lib/paths";
 
 export function CustomPage() {
@@ -21,13 +23,19 @@ export function CustomPage() {
   const raw = rawSubPath(slug, pathname);
   const path = raw === null ? "" : canonicalSubPath(raw);
   const page = useCustomPage(slug, path ?? "", { enabled: path !== null });
+  // A v2 page may name this sub-path itself, or draw its own heading (`null`).
+  const title = usePageTitle(slug, path ?? "", useEpoch(useSession().api));
   if (path === null) return <NotFoundPage />;
   if (page.isLoading) return <Loading />;
   // A failed refetch (no longer allowed, gone) drops what was shown before.
   if (page.isError || !page.data) return <ErrorState error={page.error} />;
   return (
     <Page>
-      <PageHeader title={page.data.title} />
+      {title === null ? (
+        <h1 className="sr-only">{page.data.title}</h1>
+      ) : (
+        <PageHeader title={title ?? page.data.title} />
+      )}
       <CustomContentView kind="page" content={page.data.content} reload={() => void page.refetch()}
         place={{ kind: "page", slug, path }} />
     </Page>

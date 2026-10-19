@@ -36,8 +36,8 @@ people and `Actor::System` for trusted operators (console). It refuses:
 | Removing, disabling or deleting the last active super admin of a guard | 422 |
 
 Every change runs in one transaction that first takes the RBAC lock
-(`rbac::lock`: a transaction-scoped advisory lock on PostgreSQL, the write lock
-on SQLite) and then re-reads the actor's own grants. Concurrent changes are
+(`rbac::lock`: a transaction-scoped advisory lock on PostgreSQL, the
+`rustcms_locks` row locked `FOR UPDATE` on MySQL, the write lock on SQLite) and then re-reads the actor's own grants. Concurrent changes are
 therefore applied one after another, each checked against the state left by
 the previous one: an edit cannot restore a permission revoked meanwhile, and a
 promotion racing a removal cannot leave a guard without an active super admin.

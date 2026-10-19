@@ -19,7 +19,7 @@ saves the choice (422 for a language not offered). The shell's
 
 | Method | Path | Response |
 |---|---|---|
-| GET | `/panel` | `PanelResponse` `{brand, user, navigation: [ResourceInfo]}` (resources with `view_any`) |
+| GET | `/panel` | `PanelResponse` `{brand, user, navigation: [ResourceInfo], system, settings, pages, home?, permissions}`: resources with `view_any` (hidden ones too, `nav: false`; optional `sort`), settings pages with `view`, custom pages the user may open (optional `sort`), the home page's slug when the user may open it, the declared admin permissions the user holds |
 | GET | `/resources/{slug}/schema?operation=create\|edit\|view&key=` | `ResourceSchema` for this user |
 | GET | `/resources/{slug}/records?…` | `{data: [Envelope], meta}` |
 | POST | `/resources/{slug}/records` | 201 `{data: Envelope}` |
@@ -55,6 +55,7 @@ saves the choice (422 for a language not offered). The shell's
 | GET | `/audit?…` | `AuditPage` (`audit.view_all`; auth families with `audit.view_auth`) |
 | GET | `/resources/{slug}/records/{key}/history?cursor=&per_page=` | `AuditPage` of the record (`audit.view` + record `view`) |
 | GET | `/pages/{slug}` | `CustomPageResponse` (`content`: tagged `html` / `script`); 403 for users with no page, else 404 unknown / 403 not allowed; `data` only when allowed |
+| GET | `/pages/{slug}/{*path}` | the same for a sub-page: the raw path is split before decoding and checked after the page's permissions (422 on `path`: malformed or double encoding, `.`/`..`, empty segments, >16 segments or >512 bytes); `Ctx::page_path()` |
 | GET | `/slots?resource=&key=` | `SlotsResponse`; unknown resource 404, then the resource's `admits(view)` (403) before 422 for unknown, repeated or missing parameters; record as `find` (404 / 403); slots without their permissions omitted |
 | GET | `/queue` | `QueueOverview` (`queue.view`) |
 | GET | `/queue/jobs?status=&queue=&kind=&cursor=&per_page=` | `QueueJobPage`, keyset `(created_at, id)` desc, exact-instant cursor (`queue.view`) |
@@ -89,7 +90,9 @@ the policy allows `view` and `restore` or `force_delete` on it.
 `ResourceSchema` = `{schemaVersion, vocabularyVersion, resource, operation,
 abilities, form, table, relations?}` (`schemaVersion` 2: actions may carry a
 `form`; vocabulary 7: relations carry `kind`, `attach`, `detach`, `pivot`,
-`attachForm`, `pivotForm`). It contains only what the user may see: inputs for
+`attachForm`, `pivotForm`; vocabulary 8 (current): encrypted fields are
+`secret` and `secret_map` inputs, with masked views and explicit write
+operations). It contains only what the user may see: inputs for
 fields they may write (create), readable fields with `disabled` set when not
 writable (edit), and actions they may run. The reference payload is
 [`fixtures/contract/posts.schema.json`](https://github.com/irisvn/RustCMS-Core/blob/main/fixtures/contract/posts.schema.json),

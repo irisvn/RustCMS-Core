@@ -14,12 +14,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox, Switch } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, NativeSelect, Textarea } from "@/components/ui/input";
+import { DropdownMenu, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, Tooltip } from "@/components/ui/menu";
+import { CodeBlock, Separator, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/misc";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Page, PageHeader } from "@/components/layout";
 import { ErrorState, Loading } from "@/components/states";
 import { cn } from "@/lib/utils";
 
-/** Version of the `ui` module (its export list). */
-export const UI_VERSION = 1;
+/**
+ * The host's additive level (ADR 0032): the `ui` module's exports and the
+ * props of v2 views. A bundle needs a level at most this one; removing
+ * anything takes host API 3.
+ */
+export const UI_VERSION = 2;
 
 /** The panel's versions, for `requires`. */
 export const HOST_VERSIONS = Object.freeze({
@@ -45,7 +52,7 @@ const majorMinor = (version: string): [number, number] | null => {
 /** Why `requires` does not fit this panel, or `null` when it does. */
 export function incompatibility(requires: Requires, host = HOST_VERSIONS): string | null {
   if (requires.api !== host.api) return `needs host API ${requires.api}, the panel has ${host.api}`;
-  if (requires.ui !== host.ui) return `needs ui ${requires.ui}, the panel has ${host.ui}`;
+  if (!Number.isInteger(requires.ui) || requires.ui < 1 || requires.ui > host.ui) return `needs ui ${requires.ui}, the panel has ${host.ui}`;
   for (const [name, wanted, have] of [
     ["React", requires.react, host.react],
     ["React Query", requires.reactQuery, host.reactQuery],
@@ -86,6 +93,25 @@ export const MODULES = freeze({
     Loading,
     ErrorState,
     cn,
+    // ui 2
+    Tabs,
+    TabsList,
+    TabsTrigger,
+    TabsContent,
+    DropdownMenu,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuLabel,
+    Tooltip,
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+    Skeleton,
+    Separator,
+    CodeBlock,
   }),
   host: freeze({ ApiError, versions: HOST_VERSIONS }),
 });

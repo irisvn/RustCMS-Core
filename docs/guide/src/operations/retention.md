@@ -1,8 +1,9 @@
 # What is kept, and for how long
 
-`serve` deletes expired data on its own, once per period. With Redis, one
-instance at a time does it; without, every instance runs the pass (each
-deletion is safe to repeat). The commands do the same on demand.
+`serve` deletes expired data on its own, once per period. With Redis, a
+lease keeps instances from doing it at the same time in the usual case (runs
+can still overlap after a lease expires or when Redis fails); without, every
+instance runs the pass. Each deletion is safe to repeat. The commands do the same on demand.
 
 | Data | Kept | Pruned by |
 |---|---|---|
@@ -11,6 +12,7 @@ deletion is safe to repeat). The commands do the same on demand.
 | Reset and invitation links | until they expire (marks of credential changes: 30 days) | `serve` hourly |
 | Audit entries | `audit.retention_days` (365) | `serve` hourly, `audit:prune` |
 | Idempotency receipts | 24 hours | `serve`, `idempotency:prune` |
+| Schedule claims (`schedule_slots`) | 7 days (`schedule_states` are kept) | `serve` hourly, while schedules are registered and `[schedule] enabled` |
 | Failed jobs, `once` receipts | `queue.failed_retention_days` (30) | the workers |
 | Background exports (file and row) | 24 hours, removed an hour later | `serve` |
 | Imports (file, row, report, receipts) | 24 hours from upload, or from the start of the run | `serve` |

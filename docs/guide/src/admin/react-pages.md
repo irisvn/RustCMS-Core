@@ -23,7 +23,7 @@ cd resources/admin && npm install && npm run build   # Node 20.19+ or 22.12+
 
   ```rust,ignore
   .extension_script_v2("stats", include_str!("../../resources/admin/js/blog/stats.js"),
-      Requires { react: "19.3", react_query: "5.104", ui: 1 })
+      Requires { react: "19.3", react_query: "5.104", ui: 2 })
   .extension_style("stats", include_str!("../../resources/admin/css/blog/stats.css"))
   ```
 
@@ -66,11 +66,14 @@ registerPage("blog/stats", Stats);
 
 Register with `registerPage`, `registerSlot` or `registerCell` and the name of
 the Rust side (`PageView::Script("…")` of a page or slot, `.cell("…")` of a
-column). A
-name is taken once, by v1 or v2.
+column). Within each kind (page, slot or cell) a name is taken once, by v1
+or v2.
 
-Only these imports are available; anything else (`react-dom/client`,
-`react/jsx-dev-runtime`, `import()`) fails the build:
+These imports use the panel's own modules, except `@rustcms/admin-sdk`,
+whose hooks and registration code are bundled into your script. Other installed
+dependencies and your local modules are bundled into the script; other
+React, React DOM and React Query subpaths (`react-dom/client`,
+`react/jsx-dev-runtime`) and every dynamic `import()` fail the build:
 
 | Import | What |
 |---|---|
@@ -78,7 +81,7 @@ Only these imports are available; anything else (`react-dom/client`,
 | `react-dom` | `createPortal` |
 | `@tanstack/react-query` | `useQuery`, `useMutation`, `useQueryClient`, `useInfiniteQuery` |
 | `@rustcms/admin-sdk` | `registerPage/Slot/Cell`, the hooks below, the prop types |
-| `@rustcms/admin-sdk/ui` | `Alert`, `Badge`, `Button`, `buttonVariants`, `Card`, `CardContent`, `CardHeader`, `CardTitle`, `Checkbox`, `Switch`, `Dialog`, `Input`, `Label`, `NativeSelect`, `Textarea`, `Page`, `PageHeader`, `Loading`, `ErrorState`, `cn` |
+| `@rustcms/admin-sdk/ui` | `Alert`, `Badge`, `Button`, `buttonVariants`, `Card`, `CardContent`, `CardHeader`, `CardTitle`, `Checkbox`, `Switch`, `Dialog`, `Input`, `Label`, `NativeSelect`, `Textarea`, `Page`, `PageHeader`, `Loading`, `ErrorState`, `cn`; and from `ui` 2: `Tabs*`, `DropdownMenu*`, `Tooltip`, `Table*`, `Skeleton`, `Separator`, `CodeBlock` ([below](#components)) |
 | `@rustcms/admin-sdk/host` | `ApiError`, `versions` |
 
 Never call `createRoot`: the panel renders your component.
@@ -94,6 +97,8 @@ Never call `createRoot`: the panel renders your component.
 | `props` (the cell's) | | | ✓ |
 | `locale`, `t`, `scope`, `can` | ✓ | ✓ | ✓ |
 | `navigate`, `reload`, `api`, `realtime` | ✓ | ✓ | |
+| `resources`, `toast` (`ui` 2) | ✓ | ✓ | |
+| `title` (`ui` 2) | ✓ | | |
 
 - `t(text)` translates with the catalogs of `registerTranslations`
   ([Languages](i18n.md)).
@@ -103,7 +108,8 @@ Never call `createRoot`: the panel renders your component.
 
 ## Calling your routes
 
-`props.api.get/post/put/patch/delete(path, body?, { query })` call your
+`props.api.get/delete(path, { query }?)` and
+`props.api.post/put/patch(path, body?, { query }?)` call your
 [admin routes](admin-routes.md) under `{admin}/api/x`, with the session and
 CSRF token. Paths start with one `/` (`/blog/posts`); `..`, `//`, `?`, `#`,
 encoded slashes and double encoding are refused before anything is sent.
@@ -125,14 +131,99 @@ mounted again for the new session; calls and callbacks of the old one do
 nothing (a call rejects with `ApiError` code `session_changed`). A refused
 CSRF token also ends the session state, so that call rejects the same way.
 
+## Records of your resources
+
+With `ui: 2` in `Requires`, `props.resources` reads and writes the records of
+your [resources](resources.md) through the panel's own routes, so their
+policy, `scope()`, field rules, validation, audit log and encrypted fields
+apply:
+
+```tsx
+import { fieldErrors, useResource, useResourceMutation } from "@rustcms/admin-sdk";
+
+const services = useResource<Service>(props, "services", { query: { search: "web", per_page: "25" } });
+const restart = useResourceMutation(props, "services", "action", {
+  onSuccess: () => props.toast.success(props.t("Restarted")),
+});
+const save = useResourceMutation(props, "services", "update");
+// services.data?.data: envelopes { key, title, abilities, data, labels }
+restart.mutate({ name: "restart", keys: [service.key] });
+save.mutate({ key: service.key, data: { replicas: "3" } });
+const errors = fieldErrors(save.error); // { replicas: ["must be at most 10"] }
+```
+
+- **Methods:** `list`, `get`, `create`, `update`, `delete`, `restore`,
+  `forceDelete`, `action`. The hooks `useResource`, `useRecord` and
+  `useResourceMutation` wrap them.
+- **Values** use the panel's wire format: 64-bit integers and decimals as
+  strings. `props.resources` sends values unchanged: send `null` to clear a
+  field (or to leave a `required` one empty, which it refuses); an empty
+  string stays an empty string.
+- **Updates** send the changed fields, and the last write wins. Encrypted
+  maps answer `409 secret_stale` when they changed meanwhile. On a 409 or
+  422, keep the user's draft.
+- **Lost answers:** a write whose answer was lost pauses that resource's
+  writes, in your view and in the resource's own pages. Both show the
+  banner; creates and actions can be retried safely there. Writes are never
+  retried automatically.
+- **Refreshing:** after any write to a resource, every view reading it
+  refetches, the built-in lists included.
+- **Validation:** slugs, action names and keys a URL could change (`.`,
+  `..`) are refused before anything is sent.
+
+## Toasts
+
+`props.toast.success(text)` and `props.toast.error(text)` (`ui` 2) show a
+message in the panel's corner:
+
+- a success for 5 s, an error for 8 s; at most 5 at a time;
+- announced to screen readers;
+- kept when the user leaves the page, dropped when the session changes.
+
+## Page titles
+
+`props.title(text)` (`ui` 2, pages) names the current sub-path in the
+panel's heading and breadcrumb; `props.title(null)` hides the heading (it
+stays for screen readers) when the page draws its own:
+
+```tsx
+useEffect(() => {
+  if (props.path.startsWith("services/")) props.title(props.path.slice("services/".length));
+}, [props.path, props.title]);
+```
+
+A title holds for the sub-path it was set on: on another one the page's own
+title shows again until it is set there too. It ends with the view and with
+the session.
+
+## Components
+
+`ui` 2 adds:
+
+- `Tabs` (controlled): with sub-paths,
+  `<Tabs value={props.path || "overview"} onValueChange={(v) => props.navigate("/p/x/" + v)}>`,
+  then `TabsList aria-label=…`, `TabsTrigger value=…` and
+  `TabsContent value=…`.
+- `DropdownMenu trigger="Actions"` with `DropdownMenuItem onSelect destructive
+  disabled`, `DropdownMenuSeparator` and `DropdownMenuLabel`. The keyboard
+  works, and Escape returns to the button.
+- `Tooltip content="…"` around one element.
+- `Table`, `TableHeader`, `TableBody`, `TableRow`, `TableHead` and
+  `TableCell`, styled like the panel's lists.
+- `Skeleton`, `Separator`, and `CodeBlock code="…"` (with a copy button).
+
+Menus and tooltips work inside a `Dialog`.
+
 ## Sub-pages
 
 `/admin/p/<slug>/<sub/path>` opens the same page: `props.path` is
 `"sub/path"` (`""` without one), and `PanelPage::data` reads
 `ctx.page_path()`. The page's permissions cover every sub-path; check more in
-`data` when some need it. Segments are `A-Z a-z 0-9 . _ ~ -`, at most 16;
-anything else is "not found" in the panel and a 422 validation error on
-`path` from the API.
+`data` when some need it. A sub-path is up to 16 non-empty segments of
+`A-Z a-z 0-9 . _ ~ -` (`.` and `..` are refused), at most 512 bytes as sent
+(one trailing slash is dropped). Anything else is "not found" in the panel
+and a 422 validation error on `path` from the API, after the permission
+checks.
 
 ## Styles
 
@@ -155,9 +246,12 @@ time, so the panel's Content Security Policy stays strict.
 - A component that throws while rendering shows "unavailable" with Retry;
   other views are unaffected (a cell shows its plain value).
 - `Requires` states the React, React Query and `ui` versions the bundle was
-  built against. A panel with another major, an older minor or another `ui`
+  built against. A panel with another major, an older minor or a lower `ui`
   does not load the script at all, and the console says why: rebuild with the
-  SDK of that RustCMS version.
+  SDK of that RustCMS version. A `ui: 1` bundle keeps working on newer
+  panels.
+- A bundle built with the `ui` 2 SDK whose `Requires` still says `ui: 1` is
+  refused at registration, with a message: update the provider.
 - `AdminProvider::extension_timeout(Duration)` (1–60 s, default 10) bounds how
   long the panel waits for scripts to register.
 
@@ -171,5 +265,6 @@ end-to-end tests drive the built page in a browser.
 
 `rustcms upgrade` warns when `resources/admin/sdk` is older than the command.
 Run `rustcms make:sdk`: it replaces the files you did not edit and lists the
-ones it kept. Then update `package.json` to the versions in `Requires`,
-`npm install && npm run build`, and commit.
+ones it kept, and the `extension_script_v2` registrations whose `Requires`
+declare an older `ui`: set `ui: 2` there. Then update `package.json` to the
+versions in `Requires`, run `npm install && npm run build`, and commit.

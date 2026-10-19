@@ -27,7 +27,7 @@ strip target/release/blog      # tuỳ chọn: khoảng 29 MB → 23 MB
   | `s3` | tắt | lưu upload trên S3 / MinIO (`storage.disk = "s3"`) |
 
   ```toml
-  rustcms = { version = "…", features = ["redis", "s3"] }
+  rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.6.0", features = ["redis", "s3"] }  # giữ tag app đang dùng
   ```
 - **Admin SPA** đã build sẵn trong crate `rustcms-admin`. App bình thường không
   cần chạy `npm`. Chỉ khi sửa mã nguồn SPA trong repo rustcms mới phải chạy
@@ -77,8 +77,9 @@ cấu hình có trong [Configuration](../../guide/src/getting-started/configurat
 
 ## 3. Các lệnh thường dùng
 
-Binary chính là `rustcms`/`artisan` của app. Mọi lệnh ở [CLI](../../guide/src/reference/cli.md) đều chạy
-được dạng `./blog <lệnh>`:
+Binary chính là `rustcms`/`artisan` của app. Chỉ các mục Application commands, Auth commands và Admin
+panel commands trong [CLI](../../guide/src/reference/cli.md) chạy bằng `./blog <lệnh>`; Global commands chạy
+bằng lệnh `rustcms` đã cài:
 
 ```sh
 ./blog key:generate --show                # in ra APP_KEY mới (không ghi file)
@@ -222,7 +223,7 @@ blog.example.com {
 
 Khi đó:
 - rate limit được đếm chung ở Redis;
-- job định kỳ (dọn session, xoá media) không chạy trùng nhau;
+- job định kỳ (dọn session, xoá media) dùng lease Redis để giảm chạy trùng; job vẫn có thể chạy đồng thời khi lease hết hạn hoặc Redis lỗi, nên phải an toàn khi chạy lặp;
 - quyền đổi trên một instance có hiệu lực trên mọi instance từ request sau.
 
 Không có Redis thì chỉ nên chạy **một** instance. Chi tiết ở ADR 0012 và

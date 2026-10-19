@@ -1,4 +1,4 @@
-import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { t, useLocale } from "@/i18n";
 import type { ApiClient } from "./client";
 import type {
@@ -89,10 +89,17 @@ export function keyedWrite<T>(
   path: string,
   body: unknown,
   origin?: string,
+  /** Runs the send inside the queue (e.g. refuses it when an extension view is gone). */
+  gate: (send: () => Promise<T>) => Promise<T> = (send) => send(),
 ): Promise<T> {
   const text = JSON.stringify(body);
   const pending = { id: crypto.randomUUID(), method, path, body: text, key: crypto.randomUUID(), origin };
-  return guardedWrite(session, slug, () => session.api.request<T>(method, path, JSON.parse(text), { "Idempotency-Key": pending.key }), pending);
+  return guardedWrite(
+    session,
+    slug,
+    () => gate(() => session.api.request<T>(method, path, JSON.parse(text), { "Idempotency-Key": pending.key })),
+    pending,
+  );
 }
 
 /**
@@ -120,9 +127,11 @@ export function retryPending(session: Session, slug: string): Promise<{ result: 
 }
 
 /** After any write: lists, records, schemas (abilities), relationship options and the audit log may have changed. */
-function invalidateAfterWrite(client: ReturnType<typeof useQueryClient>, slug: string) {
+export function invalidateAfterWrite(client: QueryClient, slug: string) {
   return Promise.all([
     client.invalidateQueries({ queryKey: keys.records(slug) }),
+    // Extension views' reads of this resource (`props.resources`, ADR 0032).
+    client.invalidateQueries({ queryKey: ["rustcms.r", slug] }),
     client.invalidateQueries({ queryKey: ["schema", slug] }),
     client.invalidateQueries({ queryKey: ["options"] }),
     client.invalidateQueries({ queryKey: ["history", slug] }),

@@ -41,8 +41,13 @@ Resources the user may list (`view_any`) appear in the sidebar, grouped by
 ResourceMeta::new("Post").plural("Posts").group("Content").icon("file-text")
 ```
 
-Icons: `box`, `file-text`, `folder`, `history`, `image`, `layers`,
-`settings`, `shield`, `shopping-cart`, `tag`, `users`.
+Icons (also for pages): `activity`, `bell`, `box`, `calendar`, `chart`,
+`cloud`, `container`, `cpu`, `dashboard`, `database`, `file-code`,
+`file-text`, `folder`, `gauge`, `git-branch`, `globe`, `hard-drive`,
+`history`, `home`, `image`, `key`, `layers`, `link`, `lock`, `logs`, `mail`,
+`network`, `package`, `rocket`, `server`, `settings`, `shield`,
+`shopping-cart`, `tag`, `terminal`, `users`, `workflow`. Others show a
+generic icon.
 
 ### Order
 

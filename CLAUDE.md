@@ -41,7 +41,8 @@
   as `AdminRoutes::events` with `LiveSession` first (ADR 0027): read-only, rechecked, bounded; sockets only as
   `AdminRoutes::socket` with `LiveSocket` (ADR 0029): commands call `AdminSocket::authorize` when they run; never add
   raw SSE or WebSocket routes.
-- v2 extensions (ADR 0032): rendered by the host, never `createRoot`; import only the ids the SDK preset maps;
+- v2 extensions (ADR 0032): rendered by the host, never `createRoot`; host modules only through the ids the SDK
+  preset maps (other dependencies and local modules are bundled; framework subpaths and dynamic imports are refused);
   built `resources/admin/{js,css}` are committed; every extension path goes through `admin-ui/src/lib/paths.ts`.
   `admin-ui/sdk` is canonical: copy it to `crates/rustcms-cli/templates/sdk` and `examples/demo/resources/admin/sdk`
   (`just generated` checks).

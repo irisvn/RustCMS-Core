@@ -29,6 +29,17 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.5.1 to 0.6.0
+
+Nothing needs to change: React pages built with `ui: 1` keep working.
+
+To use `props.resources`, `props.toast` and the new components:
+1. Run `rustcms make:sdk`: it updates `resources/admin/sdk` (keeping files
+   you edited) and lists the registrations to change.
+2. Set `ui: 2` in those `Requires { … }`. A bundle built with the new SDK
+   is refused while its provider still declares `ui: 1`.
+3. Run `npm install && npm run build` in `resources/admin`, then commit.
+
 ## From 0.5.0 to 0.5.1
 
 Nothing needs to change. `PanelResponse` (`home`), `ResourceInfo` (`sort`,
@@ -44,7 +55,8 @@ Nothing needs to change: v1 scripts (`extension_script`,
   (`rustcms make:page <Name> --react`, `extension_script_v2`). They need Node
   20.19+ or 22.12+ to build, not to compile or deploy the app.
 - `GET {admin}/api/panel` has a new `permissions` list; a test that compares
-  the whole response should expect it.
+  the whole response should expect it, and Rust code building a
+  `PanelResponse` literal must add `permissions`.
 - `{admin}/api/pages/{slug}/{*path}` is new: a page now answers its
   sub-paths too (with the page's permissions; read `ctx.page_path()` in
   `data` to tell them apart).

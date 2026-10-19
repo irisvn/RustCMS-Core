@@ -107,6 +107,17 @@ export function registerWidget(name: string, widget: Widget): void {
   widgets.set(name, widget);
 }
 
+/** Each v2 script's requirements, set while it loads (its registrations inherit them). */
+const scriptRequires = new WeakMap<Element, Requires>();
+/** The `ui` level each v2 view's script declared (`Requires.ui`), by `kind:name`. */
+const viewLevels = new Map<string, number>();
+
+/** The level declared by the script running now: 1 for v1 scripts and outside one. */
+function declaredLevel(): number {
+  const script = document.currentScript;
+  return (script && scriptRequires.get(script)?.ui) ?? 1;
+}
+
 /** React views of v2 scripts (ADR 0032): same names as v1, taken once by either. */
 const reactViews: Record<ViewKind, Map<string, React.ComponentType<never>>> = {
   page: new Map(),
@@ -124,13 +135,33 @@ function checkRegistration(kind: ViewKind, name: string): void {
   }
 }
 
-/** Registers a v2 React component (a page, slot or cell) under `name`. */
-export function registerReactView(kind: ViewKind, name: string, component: React.ComponentType<never>): void {
+/**
+ * Registers a v2 React component (a page, slot or cell) under `name`. `meta.ui`
+ * is the level of the SDK it was built with (absent: 1); it may not exceed the
+ * level its script declares (`declared`, from `Requires.ui`).
+ */
+export function registerReactView(
+  kind: ViewKind,
+  name: string,
+  component: React.ComponentType<never>,
+  meta?: { ui?: unknown },
+  declared: number = declaredLevel(),
+): void {
   checkRegistration(kind, name);
   if (typeof component !== "function" && (typeof component !== "object" || component === null)) {
     throw new Error(`rustcms: ${kind} ${name} is not a React component`);
   }
+  const sdk = typeof meta?.ui === "number" ? meta.ui : 1;
+  if (sdk > declared) {
+    throw new Error(`rustcms: ${kind} ${name} was built with SDK ui ${sdk} but \`Requires\` declares ui ${declared}: update the provider`);
+  }
   reactViews[kind].set(name, component);
+  viewLevels.set(`${kind}:${name}`, declared);
+}
+
+/** The `ui` level a v2 view's script declared (which props it gets). */
+export function reactViewLevel(kind: ViewKind, name: string): number {
+  return viewLevels.get(`${kind}:${name}`) ?? 1;
 }
 
 /** The v2 component registered as `name`, unless missing or failed. */
@@ -226,9 +257,9 @@ export async function loadExtensions(basePath: string, extensions: ExtensionsCon
     apiVersion: 2,
     versions: HOST_VERSIONS,
     modules: MODULES,
-    registerPage: (name: string, component: React.ComponentType<never>) => registerReactView("page", name, component),
-    registerSlot: (name: string, component: React.ComponentType<never>) => registerReactView("slot", name, component),
-    registerCell: (name: string, component: React.ComponentType<never>) => registerReactView("cell", name, component),
+    registerPage: (name: string, component: React.ComponentType<never>, meta?: { ui?: unknown }) => registerReactView("page", name, component, meta),
+    registerSlot: (name: string, component: React.ComponentType<never>, meta?: { ui?: unknown }) => registerReactView("slot", name, component, meta),
+    registerCell: (name: string, component: React.ComponentType<never>, meta?: { ui?: unknown }) => registerReactView("cell", name, component, meta),
   });
   (window as unknown as { rustcms: unknown }).rustcms = {
     registerWidget,
@@ -263,6 +294,7 @@ export async function loadExtensions(basePath: string, extensions: ExtensionsCon
         resolve();
       }, deadline);
       script.src = url(src);
+      if (requires) scriptRequires.set(script, requires);
       // Loaded one at a time here: an `async=false` script would also hold back
       // the next ones until it runs.
       script.onload = () => {
@@ -286,6 +318,7 @@ export function resetWidgets(): void {
   failed.clear();
   for (const map of Object.values(views)) map.clear();
   for (const map of Object.values(reactViews)) map.clear();
+  viewLevels.clear();
   failedViews.clear();
   translations.clear();
   frozen = false;

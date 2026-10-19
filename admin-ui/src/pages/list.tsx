@@ -8,6 +8,7 @@ import { ErrorState, Loading, PausedBanner, VersionBanner, compatibility } from 
 import { Page, PageHeader } from "@/components/layout";
 import { Alert } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Table, TableBody, TableHeader, TableRow } from "@/components/ui/misc";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
@@ -275,9 +276,8 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
         {records.error ? (
           <ErrorState error={records.error} />
         ) : (
-          <div className="relative max-w-full overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
+          <Table>
+              <TableHeader>
                 <tr>
                   {bulkActions.length > 0 && (
                     <th className="w-8 p-3">
@@ -307,8 +307,8 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                     <span className="sr-only">{t("list.actions")}</span>
                   </th>
                 </tr>
-              </thead>
-              <tbody>
+              </TableHeader>
+              <TableBody>
                 {records.isLoading && (
                   <tr>
                     <td colSpan={table.columns.length + 2}>
@@ -324,7 +324,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                   </tr>
                 )}
                 {rows.map((record) => (
-                  <tr key={record.key} data-selected={selected.has(record.key) || undefined} className="border-b border-border last:border-0 hover:bg-muted/50 data-[selected=true]:bg-muted/60">
+                  <TableRow key={record.key} data-selected={selected.has(record.key) || undefined} className="data-[selected=true]:bg-muted/60">
                     {bulkActions.length > 0 && (
                       <td className="p-3">
                         <Checkbox
@@ -392,11 +392,10 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                         )}
                       </div>
                     </td>
-                  </tr>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+          </Table>
         )}
 
         {meta && (

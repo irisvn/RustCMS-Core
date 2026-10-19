@@ -69,7 +69,15 @@ impl CustomPanel {
             let slug = page.slug();
             assert!(valid_slug(slug), "page `{slug}`: slugs are 1-64 of a-z, 0-9 and -");
             assert!(seen.insert(slug), "page `{slug}` registered twice");
-            assert!(!page.meta().permissions.is_empty(), "page `{slug}`: declare at least one permission");
+            let meta = page.meta();
+            assert!(
+                !meta.permissions.is_empty() || !meta.any.is_empty(),
+                "page `{slug}`: declare at least one permission"
+            );
+            assert!(
+                meta.any.iter().all(|g| !g.is_empty()),
+                "page `{slug}`: `permission_any` needs at least one permission"
+            );
             compile(&mut templates, &mut sources, &format!("page:{slug}"), page.view());
         }
         let mut names = std::collections::HashSet::new();

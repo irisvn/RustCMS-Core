@@ -1,6 +1,6 @@
 # ADR 0032: Extension host API v2 (React pages that share the SPA)
 
-- Status: accepted (0.5.0, W5)
+- Status: accepted (0.5.0, W5); amended in 0.6.0 (W9: `ui` 2, an additive level)
 - Date: 2026-10-18
 
 ## Context
@@ -18,8 +18,9 @@ CSRF, sub-pages and permission-aware buttons, without shipping a second React.
 - **Compatibility before execution.** `AdminProvider::extension_script_v2(name,
   js, Requires { react, react_query, ui })` puts the requirements in the index
   config next to the script URL. The SPA compares them with the host before
-  inserting the `<script>`: `api` and `ui` exactly, `react` and `react_query`
-  the same major and a host minor at least the required one. An incompatible
+  inserting the `<script>`: `api` exactly, `ui` at most the host's level
+  (0.5.x required it exactly), `react` and `react_query` the same major and a
+  host minor at least the required one. An incompatible
   script never runs; its views show "unavailable" and the console says why.
   Registration checks again. `extension_script` (v1) is unchanged, and
   `window.rustcms.apiVersion` stays 1; v2 is `window.rustcms.v2`.
@@ -27,17 +28,63 @@ CSRF, sub-pages and permission-aware buttons, without shipping a second React.
   `react/jsx-runtime`, `react-dom` (`createPortal` only),
   `@tanstack/react-query`, `@rustcms/admin-sdk/ui` and
   `@rustcms/admin-sdk/host` to frozen objects in `window.rustcms.v2.modules`.
-  Any other subpath (`react-dom/client`, `react/jsx-dev-runtime`) and dynamic
-  imports are build errors. Extensions are built in production mode.
-- **`ui` v1** (adding is minor, removing bumps `ui`): `Alert`, `Badge`,
-  `Button`, `buttonVariants`, `Card`, `CardContent`, `CardHeader`,
-  `CardTitle`, `Checkbox`, `Switch`, `Dialog`, `Input`, `Label`,
-  `NativeSelect`, `Textarea`, `Page`, `PageHeader`, `Loading`, `ErrorState`,
-  `cn`.
+  Unlisted `react`, `react-dom` and `@tanstack/react-query` subpaths
+  (`react-dom/client`, `react/jsx-dev-runtime`) and all dynamic imports are
+  build errors; other installed dependencies and local modules are bundled. Extensions are built in production mode.
+- **`ui` is an additive level** (0.6.0). Each level only adds components
+  and props; removing anything needs host API 3.
+  - Level 1: `Alert`, `Badge`, `Button`, `buttonVariants`, `Card`,
+    `CardContent`, `CardHeader`, `CardTitle`, `Checkbox`, `Switch`, `Dialog`,
+    `Input`, `Label`, `NativeSelect`, `Textarea`, `Page`, `PageHeader`,
+    `Loading`, `ErrorState`, `cn`.
+  - Level 2 adds:
+    - components: `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent`,
+      `DropdownMenu`, `DropdownMenuItem`, `DropdownMenuSeparator`,
+      `DropdownMenuLabel`, `Tooltip`, `Table`, `TableHeader`, `TableBody`,
+      `TableRow`, `TableHead`, `TableCell`, `Skeleton`, `Separator`,
+      `CodeBlock`;
+    - props: `props.resources` and `props.toast` on pages and slots;
+      `props.title` on pages (the shell's heading and breadcrumb for the
+      current sub-path, `null` hides the heading; bound to the view, its
+      sub-path and the epoch).
+- **Declared vs used.** A registration inherits the `Requires` of the
+  script running it (`document.currentScript` during loading). The SDK
+  (`SDK_UI = 2`) refuses to register on a panel below its level, so even a
+  0.5.x panel never runs it, and it passes `{ ui: SDK_UI }`. The panel
+  refuses a registration whose SDK level is above its script's declared
+  `ui`. Level-2 props go only to scripts that declare `ui >= 2`.
+  `make:sdk` lists older declarations in
+  `src/providers/admin_panel_provider.rs`; `rustcms upgrade` does so when the
+  vendored SDK's VERSION differs from its own.
+- **`props.resources`.** It calls the existing resource routes, so policy,
+  `scope()`, field rules, validation and audit apply; it adds no server
+  routes.
+  - Slugs and action names must be `[a-z0-9_-]{1,64}`. Keys are refused when
+    they are `.`, `..`, empty, contain control characters or exceed
+    256 bytes. Each part is encoded, and the URL must parse back to exactly
+    those segments: this is the defense against path confusion
+    (`forceDelete(s, ".")` would otherwise become a delete of `force`).
+  - Writes share the resource's paused-write scope (its slug) with the
+    built-in pages. Creates and actions carry an `Idempotency-Key`.
+  - A queued write is rechecked against the mount inside the queue. A pause
+    is recorded and a success invalidates queries before a stale mount's
+    delivery is refused.
+  - The view shows the banner of every resource it used (reads, hooks or
+    writes) in the epoch.
+  - Reads use the key family `["rustcms.r", slug, …]`, which every write to
+    the slug invalidates.
+- **`props.toast`.** Bound to the view's epoch. The store is cleared on every
+  epoch change, so no message crosses sessions. Successes are polite
+  (`status`) and errors assertive (`alert`); at most 5 at a time.
+- **Overlays.** Menus and tooltips portal into the open `<dialog>` (the top
+  layer) when inside one, else into `body`. They are `position: fixed`, placed
+  by per-property CSSOM `style.setProperty` writes of `left`, `top` and
+  `max-height`, which `style-src 'self'` does not govern; never style markup,
+  `setAttribute("style")`, `cssText` or injected `<style>` elements.
 - **Rendering.** `registerPage/Slot/Cell(name, Component)`: the component is
   rendered as an element inside the host tree (one React, one QueryClient,
-  theme, i18n, router); there is no `createRoot`. One name registry is shared
-  with v1. An error boundary per instance shows "unavailable" with Retry; a
+  theme, i18n, router); there is no `createRoot`. Within each kind (page,
+  slot or cell) a name is taken once, by v1 or v2. An error boundary per instance shows "unavailable" with Retry; a
   cell falls back to its plain text.
 - **Epoch binding.** The view subscribes to the session epoch with
   `useSyncExternalStore` and is keyed by it: sign-in, sign-out or rotation

@@ -18,7 +18,7 @@ hứng từ Laravel và FilamentPHP:
 
 ### Yêu cầu
 - **Rust** stable (≥ 1.94). Trên máy anh: `export PATH=/opt/homebrew/opt/rustup/bin:$PATH`.
-- Tuỳ chọn: **Docker** để test với PostgreSQL; **Node 20+** chỉ khi sửa mã nguồn admin SPA.
+- Tuỳ chọn: **Docker** để test với PostgreSQL; **Node 22.12+** chỉ khi sửa mã nguồn admin SPA (app chỉ cần Node để build trang React của mình).
 
 ### Chạy app demo (blog có sẵn dữ liệu)
 
@@ -70,8 +70,8 @@ curl -H "Authorization: Bearer rcms_…" -H "Content-Type: application/json" \
 ### Các service khi phát triển framework
 
 ```sh
-docker compose up -d --wait   # PostgreSQL ở localhost:55439 (cổng 55432 là của dự án khác)
-just test-matrix              # test Rust trên SQLite + PostgreSQL
+docker compose up -d --wait   # PostgreSQL 55439 (55432 là của dự án khác), MySQL 53306, Redis, S3Mock, Mailpit
+just test-matrix              # test Rust trên SQLite, PostgreSQL và MySQL
 just test-ui                  # test SPA (Vitest)
 just e2e                      # test trình duyệt (Playwright) — máy anh: PLAYWRIGHT_CHANNEL=chrome
 just dev                      # Rust :8000 + Vite :5173 (mở http://localhost:5173/admin/)
@@ -212,4 +212,4 @@ cảm (password, token…) và kiểu chưa hỗ trợ bị bỏ qua kèm cảnh
 - Lệnh CLI: `docs/guide/src/reference/cli.md`
 - Quyết định kiến trúc: `docs/core/adr/`
 - Báo cáo review: `docs/core/reports/` (vd. `2026-10-13-codebase-review.vi.md`)
-- Xem docs dạng web: `mdbook serve docs` → http://localhost:3000
+- Xem docs dạng web: `mdbook serve docs/guide` → http://localhost:3000

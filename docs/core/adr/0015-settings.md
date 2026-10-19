@@ -35,8 +35,8 @@ validated like any input, audited, and some of them secret.
   as `null` and debug-prints `Secret(set)`; serde errors are never passed on
   (they may quote values), and the application's `validate` messages have
   any secret replaced by `[redacted]`. A non-object `secrets` column fails
-  closed. A secret that no longer decrypts (`APP_KEY`
-  changed) is reported, never dropped: the group cannot be saved until each
+  closed. A secret that no current or previous key decrypts (`APP_KEY`
+  changed without `APP_PREVIOUS_KEYS`, ADR 0030) is reported, never dropped: the group cannot be saved until each
   is replaced or cleared. Writes are three-state: absent keeps, string
   replaces, `null` clears; an empty string is refused.
 - **Writes** are authorized from the request first (403 before the body is
@@ -53,7 +53,8 @@ validated like any input, audited, and some of them secret.
 
 ## Consequences
 
-- Rotating `APP_KEY` makes secrets unreadable until re-entered (documented
-  in the production checklist).
+- Rotating `APP_KEY` without keeping the old key in `APP_PREVIOUS_KEYS`
+  makes secrets unreadable until re-entered; with it, `key:reencrypt` moves
+  them to the new key (amended in 0.4.1, ADR 0030).
 - Settings writes wait for the RBAC lock (rare writes; acceptable).
 - Wider numeric kinds need a codec; deferred.

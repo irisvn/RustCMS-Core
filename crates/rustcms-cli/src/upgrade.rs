@@ -27,6 +27,9 @@ fn run_with(project: &Project, options: &Options, cargo: &dyn Fn() -> Command) -
     // An older vendored SDK, whether or not Cargo.toml needs changing.
     if let Some(warning) = crate::react::sdk_warning(&project.root) {
         println!("warning: {warning}");
+        for hint in crate::react::older_registrations_hint(&project.root) {
+            println!("warning: {hint}");
+        }
     }
     let manifest_path = project.root.join("Cargo.toml");
     let before = std::fs::read_to_string(&manifest_path)?;

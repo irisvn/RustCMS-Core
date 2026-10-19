@@ -16,6 +16,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { DashboardWidgets, useDashboard } from "@/components/dashboard";
+import { ToastRegion } from "@/components/toast";
+import { useEpoch } from "@/lib/epoch";
+import { canonicalSubPath } from "@/lib/paths";
+import { usePageTitle } from "@/lib/title";
 
 const navLink = "flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&.active]:bg-muted [&.active]:font-medium [&.active]:text-foreground data-[status=active]:bg-muted data-[status=active]:font-medium data-[status=active]:text-foreground";
 const activeProps = { "aria-current": "page" as const };
@@ -200,12 +204,15 @@ export function Shell() {
           <nav aria-label={t("shell.breadcrumb")} className="flex min-w-0 items-center gap-2 text-sm">
             <Link to="/" className="hidden text-muted-foreground hover:text-foreground sm:inline">{t("nav.workspace")}</Link>
             <ChevronRight className="hidden size-3 shrink-0 text-muted-foreground sm:block" />
-            <span className="truncate font-medium" aria-current={detail ? undefined : "page"}>{current}</span>
+            <span className="truncate font-medium" aria-current={detail ? undefined : "page"}>
+              {customPage ? <PageCrumb slug={customPage.slug} label={current} raw={path.slice(`/p/${customPage.slug}`.length + 1)} /> : current}
+            </span>
             {detail && <><ChevronRight className="size-3 shrink-0 text-muted-foreground" /><span className="text-muted-foreground" aria-current="page">{detail}</span></>}
           </nav>
           <span className="ml-auto hidden shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground sm:inline">{t("shell.admin")}</span>
         </header>
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-4 outline-none sm:p-6 lg:p-8"><Outlet /></main>
+        <ToastRegion />
       </div>
       <Dialog open={drawer} onClose={() => setDrawer(false)} title={t("shell.navigation")} className="admin-drawer md:hidden">
         <Button variant="ghost" size="icon" aria-label={t("shell.closeNav")} className="absolute right-3 top-3" onClick={() => setDrawer(false)}><X /></Button>
@@ -217,6 +224,13 @@ export function Shell() {
       </Dialog>
     </div>
   );
+}
+
+/** A custom page's crumb: the title its v2 view set for this sub-path, else its label. */
+function PageCrumb({ slug, label, raw }: { slug: string; label: string; raw: string }) {
+  const { api } = useSession();
+  const title = usePageTitle(slug, canonicalSubPath(raw) ?? "", useEpoch(api));
+  return <>{title ?? label}</>;
 }
 
 /** `/`: the home page when the user may open one, else the dashboard. */

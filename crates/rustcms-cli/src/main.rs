@@ -220,6 +220,9 @@ fn main() -> ExitCode {
                 println!("kept resources/admin/sdk/{file} (edited): compare it with the new one yourself");
             }
             println!("SDK {} in resources/admin/sdk; run `npm run build` in resources/admin.", react::sdk_version());
+            for hint in react::older_registrations_hint(&p.root) {
+                println!("{hint}");
+            }
             Ok(std::process::ExitCode::SUCCESS)
         }),
         Command::MakeWidget { name } => app().and_then(|p| generate::make_widget(&p, &name)),

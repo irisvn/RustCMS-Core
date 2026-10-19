@@ -58,8 +58,11 @@ access may have changed.
   spends none of the user's idempotency quota. Abandonment is judged from
   the start time; an expired import is never written. Reports keep row,
   field and codes whose parameters are numbers; any other message (a hook's,
-  one quoting a value) becomes `is invalid`. A quoted empty cell (`""`) of a
-  text field is the empty text, an empty cell `null`, as exports write them.
+  one quoting a value) becomes `is invalid`. An empty cell is `null`,
+  except for an optional text field that may not be null, where it is the
+  empty text; a quoted empty cell (`""`) of an optional text field is the
+  empty text. A required field is never set empty, quoted or not (it is
+  refused as missing).
 
 ## Consequences
 

@@ -67,13 +67,23 @@ pub struct PanelPageMeta {
     pub(crate) group: Option<String>,
     pub(crate) sort: i32,
     pub(crate) permissions: Vec<String>,
+    /// Groups of which the user must hold at least one each (`permission_any`).
+    pub(crate) any: Vec<Vec<String>>,
     pub(crate) declared: Vec<String>,
 }
 
 impl PanelPageMeta {
     /// A page titled `label`.
     pub fn new(label: impl Into<String>) -> Self {
-        Self { label: label.into(), icon: None, group: None, sort: 0, permissions: Vec::new(), declared: Vec::new() }
+        Self {
+            label: label.into(),
+            icon: None,
+            group: None,
+            sort: 0,
+            permissions: Vec::new(),
+            any: Vec::new(),
+            declared: Vec::new(),
+        }
     }
 
     /// Navigation icon (as resources').
@@ -99,6 +109,28 @@ impl PanelPageMeta {
     pub fn permission(mut self, permission: impl Into<String>) -> Self {
         self.permissions.push(permission.into());
         self
+    }
+
+    /// At least one of `permissions` (any-of; every `permission` is still
+    /// needed too, and each `permission_any` group is checked on its own):
+    /// e.g. a settings page for whoever manages any of its sections. The page's
+    /// `data` and routes still check each section.
+    ///
+    /// # Panics
+    /// At boot, on an empty list.
+    pub fn permission_any<I, S>(mut self, permissions: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.any.push(permissions.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Whether `ctx` may open the page: every `permission` and one of each
+    /// `permission_any` group.
+    pub(crate) fn allows(&self, ctx: &crate::Ctx) -> bool {
+        self.permissions.iter().all(|p| ctx.can(p)) && self.any.iter().all(|group| group.iter().any(|p| ctx.can(p)))
     }
 
     /// Like [`Self::permission`], and declares it for `permission:sync` (a

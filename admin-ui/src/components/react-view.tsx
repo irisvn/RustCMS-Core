@@ -3,6 +3,7 @@
 // session epoch, behind an error boundary.
 
 import { Component, type ComponentType, type ReactNode, useCallback, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useSession } from "@/api/context";
 import { usePanel } from "@/api/queries";
@@ -10,9 +11,11 @@ import { Alert } from "@/components/ui/alert";
 import { PausedBanner } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { useLocale, useT } from "@/i18n";
-import { type ExtensionApi, type MountToken, extensionApi } from "@/lib/facade";
+import { type ExtensionApi, type MountToken, extensionApi, extensionResources } from "@/lib/facade";
 import { type EventsHandle, type EventsHandlers, type SocketHandle, type SocketHandlers, openEvents, openSocket } from "@/lib/realtime";
-import { type ViewKind, translateExtension } from "@/lib/widgets";
+import { clearPageTitle, setPageTitle } from "@/lib/title";
+import { pushToast } from "@/lib/toast";
+import { type ViewKind, reactViewLevel, translateExtension } from "@/lib/widgets";
 
 /** Where a view is shown. */
 export type ViewPlace =
@@ -59,9 +62,20 @@ export function ReactView(props: ViewProps) {
   const subscribe = useCallback((listener: () => void) => api.onEpochChange(listener), [api]);
   const epoch = useSyncExternalStore(subscribe, () => api.epoch);
   const [attempt, setAttempt] = useState(0);
+  // Resources this view used (`props.resources`) in this epoch: their paused
+  // writes show here too. Kept across Retry, dropped with the epoch.
+  const [used, setUsed] = useState<{ epoch: number; slugs: readonly string[] }>({ epoch, slugs: [] });
+  const markUsed = useCallback(
+    (slug: string) =>
+      setUsed((u) => {
+        const slugs = u.epoch === epoch ? u.slugs : [];
+        return slugs.includes(slug) && u.epoch === epoch ? u : { epoch, slugs: [...slugs, slug] };
+      }),
+    [epoch],
+  );
   const view = (
     <ViewBoundary key={`${epoch}:${attempt}`} kind={props.kind} name={props.name} fallback={props.fallback} onRetry={() => setAttempt((n) => n + 1)}>
-      <Instance {...props} epoch={epoch} />
+      <Instance {...props} epoch={epoch} markUsed={markUsed} />
     </ViewBoundary>
   );
   // Writes of the view whose outcome is unknown pause it, as built-in writes do.
@@ -69,13 +83,17 @@ export function ReactView(props: ViewProps) {
   return (
     <>
       <PausedBanner scope={`x:${namespaceOf(props.place)}`} />
+      {used.epoch === epoch && used.slugs.map((slug) => <PausedBanner key={slug} scope={slug} />)}
       {view}
     </>
   );
 }
 
-function Instance({ component, place, data, record, props, reload, epoch }: ViewProps & { epoch: number }) {
+function Instance({ kind, name, component, place, data, record, props, reload, epoch, markUsed }: ViewProps & { epoch: number; markUsed: (slug: string) => void }) {
   const session = useSession();
+  const queryClient = useQueryClient();
+  // Level 2 props only for scripts that declare `ui` 2 or more.
+  const level = reactViewLevel(kind, name);
   const locale = useLocale();
   const navigate = useNavigate();
   const panel = usePanel();
@@ -92,6 +110,7 @@ function Instance({ component, place, data, record, props, reload, epoch }: View
     mount.alive = true;
     return () => {
       mount.alive = false;
+      clearPageTitle(mount);
       for (const handle of [...mount.handles]) {
         try {
           handle.close();
@@ -107,6 +126,29 @@ function Instance({ component, place, data, record, props, reload, epoch }: View
   const permissions = panel.data && !panel.isPlaceholderData && !panel.isError ? panel.data.permissions : undefined;
   const namespace = namespaceOf(place);
   const api: ExtensionApi = useMemo(() => extensionApi(session, mount, namespace), [session, mount, namespace]);
+  const level2 = useMemo(() => {
+    if (level < 2) return {};
+    // Toasts outlive the view in its epoch (the user's feedback), never past it.
+    const toast = (kind: "success" | "error") => (text: unknown) => {
+      if (session.api.epoch === mount.epoch) pushToast(kind, text, mount.epoch);
+    };
+    return {
+      resources: extensionResources(session, mount, queryClient, markUsed),
+      toast: Object.freeze({ success: toast("success"), error: toast("error") }),
+    };
+  }, [level, session, mount, queryClient, markUsed]);
+  // Pages only: the shell's heading and breadcrumb for the current sub-path.
+  const pagePath = place.kind === "page" ? place.path : "";
+  const pageSlug = place.kind === "page" ? place.slug : "";
+  const title = useMemo(
+    () =>
+      level < 2 || place.kind !== "page"
+        ? undefined
+        : (text: unknown) => {
+            if (live()) setPageTitle(mount, pageSlug, pagePath, mount.epoch, text);
+          },
+    [level, place.kind, pageSlug, pagePath, live, mount],
+  );
   const guard = useCallback(
     <A extends unknown[]>(f: (...args: A) => void) => (...args: A) => {
       if (live()) f(...args);
@@ -173,6 +215,8 @@ function Instance({ component, place, data, record, props, reload, epoch }: View
           reload: guard(() => reload?.()),
           api,
           realtime,
+          ...level2,
+          ...(title ? { title } : {}),
         };
       case "slot":
         return {
@@ -188,11 +232,12 @@ function Instance({ component, place, data, record, props, reload, epoch }: View
           reload: guard(() => reload?.()),
           api,
           realtime,
+          ...level2,
         };
       case "cell":
         return { ...common, value: copy(data), record: copy(record), props: copy(props) };
     }
-  }, [place, data, record, props, reload, locale, namespace, mount, permissions, searchStr, api, live, navigate, guard, realtime]);
+  }, [place, data, record, props, reload, locale, namespace, mount, permissions, searchStr, api, live, navigate, guard, realtime, level2, title]);
   const View = component as ComponentType<typeof built>;
   return <View {...built} />;
 }

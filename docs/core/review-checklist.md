@@ -44,7 +44,8 @@ review; reviewers use it as their dimensions.
 
 ## UI state
 - Drafts survive refetches, failed saves and background errors; forms keyed by identity.
-- Completion handlers act only if their page is still mounted.
+- Completion handlers act only if their page is still mounted. Exception: toasts (`props.toast`)
+  may outlive their view within the same session epoch; every toast is dropped on an epoch change.
 - Stale rows (placeholder data) are not actionable; selections follow the shown rows.
 - After a write, invalidate lists, records, schemas and options.
 

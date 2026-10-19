@@ -100,9 +100,16 @@ impl PanelPage for CourseOverviewPage {
 </section>
 ```
 
-- **Who sees it:** every permission of `PanelPageMeta` (at least one: a page
-  without one stops the boot). `declare_permission("reports.view")` also
-  declares it for `permission:sync`. The navigation lists the pages a user
+- **Who sees it:** every `.permission(…)` of `PanelPageMeta`, and at least
+  one of each `.permission_any([…])` group. A page needs at least one of
+  either, and an empty group stops the boot.
+  `declare_permission("reports.view")` also declares it for
+  `permission:sync`.
+  - `permission_any` suits a page that gathers several sections, for example
+    a settings page for whoever manages any of them:
+    `.permission_any(["storage_providers.view_any", "notification_channels.view_any"])`.
+    The page's `data` and its [admin routes](admin-routes.md) still check
+    each section. The navigation lists the pages a user
   may open. A user who may open no page gets 403 for any slug; otherwise an
   unknown slug is 404 and a page they may not open 403. `data` runs only for
   allowed users.

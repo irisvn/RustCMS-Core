@@ -4,7 +4,7 @@ A Rust framework for admin panels and headless CMS backends, inspired by
 Laravel and FilamentPHP: declare resources in Rust, get an authorized CRUD API
 and an admin panel (React, embedded in your binary — no Node needed to use it).
 
-> **Status: 0.3.** See the [limitations](docs/guide/src/reference/limitations.md). Not on
+> **Status: 0.6.** See the [limitations](docs/guide/src/reference/limitations.md). Not on
 > crates.io: applications depend on a Git tag of this repository.
 
 ```rust,ignore
@@ -43,7 +43,10 @@ local changes. Releases: [docs/core/guides/releasing.md](docs/core/guides/releas
 Or run the demo (blog with categories, posts, an editor role and a token API):
 
 ```sh
-cd examples/demo && cargo run -- migrate && cargo run -- db:seed && cargo run -- serve
+cd examples/demo
+cp .env.example .env
+cargo run -- key:generate
+cargo run -- migrate && cargo run -- db:seed && cargo run -- serve
 # http://localhost:8000/admin — admin@example.test / password123
 ```
 
@@ -57,16 +60,16 @@ cd examples/demo && cargo run -- migrate && cargo run -- db:seed && cargo run --
   Roles and Account pages in the panel.
 - **CLI**: `new`, `make:model|migration|resource|policy|test`, `route:list`,
   `migrate*`, `make:user`, `token:create`, `permission:sync`.
-- **Testing kit**: every database test runs on SQLite and PostgreSQL;
+- **Testing kit**: every database test runs on SQLite, PostgreSQL and MySQL;
   `acting_as`, `login_as`, `with_token`, factories.
 
 ## Development
 
 ```sh
 brew install rustup just && rustup default stable
-docker compose up -d --wait   # PostgreSQL on localhost:55439
-just test-matrix              # Rust tests on SQLite and PostgreSQL
-just test-ui                  # admin SPA unit tests (Node 20+)
+docker compose up -d --wait   # PostgreSQL 55439, MySQL 53306, Redis, S3Mock, Mailpit
+just test-matrix              # Rust tests on SQLite, PostgreSQL and MySQL
+just test-ui                  # admin SPA unit tests (Node 22.12+)
 just e2e                      # browser tests against the demo
 just ci                       # most of CI; also `just test-cli`, `just e2e`, `just msrv`
 ```

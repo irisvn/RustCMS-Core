@@ -38,7 +38,7 @@ accounts with a public password.
 | `src/services/enrollment_service.rs` | the seat rules (`check`, `enroll_in`, `enroll`), used by the panel, the enroll action and the seeders |
 | `src/models/course.rs`, `learner.rs` | query scopes: `course::taught_by`, `learner::taught_by` |
 | `src/policies/` | `permissions.rs` (names), `enrollment_policy.rs` |
-| `src/admin/resources/` | the four resources: fields, forms, tables, scopes, hooks that call the service |
+| `src/admin/resources/` | the seven resources: fields, forms, tables, scopes, hooks that call the service |
 | `src/settings/lms_settings.rs` + `src/admin/pages/lms_settings_page.rs` | the `lms` settings group and its page |
 | `src/jobs/send_welcome.rs` | the `lms.enrolled` job |
 | `src/database/seeders/` | roles, users, courses, learners, enrollments |
@@ -125,7 +125,9 @@ Field rules and the policy do the rest:
   at `/admin/settings/lms` by staff (`settings.lms.view` / `.update`).
 - A new active enrollment queues `lms.enrolled` with `ctx.dispatch(txn, …)`
   in its own transaction: a refused or failed enrollment queues nothing. The
-  job carries ids only and logs a welcome with the school name.
+  job carries ids only and sends the `welcome` mail (with the school name),
+  then records a receipt for the course/learner pair; an interrupted run can
+  send it again.
 - `lang/vi.toml` translates labels, the service's messages (through
   `ctx.t`) and the unique constraint messages; a test checks that
   `lang:missing vi` has nothing to report.
@@ -159,8 +161,9 @@ See [Customizing the panel](../admin/customizing.md).
 - **Dashboard**: learners, new enrollments (against the 30 days before),
   enrollments per week and the newest courses — each with its permission,
   granted to staff, instructors (their courses) and viewers.
-- **Mail and invitations**: the welcome mail goes to each new learner once
-  (`lms.enrolled`); an administrator invites instructors from System → Users
+- **Mail and invitations**: the welcome mail goes to each new learner
+  (`lms.enrolled`; a receipt per course/learner pair keeps a later run from
+  sending it again, though an interrupted run can); an administrator invites instructors from System → Users
   (they choose their password from the mail; staff have no user management).
 
 ## Conflicts
@@ -177,5 +180,4 @@ RUSTCMS_TEST_MYSQL=mysql://root:mysql@localhost:53306/mysql \
 cargo nextest run -p lms               # SQLite, PostgreSQL and MySQL
 ```
 
-Not part of the example yet: learner sign-in, mail (the welcome is logged),
-quizzes.
+Not part of the example yet: learner sign-in and quizzes.

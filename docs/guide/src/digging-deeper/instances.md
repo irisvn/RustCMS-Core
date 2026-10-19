@@ -37,21 +37,18 @@ recheck, because rechecks read the database.
 
 ## Your own periodic jobs
 
+Use a [schedule](scheduling.md), declared in a provider's `register`:
+
 ```rust,ignore
-// In a provider's `boot`: run every minute, on one instance at a time.
-let state = state.clone();
-tokio::spawn(async move {
-    loop {
-        rustcms::jobs::exclusive(&state, "invoices-sync", Duration::from_secs(120), || async {
-            // the work; must be safe to run twice
-        })
-        .await;
-        tokio::time::sleep(Duration::from_secs(60)).await;
-    }
-});
+app.schedule(Schedule::every("invoices-sync", Duration::from_secs(60)).job(|| SyncInvoices {}));
 ```
 
-`jobs::exclusive` runs the job unless another instance holds the lease
-(without Redis it always runs). If Redis does not answer, the job runs anyway,
-and a lease can expire during a long run: write jobs that are correct when
-two run at once (claim rows in the database), the lease only saves work.
+Schedules run only in `serve`. Each slot is claimed once in the database
+across instances, with or without Redis, and enqueues the job; the job must
+still be safe to retry.
+
+`rustcms::jobs::exclusive(&state, name, ttl, f)` is a separate, best-effort
+helper. It runs `f` unless another instance holds a Redis lease (without
+Redis it always runs). If Redis does not answer, `f` runs anyway, and a lease
+can expire during a long run: write work that is correct when two runs
+overlap (claim rows in the database), the lease only saves work.

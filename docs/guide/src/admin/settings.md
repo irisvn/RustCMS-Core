@@ -171,10 +171,12 @@ browser: the page shows only whether it is set, with **Set a value** /
 struct can be logged, queued or serialized without leaking it; read the value
 with `.expose()`. A secret's default is always unset (`Secret::default()`).
 
-If `APP_KEY` changes, stored secrets can no longer be decrypted: `get` fails
-with an error naming the secret, the page marks it **Cannot be read**, and
-the group cannot be saved until each such secret is replaced or cleared. Keep
-`APP_KEY` stable, and plan to enter secrets again if you rotate it.
+When you rotate `APP_KEY`, keep the old key in `APP_PREVIOUS_KEYS` and run
+`rustcms key:reencrypt` ([Rotating APP_KEY](../operations/app-key.md)):
+saved secrets stay readable. A secret that no current or previous key opens
+cannot be decrypted: `get` fails with an error naming the secret, the page
+marks it **Cannot be read**, and the group cannot be saved until each such
+secret is replaced or cleared.
 
 ### Secrets bound to other settings
 

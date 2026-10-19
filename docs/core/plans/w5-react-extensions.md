@@ -1,4 +1,4 @@
-# W5 plan: extension host API v2, React pages that share the SPA (round 4, 2026-10-18; Codex rounds 1–3 applied; ready to implement)
+# W5 plan: extension host API v2, React pages that share the SPA (round 4, 2026-10-18; Codex rounds 1–3 applied; implemented in 0.5.0; historical design)
 
 Builds on the 0.4.0 draft (`v0.4.0-panel-platform.md`, "W5") and keeps its
 review notes:

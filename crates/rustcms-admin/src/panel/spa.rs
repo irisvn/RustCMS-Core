@@ -76,14 +76,16 @@ pub struct Extension {
 /// What a v2 extension script needs from the panel (ADR 0032), checked
 /// before the script runs: `react` and `react_query` as `"major.minor"`
 /// (the panel must have the same major and at least that minor), `ui` the
-/// UI module's version exactly. The host API version is 2.
+/// panel level it needs (the panel must have at least that one: 2 adds
+/// `props.resources`, `props.toast` and more UI components). The host API
+/// version is 2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Requires {
     /// React, `"19.3"`.
     pub react: &'static str,
     /// React Query, `"5.104"`.
     pub react_query: &'static str,
-    /// The `ui` module, `1`.
+    /// The panel level, `1` or `2` (what `rustcms make:page --react` writes).
     pub ui: u32,
 }
 

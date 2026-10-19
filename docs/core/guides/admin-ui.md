@@ -1,9 +1,11 @@
 # Developing the admin panel (admin-ui)
 
-For contributors to RustCMS itself; applications never need Node.
+For contributors to RustCMS itself. Applications need Node only to build
+their own [React pages](../../guide/src/admin/react-pages.md) (`resources/admin`,
+`^20.19.0 || >=22.12.0`); compiling and running their binaries does not.
 
 
-Only needed to change `admin-ui/` itself (Node 20+):
+Only needed to change `admin-ui/` itself (Node 22.12+, 24 or 26+: Vitest's range):
 
 ```sh
 just admin-install   # npm ci
@@ -51,6 +53,6 @@ covers every component and wire kind) are rendered by the Vitest suite.
 ## Scaffolding an app against a local checkout
 
 `rustcms new blog --rustcms-path ../RustCMS` (hidden from the public CLI
-reference) writes path dependencies on the checkout instead of crates.io.
+reference) writes path dependencies on the checkout instead of the release Git tag.
 `--in-workspace` skips the standalone `[workspace]` table for apps inside
 another workspace (as `examples/demo`).

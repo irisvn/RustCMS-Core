@@ -1,7 +1,23 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.5.1**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.6.0**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.6.0
+
+- **Resources from React pages**: `props.resources` and the hooks
+  `useResource` and `useResourceMutation` read and write your resources
+  through the panel's routes. Policies, validation, audit and encrypted
+  fields apply; a lost answer pauses writes safely, as in the panel
+  ([React pages](admin/react-pages.md#records-of-your-resources)).
+- **Toasts**: `props.toast.success` and `props.toast.error`.
+- **Page titles**: `props.title(text)` names a sub-page in the panel's
+  heading and breadcrumb (`null` hides the heading).
+- **More components**: Tabs, DropdownMenu, Tooltip, Table, Skeleton,
+  Separator and CodeBlock, CSP-safe and usable inside dialogs.
+- **More icons** for resources and pages.
+- **Any-of page permissions**: `PanelPageMeta::permission_any([…])`.
+- `ui: 1` React pages keep working; set `ui: 2` to use the new parts.
 
 ## 0.5.1
 
@@ -19,8 +35,8 @@ was the first published one.
   - Props carry the page data, the sub-path, `can(permission)`, an API
     client with the session and CSRF token, and realtime streams; hooks
     `useAdminQuery`, `useAdminMutation`, `useEvents`, `useSocket`.
-  - A bundle built for another React or UI version is refused before it
-    runs; a view that throws shows Retry; the CSP is unchanged.
+  - A bundle needing another React or React Query major, a newer minor
+    than the panel's, or a higher UI level is refused before it runs; a view that throws shows Retry; the CSP is unchanged.
   - Built files are committed, so building the app needs no Node
     ([React pages](admin/react-pages.md)).
 - **Sub-pages**: `/admin/p/<slug>/<sub/path>` opens the same page, with

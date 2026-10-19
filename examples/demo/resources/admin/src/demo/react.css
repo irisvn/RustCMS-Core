@@ -4,3 +4,7 @@
 .demo-react-item { font-size: 1.125rem; font-weight: 600; color: var(--primary); }
 .demo-react-dialog { color: var(--muted-foreground); font-style: italic; }
 .demo-react-can { font-size: 0.875rem; color: var(--muted-foreground); }
+.demo-react-tags { display: flex; flex-direction: column; gap: 0.75rem; }
+.demo-react-row { display: flex; align-items: center; gap: 0.5rem; }
+.demo-react-list { display: flex; flex-direction: column; gap: 0.25rem; list-style: none; padding: 0; }
+.demo-react-error { color: var(--destructive); font-size: 0.875rem; }

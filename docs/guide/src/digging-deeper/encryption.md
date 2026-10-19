@@ -59,7 +59,7 @@ Columns are found by `key:reencrypt`.
 - **Others:** register them yourself, in a provider's `register`:
 
   ```rust,ignore
-  app.encrypted_column::<integration::Entity>(integration::Column::Secret, Binding::Column);
+  app.encrypted_column::<integration::Entity>(integration::Column::ApiToken, Binding::Column);
   ```
 
   Use `Binding::Row` if you seal with `.row(id)`.

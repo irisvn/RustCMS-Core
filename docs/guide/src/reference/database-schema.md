@@ -124,7 +124,7 @@ advances it, and every instance reloads ([several instances](../digging-deeper/i
 
 | Table | Holds | Stored secret | Notes |
 |---|---|---|---|
-| `sessions` | admin sign-ins (and anonymous CSRF sessions) | `id` = SHA-256 of the cookie's random value | `data` (JSON), `expires_at` (indexed, pruned hourly), `lineage` (the first session of a re-issued chain: sign-out ends all of it) |
+| `sessions` | admin sign-ins (and anonymous CSRF sessions) | `id` = HMAC-SHA-256 of the cookie's random value, keyed by `APP_KEY` | `data` (JSON), `expires_at` (indexed, pruned hourly), `lineage` (the first session of a re-issued chain: sign-out ends all of it) |
 | `personal_access_tokens` | API tokens (`rcms_…`) | `token_hash` = SHA-256 | `user_id` → `users` (cascade), `name`, `abilities` (JSON list, `["*"]` = all of the user's permissions), `last_used_at`, `expires_at`, `revoked_at` |
 | `jwt_families` | one JWT sign-in and its refresh chain | none | `id`, `user_id` → `users` (cascade), `abilities`, `auth_version` at issue, `expires_at`, `revoked_at` |
 | `jwt_refresh_tokens` | each refresh token of a family | `token_hash` = HMAC-SHA-256 under a key derived from `APP_KEY` | `family_id` → `jwt_families` (cascade), `used_at`: reusing a used token revokes the family |
@@ -162,6 +162,7 @@ WHERE p.name = 'posts.update' OR r.name = 'super_admin';
 | `media`, `media_uploads`, `media_deletions` | the media library (`disk`, `key`, `mime`, `size`, `sha256`, `owner_id`, `deleted_at`); uploads not yet attached; files to delete from storage, with retries | [Media](../admin/media.md), [Retention](../operations/retention.md) |
 | `audit_logs` | who changed what (`event`, `subject_type`/`subject_key`, actor, `credential`, `ip`, `request_id`, `changes`) | [Audit log](../digging-deeper/audit-log.md) |
 | `settings` | settings groups (`name`, `value`, `secrets` encrypted under a key derived from `APP_KEY`, `version`, `updated_by`) | [Settings](../admin/settings.md#secrets) |
+| `schedule_states`, `schedule_slots` | one state row per schedule (never pruned); each claimed slot, kept 7 days and pruned hourly while the scheduler runs | [Scheduling](../digging-deeper/scheduling.md) |
 | `jobs`, `job_receipts` | the database queue (`queue`, `kind`, `payload`, `attempts`, `available_at`, `reserved_until`, `last_error`); jobs already run once | [Queues](../digging-deeper/queues.md) |
 | `exports`, `export_objects` | CSV exports and their files | [Import and export](../admin/import-export.md) |
 | `imports`, `import_rows` | CSV imports, their mapping and report; what each row did | [Import and export](../admin/import-export.md) |

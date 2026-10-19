@@ -15,14 +15,14 @@ values follow the [wire format](wire-format.md).
 
 | Method | Path | Response |
 |---|---|---|
-| GET | `/panel` | `PanelResponse` `{brand, user, navigation: [ResourceInfo], system, settings}` (resources with `view_any`, settings pages with `view`) |
+| GET | `/panel` | `PanelResponse` `{brand, user, navigation: [ResourceInfo], system, settings, pages, home?, permissions}`: resources with `view_any` (hidden ones too, `nav: false`; optional `sort`), settings pages with `view`, custom pages the user may open (optional `sort`), the home page's slug when the user may open it, the declared admin permissions the user holds |
 | GET | `/resources/{slug}/schema?operation=create\|edit\|view&key=` | `ResourceSchema` for this user |
 | GET | `/resources/{slug}/records?…` | `{data: [Envelope], meta}` |
 | POST | `/resources/{slug}/records` | 201 `{data: Envelope}` |
 | GET / PATCH / DELETE | `/resources/{slug}/records/{key}` | `{data: Envelope}` / `{data: Envelope}` / 204 |
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
-| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `{data: [Envelope], meta}` of the target (list query string) |
+| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable belongs-to-many pivot columns by target key) |
 | POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key set by the server |
 | POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing}` |
 | POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (media library enabled) |
@@ -34,8 +34,9 @@ values follow the [wire format](wire-format.md).
 | GET | `/queue` | counts per queue and status, worker settings, `canManage` (`queue.view`) |
 | GET | `/queue/jobs?status=&queue=&kind=&cursor=&per_page=` | `{data: [QueueJob], meta: {nextCursor?}}`, newest first (`queue.view`) |
 | GET | `/pages/{slug}` | `{slug, title, content}` of a custom page: `{kind: "html", html}` or `{kind: "script", script, data}`, see [Customizing](../admin/customizing.md#custom-pages) |
+| GET | `/pages/{slug}/{*path}` | the same response for a sub-page; `Ctx::page_path()` gives the canonical sub-path; an invalid sub-path is a 422 on `path`, after the permission checks |
 | GET | `/slots?resource=&key=` | `{data: [{name, label?, content}]}` beside a record |
-| POST | `/queue/jobs/{id}/retry`, `/forget`, `/cancel` | 204; 409 `not_failed` (retry, forget) or `running` / `not_waiting` (cancel) (`queue.view` + `queue.manage`), see [Queues](../digging-deeper/queues.md#the-queue-page) |
+| POST | `/queue/jobs/{id}/retry`, `/forget`, `/cancel` | 204; 409 `write_conflict` with reason `not_failed` (retry, forget), `running` or `not_waiting` (cancel) (`queue.view` + `queue.manage`), see [Queues](../digging-deeper/queues.md#the-queue-page) |
 
 Options are available to users who may use the field. When a record-level
 policy hides more than 1,000 candidates before 50 visible ones are found, the

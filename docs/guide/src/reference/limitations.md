@@ -17,7 +17,8 @@ What RustCMS does not do yet, and behaviours to know before relying on it.
 - Image resizing and thumbnails, range requests, public media URLs (add your
   own route).
 - MariaDB; Redis Cluster.
-- Idempotency keys outside resource creates, actions and media uploads.
+- Idempotency keys outside resource creates (relation creates included), actions, media uploads,
+  CSV import uploads and background export requests.
 - Managing API-guard roles from the panel (use `rustcms role:assign`).
 
 ## Writes in flight

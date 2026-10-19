@@ -1,8 +1,23 @@
 # W9 plan: panel home, navigation order and hidden resources (0.5.1); resource API and UI kit 2 for React pages (0.6.0)
 
 Round 3, 2026-10-18 (Codex rounds 1–2 applied). Requested by RDockPanel
-(Phase 3: an EasyPanel-like interface on React pages). Needs the
-maintainer's approval.
+(Phase 3: an EasyPanel-like interface on React pages). Approved; part A
+shipped in 0.5.1, part B in 0.6.0. The text below is the historical design.
+
+## Status (implemented)
+- Final APIs: `useResource(props, slug, { query, ...options })`; controlled
+  `Tabs` with a labelled `TabsList`, content rendered only when selected;
+  `DropdownMenu` takes its trigger content directly (it renders its own
+  button).
+- Overlays portal into the open `<dialog>`, else directly into `body` (no
+  separate root), and set `left`, `top` and `max-height` with CSSOM.
+- Beyond the plan:
+  - `PanelPageMeta::permission_any` (server, any-of page permissions);
+  - more navigation icons;
+  - the built-in lists use the kit's `Table`.
+- Noted while implementing: JSON `.required()` refuses a missing field or
+  `null` but accepts `""`, while a CSV import refuses an empty required cell.
+  `props.resources` sends values unchanged.
 
 ## Why
 RDockPanel replaces the resource lists in its menu with its own React pages
@@ -212,7 +227,7 @@ where it fits:
     `aria-controls`/`aria-labelledby` and `aria-selected`;
   - roving focus with the arrows and Home/End;
   - the guide's sub-path recipe: `value={props.path || "overview"}` and
-    `onValueChange={(v) => props.navigate(\`/p/x/${v}\`)}`.
+    `onValueChange={(v) => props.navigate("/p/x/" + v)}`.
 - **`DropdownMenu`:**
   - a trigger and items (`onSelect`, `destructive`, `disabled`), a
     separator and a label;

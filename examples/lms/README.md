@@ -26,5 +26,5 @@ The layout is the one `rustcms new` generates (see the guide's "Directory
 structure" and "Example: an LMS back office").
 
 Tests: `cargo test` (SQLite; PostgreSQL with `RUSTCMS_TEST_PG`, MySQL with
-`RUSTCMS_TEST_MYSQL`). Learner sign-in and mail are not part of this example
-yet.
+`RUSTCMS_TEST_MYSQL`). Learner sign-in and quizzes are not part of this
+example yet.

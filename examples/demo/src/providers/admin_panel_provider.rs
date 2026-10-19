@@ -44,7 +44,7 @@ pub fn provider() -> AdminProvider {
         .extension_script_v2(
             "demo-react",
             include_str!("../../resources/admin/js/demo/react.js"),
-            Requires { react: "19.3", react_query: "5.104", ui: 1 },
+            Requires { react: "19.3", react_query: "5.104", ui: 2 },
         )
         .extension_style("demo-react", include_str!("../../resources/admin/css/demo/react.css"))
         // rustcms:extensions
