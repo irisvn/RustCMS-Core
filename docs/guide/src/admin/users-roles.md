@@ -21,12 +21,15 @@ CLI and your own code:
 | Create / edit a role | `roles.create` / `roles.update` (+ `roles.view` to edit) | only permissions you hold; never a role you hold; names unique ignoring case, ≤ 120 characters |
 | Delete a role | `roles.delete` | not system roles; protected roles by super admins; you hold all its permissions |
 
-**The role page** shows the permissions of resources as a matrix: a row per
+**The role page** shows permissions in collapsible **areas** with a
+selected/total count, a search box and the presets the application declares
+([The Roles page](../security/authorization.md#the-roles-page-areas-labels-and-presets)).
+Inside an area, the permissions of resources come first as a matrix: a row per
 resource, a column per ability (list, view, create, update, delete, restore,
 delete for good), the resource's other abilities (actions, `attach_tags`…) in
-its last column, and a box to switch a whole row or column. Everything else
-(users, roles, settings, audit, queue, pages, media) is listed by group. Boxes
-of permissions you do not hold are disabled, and saving keeps them as they are.
+its last column, and a box to switch a whole row or column. The rest is listed
+by group, with a box for the whole group. Boxes of permissions you do not hold
+are disabled, and saving keeps them as they are.
 
 **Invitations.** On **New user**, *Send an invitation instead of setting a
 password* creates the user pending (badge *Invited*) and mails them a link;

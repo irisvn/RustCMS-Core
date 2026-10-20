@@ -10,8 +10,8 @@ All notable changes are documented here. The format follows
 
 ### Added (0.7.0)
 - Roles page (P7, ADR 0034): permissions by area (collapsible, selected/total
-  counts), a search box (name, label, description; case and diacritics
-  ignored, `đ` too), labels and descriptions, presets as starting selections.
+  counts), a search box (name, label, description, area and group labels;
+  case and diacritics ignored, `đ` too), labels and descriptions, presets as starting selections.
   Declared with `AuthProvider::permission_area`, `permission_meta` and
   `permission_preset`, checked when the panel registers. Bulk toggles act
   only on shown, grantable permissions.

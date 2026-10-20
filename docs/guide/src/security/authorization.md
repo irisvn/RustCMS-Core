@@ -21,7 +21,8 @@ A user may hold roles in both guards; they never mix.
 ## The Roles page: areas, labels and presets
 
 The panel's Roles page groups admin permissions by **area**, with a search box
-(name, label, description; case and diacritics ignored, `đ` too). Declare how
+(name, label, description, area and group labels; case and diacritics
+ignored, `đ` too). Declare how
 permissions are shown on the `AuthProvider`. Nothing here is stored or grants
 anything:
 
@@ -46,9 +47,12 @@ AuthProvider::new()
   relabel or reorder a default once with `permission_area("system", …)`.
   Within an area, the matrix comes first, then one box per permission group.
   An area starts open; with more than three, only the first.
-- **Metadata.** `label` (1–80 characters) is shown instead of the name, which
-  stays visible below it; `description` (≤ 300) is shown under it; `area`
-  must be declared. Labels, descriptions and area and preset labels are
+- **Metadata.** `label` is shown instead of the name, which stays visible
+  below it, and `description` under it (in the matrix: the label names the
+  cell, the description is its tooltip and screen-reader description);
+  `area` must be declared. Labels (areas, permissions, presets) are 1–80
+  characters, descriptions 1–300; neither may be blank or contain control
+  characters. Labels, descriptions and area and preset labels are
   English sources, translated like other labels (`lang/vi.toml`;
   `rustcms lang:missing vi` lists them).
 - **Presets** are starting selections for admin roles. Applying one changes
@@ -58,10 +62,13 @@ AuthProvider::new()
 - **Bulk toggles** (a matrix row or column, a group) change only the
   permissions shown (matching the search, in an open area) that the user may
   grant. There is no select-all for an area.
-- **Checked when the panel registers** (a panic naming the entry): metadata
-  must name a declared permission of that guard, an area must be declared,
-  a preset may only name declared admin permissions; ids are `[a-z0-9_-]`
-  (1–64); each id or permission is declared once.
+- **Checked** with a panic naming the entry. The builders check ids
+  (`[a-z0-9_-]`, 1–64), texts and duplicates at once: metadata once per
+  `(guard, name)`, each area and preset id once. `AdminProvider::register`
+  then checks references against the permissions declared so far (register
+  providers that declare permissions before it): metadata must name a
+  declared permission of that guard, its area must exist, a preset may only
+  name declared admin permissions.
 
 ## Changing access: `RbacService`
 

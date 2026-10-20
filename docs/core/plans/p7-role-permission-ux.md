@@ -12,6 +12,10 @@ admin route.
 - The catalog is checked at the end of `AdminProvider::register` (every
   permission is declared by then), with panics as other builders.
 - `lang:missing` lists the catalog's strings.
+- Areas are derived from the returned permissions (no area without one);
+  matrix cells use the label in their accessible name and the description
+  as tooltip and screen-reader text; group entries show label, name and
+  description.
 
 ## Why
 RDockPanel declares many admin permissions: apps, docker, settings, system.
@@ -56,20 +60,20 @@ AuthProvider::new()
 
 **Validation:**
 - `name`: `[a-z0-9_-]{1,64}` for area and preset ids.
-- `label`: 1–80 characters. `description`: at most 300 characters. Neither may contain control characters.
+- `label`: 1–80 characters. `description`: 1–300 characters. Neither may be blank or contain control characters.
 - `sort`: an `i32`.
 
 **At boot** (`register`):
 - Each metadata entry must name a permission declared in that guard,
   explicitly or through `admin_permissions`. The check runs after all
-  declarations, in `boot`, because `admin_permissions` may come later in the
+  declarations, in `AdminProvider::register` (after the panel declares its own), because `admin_permissions` may come later in the
   chain.
 - Its `area` must be declared.
 - Each preset applies to the `admin` guard only, because the Roles page manages admin roles. Every name in a preset must be a declared admin permission.
 - A violation panics with a message naming the entry, as other builder misuse
   does.
 - **Duplicates:** among the app's own declarations, a duplicate
-  `permission_meta` for the same name, area id or preset id panics.
+  `permission_meta` for the same `(guard, name)`, area id or preset id panics.
 
 **Framework defaults:** core ships defaults, kept apart from the app's
 declarations:
@@ -90,7 +94,7 @@ sources, translated with `ctx.t()` like `group_label`. Apps add `vi` strings to
 their own translation files.
 
 ### 2. DTO and route
-- **`PermissionInfo`** gains four optional fields:
+- **`PermissionInfo`** gains five fields (`label`, `description` optional; `area`, `areaLabel`, `areaSort` always):
   - `label` and `description` (translated);
   - `area` (id) and `areaLabel` (translated).
   - The SPA uses them only when they are present. This is additive for the
@@ -140,7 +144,7 @@ their own translation files.
     through `useDeferredValue`.
 - **Bulk toggles:** row, column and group toggles act only on permissions that
   are **visible** (they match the search and sit in an expanded area) **and**
-  grantable. The toggle's checked or indeterminate state reads the same set.
+  grantable. The toggle is checked when that set is non-empty and fully selected (no indeterminate state).
   There is no area-level select-all, so a collapsed area cannot be changed in
   bulk.
 - **Presets:**
@@ -158,7 +162,7 @@ their own translation files.
   - Applying a preset ignores the search filter: a preset is explicit, not a
     bulk toggle over what is hidden. The notice states how many permissions
     changed (added/removed).
-  - Protected and privileged roles: the menu is disabled with the same reason
+  - Roles the user may not update (protected and privileged ones included): the menu is not shown; while saving it is disabled, as the checkboxes
     the checkboxes already show.
 - **No server change for saving.** `set_role_permissions_if` already refuses
   non-grantable changes, protected roles and stale `expected_permissions`.

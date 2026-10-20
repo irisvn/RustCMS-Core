@@ -31,6 +31,18 @@ static GATES: AtomicUsize = AtomicUsize::new(0);
 static ENTERED: tokio::sync::Notify = tokio::sync::Notify::const_new();
 static RELEASE: tokio::sync::Notify = tokio::sync::Notify::const_new();
 
+/// Takes one of the `GATES`, if any is left.
+fn take_gate() -> bool {
+    let mut left = GATES.load(Ordering::SeqCst);
+    while left > 0 {
+        match GATES.compare_exchange(left, left - 1, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => return true,
+            Err(now) => left = now,
+        }
+    }
+    false
+}
+
 fn next(value: Next) {
     *NEXT.lock().unwrap() = value;
 }
@@ -43,7 +55,7 @@ impl BrandingSource for FakeSource {
         CALLS.fetch_add(1, Ordering::SeqCst);
         let value = *NEXT.lock().unwrap();
         // What was read before the wait is what this load returns (a stale read).
-        if GATES.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok() {
+        if take_gate() {
             ENTERED.notify_one();
             RELEASE.notified().await;
         }

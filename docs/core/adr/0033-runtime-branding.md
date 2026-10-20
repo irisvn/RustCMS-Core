@@ -15,7 +15,7 @@ upload page, storage and permission; the panel must show the result safely.
 
 - **Source.** `AdminProvider::branding(impl BrandingSource)`; `load(&AppState)
   -> AppResult<Option<Branding>>`. `Branding` is a checked value: name
-  (1–64 characters, no control characters), logo, dark logo and favicon
+  (1–64 characters, not blank, no control characters), logo, dark logo and favicon
   (PNG, WebP or ICO, magic bytes checked, ≤ 512 KiB), the theme's color
   tokens (hex only) and radius. Each setter returns `Result`, and
   `check_image`/`check_color`/`check_name` let the app validate uploads with
@@ -37,14 +37,15 @@ upload page, storage and permission; the panel must show the result safely.
 - **Serving by kind.** The theme's files (static or runtime) are served at
   `{admin}/assets/brand/{theme.css|logo|logo-dark|favicon}?v={hash}`. The
   handler always returns the current file of that kind: HTML from another
-  instance, from before a restart or from before two quick changes never gets
-  a 404. Cached for good only when `v` matches, else `no-cache`. Exact MIME,
+  instance, from before a restart or from before two quick changes gets an
+  image while that kind exists (a missing kind is a 404). Cached for good only when `v` matches, else `no-cache`. Exact MIME,
   `nosniff`, `Cross-Origin-Resource-Policy: same-origin`, `inline`, the
   panel's CSP. The static theme stylesheet is no longer an extension asset;
   the brand stylesheet is the first of `extensions.styles`, so app styles
   still refine it.
-- **One branding per document.** With a source, `index.html` is rendered per
-  request (still `no-store`); the config carries `brand` and the asset paths.
+- **One branding per document.** With a source in runtime mode, `index.html`
+  is rendered per request (still `no-store`; in static mode once, even with a
+  source registered); the config carries `brand` and the asset paths.
   The SPA takes the brand, logos and favicon from it until a reload, never
   from `PanelResponse.brand` (kept for compatibility), so two requests cannot
   mix two brandings. The sign-in pages show the brand: it is public.

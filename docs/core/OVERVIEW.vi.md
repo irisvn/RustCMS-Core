@@ -1,4 +1,4 @@
-# rustcms — Tài liệu tổng quan (bản 0.1)
+# rustcms — Tài liệu tổng quan (bản 0.7.0)
 
 > Cập nhật: 13/10/2026 · nhánh `main` (commit `ce2db1e`)
 

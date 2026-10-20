@@ -20,9 +20,12 @@ raw names, and every role was built one checkbox at a time.
   `resources`, `system`, `other` and metadata for its own permissions; the
   app's declarations are checked for duplicates among themselves, then merged
   over the defaults (so the app may relabel a default once).
-- **Checked when the panel registers**, after every provider declared its
-  permissions: metadata names a declared permission, areas exist, presets
-  name declared admin permissions. Misuse panics, like other builders.
+- **Checked when the panel registers** (`AdminProvider::register`, after the
+  panel declared its own permissions), against the permissions declared by
+  then: providers declaring referenced permissions register before it.
+  Metadata names a declared permission, areas exist, presets name declared
+  admin permissions. The builders check ids, texts and duplicates at once.
+  Misuse panics, like other builders.
 - **Presets grant nothing.** `GET {admin}/api/system/permission-presets` lists
   them (same access as the permission list). Applying one only edits the
   unsaved selection: grantable permissions become exactly the preset's,
@@ -36,4 +39,5 @@ raw names, and every role was built one checkbox at a time.
 ## Consequences
 
 - Metadata cannot change at runtime and has no per-tenant form.
-- Undeclared permissions still show, by name, under "Other".
+- Permissions without metadata show by name, under "Resources" (matrix cells)
+  or "Other"; orphaned permissions are not listed.

@@ -25,6 +25,11 @@ Permissions need no Redis: a change made on one instance applies on every
 instance from the next request (the permission cache follows a counter kept
 in the database).
 
+[Runtime branding](../admin/customizing.md#runtime-branding) is cached per
+instance: `AdminBranding::invalidate()` clears this instance only; the others
+load it again once their `[admin] branding_ttl_secs` has passed. Redis does not
+broadcast it.
+
 Without Redis, several instances still work, but each keeps its own rate
 limits: run one instance unless Redis is configured. Password-hashing and
 upload concurrency limits are always per instance (each bounds its own CPU

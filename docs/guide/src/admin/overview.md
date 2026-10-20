@@ -24,6 +24,7 @@ It is served under `auth.admin_path` (default `/admin`):
 | `/admin`, `/admin/…` | the panel (`/admin/login`, `/admin/r/<slug>`, `…/create`, `…/records/<key>`, `…/edit`) |
 | `/admin/assets/…` | the panel's JS and CSS |
 | `/admin/assets/ext/…` | your [extension](custom-fields.md) scripts and styles |
+| `/admin/assets/brand/{theme.css,logo,logo-dark,favicon}?v=…` | the theme's stylesheet and images, static or [runtime branding](customizing.md#runtime-branding) |
 | `/admin/api/…` | the panel's JSON API (used by the panel itself) |
 
 Each resource declares its permissions (`posts.view_any`, `posts.create`, …)

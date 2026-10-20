@@ -29,6 +29,7 @@ values follow the [wire format](wire-format.md).
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../admin/users-roles.md) |
+| GET | `/system/permission-presets` | `[{id, label, description?, permissions}]` (`roles.view_any` or `permissions.view_any`); `/system/permissions` items carry `area`, `areaLabel`, `areaSort`, and `label`/`description` when declared |
 | GET / PUT | `/settings/{group}` | settings pages, see [Settings](../admin/settings.md#api) |
 | GET | `/audit`, `/resources/{slug}/records/{key}/history` | the audit log and record histories, see [Audit log](../digging-deeper/audit-log.md#viewing-the-log) |
 | GET | `/queue` | counts per queue and status, worker settings, `canManage` (`queue.view`) |

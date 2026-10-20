@@ -31,10 +31,12 @@
 
 ## From 0.6.1 to 0.7.0
 
-Nothing needs to change.
-- The Roles page now groups permissions by area: resource permissions under
-  "Resources", the framework's under "System", the rest under "Other" until
-  you declare areas (`permission_area`, `permission_meta`).
+Most applications need no change; update links of your own to theme files,
+and `PermissionInfo` struct literals, if you have any.
+- The Roles page now groups permissions by area: resource matrix cells under
+  "Resources", the built-in users, roles and permissions permissions under
+  "System", the rest under "Other" until you declare areas
+  (`permission_area`, `permission_meta`).
 - Theme files moved from `{admin}/assets/ext/` to `{admin}/assets/brand/`
   (`theme.css`, `logo`, `favicon`). Change any link of your own to the old
   paths; the panel's pages need nothing.

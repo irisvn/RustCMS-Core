@@ -91,7 +91,8 @@ AdminProvider::new().brand("Acme").theme(theme).branding(SettingsBranding)
 app.service::<AdminBranding>().expect("AdminProvider").invalidate();
 ```
 
-- **What it sets**: `name` (1–64 characters, plain text), `logo`, `logo_dark`
+- **What it sets**: `name` (1–64 characters, not blank, no control
+  characters; plain text), `logo`, `logo_dark`
   (shown when the page is dark; else `logo`), `favicon` (PNG, WebP or ICO up
   to 512 KiB, checked against their bytes; never SVG), `color`, `primary`,
   `dark(…)` (with `Palette::try_color`) and `radius`: the theme's tokens and
@@ -109,8 +110,9 @@ app.service::<AdminBranding>().expect("AdminProvider").invalidate();
   and theme until the next period; the error is logged without its data.
 - **One branding per page**: the panel reads the brand, logos and favicon
   from the page it loaded with, until a reload. Images and the stylesheet are
-  served by kind, so a page from another instance or from before a change
-  still gets images (the current ones, not cached).
+  served by kind: a page from another instance or from before a change gets
+  the current file (with `no-cache`; cached for good only when `v` matches)
+  while that kind exists, else a 404.
 - **Recovery**: `[admin] branding = "static"` (or
   `RUSTCMS_ADMIN__BRANDING=static`) ignores the source until it is removed; a
   restart applies it. `rustcms admin:branding` shows the mode and, in runtime

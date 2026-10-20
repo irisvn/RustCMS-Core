@@ -14,8 +14,9 @@ deny-by-default authorization and field read rules everywhere.
 
 - **Theme**: validated tokens only (hex colors, bounded radius, quoted
   font-family names, raster logo/favicon checked against their bytes),
-  compiled at boot into a hashed stylesheet and images under
-  `assets/ext/`. Dark mode follows `data-scheme` on `<html>` (set from
+  compiled at boot into a stylesheet and images served under
+  `assets/brand/{theme.css,logo,favicon}?v={hash8}` since 0.7.0 (ADR 0033;
+  extension scripts and styles stay under `assets/ext/`). Dark mode follows `data-scheme` on `<html>` (set from
   the browser's saved choice, falling back to `ColorScheme`; `system` follows
   the OS) with an OS fallback before the SPA
   runs. SVG logos, `data:` images and web fonts are deferred.

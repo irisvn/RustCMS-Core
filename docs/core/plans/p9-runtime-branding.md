@@ -46,7 +46,7 @@ AdminProvider::new().brand("RDockPanel").theme(static_theme).branding(SettingsBr
 **`Branding`** is an owned value. Each method returns
 `Result<Self, BrandingError>`, so the app validates uploads with the same
 rules core applies:
-- `name(String)`: 1–64 characters, no control characters, plain text.
+- `name(&str)`: 1–64 characters, not blank, no control characters, plain text.
 - `logo(Bytes, mime)`, `logo_dark(Bytes, mime)`, `favicon(Bytes, mime)`:
   - PNG, WebP or ICO only, with the magic bytes checked against the MIME;
   - at most 512 KiB each.
@@ -67,8 +67,8 @@ of the same name. A missing field falls back to the static one.
 `logo_dark` falls back to the runtime `logo`, then the static logo.
 
 ### 2. Cache and invalidation
-- **`BrandingCache`**, bound in the container and reachable as
-  `app.get::<AdminBranding>()`, holds one entry: a `generation`, an
+- **`AdminBranding`** (planned as `BrandingCache`), bound in the container and reachable as
+  `state.service::<AdminBranding>()`, holds one entry: a `generation`, an
   `Arc<Resolved>` and an expiry time.
   - `Resolved` holds the merged values, the rendered stylesheet, and the images
     with their hashes.
@@ -108,7 +108,7 @@ of the same name. A missing field falls back to the static one.
     `Cache-Control: public, max-age=31536000, immutable`. Otherwise it is
     served with `no-cache`, so a stale `v` never pins new bytes for long.
   - A kind with no runtime or static file returns a 404.
-  - Every response carries:
+  - Every successful response carries (404/405 carry the security headers and CORP):
     - the exact MIME of the stored kind, never sniffed, with `nosniff`;
     - `Cross-Origin-Resource-Policy: same-origin`;
     - `Content-Disposition: inline`;
@@ -122,7 +122,7 @@ of the same name. A missing field falls back to the static one.
   existing `Theme::stylesheet` code path. It is served as `text/css` from
   `'self'`, so the CSP is unchanged and no inline style is added.
 - **`index.html`:**
-  - With a branding source, index is rendered per request from a template
+  - With a branding source (runtime mode), index is rendered per request (implemented by replacing the config marker each time, no split template) from a template
     split at boot: prefix, config, suffix. Rendering only fills the config
     JSON, so it stays cheap.
   - In runtime mode, the generated static `theme` extension stylesheet is not
@@ -153,7 +153,7 @@ of the same name. A missing field falls back to the static one.
 - The static `Theme` gets this too: the index config always carries `brand`.
   The brand name becomes visible before sign-in: it is the panel's public
   name, and this is noted in `security/production.md`.
-- `document.title` = brand name, on every page.
+- `document.title` = the brand on sign-in pages, `{brand} · Admin panel` in the shell.
 - **Dark logo:** the SPA picks `logoDark` when `data-scheme` resolves to dark,
   through the existing theme lib (a MutationObserver hook like
   `useColorScheme`). `<picture>` media queries would not follow the in-app

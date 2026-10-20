@@ -19,7 +19,7 @@ saves the choice (422 for a language not offered). The shell's
 `brand` and `theme` (`colorScheme`; `logo`, `logoDark`, `favicon` as
 `assets/brand/{kind}?v={hash8}`; the theme stylesheet is the first of
 `extensions.styles`, `assets/brand/theme.css?v=…`). With a `BrandingSource`
-the page is rendered per request; the SPA shows that branding until a reload
+in runtime mode the page is rendered per request (static mode renders it once); the SPA shows that branding until a reload
 (ADR 0033). `assets/brand/{kind}` always serves the current file of the kind
 (immutable only when `v` is current, else `no-cache`).
 
