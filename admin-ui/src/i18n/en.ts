@@ -424,6 +424,7 @@ export const en = {
   "action.restore": "Restore",
   "action.forceDelete": "Delete permanently",
   "action.cancel": "Cancel",
+  "action.close": "Close",
   "action.confirm": "Confirm",
   "list.noResults": "No results",
   "list.page": "Page {page} of {last} · {records}",

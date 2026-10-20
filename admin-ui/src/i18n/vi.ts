@@ -423,6 +423,7 @@ export const vi: Record<keyof typeof en, string> = {
   "action.restore": "Khôi phục",
   "action.forceDelete": "Xoá vĩnh viễn",
   "action.cancel": "Huỷ",
+  "action.close": "Đóng",
   "action.confirm": "Xác nhận",
   "list.noResults": "Không có kết quả",
   "list.page": "Trang {page}/{last} · {records}",

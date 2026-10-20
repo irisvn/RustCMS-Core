@@ -216,7 +216,10 @@ the session.
   `TableCell`, styled like the panel's lists.
 - `Skeleton`, `Separator`, and `CodeBlock code="…"` (with a copy button).
 
-Menus and tooltips work inside a `Dialog`.
+Menus and tooltips work inside a `Dialog`. Every `Dialog` has a close button
+(×, "Close") in its top right corner, after your content, so opening still
+focuses your first field; `closeButton={false}` leaves it out, and
+`closeDisabled` disables it and Escape (for example while saving).
 
 ## Sub-pages
 

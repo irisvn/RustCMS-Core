@@ -29,6 +29,12 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.7.0 to 0.7.1
+
+Nothing needs to change. React pages' dialogs get the close button without a
+rebuild; `rustcms make:sdk` adds `closeButton` and `closeDisabled` to the
+SDK's types.
+
 ## From 0.6.1 to 0.7.0
 
 Most applications need no change; update links of your own to theme files,

@@ -38,15 +38,17 @@ export function SchemaFormDialog(props: {
    */
   mode?: "action" | "create" | "edit";
 }) {
+  // Busy while submitting: closing is blocked until the answer arrives.
+  const [busy, setBusy] = useState(false);
   // Mounted only while open: each opening starts from fresh values.
   return (
-    <Dialog open={props.open} onClose={props.onClose} title={props.title} className="max-w-lg">
-      {props.open && <Body {...props} />}
+    <Dialog open={props.open} onClose={props.onClose} title={props.title} className="max-w-lg" closeDisabled={busy}>
+      {props.open && <Body {...props} busy={busy} setBusy={setBusy} />}
     </Dialog>
   );
 }
 
-function Body({ onClose, form, slug, optionsPath, data, submitLabel, onSubmit, children, ready = true, mode = "action" }: Parameters<typeof SchemaFormDialog>[0]) {
+function Body({ onClose, form, slug, optionsPath, data, submitLabel, onSubmit, children, ready = true, mode = "action", busy, setBusy }: Parameters<typeof SchemaFormDialog>[0] & { busy: boolean; setBusy: (busy: boolean) => void }) {
   const t = useT();
   const components = useMemo(() => form?.components ?? [], [form]);
   const inputs = useMemo(() => inputsOf(components), [components]);
@@ -57,7 +59,6 @@ function Body({ onClose, form, slug, optionsPath, data, submitLabel, onSubmit, c
   const values = useForm<FormValues>({ defaultValues: defaultValues(inputs, data), resolver });
   dirty.current = (name) => values.getFieldState(name).isDirty;
   const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const submit = values.handleSubmit(async (current) => {
     setNotice(null);
     setBusy(true);
@@ -90,7 +91,7 @@ function Body({ onClose, form, slug, optionsPath, data, submitLabel, onSubmit, c
       )}
       {notice && <Alert variant="destructive">{notice}</Alert>}
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" onClick={onClose}>
+        <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
           {t("action.cancel")}
         </Button>
         <Button type="submit" disabled={busy || !ready}>

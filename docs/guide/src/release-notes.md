@@ -1,7 +1,12 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.7.0**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.7.1**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.7.1
+
+- **Dialogs have a close button** (×) in their top right corner, also the
+  `Dialog` of React pages; forms in dialogs cannot be closed while saving.
 
 ## 0.7.0
 

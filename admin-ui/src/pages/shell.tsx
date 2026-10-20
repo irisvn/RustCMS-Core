@@ -243,7 +243,7 @@ export function Shell() {
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-4 outline-none sm:p-6 lg:p-8"><Outlet /></main>
         <ToastRegion />
       </div>
-      <Dialog open={drawer} onClose={() => setDrawer(false)} title={t("shell.navigation")} className="admin-drawer md:hidden">
+      <Dialog open={drawer} onClose={() => setDrawer(false)} title={t("shell.navigation")} className="admin-drawer md:hidden" closeButton={false}>
         <Button variant="ghost" size="icon" aria-label={t("shell.closeNav")} className="absolute right-3 top-3" onClick={() => setDrawer(false)}><X /></Button>
         <div className="flex min-h-0 flex-1 flex-col gap-4">
           <Link to="/" className="flex items-center gap-2 font-semibold" onClick={() => setDrawer(false)}><BrandMark /><span className="truncate">{brand}</span></Link>

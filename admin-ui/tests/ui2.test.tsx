@@ -441,7 +441,7 @@ describe("ui 2 components", () => {
 
   it("Tab from a menu moves on from its button, and wraps inside a dialog", async () => {
     render(
-      <Dialog open onClose={() => {}} title="D">
+      <Dialog open onClose={() => {}} title="D" closeButton={false}>
         <button type="button">Before</button>
         <DropdownMenu trigger="More" aria-label="More">
           <DropdownMenuItem>Edit</DropdownMenuItem>

@@ -6,6 +6,15 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-10-20
+
+### Added (0.7.1)
+- `Dialog` (panel and the SDK kit): a close button (×, `action.close`) after
+  the content, so opening still focuses the first field; `closeButton` and
+  `closeDisabled` (which also blocks Escape). Dialogs are labelled by their
+  title (`aria-labelledby`), so `title` may be any node.
+- Form dialogs cannot be closed or cancelled while submitting.
+
 ## [0.7.0] — 2026-10-20
 
 ### Added (0.7.0)
