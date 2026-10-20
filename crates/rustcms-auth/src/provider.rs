@@ -41,6 +41,7 @@ const PRUNE_EVERY: Duration = Duration::from_secs(3600);
 pub struct AuthProvider {
     gate: Mutex<Option<Gate>>,
     permissions: Vec<(String, String, Option<String>)>,
+    catalog: crate::catalog::Declarations,
 }
 
 impl AuthProvider {
@@ -83,6 +84,36 @@ impl AuthProvider {
         self
     }
 
+    /// Declares a section of the Roles page (or relabels a framework one:
+    /// `resources`, `system`, `other`), once per id.
+    ///
+    /// # Panics
+    /// On an invalid id (`[a-z0-9_-]`, 1–64) or an id declared twice.
+    pub fn permission_area(mut self, id: &str, area: crate::PermissionArea) -> Self {
+        self.catalog.area(id, area);
+        self
+    }
+
+    /// Declares how `name` of `guard` is shown: label, description, area.
+    /// The permission must be declared (checked when the panel registers).
+    ///
+    /// # Panics
+    /// When `name` already has metadata from this provider.
+    pub fn permission_meta(mut self, guard: &str, name: &str, meta: crate::PermissionMeta) -> Self {
+        self.catalog.meta(guard, name, meta);
+        self
+    }
+
+    /// Declares a starting selection of admin permissions for the Roles page.
+    /// It grants nothing: applying it only changes the unsaved selection.
+    ///
+    /// # Panics
+    /// On an invalid id or an id declared twice.
+    pub fn permission_preset(mut self, id: &str, preset: crate::PermissionPreset) -> Self {
+        self.catalog.preset(id, preset);
+        self
+    }
+
     /// Defines a gate ability (see [`Gate::define`]).
     pub fn define(self, ability: &str, check: impl Fn(&Principal) -> bool + Send + Sync + 'static) -> Self {
         self.gate
@@ -107,7 +138,8 @@ impl ServiceProvider for AuthProvider {
             crate::recovery::MAX_INVITATION_DAYS
         );
         let gate = self.gate.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take().unwrap_or_default();
-        let state = AuthState::new(config.clone(), &app.config().app.url, &app.config().app.key, gate);
+        let mut state = AuthState::new(config.clone(), &app.config().app.url, &app.config().app.key, gate);
+        state.catalog = self.catalog.catalog();
         for (group, name) in BUILT_IN_PERMISSIONS {
             state.permissions.declare(ADMIN_GUARD, name, Some(group));
         }

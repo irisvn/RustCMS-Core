@@ -293,6 +293,9 @@ impl ServiceProvider for AdminProvider {
             app.bind(crate::media::MediaState { storage, config, uploads });
             app.command(MediaPrune);
         }
+        // Every permission is declared by now: the Roles page's labels,
+        // areas and presets may only name declared ones.
+        auth.catalog.check(auth.permissions.all().keys());
         // Background exports keep their files in the application's storage.
         if app.service::<std::sync::Arc<dyn rustcms_core::storage::Storage>>().is_some() {
             app.job::<crate::exports::ExportJob>();
@@ -502,7 +505,15 @@ impl AppCommand for LangMissing {
             .service::<AuthState>()
             .map(|auth| auth.permissions.all().into_values().flatten().collect())
             .unwrap_or_default();
-        let missing = panel.missing_translations(locale, &groups);
+        let mut missing = panel.missing_translations(locale, &groups);
+        // The Roles page's areas, permission labels and presets.
+        if let Some(auth) = state.service::<AuthState>().filter(|_| locale != "en") {
+            missing.extend(
+                auth.catalog.display_strings().into_iter().filter(|s| panel.translator.find(locale, None, s).is_none()),
+            );
+            missing.sort();
+            missing.dedup();
+        }
         if missing.is_empty() {
             println!("# every admin label has a {locale} translation");
             return Ok(());

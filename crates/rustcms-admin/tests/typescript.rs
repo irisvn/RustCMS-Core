@@ -5,7 +5,9 @@
 
 use rustcms_admin::http::{DataResponse, PanelResponse, PanelUser};
 use rustcms_admin::schema::*;
-use rustcms_admin::system::{PermissionInfo, RoleRef, SystemLinks, SystemRole, SystemUser, UserPage};
+use rustcms_admin::system::{
+    PermissionInfo, PermissionPresetInfo, RoleRef, SystemLinks, SystemRole, SystemUser, UserPage,
+};
 use rustcms_admin::ui::{ColumnType, FilterType, InputType, LayoutType, SelectOption};
 use rustcms_admin::{ActionOutcome, Envelope, Page, PageMeta};
 use ts_rs::{Config, TS};
@@ -57,6 +59,7 @@ fn bindings() -> String {
         UserPage::decl(&cfg),
         SystemRole::decl(&cfg),
         PermissionInfo::decl(&cfg),
+        PermissionPresetInfo::decl(&cfg),
         rustcms_admin::settings::SettingsLink::decl(&cfg),
         rustcms_admin::settings::SecretStatus::decl(&cfg),
         rustcms_admin::settings::SettingsAbilities::decl(&cfg),

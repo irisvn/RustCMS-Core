@@ -41,6 +41,14 @@
 
 "Published per week" = "Xuất bản theo tuần"
 
+# The Roles page (auth_service_provider.rs).
+"Use live demos" = "Dùng demo trực tiếp"
+"Ticks, echo socket and hello page" = "Bộ đếm, socket echo và trang hello"
+"Edit own posts" = "Sửa bài của mình"
+"Edit the posts you wrote" = "Sửa các bài bạn đã viết"
+"Viewer" = "Người xem"
+"Reads posts and categories" = "Đọc bài viết và danh mục"
+
 [posts]
 # "Content" is also a navigation group; on the post form it is the first tab.
 "Content" = "Nội dung"

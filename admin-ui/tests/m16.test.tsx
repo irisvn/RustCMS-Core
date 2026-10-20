@@ -30,6 +30,7 @@ const writes: { method: string; path: string; body: unknown }[] = [];
 const record = (key: string, title: string, extra = {}) => ({ key, title, abilities: { view: true, update: true, delete: true, move: true }, data: { title, ...extra } });
 
 const server = setupServer(
+  http.get("*/admin/api/system/permission-presets", () => HttpResponse.json([])),
   http.get("*/admin/api/auth/me", () => HttpResponse.json({ user: { id: "1" }, guard: "admin", permissions: [], superAdmin: true })),
   http.get("*/admin/api/auth/csrf", () => HttpResponse.json({ csrfToken: "t", userId: "1" })),
   http.get("*/admin/api/panel", () => HttpResponse.json({ brand: "T", user: { id: "1", name: "A", email: "a@b.c" }, navigation: [list.resource], system: { users: false, roles: true, createUsers: false, createRoles: true, audit: false, queue: false }, settings: [], pages: [] })),
@@ -174,11 +175,11 @@ it("lays resource permissions out as a matrix and keeps what the user cannot cha
   server.use(
     http.get("*/admin/api/system/permissions", () =>
       HttpResponse.json([
-        { name: "posts.view", group: "posts", groupLabel: "Posts", grantable: true, resource: "posts", ability: "view" },
-        { name: "posts.update", group: "posts", groupLabel: "Posts", grantable: false, resource: "posts", ability: "update" },
-        { name: "posts.attach_tags", group: "posts", groupLabel: "Posts", grantable: true, resource: "posts", ability: "attach_tags" },
-        { name: "tags.view", group: "tags", groupLabel: "Tags", grantable: true, resource: "tags", ability: "view" },
-        { name: "settings.general.view", group: "settings", groupLabel: "Settings", grantable: true },
+        { name: "posts.view", group: "posts", groupLabel: "Posts", grantable: true, area: "resources", areaLabel: "Resources", areaSort: 0, resource: "posts", ability: "view" },
+        { name: "posts.update", group: "posts", groupLabel: "Posts", grantable: false, area: "resources", areaLabel: "Resources", areaSort: 0, resource: "posts", ability: "update" },
+        { name: "posts.attach_tags", group: "posts", groupLabel: "Posts", grantable: true, area: "resources", areaLabel: "Resources", areaSort: 0, resource: "posts", ability: "attach_tags" },
+        { name: "tags.view", group: "tags", groupLabel: "Tags", grantable: true, area: "resources", areaLabel: "Resources", areaSort: 0, resource: "tags", ability: "view" },
+        { name: "settings.general.view", group: "settings", groupLabel: "Settings", grantable: true, area: "resources", areaLabel: "Resources", areaSort: 0 },
       ]),
     ),
     http.post("*/admin/api/system/roles", async ({ request }) => {
@@ -213,8 +214,8 @@ it("saving a role keeps permissions the user cannot change, with what it started
   server.use(
     http.get("*/admin/api/system/permissions", () =>
       HttpResponse.json([
-        { name: "posts.view", group: "posts", groupLabel: "Posts", grantable: true, resource: "posts", ability: "view" },
-        { name: "posts.update", group: "posts", groupLabel: "Posts", grantable: false, resource: "posts", ability: "update" },
+        { name: "posts.view", group: "posts", groupLabel: "Posts", grantable: true, area: "resources", areaLabel: "Resources", areaSort: 0, resource: "posts", ability: "view" },
+        { name: "posts.update", group: "posts", groupLabel: "Posts", grantable: false, area: "resources", areaLabel: "Resources", areaSort: 0, resource: "posts", ability: "update" },
       ]),
     ),
     http.get("*/admin/api/system/roles/4", () => HttpResponse.json(role)),

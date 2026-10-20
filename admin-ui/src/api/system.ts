@@ -3,7 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useLocale } from "@/i18n";
 import { useApi, useSession } from "./context";
 import { guardedWrite } from "./queries";
-import type { PermissionInfo, SystemRole, SystemUser, UserPage } from "./types";
+import type { PermissionInfo, PermissionPresetInfo, SystemRole, SystemUser, UserPage } from "./types";
 
 /** Write scopes (see `guardedWrite`): a write with an unknown outcome pauses its scope. */
 export const USERS = "system:users";
@@ -33,6 +33,17 @@ export function useRoles(enabled = true) {
 export function useRole(id: string) {
   const api = useApi();
   return useQuery({ queryKey: ["system", "role", id], queryFn: () => api.get<SystemRole>(`/system/roles/${enc(id)}`) });
+}
+
+/** Presets of the Roles page (starting selections; they grant nothing). */
+export function usePermissionPresets() {
+  const api = useApi();
+  const locale = useLocale();
+  return useQuery({
+    queryKey: ["system", "permission-presets", locale],
+    queryFn: () => api.get<PermissionPresetInfo[]>("/system/permission-presets"),
+    placeholderData: keepPreviousData,
+  });
 }
 
 export function usePermissions() {

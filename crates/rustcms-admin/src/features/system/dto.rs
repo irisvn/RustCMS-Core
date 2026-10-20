@@ -134,4 +134,36 @@ pub struct PermissionInfo {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ability: Option<String>,
+    /// Label (declared with `permission_meta`), translated; else show `name`.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// What it allows, translated.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Section of the Roles page (`resources`, `system`, `other` or declared).
+    pub area: String,
+    /// The area as shown, translated.
+    pub area_label: String,
+    /// The area's position (lower first).
+    pub area_sort: i32,
+}
+
+/// A starting selection for the Roles page (it grants nothing by itself).
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionPresetInfo {
+    /// Id (`viewer`).
+    pub id: String,
+    /// Label, translated.
+    pub label: String,
+    /// Description, translated.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Admin permissions it selects (declared, not orphaned; also those the
+    /// current user may not grant, which the page leaves unchanged).
+    pub permissions: Vec<String>,
 }

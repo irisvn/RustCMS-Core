@@ -748,3 +748,69 @@ db_test!(nobody_deletes_a_role_they_hold, |db: TestDb| async move {
         .await
         .assert_status(StatusCode::FORBIDDEN);
 });
+
+db_test!(permissions_carry_areas_labels_and_presets, |db: TestDb| async move {
+    let (app, users): (TestApp, Users) = setup(db).await;
+    let vi = app.acting_as(&users.admin).await.languages("vi");
+    let list = vi.get(&api(&app, "permissions")).await.json();
+    let find = |name: &str| list.as_array().unwrap().iter().find(|p| p["name"] == name).unwrap().clone();
+    let own = find("posts.update_own");
+    assert_eq!(own["label"], json!("Sửa bài của mình"));
+    assert_eq!(own["description"], json!("Edit the posts you wrote"), "untranslated stays English");
+    assert_eq!(
+        (own["area"].clone(), own["areaLabel"].clone(), own["areaSort"].clone()),
+        (json!("writing"), json!("Viết bài"), json!(10))
+    );
+    // Defaults: matrix cells in `resources`, the framework's own in `system`, the rest in `other`.
+    assert_eq!(find("posts.update")["area"], json!("resources"));
+    assert_eq!(find("posts.update")["areaLabel"], json!("Tài nguyên"));
+    assert_eq!(find("users.view_any")["area"], json!("system"));
+    assert_eq!(find("users.view_any")["areaSort"], json!(1000));
+    assert_eq!(find("audit.view")["area"], json!("other"));
+    assert!(find("posts.update").get("label").is_none());
+
+    // Presets list every declared name, also those the caller cannot grant.
+    let editor = with_role(&app, "role-viewer", &["roles.view_any", "posts.view_any"]).await;
+    let presets = app.acting_as(&editor).await.get(&api(&app, "permission-presets")).await.json();
+    assert_eq!(
+        presets,
+        json!([{"id": "writer", "label": "Writer", "description": "Writes posts",
+                "permissions": ["posts.create", "posts.view", "posts.view_any", "users.view_any"]}])
+    );
+    app.acting_as(&users.member).await.get(&api(&app, "permission-presets")).await.assert_status(StatusCode::FORBIDDEN);
+});
+
+#[test]
+fn misdeclared_permission_catalogs_stop_the_boot() {
+    use rustcms_admin::AdminProvider;
+    use rustcms_auth::{AuthProvider, PermissionArea, PermissionMeta, PermissionPreset};
+    let boot = |auth: fn() -> AuthProvider| {
+        std::panic::catch_unwind(move || {
+            let mut app = rustcms_core::AppBuilder::new(rustcms_testing::test_config("sqlite::memory:"));
+            app.provider(auth());
+            app.provider(AdminProvider::new());
+        })
+        .is_err()
+    };
+    assert!(!boot(|| AuthProvider::new().permission_meta(
+        ADMIN_GUARD,
+        "users.view",
+        PermissionMeta::new().label("See")
+    )));
+    assert!(
+        boot(|| AuthProvider::new().permission_meta(ADMIN_GUARD, "nope.view", PermissionMeta::new())),
+        "undeclared"
+    );
+    assert!(
+        boot(|| AuthProvider::new().permission_meta(ADMIN_GUARD, "users.view", PermissionMeta::new().area("x"))),
+        "unknown area"
+    );
+    assert!(boot(|| AuthProvider::new().permission_preset("p", PermissionPreset::new("P").permissions(["nope.view"]))));
+    assert!(
+        !boot(|| AuthProvider::new().permission_area("system", PermissionArea::new("Platform"))),
+        "a default, once"
+    );
+    assert!(boot(|| AuthProvider::new()
+        .permission_area("system", PermissionArea::new("Platform"))
+        .permission_area("system", PermissionArea::new("Again"))));
+}

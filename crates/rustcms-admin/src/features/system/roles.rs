@@ -197,24 +197,31 @@ pub(super) async fn list_permissions(
     State(app): State<AppState>,
     AdminCtx(ctx): AdminCtx,
 ) -> AppResult<Json<Vec<PermissionInfo>>> {
-    if !ctx.principal.can("roles.view_any") && !ctx.principal.can("permissions.view_any") {
-        return Err(AppError::Forbidden);
-    }
-    let permissions = permission::Entity::find()
-        .filter(permission::Column::GuardName.eq(ADMIN_GUARD))
-        .filter(permission::Column::Orphaned.eq(false))
-        .order_by_asc(permission::Column::Name)
-        .all(app.db())
-        .await?;
+    may_list_permissions(&ctx)?;
+    let catalog = &auth(&app)?.catalog;
+    let permissions = admin_permissions(&app).await?;
     let cells = matrix_cells(&ctx);
     Ok(Json(
         permissions
             .into_iter()
             .map(|p| {
                 let (resource, ability) = cells.get(&p.name).cloned().unzip();
+                let meta = catalog.meta(ADMIN_GUARD, &p.name);
+                let area = meta
+                    .and_then(|m| m.area.clone())
+                    .unwrap_or_else(|| if resource.is_some() { RESOURCES_AREA } else { OTHER_AREA }.to_owned());
+                let (area_label, area_sort) = match catalog.area(&area) {
+                    Some(a) => (ctx.t(&a.label), a.sort),
+                    None => (area.clone(), 0),
+                };
                 PermissionInfo {
                     grantable: ctx.principal.can(&p.name),
                     group_label: p.group.as_deref().map(|g| group_label(&ctx, g)),
+                    label: meta.and_then(|m| m.label.as_deref()).map(|l| ctx.t(l)),
+                    description: meta.and_then(|m| m.description.as_deref()).map(|d| ctx.t(d)),
+                    area,
+                    area_label,
+                    area_sort,
                     name: p.name,
                     group: p.group,
                     resource,
@@ -223,6 +230,45 @@ pub(super) async fn list_permissions(
             })
             .collect(),
     ))
+}
+
+/// Presets of the Roles page, with the names that are declared and not orphaned.
+pub(super) async fn list_presets(
+    State(app): State<AppState>,
+    AdminCtx(ctx): AdminCtx,
+) -> AppResult<Json<Vec<PermissionPresetInfo>>> {
+    may_list_permissions(&ctx)?;
+    let auth = auth(&app)?;
+    let live: std::collections::HashSet<String> = admin_permissions(&app).await?.into_iter().map(|p| p.name).collect();
+    Ok(Json(
+        auth.catalog
+            .presets()
+            .iter()
+            .map(|(id, preset)| PermissionPresetInfo {
+                id: id.clone(),
+                label: ctx.t(&preset.label),
+                description: preset.description.as_deref().map(|d| ctx.t(d)),
+                permissions: preset.permissions.iter().filter(|n| live.contains(*n)).cloned().collect(),
+            })
+            .collect(),
+    ))
+}
+
+fn may_list_permissions(ctx: &crate::Ctx) -> AppResult<()> {
+    if ctx.principal.can("roles.view_any") || ctx.principal.can("permissions.view_any") {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden)
+    }
+}
+
+async fn admin_permissions(app: &AppState) -> AppResult<Vec<permission::Model>> {
+    Ok(permission::Entity::find()
+        .filter(permission::Column::GuardName.eq(ADMIN_GUARD))
+        .filter(permission::Column::Orphaned.eq(false))
+        .order_by_asc(permission::Column::Name)
+        .all(app.db())
+        .await?)
 }
 
 /// Permissions that are exactly one resource's `{slug}.{ability}` (from how

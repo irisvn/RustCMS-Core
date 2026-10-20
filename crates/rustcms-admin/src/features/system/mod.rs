@@ -18,6 +18,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, put};
+use rustcms_auth::catalog::{OTHER_AREA, RESOURCES_AREA};
 use rustcms_auth::entities::{USER_MODEL, model_has_roles as user_role, permission, role, role_has_permissions};
 use rustcms_auth::{ADMIN_GUARD, Actor, Auth, AuthState, NewUser, RbacService, Session};
 use rustcms_core::models::user;
@@ -48,6 +49,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::DELETE, format!("{base}/roles/{{id}}")),
         (Method::PUT, format!("{base}/roles/{{id}}/permissions")),
         (Method::GET, format!("{base}/permissions")),
+        (Method::GET, format!("{base}/permission-presets")),
     ]
 }
 
@@ -65,6 +67,7 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route(&format!("{base}/roles/{{id}}"), get(show_role).delete(delete_role))
         .route(&format!("{base}/roles/{{id}}/permissions"), put(set_permissions))
         .route(&format!("{base}/permissions"), get(list_permissions))
+        .route(&format!("{base}/permission-presets"), get(list_presets))
 }
 
 fn auth(app: &AppState) -> AppResult<std::sync::Arc<AuthState>> {

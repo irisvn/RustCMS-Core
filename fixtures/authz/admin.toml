@@ -1529,6 +1529,18 @@ actor = "admin"
 status = 200
 
 [[case]]
+route = "GET /admin/api/system/permission-presets"
+path = "/admin/api/system/permission-presets"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/system/permission-presets"
+path = "/admin/api/system/permission-presets"
+actor = "admin"
+status = 200
+
+[[case]]
 route = "PUT /admin/api/system/roles/{id}/permissions"
 path = "/admin/api/system/roles/{editor_role}/permissions"
 actor = "editor"

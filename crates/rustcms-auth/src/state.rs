@@ -82,6 +82,8 @@ pub struct AuthState {
     pub resolver: PermissionResolver,
     /// Declared permissions.
     pub permissions: PermissionRegistry,
+    /// How the Roles page shows them (areas, labels, presets).
+    pub catalog: crate::PermissionCatalog,
     /// Ad-hoc abilities.
     pub gate: Gate,
     pub(crate) allowed_origins: Vec<String>,
@@ -117,6 +119,7 @@ impl AuthState {
             passwords: Passwords::new(),
             limiter: RateLimiter::default(),
             permissions: PermissionRegistry::default(),
+            catalog: crate::PermissionCatalog::default(),
             gate,
             allowed_origins,
             secure_cookies,

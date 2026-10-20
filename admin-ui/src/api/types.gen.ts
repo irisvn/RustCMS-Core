@@ -867,7 +867,46 @@ resource?: string,
 /**
  * That ability (`update`, `attach_tags`, an action's).
  */
-ability?: string, };
+ability?: string, 
+/**
+ * Label (declared with `permission_meta`), translated; else show `name`.
+ */
+label?: string, 
+/**
+ * What it allows, translated.
+ */
+description?: string, 
+/**
+ * Section of the Roles page (`resources`, `system`, `other` or declared).
+ */
+area: string, 
+/**
+ * The area as shown, translated.
+ */
+areaLabel: string, 
+/**
+ * The area's position (lower first).
+ */
+areaSort: number, };
+
+export type PermissionPresetInfo = { 
+/**
+ * Id (`viewer`).
+ */
+id: string, 
+/**
+ * Label, translated.
+ */
+label: string, 
+/**
+ * Description, translated.
+ */
+description?: string, 
+/**
+ * Admin permissions it selects (declared, not orphaned; also those the
+ * current user may not grant, which the page leaves unchanged).
+ */
+permissions: Array<string>, };
 
 export type SettingsLink = { 
 /**

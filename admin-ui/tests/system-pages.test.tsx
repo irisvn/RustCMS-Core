@@ -10,6 +10,7 @@ import { createSession } from "@/app/session";
 import { groupPermissions } from "@/api/system";
 
 const server = setupServer(
+  http.get("*/admin/api/system/permission-presets", () => HttpResponse.json([])),
   http.get("*/admin/api/auth/me", () => HttpResponse.json({ user: { id: "5" }, guard: "admin", permissions: ["users.create"], superAdmin: false })),
   http.get("*/admin/api/auth/csrf", () => HttpResponse.json({ csrfToken: "t", userId: "5" })),
   http.get("*/admin/api/panel", () =>
@@ -82,8 +83,8 @@ it("keeps named system tables inside their local overflow container", async () =
 
 it("keeps grouped permission labels and grantability guards", async () => {
   server.use(http.get("*/admin/api/system/permissions", () => HttpResponse.json([
-    { name: "posts.view", group: "posts", grantable: true },
-    { name: "posts.delete", group: "posts", grantable: false },
+    { name: "posts.view", group: "posts", grantable: true, area: "resources", areaLabel: "Resources", areaSort: 0 },
+    { name: "posts.delete", group: "posts", grantable: false, area: "resources", areaLabel: "Resources", areaSort: 0 },
   ])));
   mount("/system/roles/create");
   const view = await screen.findByRole("checkbox", { name: "posts.view" });
@@ -95,9 +96,9 @@ it("keeps grouped permission labels and grantability guards", async () => {
 
 it("groups permissions by resource", () => {
   const groups = groupPermissions([
-    { name: "posts.view", group: "posts", grantable: true },
-    { name: "categories.view", grantable: false },
-    { name: "posts.create", group: "posts", grantable: true },
+    { name: "posts.view", group: "posts", grantable: true, area: "resources", areaLabel: "Resources", areaSort: 0 },
+    { name: "categories.view", grantable: false, area: "resources", areaLabel: "Resources", areaSort: 0 },
+    { name: "posts.create", group: "posts", grantable: true, area: "resources", areaLabel: "Resources", areaSort: 0 },
   ]);
   expect(groups.map(([g, l]) => [g, l.map((p) => p.name)])).toEqual([
     ["categories", ["categories.view"]],

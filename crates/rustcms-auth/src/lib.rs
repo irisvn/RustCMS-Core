@@ -9,6 +9,7 @@
 //! Register [`AuthProvider`], then use [`Auth`] in handlers.
 #![warn(missing_docs)]
 
+pub mod catalog;
 pub mod config;
 pub mod console;
 pub mod entities;
@@ -27,6 +28,7 @@ pub use guards::{credentials, guard, session, tokens};
 pub use http::routes;
 pub use support::{audit, password, rate_limit, secret};
 
+pub use catalog::{PermissionArea, PermissionCatalog, PermissionMeta, PermissionPreset};
 pub use config::AuthConfig;
 pub use guard::{Auth, Authenticated, CSRF_HEADER, MaybeAuth};
 pub use http::admin_routes::{AdminAccess, AdminRoutes};

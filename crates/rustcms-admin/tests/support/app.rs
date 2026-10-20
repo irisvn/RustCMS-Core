@@ -100,6 +100,8 @@ impl SettingsPage for GeneralSettings {
 
 /// Vietnamese labels of the test resources (`[posts]` overrides for that resource).
 pub const VI: &str = r#"
+"Writing" = "Viết bài"
+"Edit own posts" = "Sửa bài của mình"
 "Post" = "Bài viết"
 "Posts" = "Bài viết"
 "Title" = "Tiêu đề"
@@ -154,7 +156,28 @@ pub fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
     app.provider(rustcms_core::storage::StorageProvider);
     app.provider(rustcms_core::mail::MailProvider);
-    app.provider(AuthProvider::new().permission(ADMIN_GUARD, "posts.update_own", "posts"));
+    app.provider(
+        AuthProvider::new()
+            .permission(ADMIN_GUARD, "posts.update_own", "posts")
+            .permission_area("writing", rustcms_auth::PermissionArea::new("Writing").sort(10))
+            .permission_meta(
+                ADMIN_GUARD,
+                "posts.update_own",
+                rustcms_auth::PermissionMeta::new()
+                    .label("Edit own posts")
+                    .description("Edit the posts you wrote")
+                    .area("writing"),
+            )
+            .permission_preset(
+                "writer",
+                rustcms_auth::PermissionPreset::new("Writer").description("Writes posts").permissions([
+                    "posts.view_any",
+                    "posts.view",
+                    "posts.create",
+                    "users.view_any",
+                ]),
+            ),
+    );
     app.provider(
         AdminProvider::new()
             .brand("Test CMS")
