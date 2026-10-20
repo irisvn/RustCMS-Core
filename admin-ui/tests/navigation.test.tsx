@@ -59,10 +59,10 @@ afterEach(() => {
 });
 afterAll(() => server.close());
 
-function mount(path: string, panel: object) {
+function mount(path: string, panel: object, brand?: string) {
   server.use(http.get("*/api/panel", () => HttpResponse.json(panel)));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const session = createSession({ basePath: "", apiPath: "http://localhost/api" }, queryClient, () => {});
+  const session = createSession({ basePath: "", apiPath: "http://localhost/api", brand }, queryClient, () => {});
   const router = createAppRouter({ queryClient, session }, createMemoryHistory({ initialEntries: [path] }));
   render(
     <SessionContext.Provider value={session}>
@@ -100,6 +100,14 @@ describe("home and hidden resources", () => {
     await screen.findByRole("heading", { name: "Welcome, Admin" });
     expect(screen.queryByRole("link", { name: /Deployments/ })).toBeNull();
     expect(screen.getAllByRole("link", { name: /Posts/ }).length).toBeGreaterThan(0);
+  });
+
+  it("the shell shows the index configuration's brand over the panel response's", async () => {
+    mount("/", { ...base, brand: "From panel", navigation: [], pages }, "From index");
+    await screen.findByRole("heading", { name: "Welcome, Admin" });
+    expect(screen.getAllByText("From index").length).toBeGreaterThan(0);
+    expect(screen.queryByText("From panel")).toBeNull();
+    expect(document.title).toMatch(/^From index · /);
   });
 
   it("the breadcrumb names a page on its sub-paths", async () => {

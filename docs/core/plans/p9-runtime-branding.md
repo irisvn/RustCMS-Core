@@ -1,8 +1,20 @@
 # P9 plan: runtime white-label branding
 
-Round 2, 2026-10-20 (Codex round 1 applied). Requested by RDockPanel. **Plan only; not approved yet.**
+Round 2, 2026-10-20 (Codex round 1 applied). Requested by RDockPanel. Approved and
+shipped in 0.7.0; the text below is the design (ADR 0033).
 Target: 0.8.0, or 0.7.0 together with P7. It adds a public trait, a builder,
 config and routes.
+
+## Status (implemented)
+- The static theme is served the same way (`assets/brand/`), with or without
+  a source, so there is one path; the generated theme stylesheet and images
+  are no longer extension assets. Without a source, the index is still
+  rendered once at boot.
+- The service is reached with `state.service::<AdminBranding>()`.
+- `Branding::check_name` joins `check_image` and `check_color`.
+- No previous snapshot is kept: serving by kind made it unnecessary.
+- The demo brands the panel with the site's name (Settings → Site) and a
+  primary color, with `branding_ttl_secs = 2`.
 
 ## Why
 RDockPanel lets an operator change the panel's brand in Settings → Branding.

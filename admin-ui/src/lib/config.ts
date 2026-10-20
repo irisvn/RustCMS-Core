@@ -11,8 +11,10 @@ export interface PanelConfig {
   /** Default interface language and the languages users may choose. */
   locale?: string;
   locales?: string[];
-  /** The theme: logo and favicon (relative to `basePath`), color scheme. */
-  theme?: { logo?: string; favicon?: string; colorScheme: "system" | "light" | "dark" };
+  /** The brand name (the static brand, or the runtime branding's). */
+  brand?: string;
+  /** The theme: logos and favicon (relative to `basePath`), color scheme. */
+  theme?: { logo?: string; logoDark?: string; favicon?: string; colorScheme: "system" | "light" | "dark" };
   /** What the sign-in page offers. */
   signIn?: { passwordReset: boolean; remember: boolean };
 }
@@ -23,6 +25,7 @@ export function readConfig(doc: Document = document): PanelConfig {
   let extensions: PanelConfig["extensions"];
   let locale: string | undefined;
   let locales: string[] | undefined;
+  let brand: string | undefined;
   const theme: NonNullable<PanelConfig["theme"]> = { colorScheme: "system" };
   const signIn = { passwordReset: false, remember: false };
   if (raw) {
@@ -33,7 +36,9 @@ export function readConfig(doc: Document = document): PanelConfig {
       // Only extension asset paths of the panel itself.
       const own = (list: unknown, ext: string) =>
         Array.isArray(list)
-          ? list.filter((p): p is string => typeof p === "string" && new RegExp(`^assets/ext/[a-z0-9-]+\\.[0-9a-f]{8}\\.${ext}$`).test(p))
+          ? list.filter((p): p is string => typeof p === "string" && (new RegExp(`^assets/ext/[a-z0-9-]+\\.[0-9a-f]{8}\\.${ext}$`).test(p)
+            // The theme's stylesheet (static theme and runtime branding).
+            || (ext === "css" && /^assets\/brand\/theme\.css\?v=[0-9a-f]{8}$/.test(p))))
           : [];
       if (ext) {
         const scripts = own(ext.scripts, "js");
@@ -58,11 +63,13 @@ export function readConfig(doc: Document = document): PanelConfig {
         signIn.remember = parsed.signIn.remember === true;
       }
       const look = parsed.theme as Partial<NonNullable<PanelConfig["theme"]>> | undefined;
-      const image = (path: unknown) =>
-        typeof path === "string" && /^assets\/ext\/(logo|favicon)\.[0-9a-f]{8}\.(png|webp|ico)$/.test(path) ? path : undefined;
+      const image = (path: unknown, kind: string) =>
+        typeof path === "string" && new RegExp(`^assets/brand/${kind}\\?v=[0-9a-f]{8}$`).test(path) ? path : undefined;
+      if (typeof parsed.brand === "string" && parsed.brand.trim()) brand = Array.from(parsed.brand).slice(0, 64).join("");
       if (look) {
-        theme.logo = image(look.logo);
-        theme.favicon = image(look.favicon);
+        theme.logo = image(look.logo, "logo");
+        theme.logoDark = image(look.logoDark, "logo-dark");
+        theme.favicon = image(look.favicon, "favicon");
         if (look.colorScheme === "light" || look.colorScheme === "dark") theme.colorScheme = look.colorScheme;
       }
     } catch {
@@ -71,7 +78,7 @@ export function readConfig(doc: Document = document): PanelConfig {
   }
   basePath = "/" + basePath.replace(/^\/+|\/+$/g, "");
   if (basePath === "/") basePath = "";
-  return { basePath, apiPath: `${basePath}/api`, extensions, locale, locales, theme, signIn };
+  return { basePath, apiPath: `${basePath}/api`, extensions, locale, locales, brand, theme, signIn };
 }
 
 /**

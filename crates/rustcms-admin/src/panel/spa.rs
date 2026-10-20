@@ -9,12 +9,15 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::Path;
+use axum::extract::{Path, RawQuery, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use rust_embed::RustEmbed;
 use rustcms_core::{AppError, AppState};
+
+use crate::custom::AdminBranding;
+use crate::custom::branding::Resolved;
 
 #[derive(RustEmbed)]
 #[folder = "assets/"]
@@ -61,8 +64,9 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
 }
 
 /// An asset the panel serves for the application: an extension script
-/// (registering widgets, pages, cells), a stylesheet, or a theme image, under
-/// a content-hashed file name (immutable).
+/// (registering widgets, pages, cells) or a stylesheet, under a
+/// content-hashed file name (immutable). The theme's own files are served
+/// under `assets/brand/` (see [`crate::custom::AdminBranding`]).
 #[derive(Debug, Clone)]
 pub struct Extension {
     pub(crate) file: String,
@@ -99,23 +103,6 @@ impl Extension {
         asset
     }
 
-    /// A stylesheet generated at boot (the theme).
-    pub(crate) fn generated_style(name: &str, css: String) -> Self {
-        let mut asset = Self::bytes(name, css.into_bytes().into(), "css", "text/css; charset=utf-8");
-        asset.style = true;
-        asset
-    }
-
-    /// An image (logo, favicon), neither script nor stylesheet.
-    pub(crate) fn image(name: &str, body: &'static [u8], mime: &'static str) -> Self {
-        let extension = match mime {
-            "image/png" => "png",
-            "image/webp" => "webp",
-            _ => "ico",
-        };
-        Self::bytes(name, body.into(), extension, mime)
-    }
-
     fn bytes(name: &str, body: std::borrow::Cow<'static, [u8]>, extension: &str, content_type: &'static str) -> Self {
         assert!(
             (1..=64).contains(&name.len())
@@ -132,14 +119,6 @@ impl Extension {
     }
 }
 
-/// Theme facts the panel needs before it renders.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct ThemeConfig {
-    pub(crate) logo: Option<String>,
-    pub(crate) favicon: Option<String>,
-    pub(crate) scheme: &'static str,
-}
-
 /// Languages of the interface: the default and those users may choose.
 #[derive(Debug, Clone)]
 pub(crate) struct Locales {
@@ -151,71 +130,146 @@ pub(crate) struct Locales {
     pub(crate) remember: bool,
 }
 
+/// What every page response needs.
+struct Pages {
+    base: String,
+    extensions: Arc<Vec<Extension>>,
+    locales: Locales,
+    extension_timeout: std::time::Duration,
+    branding: Arc<AdminBranding>,
+    /// Rendered once when the branding is static.
+    fixed: Option<Arc<str>>,
+    csp: HeaderValue,
+}
+
+impl Pages {
+    fn render(&self, look: &Resolved) -> String {
+        render_index(
+            Assets::get("index.html").map(|f| f.data),
+            &self.base,
+            &self.extensions,
+            &self.locales,
+            look,
+            self.extension_timeout,
+        )
+    }
+
+    async fn index(&self, app: &AppState) -> Arc<str> {
+        match &self.fixed {
+            Some(index) => index.clone(),
+            None => self.render(&*self.branding.current(app).await).into(),
+        }
+    }
+}
+
 pub(crate) fn router(
     router: Router<AppState>,
     admin_path: &str,
     extensions: Arc<Vec<Extension>>,
     locales: &Locales,
-    theme: &ThemeConfig,
+    branding: Arc<AdminBranding>,
     csp: &str,
     extension_timeout: std::time::Duration,
 ) -> Router<AppState> {
     let csp = HeaderValue::from_str(csp).expect("a header-safe policy");
     // `admin_path` is normalized by the auth config (`/admin`, never `/`).
     let base = admin_path.trim_end_matches('/').to_owned();
-    let index: Arc<str> =
-        render_index(Assets::get("index.html").map(|f| f.data), &base, &extensions, locales, theme, extension_timeout)
-            .into();
-    let (root, slash) = (index.clone(), index.clone());
-    let (csp_page, csp_slash, csp_root) = (csp.clone(), csp.clone(), csp);
+    let mut pages = Pages {
+        base: base.clone(),
+        extensions,
+        locales: locales.clone(),
+        extension_timeout,
+        branding,
+        fixed: None,
+        csp,
+    };
+    if !pages.branding.is_runtime() {
+        pages.fixed = Some(pages.render(&pages.branding.fixed()).into());
+    }
+    let pages = Arc::new(pages);
+    let (root, slash) = (pages.clone(), pages.clone());
     router
         .route(
             &format!("{base}/{{*rest}}"),
-            any(move |method: Method, Path(rest): Path<String>| page(method, rest, index, extensions, csp_page)),
+            any(
+                move |State(app): State<AppState>,
+                      method: Method,
+                      Path(rest): Path<String>,
+                      RawQuery(query): RawQuery| { page(app, method, rest, query, pages) },
+            ),
         )
-        .route(&format!("{base}/"), any(move |method: Method| async move { shell(&method, &slash, &csp_slash) }))
-        .route(&base, any(move |method: Method| async move { shell(&method, &root, &csp_root) }))
+        .route(&format!("{base}/"), any(move |State(app): State<AppState>, method: Method| shell(app, method, slash)))
+        .route(&base, any(move |State(app): State<AppState>, method: Method| shell(app, method, root)))
 }
 
-async fn page(
-    method: Method,
-    rest: String,
-    index: Arc<str>,
-    extensions: Arc<Vec<Extension>>,
-    csp: HeaderValue,
-) -> Response {
+async fn page(app: AppState, method: Method, rest: String, query: Option<String>, pages: Arc<Pages>) -> Response {
     // The admin API has its own JSON 404 (registered by the auth provider); this
     // guards the boundary should routes ever change.
     if rest == "api" || rest.starts_with("api/") {
         return AppError::NotFound.into_response();
     }
-    if !matches!(method, Method::GET | Method::HEAD) {
+    let csp = &pages.csp;
+    let readable = matches!(method, Method::GET | Method::HEAD);
+    if let Some(kind) = rest.strip_prefix("assets/brand/") {
+        if !readable {
+            return brand_error(AppError::MethodNotAllowed, csp);
+        }
+        return brand_asset(&*pages.branding.current(&app).await, kind, query.as_deref(), csp);
+    }
+    if !readable {
         return AppError::MethodNotAllowed.into_response();
     }
     if let Some(file) = rest.strip_prefix("assets/ext/") {
-        return match extensions.iter().find(|e| e.file == file) {
-            Some(extension) => extension_asset(extension, &csp),
+        return match pages.extensions.iter().find(|e| e.file == file) {
+            Some(extension) => extension_asset(extension, csp),
             None => AppError::NotFound.into_response(),
         };
     }
     match rest.strip_prefix("assets/") {
-        Some(path) => asset(path, &csp),
+        Some(path) => asset(path, csp),
         // Pages whose URL carries a token (in the fragment): no `Referer` at all.
         None if matches!(rest.as_str(), "reset-password" | "invitation") => {
-            let mut response = html(&index, &csp);
+            let mut response = html(&pages.index(&app).await, csp);
             response.headers_mut().insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
             response
         }
-        None => html(&index, &csp),
+        None => html(&pages.index(&app).await, csp),
     }
 }
 
-fn shell(method: &Method, index: &str, csp: &HeaderValue) -> Response {
-    if matches!(*method, Method::GET | Method::HEAD) {
-        html(index, csp)
+async fn shell(app: AppState, method: Method, pages: Arc<Pages>) -> Response {
+    if matches!(method, Method::GET | Method::HEAD) {
+        html(&pages.index(&app).await, &pages.csp)
     } else {
         AppError::MethodNotAllowed.into_response()
     }
+}
+
+/// An error of the brand route, with the headers of its files.
+fn brand_error(error: AppError, csp: &HeaderValue) -> Response {
+    let mut response = error.into_response();
+    let headers = response.headers_mut();
+    headers.extend(security_headers(csp));
+    headers.insert("cross-origin-resource-policy", HeaderValue::from_static("same-origin"));
+    response
+}
+
+/// The current file of `kind`, whatever version `?v=` names: HTML from another
+/// instance or before a change still gets an image, cached only when current.
+fn brand_asset(look: &Resolved, kind: &str, query: Option<&str>, csp: &HeaderValue) -> Response {
+    let Some(asset) = look.asset(kind) else {
+        return brand_error(AppError::NotFound, csp);
+    };
+    let current = query.and_then(|q| q.strip_prefix("v=")).is_some_and(|v| v == asset.hash);
+    let mut headers = security_headers(csp);
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(asset.mime));
+    headers.insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("inline"));
+    headers.insert("cross-origin-resource-policy", HeaderValue::from_static("same-origin"));
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(if current { "public, max-age=31536000, immutable" } else { "no-cache" }),
+    );
+    (StatusCode::OK, headers, Body::from(asset.bytes.clone())).into_response()
 }
 
 fn asset(path: &str, csp: &HeaderValue) -> Response {
@@ -262,7 +316,7 @@ fn render_index(
     base: &str,
     extensions: &[Extension],
     locales: &Locales,
-    theme: &ThemeConfig,
+    look: &Resolved,
     extension_timeout: std::time::Duration,
 ) -> String {
     let Some(template) = template else {
@@ -271,7 +325,12 @@ fn render_index(
     let template = String::from_utf8_lossy(&template).into_owned();
     let scripts: Vec<String> =
         extensions.iter().filter(|e| e.is_script()).map(|e| format!("assets/ext/{}", e.file)).collect();
-    let styles: Vec<String> = extensions.iter().filter(|e| e.style).map(|e| format!("assets/ext/{}", e.file)).collect();
+    // The theme's stylesheet first, so extension styles may refine it.
+    let styles: Vec<String> = look
+        .path("theme.css")
+        .into_iter()
+        .chain(extensions.iter().filter(|e| e.style).map(|e| format!("assets/ext/{}", e.file)))
+        .collect();
     // Before sign-in the panel picks among these from the browser's languages.
     let mut config = serde_json::json!({ "basePath": base, "locale": locales.default, "locales": locales.all });
     if locales.password_reset || locales.remember {
@@ -294,18 +353,18 @@ fn render_index(
         config["extensions"] =
             serde_json::json!({ "scripts": scripts, "styles": styles, "v2": v2, "timeoutMs": timeout });
     }
-    let mut look = serde_json::json!({ "colorScheme": if theme.scheme.is_empty() { "system" } else { theme.scheme } });
-    if let Some(logo) = &theme.logo {
-        look["logo"] = serde_json::json!(format!("assets/ext/{logo}"));
+    let mut theme = serde_json::json!({ "colorScheme": look.scheme });
+    for (key, kind) in [("logo", "logo"), ("logoDark", "logo-dark"), ("favicon", "favicon")] {
+        if let Some(path) = look.path(kind) {
+            theme[key] = serde_json::json!(path);
+        }
     }
-    if let Some(favicon) = &theme.favicon {
-        look["favicon"] = serde_json::json!(format!("assets/ext/{favicon}"));
-    }
-    config["theme"] = look;
+    config["brand"] = serde_json::json!(look.brand);
+    config["theme"] = theme;
     let config = config.to_string();
     // Without a favicon of its own, an empty one: browsers would ask for
     // `/favicon.ico` on every page and log its 404 (`data:` is in `img-src`).
-    let icon = if theme.favicon.is_none() { "<link rel=\"icon\" href=\"data:,\">" } else { "" };
+    let icon = if look.favicon.is_none() { "<link rel=\"icon\" href=\"data:,\">" } else { "" };
     let tags = format!(
         "<base href=\"{}/\"><meta name=\"rustcms-admin\" content=\"{}\">{icon}",
         escape_attr(base),
@@ -323,6 +382,10 @@ mod tests {
     use super::*;
 
     const TEN: std::time::Duration = std::time::Duration::from_secs(10);
+
+    fn look() -> Resolved {
+        Resolved::new("rustcms", &crate::custom::Theme::default(), None)
+    }
 
     fn en() -> Locales {
         Locales { default: "en".into(), all: vec!["en".into(), "vi".into()], password_reset: false, remember: false }
@@ -346,16 +409,15 @@ mod tests {
     #[test]
     fn index_gets_base_and_escaped_config() {
         let template = b"<head><!-- rustcms:config --><script src=\"./assets/a.js\"></script></head>";
-        let html =
-            render_index(Some(template.as_slice().into()), "/back-office", &[], &en(), &ThemeConfig::default(), TEN);
+        let html = render_index(Some(template.as_slice().into()), "/back-office", &[], &en(), &look(), TEN);
         assert_eq!(
             html,
             "<head><base href=\"/back-office/\"><meta name=\"rustcms-admin\" \
-             content=\"{&quot;basePath&quot;:&quot;/back-office&quot;,&quot;locale&quot;:&quot;en&quot;,&quot;locales&quot;:[&quot;en&quot;,&quot;vi&quot;],&quot;theme&quot;:{&quot;colorScheme&quot;:&quot;system&quot;}}\"><link rel=\"icon\" href=\"data:,\"><script src=\"./assets/a.js\"></script></head>"
+             content=\"{&quot;basePath&quot;:&quot;/back-office&quot;,&quot;brand&quot;:&quot;rustcms&quot;,&quot;locale&quot;:&quot;en&quot;,&quot;locales&quot;:[&quot;en&quot;,&quot;vi&quot;],&quot;theme&quot;:{&quot;colorScheme&quot;:&quot;system&quot;}}\"><link rel=\"icon\" href=\"data:,\"><script src=\"./assets/a.js\"></script></head>"
         );
-        assert!(render_index(None, "/admin", &[], &en(), &ThemeConfig::default(), TEN).contains("not built"));
+        assert!(render_index(None, "/admin", &[], &en(), &look(), TEN).contains("not built"));
         let ext = [Extension::new("acme", "x", false), Extension::new("acme", "y", true)];
-        let html = render_index(Some(template.as_slice().into()), "/admin", &ext, &en(), &ThemeConfig::default(), TEN);
+        let html = render_index(Some(template.as_slice().into()), "/admin", &ext, &en(), &look(), TEN);
         assert!(html.contains("&quot;scripts&quot;:[&quot;assets/ext/acme.2d711642.js&quot;]"), "{html}");
         assert_eq!(escape_attr("\"'<&>"), "&quot;&#39;&lt;&amp;&gt;");
     }

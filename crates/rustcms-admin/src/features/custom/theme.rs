@@ -51,7 +51,7 @@ impl ColorScheme {
 /// Token values of one color scheme.
 #[derive(Debug, Clone, Default)]
 pub struct Palette {
-    colors: Vec<(&'static str, String)>,
+    pub(super) colors: Vec<(&'static str, String)>,
 }
 
 impl Palette {
@@ -77,6 +77,57 @@ impl Palette {
     pub fn primary_foreground(self, value: &str) -> Self {
         self.color("primary-foreground", value)
     }
+
+    /// [`Palette::color`] for values chosen at runtime: an error instead of a panic.
+    ///
+    /// # Errors
+    /// On an unknown token or a value that is not a hex color.
+    pub fn try_color(mut self, token: &str, value: &str) -> Result<Self, super::BrandingError> {
+        let token = check_color(token, value)?;
+        self.colors.retain(|(t, _)| *t != token);
+        self.colors.push((token, value.to_ascii_lowercase()));
+        Ok(self)
+    }
+
+    /// These tokens with `over`'s on top.
+    pub(super) fn merged(&self, over: &Palette) -> Palette {
+        let mut out = self.clone();
+        for (token, value) in &over.colors {
+            out.colors.retain(|(t, _)| t != token);
+            out.colors.push((token, value.clone()));
+        }
+        out
+    }
+}
+
+/// `token` (one of [`TOKENS`]) as its static name, if `value` is a hex color.
+pub(super) fn check_color(token: &str, value: &str) -> Result<&'static str, super::BrandingError> {
+    let token = TOKENS
+        .iter()
+        .copied()
+        .find(|t| *t == token)
+        .ok_or_else(|| super::BrandingError::new(format!("unknown color token `{token}`")))?;
+    if !hex_color(value) {
+        return Err(super::BrandingError::new(format!("`{token}` must be a hex color (#rgb, #rrggbb, …)")));
+    }
+    Ok(token)
+}
+
+/// The MIME type of an image the panel serves, if `bytes` are one (PNG, WebP or ICO, ≤ 512 KiB).
+pub(super) fn check_image(bytes: &[u8], mime: &str) -> Result<&'static str, super::BrandingError> {
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err(super::BrandingError::new("the image is larger than 512 KiB"));
+    }
+    let (canonical, detected) = match mime {
+        "image/png" => ("image/png", bytes.starts_with(b"\x89PNG\r\n\x1a\n")),
+        "image/webp" => ("image/webp", bytes.len() > 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP"),
+        "image/x-icon" | "image/vnd.microsoft.icon" => ("image/x-icon", bytes.starts_with(&[0, 0, 1, 0])),
+        _ => return Err(super::BrandingError::new("the image must be PNG, WebP or ICO")),
+    };
+    if !detected {
+        return Err(super::BrandingError::new(format!("the image's bytes are not {mime}")));
+    }
+    Ok(canonical)
 }
 
 /// An image the panel serves (logo, favicon).
@@ -89,9 +140,9 @@ pub(crate) struct Image {
 /// The panel's look.
 #[derive(Debug, Clone, Default)]
 pub struct Theme {
-    light: Palette,
-    dark: Palette,
-    radius: Option<String>,
+    pub(super) light: Palette,
+    pub(super) dark: Palette,
+    pub(super) radius: Option<String>,
     font: Option<String>,
     pub(crate) logo: Option<Image>,
     pub(crate) favicon: Option<Image>,
@@ -217,7 +268,7 @@ fn hex_color(value: &str) -> bool {
         .is_some_and(|hex| matches!(hex.len(), 3 | 4 | 6 | 8) && hex.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
-fn length(value: &str) -> bool {
+pub(super) fn length(value: &str) -> bool {
     let (number, max) = if let Some(n) = value.strip_suffix("rem") {
         (n, 4.0)
     } else if let Some(n) = value.strip_suffix("px") {
@@ -235,13 +286,11 @@ fn length(value: &str) -> bool {
 
 fn image(what: &str, bytes: &'static [u8], mime: &'static str) -> Image {
     assert!(bytes.len() <= MAX_IMAGE_BYTES, "theme: the {what} is larger than 512 KiB");
-    let detected = match mime {
-        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
-        "image/webp" => bytes.len() > 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP",
-        "image/x-icon" | "image/vnd.microsoft.icon" => bytes.starts_with(&[0, 0, 1, 0]),
-        _ => panic!("theme: the {what} must be PNG, WebP or ICO, not `{mime}`"),
-    };
-    assert!(detected, "theme: the {what}'s bytes are not {mime}");
+    assert!(
+        matches!(mime, "image/png" | "image/webp" | "image/x-icon" | "image/vnd.microsoft.icon"),
+        "theme: the {what} must be PNG, WebP or ICO, not `{mime}`"
+    );
+    assert!(check_image(bytes, mime).is_ok(), "theme: the {what}'s bytes are not {mime}");
     Image { bytes, mime }
 }
 

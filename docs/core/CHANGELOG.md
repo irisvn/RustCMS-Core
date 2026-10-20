@@ -6,6 +6,33 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-10-20
+
+### Added (0.7.0)
+- Roles page (P7, ADR 0034): permissions by area (collapsible, selected/total
+  counts), a search box (name, label, description; case and diacritics
+  ignored, `đ` too), labels and descriptions, presets as starting selections.
+  Declared with `AuthProvider::permission_area`, `permission_meta` and
+  `permission_preset`, checked when the panel registers. Bulk toggles act
+  only on shown, grantable permissions.
+- `PermissionInfo` gains `label`, `description`, `area`, `areaLabel`,
+  `areaSort`; `GET {admin}/api/system/permission-presets`.
+- Runtime branding (P9, ADR 0033): `AdminProvider::branding(impl
+  BrandingSource)` with a checked `Branding` (name, logo, dark logo, favicon,
+  color tokens, radius), cached per instance (`[admin] branding_ttl_secs`,
+  `branding_timeout_ms`), `AdminBranding::invalidate`, the static theme on
+  failure, `[admin] branding = "static"` (`RUSTCMS_ADMIN__BRANDING`) to
+  recover, and `admin:branding` to check.
+- The sign-in, reset and invitation pages show the brand name and logo; the
+  brand names the tab on every page.
+
+### Changed (0.7.0)
+- Theme files are served at `{admin}/assets/brand/{theme.css,logo,favicon}?v=`
+  (by kind, current bytes; cached for good only when `v` is current) instead
+  of `assets/ext/`. The index config carries `brand` and `theme.logoDark`.
+- The shell takes its brand from the index config (one branding per
+  document); `PanelResponse.brand` is the current branding's.
+
 ## [0.6.1] — 2026-10-19
 
 ### Added (0.6.1)

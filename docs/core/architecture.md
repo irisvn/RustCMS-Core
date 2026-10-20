@@ -49,13 +49,14 @@ on the admin engine, so it can change without touching them.
 | `engine/adapter/` | `ResourceAdapter<R>`: `input` (acceptance), `references` (checks after hooks), `read`, `write` (transactions, row and parent locks, ADR 0018), `schema`, `operations` (the `DynResource` impl), `audit` (snapshots, redaction, entries), `pivot` + `many` (belongs-to-many: `PivotAdapter`, lists through the pivot, attach/detach/update, ADR 0020), `action_form` (action forms: admission, canonical data, references), `export` (keys in list order, rows of readable fields, canonical queries), `import` (import fields and key, cell values, static row checks, key matches), `secrets` (encrypted field operations and stale-map checks, ADR 0030) |
 | `http/` | routes and handlers: `resources`, `relations`, `actions`, `extract` (`AdminCtx`) |
 | `contract/` | the DTOs the SPA receives (`ResourceSchema`, …); also reachable as `schema` |
-| `features/` | built-in features: `audit` (log viewer, record history), `queue` (System → Queue page, M15d), `custom/` (theme, custom pages and slots: templates + sanitizer, ADR 0019; `subpath` validates raw sub-page paths, ADR 0032), `dashboard/` (widgets, ADR 0024; counts in `engine/adapter/aggregate.rs`), `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
+| `features/` | built-in features: `audit` (log viewer, record history), `queue` (System → Queue page, M15d), `custom/` (theme, `branding` (runtime branding, `AdminBranding` cache, ADR 0033), custom pages and slots: templates + sanitizer, ADR 0019; `subpath` validates raw sub-page paths, ADR 0032), `dashboard/` (widgets, ADR 0024; counts in `engine/adapter/aggregate.rs`), `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
 
 ### rustcms-auth
 
 | Module | Role |
 |---|---|
 | `guards/` | `guard` (`Auth`, `MaybeAuth`), `session`, `tokens`, `jwt` (access tokens), `jwt_session` (refresh families), `credentials` (revocation) |
+| `catalog` | how the Roles page shows permissions: areas, labels, presets (`PermissionCatalog`, ADR 0034) |
 | `rbac/` | `service` (`RbacService`, every change; `begin_as` for writes outside RBAC under its lock), `rules` (no escalation), `resolver` (grants cache keyed by the database generation), `queries` |
 | `http/` | the auth routes, `admin_routes` (`AdminRoutes`, ADR 0026) |
 | `realtime/` | admission and rechecks shared by streams and sockets (`Live`), SSE (`LiveSession`, ADR 0027), `socket` (`LiveSocket`, `AdminSocket`, ADR 0029) |
@@ -78,8 +79,8 @@ periodic work; runs can overlap), `redis` with feature `redis`). Other directori
   `widgets` (v1/v2 registration, script loading and `ui` levels), `facade`
   (`props.api` and `props.resources`), `paths` (extension, sub-page and
   resource path validation), `realtime`, `toast` (the toast store), `theme` (favicon, the browser's
-  color-scheme choice and cross-tab sync), `title` (`props.title`).
-- `src/components/`: `react-view` (v2 views: epoch, boundary, props), `toast`
+  color-scheme choice and cross-tab sync), `config` (index config: brand, theme paths allowlist), `title` (`props.title`).
+- `src/components/`: `brand` (logo, dark logo and name from the index config), `react-view` (v2 views: epoch, boundary, props), `toast`
   (the region), `ui/` (the kit; `portal`, `tabs`, `menu`, `misc` are `ui` 2).
 - `sdk/`: `@rustcms/admin-sdk`, canonical; copied to the CLI template and the
   demo (`just generated`).

@@ -1,0 +1,4 @@
+# The panel. Runtime branding (src/admin/branding.rs) is cached per instance
+# for `branding_ttl_secs`; "static" ignores it (recovery: RUSTCMS_ADMIN__BRANDING=static).
+branding = "runtime"
+branding_ttl_secs = 2

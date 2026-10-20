@@ -11,6 +11,8 @@ export RUSTCMS_APP__LISTEN=127.0.0.1:8123
 export APP_ENV=testing
 export APP_KEY=${APP_KEY:-base64:ZTJlLXRlc3Qta2V5LW5vdC1zZWNyZXQtMzItYnl0ZXM=}
 export RUSTCMS_AUTH__SESSION_LIFETIME_MINUTES=120
+# Runtime branding (the site's name) shows within a second of a change.
+export RUSTCMS_ADMIN__BRANDING_TTL_SECS=1
 # The suite signs the same accounts in many times a minute (throttling has its own Rust tests).
 export RUSTCMS_AUTH__ATTEMPTS_PER_IDENTIFIER=100
 export RUSTCMS_AUTH__ATTEMPTS_PER_IP=300

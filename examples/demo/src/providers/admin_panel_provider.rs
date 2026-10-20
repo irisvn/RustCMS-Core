@@ -11,6 +11,8 @@ use crate::admin::resources::{
 pub fn provider() -> AdminProvider {
     AdminProvider::new()
         .brand("demo")
+        // The site's name, once set in Settings → Site (runtime branding).
+        .branding(crate::admin::branding::SiteBranding)
         .media()
         .resource::<CategoryResource>()
         .resource::<PostResource>()

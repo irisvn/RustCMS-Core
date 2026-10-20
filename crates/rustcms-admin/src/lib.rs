@@ -18,7 +18,8 @@ pub mod ui;
 // Module paths kept from before the layout by role (R1).
 pub use contract as schema;
 pub use custom::{
-    ColorScheme, PageView, Palette, PanelPage, PanelPageMeta, PanelSlot, Placement, SlotMeta, TemplateFile, Theme,
+    AdminBranding, Branding, BrandingError, BrandingSource, ColorScheme, PageView, Palette, PanelPage, PanelPageMeta,
+    PanelSlot, Placement, SlotMeta, TemplateFile, Theme,
 };
 pub(crate) use engine::adapter;
 pub use engine::{context, idempotency, registry, wire};

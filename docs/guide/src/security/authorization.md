@@ -18,6 +18,51 @@ A user may hold roles in both guards; they never mix.
   then `rustcms permission:sync`. Sync never renames or deletes: undeclared
   permissions become *orphaned* and stop granting access.
 
+## The Roles page: areas, labels and presets
+
+The panel's Roles page groups admin permissions by **area**, with a search box
+(name, label, description; case and diacritics ignored, `đ` too). Declare how
+permissions are shown on the `AuthProvider`. Nothing here is stored or grants
+anything:
+
+```rust,ignore
+use rustcms::auth::{ADMIN_GUARD, PermissionArea, PermissionMeta, PermissionPreset};
+
+AuthProvider::new()
+    .admin_permissions(&admin_routes)
+    .permission_area("docker", PermissionArea::new("Docker").sort(20))
+    .permission_meta(ADMIN_GUARD, "docker.manage", PermissionMeta::new()
+        .label("Manage containers")
+        .description("Start, stop and remove containers")
+        .area("docker"))
+    .permission_preset("viewer", PermissionPreset::new("Viewer")
+        .description("Read-only access")
+        .permissions(["docker.view", "posts.view_any", "posts.view"]))
+```
+
+- **Areas.** Framework defaults: `resources` (sort 0: permissions that are
+  exactly one resource's ability, shown as a matrix), `system` (1000: users,
+  roles, permissions) and `other` (2000: the rest). Declare your own, or
+  relabel or reorder a default once with `permission_area("system", …)`.
+  Within an area, the matrix comes first, then one box per permission group.
+  An area starts open; with more than three, only the first.
+- **Metadata.** `label` (1–80 characters) is shown instead of the name, which
+  stays visible below it; `description` (≤ 300) is shown under it; `area`
+  must be declared. Labels, descriptions and area and preset labels are
+  English sources, translated like other labels (`lang/vi.toml`;
+  `rustcms lang:missing vi` lists them).
+- **Presets** are starting selections for admin roles. Applying one changes
+  the unsaved selection only: the permissions the user may grant become
+  exactly the preset's, the others keep their state, and a notice says how
+  many could not be granted. Saving checks everything as usual.
+- **Bulk toggles** (a matrix row or column, a group) change only the
+  permissions shown (matching the search, in an open area) that the user may
+  grant. There is no select-all for an area.
+- **Checked when the panel registers** (a panic naming the entry): metadata
+  must name a declared permission of that guard, an area must be declared,
+  a preset may only name declared admin permissions; ids are `[a-z0-9_-]`
+  (1–64); each id or permission is declared once.
+
 ## Changing access: `RbacService`
 
 Every change goes through `RbacService`, with `Actor::User(&principal)` for

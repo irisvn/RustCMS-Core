@@ -1,8 +1,17 @@
 # P7 plan: Roles page permission areas, search, metadata and presets
 
-Round 2, 2026-10-20 (Codex round 1 applied). Requested by RDockPanel. **Plan only; not approved yet.**
+Round 2, 2026-10-20 (Codex round 1 applied). Requested by RDockPanel. Approved and
+shipped in 0.7.0; the text below is the design (ADR 0034).
 Target: 0.7.0, a minor release: it adds public builders, DTO fields and one
 admin route.
+
+## Status (implemented)
+- As planned, plus: a group toggle (shown for groups of more than one
+  permission, acting on shown grantable ones); the search also matches the
+  group label; the area count has an accessible label ("2 of 5 selected").
+- The catalog is checked at the end of `AdminProvider::register` (every
+  permission is declared by then), with panics as other builders.
+- `lang:missing` lists the catalog's strings.
 
 ## Why
 RDockPanel declares many admin permissions: apps, docker, settings, system.

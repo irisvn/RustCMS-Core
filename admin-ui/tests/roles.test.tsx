@@ -158,3 +158,56 @@ it("with more than three areas only the first starts open", async () => {
   await userEvent.type(screen.getByRole("searchbox", { name: "Search permissions" }), "containers");
   expect(area("Docker")).toHaveAttribute("aria-expanded", "true");
 });
+
+it("matrix rows and columns under a search change only shown, grantable cells, and the save keeps the rest", async () => {
+  const role = { ...ROLE, permissions: ["tags.update"] };
+  server.use(
+    http.get("*/admin/api/system/roles/4", () => HttpResponse.json(role)),
+    http.get("*/admin/api/system/permissions", () => HttpResponse.json([
+      ...PERMISSIONS,
+      { name: "tags.view", group: "tags", groupLabel: "Tags", grantable: true, resource: "tags", ability: "view", area: "resources", areaLabel: "Resources", areaSort: 0 },
+      { name: "tags.update", group: "tags", groupLabel: "Tags", grantable: false, resource: "tags", ability: "update", area: "resources", areaLabel: "Resources", areaSort: 0 },
+      { name: "tags.delete", group: "tags", groupLabel: "Tags", grantable: false, resource: "tags", ability: "delete", label: "Remove tags", description: "Deletes tags for good", area: "resources", areaLabel: "Resources", areaSort: 0 },
+    ])),
+  );
+  mount("/system/roles/4");
+  await screen.findByRole("button", { name: /^Docker/ });
+  // A declared label names the cell; its description describes it.
+  expect(screen.getByRole("checkbox", { name: "Tags: Remove tags" })).toHaveAccessibleDescription(/Deletes tags for good/);
+  // "Tags" matches the tags row only: Posts is hidden.
+  await userEvent.type(screen.getByRole("searchbox", { name: "Search permissions" }), "tags");
+  expect(screen.queryByRole("checkbox", { name: "Posts: View" })).toBeNull();
+  await userEvent.click(screen.getByRole("checkbox", { name: "View on every resource" }));
+  expect(screen.getByRole("checkbox", { name: "Tags: View" })).toBeChecked();
+  // The row reads as on (all it may grant is), and switches off what it may grant only.
+  await userEvent.click(screen.getByRole("checkbox", { name: "Every permission of Tags" }));
+  expect(screen.getByRole("checkbox", { name: "Tags: View" })).not.toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "Tags: Update" })).toBeChecked();
+  await userEvent.click(screen.getByRole("checkbox", { name: "Every permission of Tags" }));
+  expect(screen.getByRole("checkbox", { name: "Tags: View" })).toBeChecked();
+  // Not grantable: one selected, one not, both unchanged.
+  expect(screen.getByRole("checkbox", { name: "Tags: Update" })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "Tags: Remove tags" })).not.toBeChecked();
+  await userEvent.clear(screen.getByRole("searchbox", { name: "Search permissions" }));
+  expect(screen.getByRole("checkbox", { name: "Posts: View" })).not.toBeChecked();
+  await userEvent.click(screen.getByRole("button", { name: "Save permissions" }));
+  await vi.waitFor(() => expect(puts).toHaveLength(1));
+  expect(puts[0]).toEqual({ permissions: ["tags.update", "tags.view"], expectedPermissions: ["tags.update"] });
+});
+
+it("every disclosure controls an element, and a new search reopens what the last one closed", async () => {
+  mount("/system/roles/4");
+  await screen.findByRole("button", { name: /^Docker/ });
+  await userEvent.click(area("Docker"));
+  for (const button of screen.getAllByRole("button").filter((b) => b.hasAttribute("aria-controls"))) {
+    expect(document.getElementById(button.getAttribute("aria-controls")!)).not.toBeNull();
+  }
+  await userEvent.click(area("Docker"));
+  const search = screen.getByRole("searchbox", { name: "Search permissions" });
+  await userEvent.type(search, "containers");
+  await userEvent.click(area("Docker"));
+  expect(area("Docker")).toHaveAttribute("aria-expanded", "false");
+  await userEvent.clear(search);
+  await userEvent.type(search, "containers");
+  expect(area("Docker")).toHaveAttribute("aria-expanded", "true");
+});

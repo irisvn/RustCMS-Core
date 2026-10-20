@@ -361,3 +361,7 @@ List the admin labels without a translation, as TOML to add to the catalog (lang
 |---|---|
 | `<locale>` | Language, e.g. `vi` |
 
+### `admin:branding`
+
+Show where the panel's branding comes from, and load it once to check it (changes nothing)
+

@@ -57,7 +57,8 @@ the rest of the admin API):
 | GET / POST | `/roles` | POST: `{name, permissions}` | `[SystemRole]` / 201 `SystemRole` |
 | GET / DELETE | `/roles/{id}` | | `SystemRole` / 204 |
 | PUT | `/roles/{id}/permissions` | `{permissions, expectedPermissions}` | `SystemRole` |
-| GET | `/permissions` | | `[PermissionInfo]` (with `grantable`; `resource` and `ability` when it is exactly one resource's `{slug}.{ability}`) |
+| GET | `/permissions` | | `[PermissionInfo]` (with `grantable`; `resource` and `ability` when it is exactly one resource's `{slug}.{ability}`; `area`, `areaLabel`, `areaSort` always; `label` and `description` when declared) |
+| GET | `/permission-presets` | | `[PermissionPresetInfo]` `{id, label, description?, permissions}` (declared, not orphaned names, also those the caller may not grant); `roles.view_any` or `permissions.view_any`, as `/permissions` |
 
 Replacing roles or permissions sends what the editor started from
 (`expected…`): if someone changed them meanwhile, the request is refused with a

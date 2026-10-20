@@ -66,6 +66,16 @@ Uploads and the media library: see [File storage](../digging-deeper/storage.md).
 | `auth.jwt.refresh_ttl_days`          | `14`               | an unused refresh token expires (1–90)  |
 | `auth.jwt.refresh_family_days`       | `30`               | a sign-in ends, however often refreshed (≥ refresh_ttl_days, ≤ 365) |
 
+### `[admin]` (`config/admin.toml`)
+
+[Runtime branding](../admin/customizing.md#runtime-branding) of the panel.
+
+| Key | Default | |
+|---|---|---|
+| `admin.branding` | `"runtime"` | `"static"` ignores the `BrandingSource` (recovery: `RUSTCMS_ADMIN__BRANDING=static`) |
+| `admin.branding_ttl_secs` | `30` | how long an instance keeps the loaded branding (1–3600) |
+| `admin.branding_timeout_ms` | `2000` | a slower load shows the static theme (1–30000) |
+
 ### `[audit]` (`config/audit.toml`)
 
 | Key                                 | Default | |

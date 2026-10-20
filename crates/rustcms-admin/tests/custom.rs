@@ -433,9 +433,9 @@ db_test!(the_theme_is_served_as_checked_assets, |db: TestDb| async move {
     let html = index.text().replace("&quot;", "\"");
     assert!(html.contains("\"colorScheme\":\"dark\""), "{html}");
     let logo = html.split("\"logo\":\"").nth(1).unwrap().split('"').next().unwrap().to_owned();
-    assert!(logo.starts_with("assets/ext/logo.") && logo.ends_with(".png"), "{logo}");
-    let theme = html.split("assets/ext/theme.").nth(1).unwrap().split('"').next().unwrap().to_owned();
-    let css = app.get(&format!("/admin/assets/ext/theme.{theme}")).await;
+    assert!(logo.starts_with("assets/brand/logo?v="), "{logo}");
+    let theme = html.split("assets/brand/theme.css").nth(1).unwrap().split('"').next().unwrap().to_owned();
+    let css = app.get(&format!("/admin/assets/brand/theme.css{theme}")).await;
     css.assert_status(StatusCode::OK);
     assert!(
         css.text().contains("--primary:#2563eb;") && css.text().contains(":root[data-scheme=dark]{--primary:#60a5fa;}")

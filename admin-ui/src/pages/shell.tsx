@@ -1,8 +1,8 @@
 import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
-import { ArrowUpRight, ChevronRight, Home, LogOut, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelsTopLeft, Settings2, Sun, X } from "lucide-react";
+import { ArrowUpRight, ChevronRight, Home, LogOut, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Settings2, Sun, X } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ApiError } from "@/api/client";
-import { usePanelConfig, useSession } from "@/api/context";
+import { useSession } from "@/api/context";
 import { meQuery, usePanel } from "@/api/queries";
 import { useQuery } from "@tanstack/react-query";
 import { errorText, show, type Text, useLocale, useT } from "@/i18n";
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { DashboardWidgets, useDashboard } from "@/components/dashboard";
 import { ToastRegion } from "@/components/toast";
 import { useEpoch } from "@/lib/epoch";
+import { BrandMark, useBrand } from "@/components/brand";
 import { canonicalSubPath } from "@/lib/paths";
 import { usePageTitle } from "@/lib/title";
 import { type SchemeChoice, chooseScheme, schemeChoice, subscribeScheme } from "@/lib/theme";
@@ -47,13 +48,6 @@ export function groups(navigation: ResourceInfo[], pages: PageLink[], home?: str
     .map(([group, items], index) => ({ group, items: [...items].sort((a, b) => sortOf(a) - sortOf(b)), rank: Math.min(...items.map(sortOf)), index }))
     .sort((a, b) => a.rank - b.rank || a.index - b.index)
     .map(({ group, items }) => [group, items]);
-}
-
-/** The theme's logo, or the default mark. */
-function BrandMark() {
-  const { basePath, theme } = usePanelConfig();
-  if (theme?.logo) return <img src={`${basePath}/${theme.logo}`} alt="" className="size-8 shrink-0 rounded-lg object-contain" />;
-  return <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><PanelsTopLeft className="size-4" /></span>;
 }
 
 function Navigation({ panel, collapsed = false, onNavigate }: { panel: PanelResponse; collapsed?: boolean; onNavigate?: () => void }) {
@@ -174,10 +168,11 @@ export function Shell() {
   const me = useQuery(meQuery(session.api));
   // The user's language as the server knows it (a choice made elsewhere, another device).
   useEffect(() => serverLocale(me.data?.locale, me.dataUpdatedAt), [me.data?.locale, me.dataUpdatedAt]);
-  const brand = panel.data?.brand;
+  // The index configuration's brand: one branding per document (ADR 0033).
+  const brand = useBrand(panel.data?.brand);
   const locale = useLocale();
   useEffect(() => {
-    if (brand) document.title = `${brand} · ${t("shell.admin")}`;
+    document.title = `${brand} · ${t("shell.admin")}`;
   }, [brand, t, locale]);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [error, setError] = useState<Text | null>(null);
@@ -224,8 +219,8 @@ export function Shell() {
     <div className="flex min-h-dvh">
       <a href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById("main-content")?.focus(); }} className="sr-only z-50 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4">{t("shell.skip")}</a>
       <aside className={cn("sticky top-0 hidden h-dvh shrink-0 flex-col gap-4 border-r border-border bg-background p-3 md:flex", collapsed ? "w-16" : "w-64")}>
-        <Link to="/" className={cn("flex h-11 min-w-0 items-center gap-3 px-2 font-semibold tracking-tight", collapsed && "justify-center px-0")} title={p.brand}>
-          <BrandMark /><span className={cn("truncate", collapsed && "sr-only")}>{p.brand}</span>
+        <Link to="/" className={cn("flex h-11 min-w-0 items-center gap-3 px-2 font-semibold tracking-tight", collapsed && "justify-center px-0")} title={brand}>
+          <BrandMark /><span className={cn("truncate", collapsed && "sr-only")}>{brand}</span>
         </Link>
         <Navigation panel={p} collapsed={collapsed} />
         <UserFooter {...footer} collapsed={collapsed} />
@@ -251,7 +246,7 @@ export function Shell() {
       <Dialog open={drawer} onClose={() => setDrawer(false)} title={t("shell.navigation")} className="admin-drawer md:hidden">
         <Button variant="ghost" size="icon" aria-label={t("shell.closeNav")} className="absolute right-3 top-3" onClick={() => setDrawer(false)}><X /></Button>
         <div className="flex min-h-0 flex-1 flex-col gap-4">
-          <Link to="/" className="flex items-center gap-2 font-semibold" onClick={() => setDrawer(false)}><PanelsTopLeft className="size-5" /><span className="truncate">{p.brand}</span></Link>
+          <Link to="/" className="flex items-center gap-2 font-semibold" onClick={() => setDrawer(false)}><BrandMark /><span className="truncate">{brand}</span></Link>
           <Navigation panel={p} onNavigate={() => setDrawer(false)} />
           <UserFooter {...footer} onNavigate={() => setDrawer(false)} />
         </div>

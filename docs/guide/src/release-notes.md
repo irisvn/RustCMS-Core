@@ -1,7 +1,21 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.6.1**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.7.0**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.7.0
+
+- **Roles page**: permissions by area (collapsible, with counts), a search
+  box, labels and descriptions, and presets ("Viewer", "Developer") as
+  starting selections, declared on the `AuthProvider` with
+  `permission_area`, `permission_meta` and `permission_preset`
+  ([Roles & permissions](security/authorization.md#the-roles-page-areas-labels-and-presets)).
+- **Runtime branding**: `AdminProvider::branding(source)` sets the brand
+  name, logos (light and dark), favicon and theme tokens while the app runs,
+  cached per instance and invalidated at once; `[admin] branding = "static"`
+  recovers ([Runtime branding](admin/customizing.md#runtime-branding)).
+- The sign-in, password reset and invitation pages show the brand name and
+  logo; the brand names the browser tab.
 
 ## 0.6.1
 

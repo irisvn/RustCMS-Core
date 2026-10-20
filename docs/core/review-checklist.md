@@ -14,6 +14,10 @@ review; reviewers use it as their dimensions.
 - Own credential changes need reauthentication (current password).
 - No escalation: grant/remove only what the actor holds; never on oneself;
   protected roles by super admins; at least one active super admin.
+- Bulk selections (matrix rows and columns, groups, presets) change only
+  grantable permissions, and toggles only those shown (search, open areas).
+- Runtime values reaching CSS or images go through the theme's checks
+  (tokens, hex colors, PNG/WebP/ICO by magic bytes); never SVG or app CSS.
 
 ## Concurrency
 - Re-check authorization and state **under the lock** in the same transaction

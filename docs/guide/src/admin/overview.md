@@ -91,6 +91,9 @@ unknown slug stops the boot.
   creates and actions can be retried safely.
 - **Record pages** with their [relations](relationships.md).
 - **Languages**: English and Vietnamese, chosen per user ([i18n](i18n.md)).
+- **Roles** (System → Roles): permissions by area with a search box, the
+  labels and presets the application declares
+  ([The Roles page](../security/authorization.md#the-roles-page-areas-labels-and-presets)).
 - Someone who may update a record but not view it gets an empty edit form;
   records outside a user's scope show "Not found", forbidden pages "Access denied".
 

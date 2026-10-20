@@ -196,6 +196,9 @@ cảm (password, token…) và kiểu chưa hỗ trợ bị bỏ qua kèm cảnh
   nhiều-nhiều + action có form + ma trận quyền, import/export CSV, mail, quên mật khẩu +
   mời user + ghi nhớ đăng nhập, dashboard widgets, ví dụ LMS đầy đủ, tài liệu vận hành,
   tutorial tiếng Việt.
+- **0.4–0.7 (xong):** nền tảng panel (trang React v2, SDK, realtime, scheduler, mã hoá cột),
+  điều hướng và kit UI 2 (0.5–0.6), chọn giao diện sáng/tối; 0.7: trang Roles theo khu vực
+  (tìm kiếm, nhãn, preset) và branding lúc chạy (tên, logo, màu; cache theo instance).
 - **Sau 0.3:** Excel (M18), media Range/thumbnail (M21), xác minh email, widget tổng/trung bình,
   múi giờ, Pages/Menus kèm headless API, Plugins.
 

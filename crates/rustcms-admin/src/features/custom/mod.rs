@@ -2,6 +2,7 @@
 //! from server templates (escaped, then sanitized) or extension scripts, and
 //! custom table cells (`ColumnSchema::cell`, drawn by scripts).
 
+pub(crate) mod branding;
 mod html;
 mod http;
 mod page;
@@ -11,6 +12,7 @@ mod theme;
 
 use std::sync::Arc;
 
+pub use branding::{AdminBranding, Branding, BrandingError, BrandingSource};
 pub use http::{CustomContent, CustomPageResponse, PageLink, SlotContent, SlotsResponse};
 pub(crate) use http::{home, links, router, routes};
 pub(crate) use page::{DynPage, DynSlot, PageAdapter, SlotAdapter};

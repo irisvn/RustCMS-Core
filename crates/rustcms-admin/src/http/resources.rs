@@ -39,8 +39,13 @@ pub(super) async fn panel(
         .filter(|(guard, name)| guard == rustcms_auth::ADMIN_GUARD && ctx.principal.can(name))
         .map(|(_, name)| name)
         .collect();
+    // The current branding's name (the SPA shows the one its page loaded with).
+    let brand = match state.service::<crate::custom::AdminBranding>() {
+        Some(branding) => branding.current(&state).await.brand.clone(),
+        None => panel.brand.clone(),
+    };
     Ok(Json(PanelResponse {
-        brand: panel.brand.clone(),
+        brand,
         user: PanelUser { id: auth.user.id.to_string(), name: auth.user.name.clone(), email: auth.user.email.clone() },
         navigation,
         system: crate::system::SystemLinks::of(&ctx.principal),

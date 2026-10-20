@@ -34,3 +34,6 @@
 - [ ] `audit.retention_days` set to what you must keep, no longer: the [audit log](../digging-deeper/audit-log.md)
       holds personal data (IP addresses, emails typed in failed sign-ins), and so do backups that include it.
       Restrict who can read `audit_logs`; ship it elsewhere if it must be tamper-proof.
+- [ ] [Runtime branding](../admin/customizing.md#runtime-branding): the brand name and logo are public (the sign-in
+      page shows them); only operators may change them; you know the recovery switch
+      (`RUSTCMS_ADMIN__BRANDING=static`, then restart) if a branding makes the panel unusable.

@@ -55,9 +55,67 @@ AdminProvider::new().theme(
 - Logo and favicon are PNG, WebP or ICO up to 512 KiB, checked against their
   bytes. SVG and web fonts are not supported yet.
 - The theme becomes a stylesheet and images served from
-  `{admin}/assets/ext/` with content hashes (cached for good), loaded before
-  your extension styles. Extension styles may use the same tokens:
-  `var(--primary)`, `var(--radius-lg)`, `var(--font-sans)`.
+  `{admin}/assets/brand/{theme.css,logo,favicon}?v={hash}` (cached for good
+  when `v` is current), loaded before your extension styles. Extension styles
+  may use the same tokens: `var(--primary)`, `var(--radius-lg)`,
+  `var(--font-sans)`.
+- The brand name and logo also appear above the sign-in, password reset and
+  invitation forms, and the brand names the browser tab.
+
+## Runtime branding
+
+When the brand is chosen while the app runs (a Settings → Branding page of
+your own), give the panel a `BrandingSource`. What it returns goes over
+`brand(…)` and the `Theme`, field by field:
+
+```rust,ignore
+use rustcms::admin::{AdminBranding, Branding, BrandingSource};
+
+struct SettingsBranding;
+
+#[async_trait]
+impl BrandingSource for SettingsBranding {
+    async fn load(&self, app: &AppState) -> AppResult<Option<Branding>> {
+        let Some(row) = branding::Entity::find().one(app.db()).await? else { return Ok(None) };
+        let mut b = Branding::new().name(&row.name).map_err(AppError::internal)?;
+        if let Some(logo) = row.logo {
+            b = b.logo(logo, &row.logo_mime).map_err(AppError::internal)?;
+        }
+        Ok(Some(b.primary(&row.primary).map_err(AppError::internal)?))
+    }
+}
+
+AdminProvider::new().brand("Acme").theme(theme).branding(SettingsBranding)
+
+// After saving the branding (in your settings handler):
+app.service::<AdminBranding>().expect("AdminProvider").invalidate();
+```
+
+- **What it sets**: `name` (1–64 characters, plain text), `logo`, `logo_dark`
+  (shown when the page is dark; else `logo`), `favicon` (PNG, WebP or ICO up
+  to 512 KiB, checked against their bytes; never SVG), `color`, `primary`,
+  `dark(…)` (with `Palette::try_color`) and `radius`: the theme's tokens and
+  rules. Fonts and custom CSS are not available at runtime. Each setter
+  returns `Result<_, BrandingError>`; validate uploads with the same rules
+  through `Branding::check_image`, `Branding::check_color` and
+  `Branding::check_name`. Contrast is not checked.
+- **Cache**: each instance keeps what `load` returned for
+  `[admin] branding_ttl_secs` (default 30, 1–3600), one load at a time.
+  `AdminBranding::invalidate()` makes the next request on this instance load
+  again; other instances follow within the period (there is no push between
+  instances). A load that overlaps an invalidation is not kept.
+- **Failures**: `None`, an error, or a load slower than
+  `[admin] branding_timeout_ms` (default 2000, 1–30000) shows the static brand
+  and theme until the next period; the error is logged without its data.
+- **One branding per page**: the panel reads the brand, logos and favicon
+  from the page it loaded with, until a reload. Images and the stylesheet are
+  served by kind, so a page from another instance or from before a change
+  still gets images (the current ones, not cached).
+- **Recovery**: `[admin] branding = "static"` (or
+  `RUSTCMS_ADMIN__BRANDING=static`) ignores the source until it is removed; a
+  restart applies it. `rustcms admin:branding` shows the mode and, in runtime
+  mode, loads the branding once and reports whether it is valid; it changes
+  nothing.
 
 ## Custom pages
 

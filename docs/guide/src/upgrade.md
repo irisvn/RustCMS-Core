@@ -29,6 +29,20 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.6.1 to 0.7.0
+
+Nothing needs to change.
+- The Roles page now groups permissions by area: resource permissions under
+  "Resources", the framework's under "System", the rest under "Other" until
+  you declare areas (`permission_area`, `permission_meta`).
+- Theme files moved from `{admin}/assets/ext/` to `{admin}/assets/brand/`
+  (`theme.css`, `logo`, `favicon`). Change any link of your own to the old
+  paths; the panel's pages need nothing.
+- The sign-in pages now show your `brand(…)` name and logo instead of
+  "rustcms".
+- `PermissionInfo` (from `GET {admin}/api/system/permissions`) has new fields;
+  code that builds it with a struct literal must add them.
+
 ## From 0.6.0 to 0.6.1
 
 Nothing needs to change. Users can now pick Light, Dark or System; your

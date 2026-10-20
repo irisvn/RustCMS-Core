@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
-import { ArrowRight, PanelsTopLeft } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { ApiError } from "@/api/client";
 import { useSession } from "@/api/context";
 import type { Me } from "@/api/types";
@@ -10,9 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { LanguageSelect } from "@/components/language";
 import { useT } from "@/i18n";
-
-/** The product name (not translated). */
-const PRODUCT = "rustcms";
+import { BrandHeader } from "@/components/brand";
 
 export function LoginPage({ redirect, done }: { redirect?: string; done?: string }) {
   const t = useT();
@@ -49,7 +47,7 @@ export function LoginPage({ redirect, done }: { redirect?: string; done?: string
 
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-8 bg-background p-4 sm:p-8">
-      <div className="flex items-center gap-2.5 text-base font-semibold tracking-tight"><span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><PanelsTopLeft className="size-5" /></span>{PRODUCT}</div>
+      <BrandHeader />
       <Card className="w-full max-w-sm">
         <CardHeader className="gap-2 p-6 pb-0 text-center">
           <CardTitle className="text-2xl tracking-tight">{t("login.title")}</CardTitle>

@@ -34,6 +34,7 @@ pub struct AdminProvider {
     pages: Vec<std::sync::Arc<dyn crate::custom::DynPage>>,
     slots: Vec<std::sync::Arc<dyn crate::custom::DynSlot>>,
     theme: Option<crate::custom::Theme>,
+    branding: Option<std::sync::Arc<dyn crate::custom::BrandingSource>>,
     dashboard: crate::dashboard::Dashboard,
     home: Option<String>,
 }
@@ -58,6 +59,7 @@ impl Default for AdminProvider {
             pages: Vec::new(),
             slots: Vec::new(),
             theme: None,
+            branding: None,
             dashboard: crate::dashboard::Dashboard::default(),
             home: None,
         }
@@ -172,10 +174,17 @@ impl AdminProvider {
         self.settings::<rustcms_core::mail::MailSettings>()
     }
 
-    /// Name shown in the panel.
     /// The panel's look: colors, radius, fonts, logo, favicon, color scheme.
     pub fn theme(mut self, theme: crate::custom::Theme) -> Self {
         self.theme = Some(theme);
+        self
+    }
+
+    /// Branding chosen while running (name, logos, favicon, color tokens),
+    /// over the [`Self::brand`] and [`Self::theme`]. Cached per instance for
+    /// `[admin] branding_ttl_secs`; `admin.branding = "static"` ignores it.
+    pub fn branding(mut self, source: impl crate::custom::BrandingSource) -> Self {
+        self.branding = Some(std::sync::Arc::new(source));
         self
     }
 
@@ -319,24 +328,16 @@ impl ServiceProvider for AdminProvider {
         let settings = std::sync::Arc::new(self.settings.clone());
         let dashboard = std::sync::Arc::new(self.dashboard.clone());
         app.bind(AdminPanel { brand: self.brand.clone(), registry, translator, settings, custom, dashboard });
-        // The theme's stylesheet loads first, so extension styles may refine it.
+        // The look (static theme, runtime branding over it) is served under
+        // `assets/brand/`; its stylesheet loads first, so extension styles may refine it.
+        app.bind(crate::custom::AdminBranding::new(
+            &self.brand,
+            self.theme.clone().unwrap_or_default(),
+            self.branding.clone(),
+            &crate::custom::branding::BrandingConfig::of(app.config()),
+        ));
+        let branding = app.service::<crate::custom::AdminBranding>().expect("just bound");
         let mut extensions = Vec::new();
-        let mut theme = spa::ThemeConfig::default();
-        if let Some(look) = &self.theme {
-            if let Some(css) = look.stylesheet() {
-                extensions.push(spa::Extension::generated_style("theme", css));
-            }
-            for (name, image, slot) in
-                [("logo", &look.logo, &mut theme.logo), ("favicon", &look.favicon, &mut theme.favicon)]
-            {
-                if let Some(image) = image {
-                    let asset = spa::Extension::image(name, image.bytes, image.mime);
-                    *slot = Some(asset.file.clone());
-                    extensions.push(asset);
-                }
-            }
-            theme.scheme = look.scheme.as_str();
-        }
         extensions.extend(self.extensions.iter().cloned());
         let extensions = std::sync::Arc::new(extensions);
         let locales = spa::Locales {
@@ -372,13 +373,14 @@ impl ServiceProvider for AdminProvider {
                 &admin_path,
                 extensions,
                 &locales,
-                &theme,
+                branding,
                 &csp,
                 extension_timeout,
             )
         });
         app.command(IdempotencyPrune);
         app.command(LangMissing);
+        app.command(BrandingCheck);
     }
 
     async fn boot(&self, state: &AppState) -> anyhow::Result<()> {
@@ -483,6 +485,31 @@ impl AppCommand for IdempotencyPrune {
 
 /// `lang:missing <locale>`: the labels of the registered resources that no
 /// catalog translates, as TOML to fill in (exit code 1 when any is missing).
+struct BrandingCheck;
+
+#[async_trait]
+impl AppCommand for BrandingCheck {
+    fn definition(&self) -> Command {
+        Command::new("admin:branding")
+            .about("Show where the panel's branding comes from, and load it once to check it (changes nothing)")
+    }
+
+    async fn run(&self, state: &AppState, _: &ArgMatches) -> anyhow::Result<()> {
+        let branding = state
+            .service::<crate::custom::AdminBranding>()
+            .ok_or_else(|| anyhow::anyhow!("AdminProvider not registered"))?;
+        println!("source: {}", if branding.has_source() { "registered" } else { "none" });
+        println!("mode: {}", if branding.is_runtime() { "runtime" } else { "static" });
+        if branding.is_runtime() {
+            match branding.probe(state).await? {
+                Some(name) => println!("loaded: valid (brand {name:?})"),
+                None => println!("loaded: none (the static theme shows)"),
+            }
+        }
+        Ok(())
+    }
+}
+
 struct LangMissing;
 
 #[async_trait]
@@ -574,5 +601,5 @@ fn missing_translations(panel: &AdminPanel, locale: &str, permission_groups: &[S
 /// Definitions of the console commands the panel adds (`media:prune` only
 /// with `media()`), for the generated CLI reference.
 pub fn command_definitions() -> Vec<Command> {
-    vec![IdempotencyPrune.definition(), MediaPrune.definition(), LangMissing.definition()]
+    vec![IdempotencyPrune.definition(), MediaPrune.definition(), LangMissing.definition(), BrandingCheck.definition()]
 }

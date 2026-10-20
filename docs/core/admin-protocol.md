@@ -15,7 +15,13 @@ the language the panel shows (`X-Rustcms-Locale`), else the user's saved
 choice, else `Accept-Language`, else `app.locale` ([Languages](../guide/src/admin/i18n.md)). `GET /auth/me` returns `locale`,
 `preferredLocale` and `locales`; `POST /auth/locale {"locale": "vi" | null}`
 saves the choice (422 for a language not offered). The shell's
-`<meta name="rustcms-admin">` lists `locale` and `locales` for the sign-in page.
+`<meta name="rustcms-admin">` lists `locale` and `locales` for the sign-in page,
+`brand` and `theme` (`colorScheme`; `logo`, `logoDark`, `favicon` as
+`assets/brand/{kind}?v={hash8}`; the theme stylesheet is the first of
+`extensions.styles`, `assets/brand/theme.css?v=…`). With a `BrandingSource`
+the page is rendered per request; the SPA shows that branding until a reload
+(ADR 0033). `assets/brand/{kind}` always serves the current file of the kind
+(immutable only when `v` is current, else `no-cache`).
 
 | Method | Path | Response |
 |---|---|---|
@@ -46,6 +52,7 @@ saves the choice (422 for a language not offered). The shell's
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../guide/src/admin/users-roles.md) |
+| GET | `/system/permission-presets` | `[PermissionPresetInfo]` `{id, label, description?, permissions}`; `roles.view_any` or `permissions.view_any` (ADR 0034). `/system/permissions` items carry `area`, `areaLabel`, `areaSort`, and `label`/`description` when declared |
 | GET / PUT | `/settings/{group}` | `SettingsResponse`; PUT `{version, data}` (see below) |
 | POST | `/system/users/invitations` | `{name, email, roleIds}` → 201 `SystemUser` (or 204); `users.create` + `users.invite` before the body; 409 `mail_disabled` |
 | POST | `/system/users/{id}/invitation` | 200 `SystemUser` (or 204); `users.invite` + `users.view` before the id; 409 `invitation_accepted` / `user_inactive` |

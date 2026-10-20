@@ -329,6 +329,8 @@ mod tests {
             jail.set_env("DATABASE_URL", "sqlite::memory:");
             jail.set_env("APP_ENV", "testing");
             jail.set_env("RUSTCMS_HTTP__TIMEOUT_SECS", "5");
+            // A provider's own section (the panel's branding recovery switch).
+            jail.set_env("RUSTCMS_ADMIN__BRANDING", "static");
 
             let config = Config::from_figment(Config::figment(Path::new("config")).unwrap()).unwrap();
             assert_eq!(config.app.name, "Blog");
@@ -343,6 +345,11 @@ mod tests {
                 from: String,
             }
             assert_eq!(config.section::<Mail>("mail").unwrap().from, "no-reply@example.com");
+            #[derive(Deserialize)]
+            struct Admin {
+                branding: String,
+            }
+            assert_eq!(config.section::<Admin>("admin").unwrap().branding, "static");
             Ok(())
         });
     }

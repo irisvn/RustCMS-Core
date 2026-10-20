@@ -43,10 +43,10 @@ db_test!(the_theme_and_the_progress_cell_are_served, migrate = Migrator, |db: Te
     let app = seeded(db).await;
     let html = app.get("/admin").await.text().replace("&quot;", "\"");
     assert!(
-        html.contains("\"logo\":\"assets/ext/logo.") && html.contains("\"favicon\":\"assets/ext/favicon."),
+        html.contains("\"logo\":\"assets/brand/logo?v=") && html.contains("\"favicon\":\"assets/brand/favicon?v="),
         "{html}"
     );
-    assert!(html.contains("assets/ext/theme.") && html.contains("assets/ext/lms-progress."), "{html}");
+    assert!(html.contains("assets/brand/theme.css?v=") && html.contains("assets/ext/lms-progress."), "{html}");
     let staff = as_user(&app, "staff@example.test").await;
     let schema = staff.get(&app.admin_api("resources/enrollments/schema?operation=create")).await;
     let columns = schema.json()["table"]["columns"].clone();

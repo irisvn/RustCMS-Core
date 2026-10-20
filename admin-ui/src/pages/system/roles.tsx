@@ -1,7 +1,7 @@
 // System roles: list, create, edit permissions.
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useDeferredValue, useMemo, useState } from "react";
+import { type FormEvent, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { usePanel } from "@/api/queries";
 import { ROLES, groupPermissions, useCreateRole, useDeleteRole, usePermissionPresets, usePermissions, useRole, useRoles, useSetRolePermissions } from "@/api/system";
 import type { PermissionInfo, PermissionPresetInfo } from "@/api/types";
@@ -138,6 +138,10 @@ function PermissionPicker({
   const [open, setOpen] = useState<Set<string>>(() => new Set(areas.slice(0, areas.length > 3 ? 1 : areas.length).map((a) => a.id)));
   // While searching, areas with matches are open unless closed meanwhile.
   const [closedInSearch, setClosedInSearch] = useState<Set<string>>(new Set());
+  // Each search starts with its matching areas open.
+  useEffect(() => {
+    if (!query) setClosedInSearch(new Set());
+  }, [query]);
   const [applied, setApplied] = useState<{ label: string; added: number; removed: number; skipped: number } | null>(null);
   const shown = areas
     .map((a) => ({ ...a, visible: query ? a.permissions.filter((p) => matches(p, query)) : a.permissions }))
@@ -213,12 +217,12 @@ function PermissionPicker({
                 </span>
               </button>
             </h3>
-            {expanded && (
-              <div id={body} className="border-t border-border p-4">
+            <div id={body} hidden={!expanded} className="border-t border-border p-4">
+              {expanded && (
                 <AreaPermissions permissions={area.visible} selected={selected} onChange={onChange}
                   disabled={disabled} describedBy={describedBy} />
-              </div>
-            )}
+              )}
+            </div>
           </section>
         );
       })}
@@ -270,15 +274,20 @@ function AreaPermissions({
     }
     onChange(next);
   };
+  const hintOf = (p: PermissionInfo) => (p.description ? `perm-${p.name}-hint` : undefined);
+  // A cell: the declared label names it (else the ability), its description describes it.
   const box = (p: PermissionInfo, label: string) => (
-    <Checkbox
-      aria-label={label}
-      aria-describedby={describedBy}
-      title={p.grantable ? p.description : t("roles.notHeld")}
-      checked={selected.has(p.name)}
-      disabled={disabled || !p.grantable}
-      onChange={(e) => set([p], e.target.checked)}
-    />
+    <>
+      <Checkbox
+        aria-label={label}
+        aria-describedby={[describedBy, hintOf(p)].filter(Boolean).join(" ") || undefined}
+        title={p.grantable ? (p.description ?? p.name) : t("roles.notHeld")}
+        checked={selected.has(p.name)}
+        disabled={disabled || !p.grantable}
+        onChange={(e) => set([p], e.target.checked)}
+      />
+      {p.description && <span id={hintOf(p)} className="sr-only">{p.description}</span>}
+    </>
   );
   // A whole row or column reads (and switches) what the user may grant; the
   // others keep their own state.
@@ -335,7 +344,7 @@ function AreaPermissions({
                       const p = row.cells.get(ability);
                       return (
                         <td key={ability} className="p-3 text-center">
-                          {p && box(p, t("roles.matrixCell", { resource: row.label, ability: abilityLabel(t, ability) }))}
+                          {p && box(p, t("roles.matrixCell", { resource: row.label, ability: p.label ?? abilityLabel(t, ability) }))}
                         </td>
                       );
                     })}
@@ -344,7 +353,7 @@ function AreaPermissions({
                         {row.other.map((p) => (
                           <label key={p.name} className="flex items-center gap-2 has-disabled:opacity-60">
                             {box(p, t("roles.matrixCell", { resource: row.label, ability: p.label ?? p.ability ?? p.name }))}
-                            <span className="break-all text-xs">{p.label ?? p.ability}</span>
+                            <span className="break-all text-xs" title={p.name}>{p.label ?? p.ability}</span>
                           </label>
                         ))}
                       </div>
@@ -375,7 +384,7 @@ function AreaPermissions({
                   </label>
                 )}
                 {list.map((p) => {
-                  const hint = p.description ? `perm-${p.name}-hint` : undefined;
+                  const hint = hintOf(p);
                   return (
                     <label key={p.name}
                       className="flex min-w-0 items-start gap-3 rounded-md px-2 py-2.5 text-sm transition-colors hover:bg-muted/40 has-disabled:cursor-not-allowed has-disabled:opacity-60"
