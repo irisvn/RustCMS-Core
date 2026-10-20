@@ -6,6 +6,38 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-10-20
+
+### Added (0.8.0)
+- Job history (ADR 0016): `job_runs`, one row per terminal outcome (done,
+  failed, cancelled), written in the transaction of the transition, only
+  when it changed the job (settle, reap and cancel are transactional);
+  `jobs.started_at`, `jobs.description` (`Job::describe`, ≤ 200 characters),
+  `[queue] history_retention_days` (7; 0 = none), pruned with failed jobs.
+- `Job::AT_MOST_ONCE`: a run stopped by a shutdown fails instead of being
+  given back.
+- Queue page: Jobs and History tabs, a details dialog, time filters, the last
+  24 hours' counts, auto refresh (paused after "Load more"); routes
+  `GET queue/history`, `GET queue/jobs/{id}`, `since`/`until` on
+  `GET queue/jobs`. The *Scheduled* status reads *Delayed*.
+- Schedules (ADR 0031): `schedule_runs` (scheduled, skipped and manual runs,
+  their outcome, a task's summary, a safe error), `Schedule::task`,
+  `Schedule::timeout`, `TaskCtx`, public read API (`describe`, `next_after`,
+  `action`, `states`, `runs`), `schedule::run_now` (in the caller's
+  transaction, on the schedule's state row lock), the internal job
+  `rustcms.schedule.run` (at most once), `[schedule] history_retention_days`.
+- `Resource::after_delete`: runs in the transaction of a hard delete (resources
+  without soft deletes), after the delete; an error rolls it back.
+- System → Schedules: `GET schedules`, `GET schedules/{name}/runs`,
+  `POST schedules/{name}/run` (audited `schedule.run`); permissions
+  `schedules.view`, `schedules.manage`; `SystemLinks.schedules`.
+
+### Changed (0.8.0)
+- A slot skipped by `without_overlapping` is committed (with a `skipped`
+  run): no other instance runs it later.
+- `.run` errors are logged as before and recorded as "failed (see the logs)".
+- Application job kinds may not start with `rustcms.`.
+
 ## [0.7.1] — 2026-10-20
 
 ### Added (0.7.1)

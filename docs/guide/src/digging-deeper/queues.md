@@ -45,6 +45,8 @@ app.job::<SendWelcome>();
 | `max_attempts()` | `5` | 1 to 100 |
 | `backoff(attempt)` | 10 s, 20 s, 40 s… up to 1 hour | wait before the next attempt |
 | `timeout()` | 5 minutes | a longer run is stopped and counts as failed |
+| `describe(&self)` | `None` | a short text the Queue page shows ("deploy demo/web #12"): at most 200 characters, control characters removed; `queue.view` holders see it, so never put secrets or personal data in it |
+| `AT_MOST_ONCE` | `false` | never run twice: a run stopped by a shutdown fails ("interrupted by shutdown") instead of being given back; use it with `max_attempts() == 1` for effects that must not repeat |
 
 Keep the payload small (at most 64 KiB) and free of secrets: store ids and
 load the data when the job runs.
@@ -181,7 +183,7 @@ Statuses are the workers' own (application time, and the lease counts until
 | Status | Meaning | Actions |
 |---|---|---|
 | pending | runs as soon as a worker is free (also a job whose worker vanished, with attempts left) | cancel |
-| scheduled | waits for its `available_at` (a backoff, a delayed dispatch) | cancel |
+| scheduled (shown as **Delayed**) | waits for its `available_at` (a backoff, a delayed dispatch); not to be confused with [schedules](scheduling.md#the-schedules-page) | cancel |
 | running | a worker owns it | none |
 | stalled | its last attempt's worker vanished; the next worker pass marks it failed | cancel |
 | failed | will not run again | retry, forget |
@@ -191,7 +193,7 @@ Statuses are the workers' own (application time, and the lease counts until
   `ctx.id` still recognise work an earlier attempt finished; effects guarded
   by neither run again (and receipts older than
   `queue.failed_retention_days` are gone).
-- **Forget** deletes a failed job and its error.
+- **Forget** deletes a failed job; its entry in the history stays.
 - **Cancel** deletes a job waiting to run, in one statement with the
   workers' claim condition: if a worker took it first, the cancel answers
   409 (`running`). What earlier attempts committed stays.
@@ -203,11 +205,23 @@ Statuses are the workers' own (application time, and the lease counts until
   `not_waiting` for cancel; a job that is gone, or a malformed id, 404 (after
   the permission checks). While an action's outcome is unknown (the
   connection dropped), the page pauses further actions until it is resolved.
-- The page shows kind, queue, status, attempts, times, the dispatching user
-  (named for those who may list users) and the safe error message. It never
-  shows payloads or worker tokens.
+- The page shows kind, description, queue, status, attempts, times (a
+  running job's start and how long it has run), the dispatching user (named
+  for those who may list users) and the safe error message. It never shows
+  payloads or worker tokens. Clicking a job's kind opens its details: its
+  times, error and earlier runs.
+- **History**: a second tab lists finished jobs (done, failed, cancelled)
+  with when they finished and how long their last attempt ran, filtered by
+  status, queue, kind and time. One row is written per terminal outcome, in
+  the transaction of the transition itself (a job retried and finished again
+  has several); intermediate retries and shutdown give-backs write none.
+  Rows are kept `queue.history_retention_days` (7 by default; 0 keeps none).
 - Counts are per queue, in one SQL query (a job changing status meanwhile is
-  counted once); the list pages through jobs newest first.
+  counted once), plus the jobs done and failed in the last 24 hours; the
+  lists page through jobs newest first.
+- **Auto refresh**: the page reloads every 5 seconds while the tab is visible
+  and no dialog is open, unless the user switches it off (kept in that
+  browser). It pauses after "Load more", until *Back to latest*.
 
 The same statuses and actions are available in Rust, for your own tools:
 `rustcms::queue::manage::{counts, retry, forget, cancel}` with a
@@ -242,6 +256,7 @@ Keep the instances' clocks synchronized (NTP); `queue.clock_skew_secs`
 | `poll_ms` | `1000` | wait when no job is ready; 100 to 60,000 |
 | `shutdown_secs` | `30` | 0 to 3,600 |
 | `max_timeout_secs` | `3600` | caps every job's `timeout()` |
+| `history_retention_days` | `7` | finished jobs kept in the history; 0 to 3,650 (0: no history) |
 | `clock_skew_secs` | `5` | 0 to 60 |
 | `unknown_kind_grace_secs` | `3600` | |
 | `failed_retention_days` | `30` | failed jobs and `once` receipts |

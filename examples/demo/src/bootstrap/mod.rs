@@ -10,6 +10,7 @@ pub fn build(config: Config) -> AppBuilder {
     let api = crate::routes::api::routes();
     let admin = crate::routes::admin::routes();
     providers::register(&mut app, &api, &admin);
+    crate::jobs::post_digest::schedule(&mut app);
     // Mounted and listed by `rustcms route:list` from the same declarations.
     api.register(&mut app);
     admin.register(&mut app);

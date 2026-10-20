@@ -436,7 +436,23 @@ impl Resource for TagResource {
     async fn after_save(_ctx: &Ctx, _txn: &DatabaseTransaction, record: &tag::Model) -> AppResult<()> {
         if record.label == "boom" { Err(AppError::internal("boom")) } else { Ok(()) }
     }
+
+    /// A `locked` tag cannot be deleted (the hook fails); others are noted.
+    async fn after_delete(_ctx: &Ctx, txn: &DatabaseTransaction, record: &tag::Model) -> AppResult<()> {
+        if record.label == "locked" {
+            return Err(AppError::internal("locked"));
+        }
+        // Still in the delete's transaction: the row is gone here.
+        let left = tag::Entity::find_by_id(record.slug.clone()).one(txn).await?;
+        assert!(left.is_none(), "after_delete runs after the delete");
+        DELETED_TAGS.lock().unwrap().push(record.slug.clone());
+        Ok(())
+    }
 }
+
+/// Tags `TagResource::after_delete` saw (each test runs in its own process).
+#[allow(dead_code)]
+pub static DELETED_TAGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 pub fn admin() -> Principal {
     Principal { id: "1".into(), guard: "admin".into(), super_admin: true, ..Default::default() }

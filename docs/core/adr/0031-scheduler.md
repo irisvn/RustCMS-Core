@@ -1,6 +1,6 @@
 # ADR 0031: The scheduler
 
-- Status: accepted (0.4.1, W4)
+- Status: accepted (0.4.1, W4); amended in 0.8.0 (runs, Run now)
 - Date: 2026-10-18
 
 ## Context
@@ -87,3 +87,34 @@ unless Redis was configured.
 - No Redis is needed for single execution.
 - Capacity: a 10 s schedule keeps about 60,000 claim rows, a minute schedule
   about 10,000.
+
+## Amendment (0.8.0, 2026-10-20): runs and Run now
+
+- **Run history:** every run is recorded in `schedule_runs`, in its claim's
+  transaction:
+  - `dispatched` (a job), `running` (a closure) or `skipped` (overlap);
+  - a skipped slot is now committed with its run, so no other instance runs
+    it later, and reconciliation rebuilds `Skipped`.
+- **How a run ends:**
+  - A job's terminal transition writes the outcome on the run (`succeeded`,
+    `failed`, `cancelled`), never inferred from the job's absence.
+  - A closure's result is written by the runner.
+  - A shutdown with runs still going writes `unknown`. Crashes leave
+    `running`, shown as "completion unknown" after the timeout plus an hour.
+- **`.task`:** returns a summary or an error whose `queue::Failure` message
+  is kept. `.run` errors are kept as a generic text, so `AppError` text is
+  never persisted. `.timeout` bounds closures (1 h).
+- **Run now:** `schedule::run_now(txn, …)` runs in the caller's (RBAC)
+  transaction and locks the schedule's state row as claims do. It refuses
+  while the previous run is unfinished:
+  - a job schedule's job with `without_overlapping`;
+  - a closure's Run now whose job still lives (whatever its age), or an
+    in-process run younger than its timeout plus the grace;
+
+  and a closure's scheduled slot is skipped while one of its Run now jobs
+  lives. `started_at` stays the dispatch time (it orders runs and cursors).
+
+  Job schedules dispatch their job. Closures dispatch the internal at-most-once
+  job `rustcms.schedule.run {name, run_id}`, so long closures never run in a
+  web request and a crash never repeats one. No named lock is added. The
+  console's `schedule:run` stays in-process and is recorded as a manual run.

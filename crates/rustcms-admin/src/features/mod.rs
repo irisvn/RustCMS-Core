@@ -9,5 +9,6 @@ pub mod imports;
 pub mod media;
 pub mod queue;
 pub mod rich_text;
+pub mod schedules;
 pub mod settings;
 pub mod system;

@@ -313,6 +313,8 @@ db_test!(jobs_no_worker_knows_wait_then_fail, |db: TestDb| async move {
             initiated_by: sea_orm::Set(None),
             created_at: sea_orm::Set(created),
             failed_at: sea_orm::Set(None),
+            started_at: sea_orm::Set(None),
+            description: sea_orm::Set(None),
         }
     };
     let insert = |model: job::ActiveModel| async move { sea_orm::ActiveModelTrait::insert(model, conn).await.unwrap() };

@@ -108,6 +108,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
     .chain(crate::settings::routes(admin_path))
     .chain(crate::audit::routes(admin_path))
     .chain(crate::queue::routes(admin_path))
+    .chain(crate::schedules::routes(admin_path))
     .chain(crate::custom::routes(admin_path))
     .chain(crate::exports::routes(admin_path))
     .chain(crate::imports::routes(admin_path))

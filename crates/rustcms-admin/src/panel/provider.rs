@@ -260,6 +260,9 @@ impl ServiceProvider for AdminProvider {
         for permission in crate::queue::permissions() {
             auth.permissions.declare(ADMIN_GUARD, permission, Some("queue"));
         }
+        for permission in crate::schedules::permissions() {
+            auth.permissions.declare(ADMIN_GUARD, permission, Some("schedules"));
+        }
         self.dashboard.check(&registry);
         for permission in self.dashboard.permissions() {
             auth.permissions.declare(ADMIN_GUARD, &permission, Some("dashboard"));
@@ -354,10 +357,13 @@ impl ServiceProvider for AdminProvider {
                 crate::custom::router(
                     crate::imports::router(
                         crate::exports::router(
-                            crate::queue::router(
-                                crate::audit::router(
-                                    crate::settings::router(
-                                        system::router(http::router(router, &admin_path), &admin_path),
+                            crate::schedules::router(
+                                crate::queue::router(
+                                    crate::audit::router(
+                                        crate::settings::router(
+                                            system::router(http::router(router, &admin_path), &admin_path),
+                                            &admin_path,
+                                        ),
                                         &admin_path,
                                     ),
                                     &admin_path,

@@ -131,6 +131,7 @@ fail closed (500). See [Several instances](../digging-deeper/instances.md).
 |---|---|---|
 | `schedule.enabled` | `true` | run the schedules on this instance |
 | `schedule.grace_secs` | `30` | how late (1–300 s) a slot may still be claimed; older slots are skipped |
+| `schedule.history_retention_days` | `7` | runs kept on the Schedules page (1–3,650) |
 
 ## Your own sections
 

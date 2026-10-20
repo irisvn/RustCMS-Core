@@ -86,13 +86,14 @@ function Navigation({ panel, collapsed = false, onNavigate }: { panel: PanelResp
           )}
         </div>
       ))}
-      {(panel.system?.users || panel.system?.roles || panel.system?.audit || panel.system?.queue) && (
+      {(panel.system?.users || panel.system?.roles || panel.system?.audit || panel.system?.queue || panel.system?.schedules) && (
         <div className="space-y-1">
           {groupLabel(t("nav.system"))}
           {panel.system?.users && <Link to="/system/users" className={linkStyle} activeProps={activeProps} title={collapsed ? t("nav.users") : undefined}><ResourceIcon name="users" /><span className={cn(collapsed && "sr-only")}>{t("nav.users")}</span></Link>}
           {panel.system?.roles && <Link to="/system/roles" className={linkStyle} activeProps={activeProps} title={collapsed ? t("nav.roles") : undefined}><ResourceIcon name="shield" /><span className={cn(collapsed && "sr-only")}>{t("nav.roles")}</span></Link>}
           {panel.system?.audit && <Link to="/system/audit" className={linkStyle} activeProps={activeProps} title={collapsed ? t("nav.audit") : undefined}><ResourceIcon name="history" /><span className={cn(collapsed && "sr-only")}>{t("nav.audit")}</span></Link>}
           {panel.system?.queue && <Link to="/system/queue" className={linkStyle} activeProps={activeProps} title={collapsed ? t("nav.queue") : undefined}><ResourceIcon name="layers" /><span className={cn(collapsed && "sr-only")}>{t("nav.queue")}</span></Link>}
+          {panel.system?.schedules && <Link to="/system/schedules" className={linkStyle} activeProps={activeProps} title={collapsed ? t("nav.schedules") : undefined}><ResourceIcon name="calendar" /><span className={cn(collapsed && "sr-only")}>{t("nav.schedules")}</span></Link>}
         </div>
       )}
       {(panel.settings ?? []).length > 0 && (
@@ -211,7 +212,7 @@ export function Shell() {
   const settingsPage = (p.settings ?? []).find((s) => path === `/settings/${s.group}`);
   // Sub-pages (`/p/{slug}/…`) belong to their page.
   const customPage = (p.pages ?? []).find((c) => path === `/p/${c.slug}` || path.startsWith(`/p/${c.slug}/`));
-  const current = resource?.pluralLabel ?? settingsPage?.label ?? customPage?.label ?? (path.startsWith("/system/users") ? t("nav.users") : path.startsWith("/system/roles") ? t("nav.roles") : path.startsWith("/system/audit") ? t("nav.audit") : path.startsWith("/system/queue") ? t("nav.queue") : path.startsWith("/account") ? t("nav.account") : t("nav.overview"));
+  const current = resource?.pluralLabel ?? settingsPage?.label ?? customPage?.label ?? (path.startsWith("/system/users") ? t("nav.users") : path.startsWith("/system/roles") ? t("nav.roles") : path.startsWith("/system/audit") ? t("nav.audit") : path.startsWith("/system/queue") ? t("nav.queue") : path.startsWith("/system/schedules") ? t("nav.schedules") : path.startsWith("/account") ? t("nav.account") : t("nav.overview"));
   const detail = /\/create$/.test(path) ? t("crumb.create") : /\/edit$/.test(path) ? t("crumb.edit") : resource && path.includes("/records/") ? t("crumb.details") : undefined;
   const footer = { panel: p, leaving, logout: () => void logout(), error: error === null ? null : show(error) };
 

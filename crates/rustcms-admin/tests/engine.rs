@@ -180,6 +180,15 @@ db_test!(natural_key_and_transactional_hooks, |db: TestDb| async move {
     // after_save fails → the insert rolls back.
     assert!(tags.create(&ctx, data(json!({"slug": "boom", "label": "boom"}))).await.is_err());
     assert!(matches!(tags.find(&ctx, "boom").await, Err(AppError::NotFound)));
+
+    // after_delete runs in the delete's transaction (hard delete), with the record as it was.
+    tags.delete(&ctx, "rust").await.unwrap();
+    assert_eq!(*support::DELETED_TAGS.lock().unwrap(), vec!["rust".to_owned()]);
+    // It fails → the delete rolls back.
+    tags.create(&ctx, data(json!({"slug": "keep", "label": "locked"}))).await.unwrap();
+    assert!(tags.delete(&ctx, "keep").await.is_err());
+    assert!(tags.find(&ctx, "keep").await.is_ok(), "still there");
+    assert_eq!(support::DELETED_TAGS.lock().unwrap().len(), 1);
 });
 
 db_test!(filters_are_whitelisted_and_bounded, |db: TestDb| async move {

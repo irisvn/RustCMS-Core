@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
-use rustcms_core::models::{job, schedule_slot};
+use rustcms_core::models::{job, schedule_run, schedule_slot};
 use rustcms_core::queue::{Job, JobCtx};
 use rustcms_core::schedule::testing::{self, Claimed};
 use rustcms_core::schedule::{Schedule, ScheduleRun};
@@ -123,6 +123,13 @@ db_test!(without_overlapping_waits_for_the_active_job, |db: TestDb| async move {
     // The job is pending: the next slot (adjacent) waits.
     let second = testing::claim(app.state(), "solo", now - chrono::Duration::seconds(1), grace).await.unwrap();
     assert_eq!(second, Claimed::Overlapping);
+    // The skipped slot is spent, and its run says so.
+    let runs =
+        schedule_run::Entity::find().filter(schedule_run::Column::Name.eq("solo")).all(app.state().db()).await.unwrap();
+    let statuses: Vec<&str> = runs.iter().map(|r| r.status.as_str()).collect();
+    assert!(statuses.contains(&"skipped") && statuses.contains(&"dispatched"), "{statuses:?}");
+    let again = testing::claim(app.state(), "solo", now - chrono::Duration::seconds(1), grace).await.unwrap();
+    assert_eq!(again, Claimed::Taken, "no other claim of a skipped slot");
     // Failed for good: the schedule resumes.
     let mut failed: job::ActiveModel =
         job::Entity::find_by_id(job_id).one(app.state().db()).await.unwrap().unwrap().into();
@@ -182,6 +189,40 @@ db_test!(a_run_never_overlaps_itself_and_stops_with_the_server, |db: TestDb| asy
     // Stopping: the run gets the grace, then is aborted (its future dropped).
     server.stop().await;
     assert_eq!(running.load(Ordering::SeqCst), 0);
+    // Its run was still going: recorded as unknown, not as running forever.
+    let runs =
+        schedule_run::Entity::find().filter(schedule_run::Column::Name.eq("slow")).all(app.state().db()).await.unwrap();
+    assert_eq!(runs.len(), 1, "skipped slots on this instance are not claimed");
+    assert_eq!((runs[0].status.as_str(), runs[0].error.as_deref()), ("unknown", Some("interrupted by shutdown")));
+});
+
+db_test!(scheduled_tasks_record_their_summary_and_failures, |db: TestDb| async move {
+    db.migrate::<rustcms_migration::Migrator>().await;
+    let build_tasks = |config: Config| {
+        build_with(config, |app| {
+            app.schedule(testing::every("summary", Duration::from_secs(1)).task(|ctx| async move {
+                assert_eq!(ctx.trigger, rustcms_core::schedule::Trigger::Schedule);
+                Ok(Some("2 certificates expire soon".to_owned()))
+            }));
+            app.schedule(testing::every("panics", Duration::from_secs(1)).task(|_| async { panic!("boom") }));
+        })
+    };
+    let app = TestApp::new(build, db).await;
+    let server = serve(&app, build_tasks).await;
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    server.stop().await;
+    let of = |name: &'static str| {
+        let db = app.state().db().clone();
+        async move { schedule_run::Entity::find().filter(schedule_run::Column::Name.eq(name)).all(&db).await.unwrap() }
+    };
+    let ok = of("summary").await;
+    assert!(
+        ok.iter().any(|r| r.status == "succeeded" && r.summary.as_deref() == Some("2 certificates expire soon")),
+        "{ok:?}"
+    );
+    assert!(ok.iter().all(|r| r.trigger == "schedule" && r.slot_at.is_some()));
+    let panicked = of("panics").await;
+    assert!(panicked.iter().any(|r| r.status == "failed" && r.error.as_deref() == Some("panicked")), "{panicked:?}");
 });
 
 db_test!(old_claims_are_pruned, |db: TestDb| async move {

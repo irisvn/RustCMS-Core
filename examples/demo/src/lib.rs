@@ -8,6 +8,7 @@ pub mod admin;
 pub mod bootstrap;
 pub mod database;
 pub mod http;
+pub mod jobs;
 pub mod models;
 pub mod policies;
 pub mod providers;

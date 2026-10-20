@@ -30,7 +30,8 @@ It is served under `auth.admin_path` (default `/admin`):
 Each resource declares its permissions (`posts.view_any`, `posts.create`, …)
 for `rustcms permission:sync`. Users see the panel's System pages
 ([users & roles](users-roles.md), [audit log](../digging-deeper/audit-log.md#viewing-the-log),
-[queue](../digging-deeper/queues.md#the-queue-page)) as their permissions
+[queue](../digging-deeper/queues.md#the-queue-page),
+[schedules](../digging-deeper/scheduling.md#the-schedules-page)) as their permissions
 allow, and their own Account page.
 
 ## Navigation

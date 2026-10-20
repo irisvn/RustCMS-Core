@@ -77,3 +77,22 @@ tokens are never sent.
 retrying it (an error retrying cannot fix: a refused address, a missing
 template). `queue:retry` still runs it again. A `Failure` (permanent or not)
 is logged by its code only; other errors are logged in full as before.
+
+## Amendment (0.8.0, 2026-10-20): history
+
+- **What is recorded:** a finished job is recorded in `job_runs`, one row per
+  terminal outcome (`done`, `failed`, `cancelled`) with its own id.
+  - It is written in the transaction of the transition, and only when that
+    transition changed the job (the owner token still held). For this,
+    `settle`, `reap` and `cancel` became transactions.
+  - Intermediate retries, give-backs and temporary unknown kinds write
+    nothing.
+  - Rows are kept `history_retention_days` (7; 0 = none).
+- **Descriptions:** `Job::describe` is stored at dispatch (`jobs.description`,
+  ≤ 200 characters, control characters removed). It is shown to `queue.view`
+  holders, so it must not carry secrets; payloads are still never shown.
+- **`Job::AT_MOST_ONCE`:** a shutdown settles the run `failed` ("interrupted
+  by shutdown") instead of giving the attempt back. With `max_attempts = 1`,
+  the job never runs twice.
+- **Reserved kinds:** `rustcms.` job kinds are the framework's, registered
+  through an internal path (`rustcms.schedule.run`, ADR 0031).

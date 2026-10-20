@@ -26,9 +26,12 @@ use crate::{AppResult, AppState};
 mod claim;
 mod commands;
 mod runner;
+mod runs;
 
 pub use commands::{ScheduleList, ScheduleRun, definitions};
 pub(crate) use runner::start;
+pub(crate) use runs::prune as prune_runs;
+pub use runs::{RunNowError, run_now, runs, states};
 
 /// Shortest period of [`Schedule::every`].
 pub const MIN_PERIOD: Duration = Duration::from_secs(10);
@@ -36,6 +39,8 @@ pub const MIN_PERIOD: Duration = Duration::from_secs(10);
 pub const MAX_PERIOD: Duration = Duration::from_secs(7 * 24 * 3600);
 /// Names starting with this are the framework's.
 const RESERVED: &str = "rustcms.";
+/// Longest run of a closure schedule unless [`Schedule::timeout`] says otherwise.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(3600);
 
 /// Why a schedule was refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -86,7 +91,7 @@ impl Rule {
         }
     }
 
-    pub(crate) fn describe(&self) -> String {
+    pub(crate) fn describe_rule(&self) -> String {
         match self {
             Self::Every(period) => format!("every {period}s"),
             Self::Cron(_, expr) => format!("cron `{expr}` (UTC)"),
@@ -94,16 +99,58 @@ impl Rule {
     }
 }
 
-type Dispatch = Arc<dyn for<'t> Fn(&'t DatabaseTransaction) -> BoxFuture<'t, AppResult<uuid::Uuid>> + Send + Sync>;
-type RunFn = Arc<dyn Fn(AppState) -> BoxFuture<'static, AppResult<()>> + Send + Sync>;
+type Dispatch =
+    Arc<dyn for<'t> Fn(&'t DatabaseTransaction, Option<i64>) -> BoxFuture<'t, AppResult<uuid::Uuid>> + Send + Sync>;
+/// A closure's run: its summary, or a safe message (never an error's own text).
+pub(crate) type Exec = Arc<dyn Fn(TaskCtx) -> BoxFuture<'static, Result<Option<String>, String>> + Send + Sync>;
 
 /// What a slot does.
 #[derive(Clone)]
 pub(crate) enum Action {
     /// Enqueues a job in the claim's transaction.
     Job { kind: &'static str, dispatch: Dispatch, register: fn(&mut Jobs) },
-    /// Runs in the process.
-    Run(RunFn),
+    /// Runs a closure (`.run` or `.task`) in the process.
+    Run(Exec),
+}
+
+/// Why a run started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trigger {
+    /// Its slot came.
+    Schedule,
+    /// Someone ran it (the panel's Run now, `schedule:run`).
+    Manual,
+}
+
+impl Trigger {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Schedule => "schedule",
+            Self::Manual => "manual",
+        }
+    }
+}
+
+/// What a [`Schedule::task`] receives.
+#[derive(Clone)]
+pub struct TaskCtx {
+    /// The application.
+    pub state: AppState,
+    /// This run (`schedule_runs.id`): stable, a key for the task's own idempotency.
+    pub run_id: uuid::Uuid,
+    /// Why it runs.
+    pub trigger: Trigger,
+    /// Who ran it, for a manual run by a user.
+    pub initiated_by: Option<i64>,
+}
+
+/// What a schedule does, as the panel shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScheduleAction {
+    /// Enqueues this job kind.
+    Job(&'static str),
+    /// Runs a closure (`.run` or `.task`).
+    Closure,
 }
 
 /// A schedule: a name, when it fires, and what it does.
@@ -113,6 +160,7 @@ pub struct Schedule {
     pub(crate) rule: Rule,
     pub(crate) action: Option<Action>,
     pub(crate) without_overlapping: bool,
+    pub(crate) timeout: Duration,
 }
 
 impl Schedule {
@@ -126,7 +174,13 @@ impl Schedule {
             (MIN_PERIOD..=MAX_PERIOD).contains(&period) && period.subsec_nanos() == 0,
             "schedule `{name}`: the period must be whole seconds, 10 s to 7 days"
         );
-        Self { name: name.to_owned(), rule: Rule::Every(period.as_secs()), action: None, without_overlapping: false }
+        Self {
+            name: name.to_owned(),
+            rule: Rule::Every(period.as_secs()),
+            action: None,
+            without_overlapping: false,
+            timeout: DEFAULT_TIMEOUT,
+        }
     }
 
     /// At the fire times of a five-field cron expression (minute hour
@@ -139,6 +193,7 @@ impl Schedule {
             rule: Rule::Cron(Arc::new(cron), expr.trim().to_owned()),
             action: None,
             without_overlapping: false,
+            timeout: DEFAULT_TIMEOUT,
         })
     }
 
@@ -151,9 +206,9 @@ impl Schedule {
         F: Fn() -> J + Send + Sync + 'static,
     {
         let make = Arc::new(make);
-        let dispatch: Dispatch = Arc::new(move |txn| {
+        let dispatch: Dispatch = Arc::new(move |txn, initiated_by| {
             let job = make();
-            async move { crate::queue::dispatch(txn, &job).await }.boxed()
+            async move { crate::queue::dispatch_with(txn, &job, None, initiated_by).await }.boxed()
         });
         self.action = Some(Action::Job { kind: J::KIND, dispatch, register: |jobs| jobs.register::<J>() });
         self
@@ -162,13 +217,74 @@ impl Schedule {
     /// Runs `f` in the process for each slot: best effort, at most once per
     /// claimed slot (a crash during the run loses it). On one instance a run
     /// never overlaps the previous one: that slot is skipped.
+    /// Its error is recorded as "failed (see the logs)"; use [`Schedule::task`]
+    /// to record a summary or a safe message.
     #[must_use]
     pub fn run<F, Fut>(mut self, f: F) -> Self
     where
         F: Fn(AppState) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = AppResult<()>> + Send + 'static,
     {
-        self.action = Some(Action::Run(Arc::new(move |state| f(state).boxed())));
+        let f = Arc::new(f);
+        let name = self.name.clone();
+        self.action = Some(Action::Run(Arc::new(move |ctx: TaskCtx| {
+            let (f, name) = (f.clone(), name.clone());
+            async move {
+                match f(ctx.state).await {
+                    Ok(()) => Ok(None),
+                    Err(err) => {
+                        tracing::warn!(schedule = %name, %err, "scheduled run failed");
+                        Err("failed (see the logs)".to_owned())
+                    }
+                }
+            }
+            .boxed()
+        })));
+        self
+    }
+
+    /// Like [`run`](Self::run), with a context and a result the panel's
+    /// Schedules page shows: `Ok(Some(summary))` ("3 databases backed up",
+    /// at most 200 characters), or an error whose [`crate::queue::Failure`]
+    /// message is kept (any other error is kept as "failed (see the logs)").
+    /// Holders of `schedules.view` see both: never put secrets in them.
+    #[must_use]
+    pub fn task<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(TaskCtx) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = anyhow::Result<Option<String>>> + Send + 'static,
+    {
+        let f = Arc::new(f);
+        let name = self.name.clone();
+        self.action = Some(Action::Run(Arc::new(move |ctx: TaskCtx| {
+            let (f, name) = (f.clone(), name.clone());
+            async move {
+                match f(ctx).await {
+                    Ok(summary) => Ok(summary),
+                    Err(err) => {
+                        tracing::warn!(schedule = %name, err = %format!("{err:#}"), "scheduled task failed");
+                        Err(crate::queue::safe_message(&err))
+                    }
+                }
+            }
+            .boxed()
+        })));
+        self
+    }
+
+    /// Longest run of a `.run` or `.task` schedule (default 1 hour): then it
+    /// is stopped and recorded as failed.
+    ///
+    /// # Panics
+    /// On zero or more than a day.
+    #[must_use]
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        assert!(
+            !timeout.is_zero() && timeout <= Duration::from_secs(86_400),
+            "schedule `{}`: the timeout must be 1 s to 1 day",
+            self.name
+        );
+        self.timeout = timeout;
         self
     }
 
@@ -184,6 +300,34 @@ impl Schedule {
     /// The name.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// When it fires, in words ("every 300s", "cron `0 3 * * *` (UTC)").
+    pub fn describe(&self) -> String {
+        self.rule.describe_rule()
+    }
+
+    /// The first slot strictly after `t`.
+    pub fn next_after(&self, t: DateTime<Utc>) -> Option<DateTime<Utc>> {
+        self.rule.next_after(t)
+    }
+
+    /// What it does.
+    pub fn action(&self) -> ScheduleAction {
+        match &self.action {
+            Some(Action::Job { kind, .. }) => ScheduleAction::Job(kind),
+            _ => ScheduleAction::Closure,
+        }
+    }
+
+    /// Whether its slots wait for the previous job (`.job` schedules).
+    pub fn is_without_overlapping(&self) -> bool {
+        self.without_overlapping
+    }
+
+    /// Longest run of its closure.
+    pub fn run_timeout(&self) -> Duration {
+        self.timeout
     }
 }
 
@@ -244,12 +388,14 @@ impl Schedules {
         assert!(!name.starts_with(RESERVED), "schedule `{name}`: names starting with `{RESERVED}` are reserved");
         assert!(self.0.iter().all(|s| s.name != *name), "schedule `{name}` declared twice");
         match &schedule.action {
-            None => panic!("schedule `{name}`: give it a `.job(..)` or a `.run(..)`"),
+            None => panic!("schedule `{name}`: give it a `.job(..)`, `.run(..)` or `.task(..)`"),
             Some(Action::Run(_)) => {
                 assert!(
                     !schedule.without_overlapping,
                     "schedule `{name}`: `without_overlapping` is for `.job` schedules"
                 );
+                // Run now runs closures through the queue.
+                runs::register(jobs);
             }
             Some(Action::Job { register, .. }) => register(jobs),
         }
@@ -261,7 +407,8 @@ impl Schedules {
         &self.0
     }
 
-    pub(crate) fn get(&self, name: &str) -> Option<&Schedule> {
+    /// The schedule `name`.
+    pub fn get(&self, name: &str) -> Option<&Schedule> {
         self.0.iter().find(|s| s.name == name)
     }
 }
@@ -274,11 +421,13 @@ pub struct ScheduleConfig {
     pub enabled: bool,
     /// Seconds a slot may still be claimed after its instant (1 to 300).
     pub grace_secs: u64,
+    /// Runs are kept in the history this many days (1 to 3650).
+    pub history_retention_days: u32,
 }
 
 impl Default for ScheduleConfig {
     fn default() -> Self {
-        Self { enabled: true, grace_secs: 30 }
+        Self { enabled: true, grace_secs: 30, history_retention_days: 7 }
     }
 }
 
@@ -288,6 +437,10 @@ impl ScheduleConfig {
         // An absent section is the defaults; a malformed one is an error.
         let section: Self = config.section("schedule").map_err(|e| anyhow::anyhow!("invalid [schedule]: {e}"))?;
         anyhow::ensure!((1..=300).contains(&section.grace_secs), "schedule.grace_secs must be 1 to 300");
+        anyhow::ensure!(
+            (1..=3_650).contains(&section.history_retention_days),
+            "schedule.history_retention_days must be 1 to 3650"
+        );
         Ok(section)
     }
 }
@@ -385,6 +538,7 @@ pub mod testing {
             rule: Rule::Every(period.as_secs().max(1)),
             action: None,
             without_overlapping: false,
+            timeout: super::DEFAULT_TIMEOUT,
         }
     }
 

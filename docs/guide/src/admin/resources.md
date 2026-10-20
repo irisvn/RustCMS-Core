@@ -106,8 +106,12 @@ async fn after_save(ctx: &Ctx, txn: &DatabaseTransaction, post: &post::Model) ->
 }
 ```
 
-`mutate_before_update` receives the current record too; `after_force_delete`
-runs when a trashed record is deleted for good. A message a hook returns is
+`mutate_before_update` receives the current record too. `after_delete` runs
+in the transaction that deletes a record of a resource without soft deletes,
+after the delete, with the record as it was: dispatch a job there to undo
+what the record configured (an error rolls the delete back). Trashing does
+not call it; `after_force_delete` runs when a trashed record is deleted for
+good. A message a hook returns is
 shown as written: translate it with `ctx.t("…")` ([i18n](i18n.md)).
 
 ## Parent locks

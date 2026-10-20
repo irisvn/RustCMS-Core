@@ -29,6 +29,18 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.7.1 to 0.8.0
+
+Run `rustcms migrate`: it adds `jobs.started_at`, `jobs.description` and the
+`job_runs` and `schedule_runs` tables. Then nothing else needs to change.
+- Grant `schedules.view` (and `schedules.manage` for Run now) to the roles
+  that should see System → Schedules (`rustcms permission:sync` declares them).
+- `.run` schedules keep working; switch to `.task` to show a summary.
+- Job kinds starting with `rustcms.` are now refused (they are the
+  framework's).
+- The Queue's *Scheduled* status is labelled *Delayed* (the API value stays
+  `scheduled`).
+
 ## From 0.7.0 to 0.7.1
 
 Nothing needs to change. React pages' dialogs get the close button without a

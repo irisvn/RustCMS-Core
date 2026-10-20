@@ -181,6 +181,9 @@
   "no_super_admin_role": [
     "no super_admin role for guard `{guard}`"
   ],
+  "not_after_since": [
+    "must be after since"
+  ],
   "not_allowed": [
     "is not allowed"
   ],
@@ -189,6 +192,9 @@
   ],
   "not_imported": [
     "could not be imported"
+  ],
+  "not_instant": [
+    "must be a date and time (RFC 3339)"
   ],
   "not_option": [
     "is not one of the options"

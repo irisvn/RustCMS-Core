@@ -5,12 +5,12 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait, QueryFilter,
-    QuerySelect, SqlErr,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
+    QueryFilter, QuerySelect, SqlErr,
 };
 
-use super::{Action, Clock, Schedule};
-use crate::models::{job, schedule_slot, schedule_state};
+use super::{Action, Clock, Schedule, Trigger};
+use crate::models::{job, schedule_run, schedule_slot, schedule_state};
 use crate::{AppError, AppResult, AppState};
 
 /// Longest attempt at one claim.
@@ -93,7 +93,17 @@ pub(crate) async fn claim(
         // The attempt may have committed before failing to answer.
         let row = schedule_slot::Entity::find_by_id((schedule.name.clone(), slot)).one(state.db()).await;
         if let Ok(Some(row)) = row {
-            return Ok(if row.instance == token { Claimed::Mine(row.job_id) } else { Claimed::Taken });
+            if row.instance != token {
+                return Ok(Claimed::Taken);
+            }
+            // Committed by this call: a skipped slot left a `skipped` run.
+            let skipped = schedule_run::Entity::find()
+                .filter(schedule_run::Column::Name.eq(schedule.name.clone()))
+                .filter(schedule_run::Column::SlotAt.eq(slot))
+                .filter(schedule_run::Column::Status.eq("skipped"))
+                .one(state.db())
+                .await;
+            return Ok(if matches!(skipped, Ok(Some(_))) { Claimed::Overlapping } else { Claimed::Mine(row.job_id) });
         }
         tokio::time::sleep(RETRY_WAIT).await;
     }
@@ -110,7 +120,8 @@ async fn attempt(
     let txn = crate::db::begin_write(state.db()).await?;
     let outcome = claim_in(&txn, schedule, slot, grace, clock, token).await;
     match outcome {
-        Ok(claimed @ Claimed::Mine(_)) => {
+        // A skipped slot is spent too: no other instance runs it later.
+        Ok(claimed @ (Claimed::Mine(_) | Claimed::Overlapping)) => {
             txn.commit().await?;
             Ok(claimed)
         }
@@ -181,13 +192,26 @@ async fn claim_in(
     {
         let alive = job::Entity::find_by_id(active).filter(job::Column::FailedAt.is_null()).one(txn).await?;
         if alive.is_some() {
+            super::runs::new_run(name, Some(slot), Trigger::Schedule, "skipped", None, None).insert(txn).await?;
+            return Ok(Claimed::Overlapping);
+        }
+    }
+    // A closure's Run now still going (its job alive): this slot is skipped.
+    // Scheduled runs of other slots (no job) are not counted, as before.
+    if matches!(schedule.action, Some(Action::Run(_))) {
+        let manual = super::runs::closure_busy(txn, name, DateTime::<Utc>::MAX_UTC).await?;
+        if manual {
+            super::runs::new_run(name, Some(slot), Trigger::Schedule, "skipped", None, None).insert(txn).await?;
             return Ok(Claimed::Overlapping);
         }
     }
     let job_id = match &schedule.action {
-        Some(Action::Job { dispatch, .. }) => Some(dispatch(txn).await?),
+        Some(Action::Job { dispatch, .. }) => Some(dispatch(txn, None).await?),
         _ => None,
     };
+    // The run is recorded with its claim: dispatched (a job) or running (a closure).
+    let status = if job_id.is_some() { "dispatched" } else { "running" };
+    super::runs::new_run(name, Some(slot), Trigger::Schedule, status, job_id, None).insert(txn).await?;
     if let Some(id) = job_id {
         schedule_slot::Entity::update_many()
             .col_expr(schedule_slot::Column::JobId, Expr::value(id))

@@ -287,6 +287,19 @@ pub trait Resource: Send + Sync + 'static {
         Ok(())
     }
 
+    /// Runs in the transaction that deletes a record (resources without soft
+    /// deletes), after the delete and before the commit, with the record as it
+    /// was: e.g. dispatch a job (outbox) that removes what the record
+    /// configured. An error rolls the delete back. Trashing a soft-deleting
+    /// resource's record does not call it; see [`Self::after_force_delete`].
+    async fn after_delete(
+        _ctx: &Ctx,
+        _txn: &DatabaseTransaction,
+        _record: &<Self::Entity as EntityTrait>::Model,
+    ) -> AppResult<()> {
+        Ok(())
+    }
+
     /// Runs in the transaction that deletes a trashed record for good (soft
     /// deletes): e.g. queue the removal of files the record owned.
     async fn after_force_delete(

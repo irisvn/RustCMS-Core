@@ -117,6 +117,8 @@ impl Row {
             initiated_by: Set(self.initiated_by),
             created_at: Set(self.created_at),
             failed_at: Set(self.failed_at),
+            started_at: Set(None),
+            description: Set(None),
         }
         .insert(app.state().db())
         .await

@@ -747,7 +747,11 @@ audit: boolean,
 /**
  * The Queue page (`queue.view`).
  */
-queue: boolean, };
+queue: boolean, 
+/**
+ * The Schedules page (`schedules.view`).
+ */
+schedules: boolean, };
 
 export type RoleRef = { 
 /**
@@ -1208,7 +1212,11 @@ workers: QueueWorkers,
 /**
  * May retry, forget and cancel (`queue.manage`).
  */
-canManage: boolean, };
+canManage: boolean, 
+/**
+ * Jobs finished in the last 24 hours (from the history).
+ */
+lastDay: QueueLastDay, };
 
 export type QueueUser = { 
 /**
@@ -1238,9 +1246,17 @@ kind: string,
  */
 version: number, 
 /**
- * `pending`, `scheduled`, `running`, `stalled` or `failed`.
+ * `pending`, `scheduled` (shown as Delayed), `running`, `stalled` or `failed`.
  */
 status: string, 
+/**
+ * `Job::describe`.
+ */
+description?: string, 
+/**
+ * Its current run started at (running jobs).
+ */
+startedAt?: string, 
 /**
  * Runs so far.
  */
@@ -1289,6 +1305,217 @@ data: Array<QueueJob>,
  * Continuation.
  */
 meta: QueueJobPageMeta, };
+
+export type QueueLastDay = { 
+/**
+ * Done.
+ */
+done: number, 
+/**
+ * Failed for good.
+ */
+failed: number, };
+
+export type JobRun = { 
+/**
+ * This record's id (UUID).
+ */
+id: string, 
+/**
+ * The job's id (UUID).
+ */
+jobId: string, 
+/**
+ * Queue name.
+ */
+queue: string, 
+/**
+ * `Job::KIND`.
+ */
+kind: string, 
+/**
+ * `Job::describe`.
+ */
+description?: string, 
+/**
+ * `done`, `failed` or `cancelled`.
+ */
+status: string, 
+/**
+ * Runs used.
+ */
+attempts: number, 
+/**
+ * Dispatched at (RFC 3339).
+ */
+createdAt: string, 
+/**
+ * Its last run started at (RFC 3339).
+ */
+startedAt?: string, 
+/**
+ * Finished at (RFC 3339).
+ */
+finishedAt: string, 
+/**
+ * How long its last run took.
+ */
+durationMs?: number, 
+/**
+ * Why it failed (a safe message).
+ */
+lastError?: string, 
+/**
+ * The user who dispatched it.
+ */
+initiatedBy?: QueueUser, };
+
+export type JobRunPage = { 
+/**
+ * Finished jobs.
+ */
+data: Array<JobRun>, 
+/**
+ * Continuation.
+ */
+meta: QueueJobPageMeta, };
+
+export type QueueJobDetail = { 
+/**
+ * The job, while it exists.
+ */
+job?: QueueJob, 
+/**
+ * Its finished runs, newest first (at most 20).
+ */
+runs: Array<JobRun>, };
+
+export type ScheduleActionInfo = { "kind": "job", 
+/**
+ * Its kind.
+ */
+jobKind: string, } | { "kind": "closure" };
+
+export type ScheduleRunInfo = { 
+/**
+ * Run id (UUID).
+ */
+id: string, 
+/**
+ * The slot it ran for (scheduled runs).
+ */
+slotAt?: string, 
+/**
+ * `schedule` or `manual`.
+ */
+trigger: string, 
+/**
+ * Started (or was dispatched) at.
+ */
+startedAt: string, 
+/**
+ * Finished at.
+ */
+finishedAt?: string, 
+/**
+ * `dispatched`, `running`, `succeeded`, `failed`, `skipped`, `cancelled` or
+ * `unknown` (also a `running` run past its time: its end was not recorded).
+ */
+status: string, 
+/**
+ * How long it ran.
+ */
+durationMs?: number, 
+/**
+ * A task's summary.
+ */
+summary?: string, 
+/**
+ * Why it failed (a safe message).
+ */
+error?: string, 
+/**
+ * The job that ran it.
+ */
+jobId?: string, 
+/**
+ * The user who ran it (id).
+ */
+initiatedBy?: string, };
+
+export type ScheduleInfo = { 
+/**
+ * Name.
+ */
+name: string, 
+/**
+ * When it fires, in words.
+ */
+rule: string, 
+/**
+ * What it does.
+ */
+action: ScheduleActionInfo, 
+/**
+ * Slots wait for the previous job.
+ */
+withoutOverlapping: boolean, 
+/**
+ * Next slot (RFC 3339).
+ */
+nextAt?: string, 
+/**
+ * Last claimed slot.
+ */
+lastSlotAt?: string, 
+/**
+ * Its latest run.
+ */
+last?: ScheduleRunInfo, };
+
+export type SchedulerInfo = { 
+/**
+ * `schedule.enabled`.
+ */
+enabled: boolean, 
+/**
+ * `schedule.grace_secs`.
+ */
+graceSecs: number, };
+
+export type ScheduleList = { 
+/**
+ * Every schedule, as declared.
+ */
+data: Array<ScheduleInfo>, 
+/**
+ * The scheduler on this instance.
+ */
+scheduler: SchedulerInfo, 
+/**
+ * Workers run jobs on this instance (`queue.enabled`).
+ */
+workers: boolean, 
+/**
+ * May run schedules now (`schedules.manage`).
+ */
+canManage: boolean, };
+
+export type ScheduleRunPage = { 
+/**
+ * Runs.
+ */
+data: Array<ScheduleRunInfo>, 
+/**
+ * Continuation.
+ */
+meta: QueueJobPageMeta, };
+
+export type ScheduleRunResponse = { 
+/**
+ * The run, dispatched.
+ */
+run: ScheduleRunInfo, };
 
 export type PageLink = { 
 /**

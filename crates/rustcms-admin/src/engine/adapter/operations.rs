@@ -518,6 +518,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 .exec(txn.as_ref())
                 .await
                 .map_err(|e| self.map_db_err(&wctx, e))?;
+            R::after_delete(&wctx, &txn, &model).await?;
         }
         Self::commit(txn, wctx).await?;
         Ok(())

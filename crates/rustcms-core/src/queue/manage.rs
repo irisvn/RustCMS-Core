@@ -91,6 +91,8 @@ pub struct Clock {
     pub now: DateTime<Utc>,
     /// Leases ending before this are over (`now - clock_skew_secs`).
     pub cutoff: DateTime<Utc>,
+    /// Cancelled jobs are recorded in the history (`history_retention_days > 0`).
+    pub history: bool,
 }
 
 impl Clock {
@@ -98,7 +100,12 @@ impl Clock {
     pub fn new(clock_skew_secs: u64) -> Self {
         let now = super::now();
         let skew = chrono::Duration::seconds(i64::try_from(clock_skew_secs).unwrap_or(i64::MAX / 1_000));
-        Self { now, cutoff: now - skew }
+        Self { now, cutoff: now - skew, history: true }
+    }
+
+    /// The clock of `config`: its skew, and whether history is kept.
+    pub fn of(config: &super::QueueConfig) -> Self {
+        Self { history: config.history_retention_days > 0, ..Self::new(config.clock_skew_secs) }
     }
 }
 
@@ -209,16 +216,29 @@ pub async fn forget(db: &impl ConnectionTrait, id: uuid::Uuid, clock: &Clock) ->
 /// A job waiting to run (pending, scheduled or stalled) is deleted, in one
 /// statement with the workers' claim condition: a worker that claimed it
 /// first keeps it. What earlier attempts committed stays.
+/// Call it in a transaction: the cancellation is recorded (history and
+/// schedule run) with the delete.
 pub async fn cancel(db: &impl ConnectionTrait, id: uuid::Uuid, clock: &Clock) -> AppResult<Result<(), Refusal>> {
-    let deleted = job::Entity::delete_many()
-        .filter(job::Column::Id.eq(id))
-        .filter(job::Column::FailedAt.is_null())
-        .filter(
+    let waiting = || {
+        Condition::all().add(job::Column::Id.eq(id)).add(job::Column::FailedAt.is_null()).add(
             Condition::any().add(job::Column::ReservedUntil.is_null()).add(job::Column::ReservedUntil.lt(clock.cutoff)),
         )
-        .exec(db)
-        .await?;
-    if deleted.rows_affected == 1 { Ok(Ok(())) } else { Ok(Err(refusal(db, id, clock, false).await?)) }
+    };
+    // Locked, so a worker cannot claim it between this read and the delete.
+    let mut find = job::Entity::find().filter(waiting());
+    if db.get_database_backend() != sea_orm::DbBackend::Sqlite {
+        find = sea_orm::QuerySelect::lock_exclusive(find);
+    }
+    let row = find.one(db).await?;
+    let deleted = job::Entity::delete_many().filter(waiting()).exec(db).await?;
+    match row {
+        Some(row) if deleted.rows_affected == 1 => {
+            super::history::record(db, &row, super::history::Terminal::Cancelled, None, None, clock.now, clock.history)
+                .await?;
+            Ok(Ok(()))
+        }
+        _ => Ok(Err(refusal(db, id, clock, false).await?)),
+    }
 }
 
 /// Number of jobs matching `condition` (for tests and tools).

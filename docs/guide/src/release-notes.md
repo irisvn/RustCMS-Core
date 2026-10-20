@@ -1,7 +1,23 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.7.1**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.8.0**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.8.0
+
+- **Job history on the Queue page**: finished jobs (done, failed, cancelled)
+  with their times and duration, a details dialog, filters by time, auto
+  refresh; `Job::describe()` names a job ("deploy demo/web #12"); the
+  *Scheduled* status is now *Delayed* ([Queues](digging-deeper/queues.md#the-queue-page)).
+- **System → Schedules**: every schedule, its next and last run and its
+  history, and **Run now** for job and closure schedules
+  ([Scheduling](digging-deeper/scheduling.md#the-schedules-page)).
+- **`Resource::after_delete`** runs in the transaction of a hard delete, for
+  example to dispatch a job that removes what the record configured
+  ([Resources](admin/resources.md)).
+- **`.task(…)` schedules** report a summary or a safe error; `.timeout(…)`
+  bounds a closure's run; `Job::AT_MOST_ONCE` for jobs that must never run
+  twice.
 
 ## 0.7.1
 

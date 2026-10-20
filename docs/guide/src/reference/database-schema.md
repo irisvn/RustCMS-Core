@@ -163,6 +163,8 @@ WHERE p.name = 'posts.update' OR r.name = 'super_admin';
 | `audit_logs` | who changed what (`event`, `subject_type`/`subject_key`, actor, `credential`, `ip`, `request_id`, `changes`) | [Audit log](../digging-deeper/audit-log.md) |
 | `settings` | settings groups (`name`, `value`, `secrets` encrypted under a key derived from `APP_KEY`, `version`, `updated_by`) | [Settings](../admin/settings.md#secrets) |
 | `schedule_states`, `schedule_slots` | one state row per schedule (never pruned); each claimed slot, kept 7 days and pruned hourly while the scheduler runs | [Scheduling](../digging-deeper/scheduling.md) |
-| `jobs`, `job_receipts` | the database queue (`queue`, `kind`, `payload`, `attempts`, `available_at`, `reserved_until`, `last_error`); jobs already run once | [Queues](../digging-deeper/queues.md) |
+| `jobs`, `job_receipts` | the database queue (`queue`, `kind`, `payload`, `attempts`, `available_at`, `reserved_until`, `started_at`, `description`, `last_error`); jobs already run once | [Queues](../digging-deeper/queues.md) |
+| `job_runs` | one row per finished job (`job_id`, `status` done/failed/cancelled, times, `duration_ms`, safe error), kept `queue.history_retention_days` | [Queues](../digging-deeper/queues.md#the-queue-page) |
+| `schedule_runs` | one row per schedule run (`trigger`, `status`, `job_id`, times, `summary`, safe error), kept `schedule.history_retention_days` | [Scheduling](../digging-deeper/scheduling.md#the-schedules-page) |
 | `exports`, `export_objects` | CSV exports and their files | [Import and export](../admin/import-export.md) |
 | `imports`, `import_rows` | CSV imports, their mapping and report; what each row did | [Import and export](../admin/import-export.md) |

@@ -52,6 +52,8 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../guide/src/admin/users-roles.md) |
+| GET | `/queue/history`, `/queue/jobs/{id}` | finished jobs (`JobRunPage`), one job and its runs (`QueueJobDetail`); `queue.view` (0.8.0) |
+| GET / POST | `/schedules`, `/schedules/{name}/runs`, `/schedules/{name}/run` | the Schedules page (`ScheduleList`, `ScheduleRunPage`, 202 `ScheduleRunResponse`); `schedules.view`, Run now also `schedules.manage` (0.8.0) |
 | GET | `/system/permission-presets` | `[PermissionPresetInfo]` `{id, label, description?, permissions}`; `roles.view_any` or `permissions.view_any` (ADR 0034). `/system/permissions` items carry `area`, `areaLabel`, `areaSort`, and `label`/`description` when declared |
 | GET / PUT | `/settings/{group}` | `SettingsResponse`; PUT `{version, data}` (see below) |
 | POST | `/system/users/invitations` | `{name, email, roleIds}` → 201 `SystemUser` (or 204); `users.create` + `users.invite` before the body; 409 `mail_disabled` |

@@ -3,6 +3,8 @@
 pub mod audit_log;
 pub mod job;
 pub mod job_receipt;
+pub mod job_run;
+pub mod schedule_run;
 pub mod schedule_slot;
 pub mod schedule_state;
 pub mod setting;

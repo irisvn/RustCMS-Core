@@ -210,9 +210,15 @@ pub async fn setup(db: TestDb) -> (TestApp, Users) {
 
 /// [`setup`] with `config`.
 pub async fn setup_with(db: TestDb, config: Config) -> (TestApp, Users) {
+    setup_built(db, config, build).await
+}
+
+/// [`setup_with`] for an app built by `make` (the panel of [`build`], plus more).
+#[allow(dead_code)]
+pub async fn setup_built(db: TestDb, config: Config, make: fn(Config) -> AppBuilder) -> (TestApp, Users) {
     db.migrate::<rustcms_migration::Migrator>().await;
     super::create_tables(db.conn()).await;
-    let app = TestApp::with_config(build, config, db).await;
+    let app = TestApp::with_config(make, config, db).await;
     let auth = app.state().service::<AuthState>().unwrap();
     let db = app.state().db();
     let rbac = RbacService::new(db, &auth.resolver);

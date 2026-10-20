@@ -35,6 +35,10 @@ pub struct Model {
     pub created_at: DateTimeUtc,
     /// Set when it will not run again.
     pub failed_at: Option<DateTimeUtc>,
+    /// When the current (or last) attempt started.
+    pub started_at: Option<DateTimeUtc>,
+    /// `Job::describe` (shown in the panel).
+    pub description: Option<String>,
 }
 
 /// No relations.

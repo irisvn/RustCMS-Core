@@ -8,9 +8,12 @@ use chrono::{DateTime, Utc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
 use super::claim::{self, Claimed};
-use super::{Action, Clock, Schedule, ScheduleConfig, Schedules, SystemClock};
+use super::{Action, Clock, Schedule, ScheduleConfig, Schedules, SystemClock, TaskCtx, Trigger};
 use crate::AppState;
+use crate::models::schedule_run;
 
 /// Longest sleep before the wall clock is read again (clock jumps, long
 /// cron waits).
@@ -75,6 +78,7 @@ pub(crate) fn start_with(
         });
     }
     let (state, prune_cancel) = (state.clone(), cancel.clone());
+    let history_days = config.history_retention_days;
     let prune_clock = clock;
     tasks.spawn(async move {
         loop {
@@ -86,6 +90,12 @@ pub(crate) fn start_with(
                 Ok(n) if n > 0 => tracing::info!(deleted = n, "old schedule claims pruned"),
                 Ok(_) => {}
                 Err(err) => tracing::warn!(%err, "pruning schedule claims failed; retried in an hour"),
+            }
+            let keep = chrono::Duration::days(i64::from(history_days));
+            match super::runs::prune(state.db(), prune_clock.now() - keep).await {
+                Ok(n) if n > 0 => tracing::info!(deleted = n, "old schedule runs pruned"),
+                Ok(_) => {}
+                Err(err) => tracing::warn!(%err, "pruning schedule runs failed; retried in an hour"),
             }
         }
     });
@@ -115,6 +125,8 @@ async fn run_schedule(
     }
     // Runs of this schedule: aborted when this task is (the owner dropped).
     let mut runs: JoinSet<()> = JoinSet::new();
+    // Their run ids, until recorded: those still going at the stop are `unknown`.
+    let active: Arc<std::sync::Mutex<std::collections::HashSet<uuid::Uuid>>> = Arc::default();
     let mut last: DateTime<Utc> = clock.now();
     loop {
         while runs.try_join_next().is_some() {}
@@ -150,17 +162,43 @@ async fn run_schedule(
             Ok(Claimed::Mine(job)) => {
                 tracing::debug!(schedule = %name, %slot, ?job, "slot claimed");
                 // Claimed as the stop came: the slot is spent, nothing new starts.
-                if let Some(Action::Run(run)) = schedule.action.as_ref().filter(|_| !cancel.is_cancelled()) {
-                    let (run, state, name) = (run.clone(), state.clone(), name.clone());
-                    runs.spawn(async move {
-                        let outcome =
-                            futures_util::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(run(state))).await;
-                        match outcome {
-                            Ok(Ok(())) => {}
-                            Ok(Err(err)) => tracing::warn!(schedule = %name, %err, "scheduled run failed"),
-                            Err(_) => tracing::error!(schedule = %name, "scheduled run panicked"),
+                if let Some(Action::Run(exec)) = schedule.action.as_ref() {
+                    let run_id = run_of(&state, &name, slot).await;
+                    if cancel.is_cancelled() {
+                        // Claimed as the stop came: the slot is spent, nothing new starts.
+                        if let Some(id) = run_id {
+                            let _ =
+                                super::runs::finish(state.db(), id, "unknown", None, Some("interrupted by shutdown"))
+                                    .await;
                         }
-                    });
+                    } else if let Some(run_id) = run_id {
+                        let (exec, state, name, timeout) =
+                            (exec.clone(), state.clone(), name.clone(), schedule.timeout);
+                        active.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(run_id);
+                        let active = active.clone();
+                        runs.spawn(async move {
+                            let ctx = TaskCtx {
+                                state: state.clone(),
+                                run_id,
+                                trigger: Trigger::Schedule,
+                                initiated_by: None,
+                            };
+                            let (status, summary, error) = match super::runs::execute(&exec, ctx, timeout).await {
+                                Ok(summary) => ("succeeded", summary, None),
+                                Err(message) => {
+                                    tracing::warn!(schedule = %name, %message, "scheduled run failed");
+                                    ("failed", None, Some(message))
+                                }
+                            };
+                            if let Err(err) =
+                                super::runs::finish(state.db(), run_id, status, summary.as_deref(), error.as_deref())
+                                    .await
+                            {
+                                tracing::warn!(schedule = %name, %err, "schedule run not recorded");
+                            }
+                            active.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&run_id);
+                        });
+                    }
                 }
             }
             Ok(Claimed::Taken) => {}
@@ -173,4 +211,26 @@ async fn run_schedule(
     }
     // Stopping: running actions get the grace, then are aborted (with `runs`).
     let _ = tokio::time::timeout(shutdown_grace, async { while runs.join_next().await.is_some() {} }).await;
+    runs.abort_all();
+    let left: Vec<uuid::Uuid> = active.lock().unwrap_or_else(std::sync::PoisonError::into_inner).drain().collect();
+    for id in left {
+        let _ = super::runs::finish(state.db(), id, "unknown", None, Some("interrupted by shutdown")).await;
+    }
+}
+
+/// The run recorded with the claim of `slot`.
+async fn run_of(state: &AppState, name: &str, slot: DateTime<Utc>) -> Option<uuid::Uuid> {
+    match schedule_run::Entity::find()
+        .filter(schedule_run::Column::Name.eq(name))
+        .filter(schedule_run::Column::SlotAt.eq(slot))
+        .filter(schedule_run::Column::Trigger.eq("schedule"))
+        .one(state.db())
+        .await
+    {
+        Ok(row) => row.map(|r| r.id),
+        Err(err) => {
+            tracing::warn!(schedule = %name, %err, "schedule run not found; not run");
+            None
+        }
+    }
 }

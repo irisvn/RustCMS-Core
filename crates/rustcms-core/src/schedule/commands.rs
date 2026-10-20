@@ -3,6 +3,8 @@
 use async_trait::async_trait;
 use clap::{Arg, ArgMatches, Command};
 
+use sea_orm::ActiveModelTrait;
+
 use super::{Action, Schedules, claim};
 use crate::{AppCommand, AppState};
 
@@ -42,7 +44,7 @@ impl AppCommand for ScheduleList {
             println!(
                 "{}  {}  {action}{overlap}  next {next}  last {last}{job}",
                 schedule.name,
-                schedule.rule.describe()
+                schedule.rule.describe_rule()
             );
         }
         Ok(())
@@ -70,16 +72,43 @@ impl AppCommand for ScheduleRun {
         match &schedule.action {
             Some(Action::Job { dispatch, kind, .. }) => {
                 let txn = crate::db::begin_write(state.db()).await?;
-                let id = dispatch(&txn).await?;
+                let id = dispatch(&txn, None).await?;
+                super::runs::new_run(name, None, super::Trigger::Manual, "dispatched", Some(id), None)
+                    .insert(&txn)
+                    .await?;
                 txn.commit().await?;
                 println!("enqueued job `{kind}` {id}");
             }
-            Some(Action::Run(run)) => {
-                tokio::select! {
-                    result = run(state.clone()) => result?,
-                    () = crate::app::shutdown_signal() => anyhow::bail!("cancelled"),
+            Some(Action::Run(exec)) => {
+                let run = super::runs::new_run(name, None, super::Trigger::Manual, "running", None, None)
+                    .insert(state.db())
+                    .await?;
+                let ctx = super::TaskCtx {
+                    state: state.clone(),
+                    run_id: run.id,
+                    trigger: super::Trigger::Manual,
+                    initiated_by: None,
+                };
+                let result = tokio::select! {
+                    result = super::runs::execute(exec, ctx, schedule.timeout) => result,
+                    () = crate::app::shutdown_signal() => {
+                        super::runs::finish(state.db(), run.id, "unknown", None, Some("interrupted")).await?;
+                        anyhow::bail!("cancelled")
+                    }
+                };
+                match result {
+                    Ok(summary) => {
+                        super::runs::finish(state.db(), run.id, "succeeded", summary.as_deref(), None).await?;
+                        match summary {
+                            Some(summary) => println!("ran `{name}`: {summary}"),
+                            None => println!("ran `{name}`"),
+                        }
+                    }
+                    Err(message) => {
+                        super::runs::finish(state.db(), run.id, "failed", None, Some(&message)).await?;
+                        anyhow::bail!("`{name}` failed: {message}");
+                    }
                 }
-                println!("ran `{name}`");
             }
             None => anyhow::bail!("schedule `{name}` has no action"),
         }

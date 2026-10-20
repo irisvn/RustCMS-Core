@@ -23,7 +23,7 @@ pub use custom::{
 };
 pub(crate) use engine::adapter;
 pub use engine::{context, idempotency, registry, wire};
-pub use features::{audit, custom, dashboard, exports, imports, media, queue, rich_text, settings, system};
+pub use features::{audit, custom, dashboard, exports, imports, media, queue, rich_text, schedules, settings, system};
 pub(crate) use panel::provider;
 pub use panel::spa;
 pub use panel::spa::Requires;

@@ -53,6 +53,8 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     ("not_option", "is not one of the options"),
     ("unreadable_secret", "cannot be decrypted; replace or clear it"),
     ("given_twice", "may only be given once"),
+    ("not_instant", "must be a date and time (RFC 3339)"),
+    ("not_after_since", "must be after since"),
     ("token_invalid", "is invalid or has expired"),
     // Lengths and counts.
     ("max_length", "may not be longer than {max} characters"),

@@ -33,7 +33,12 @@ values follow the [wire format](wire-format.md).
 | GET / PUT | `/settings/{group}` | settings pages, see [Settings](../admin/settings.md#api) |
 | GET | `/audit`, `/resources/{slug}/records/{key}/history` | the audit log and record histories, see [Audit log](../digging-deeper/audit-log.md#viewing-the-log) |
 | GET | `/queue` | counts per queue and status, worker settings, `canManage` (`queue.view`) |
-| GET | `/queue/jobs?status=&queue=&kind=&cursor=&per_page=` | `{data: [QueueJob], meta: {nextCursor?}}`, newest first (`queue.view`) |
+| GET | `/queue/jobs?status=&queue=&kind=&since=&until=&cursor=&per_page=` | `{data: [QueueJob], meta: {nextCursor?}}`, newest first (`queue.view`); `since`/`until` RFC 3339 on dispatch time |
+| GET | `/queue/history?status=done\|failed\|cancelled&queue=&kind=&since=&until=&cursor=&per_page=` | `{data: [JobRun], meta: {nextCursor?}}`, finished jobs newest first (`queue.view`) |
+| GET | `/queue/jobs/{id}` | `{job?: QueueJob, runs: [JobRun]}` (at most 20 runs); 404 when neither exists (`queue.view`) |
+| GET | `/schedules` | `{data: [ScheduleInfo], scheduler, workers, canManage}` (`schedules.view`), see [Scheduling](../digging-deeper/scheduling.md#the-schedules-page) |
+| GET | `/schedules/{name}/runs?cursor=&per_page=` | `{data: [ScheduleRunInfo], meta}`, newest first; 404 for an unknown name (`schedules.view`) |
+| POST | `/schedules/{name}/run` | 202 `{run}`; 409 `write_conflict` reason `running`; 404 unknown (`schedules.view` + `schedules.manage`, rechecked under the RBAC lock; audited) |
 | GET | `/pages/{slug}` | `{slug, title, content}` of a custom page: `{kind: "html", html}` or `{kind: "script", script, data}`, see [Customizing](../admin/customizing.md#custom-pages) |
 | GET | `/pages/{slug}/{*path}` | the same response for a sub-page; `Ctx::page_path()` gives the canonical sub-path; an invalid sub-path is a 422 on `path`, after the permission checks |
 | GET | `/slots?resource=&key=` | `{data: [{name, label?, content}]}` beside a record |

@@ -19,6 +19,8 @@ A message that follows none of these templates has the code `custom` and
 | `confirmation` | `does not match` |
 | `empty` | `is empty` |
 | `given_twice` | `may only be given once` |
+| `not_instant` | `must be a date and time (RFC 3339)` |
+| `not_after_since` | `must be after since` |
 | `token_invalid` | `is invalid or has expired` (a reset or invitation link) |
 | `max_length` | `may not be longer than {max} characters` |
 | `max_bytes` | `may not be longer than {max} bytes` |

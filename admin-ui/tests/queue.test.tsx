@@ -29,6 +29,7 @@ const overview = (canManage: boolean): QueueOverview => ({
   queues: [{ name: "default", pending: 1, scheduled: 0, running: 0, stalled: 0, failed: 1 }],
   workers: { enabled: true, workers: 2, queues: ["default"] },
   canManage,
+  lastDay: { done: 4, failed: 1 },
 });
 
 let queries: URLSearchParams[] = [];

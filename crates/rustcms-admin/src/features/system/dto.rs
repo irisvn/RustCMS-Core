@@ -21,6 +21,8 @@ pub struct SystemLinks {
     pub audit: bool,
     /// The Queue page (`queue.view`).
     pub queue: bool,
+    /// The Schedules page (`schedules.view`).
+    pub schedules: bool,
 }
 
 impl SystemLinks {
@@ -33,6 +35,7 @@ impl SystemLinks {
             create_roles: principal.can("roles.create"),
             audit: principal.can(crate::audit::VIEW_ALL),
             queue: principal.can(crate::queue::VIEW),
+            schedules: principal.can(crate::schedules::VIEW),
         }
     }
 }

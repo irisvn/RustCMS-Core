@@ -11,6 +11,7 @@
 //!   `queue:retry`, `queue:forget`).
 
 mod commands;
+pub(crate) mod history;
 pub mod manage;
 mod worker;
 
@@ -65,6 +66,16 @@ pub trait Job: Serialize + DeserializeOwned + Send + Sync + 'static {
     const VERSION: u32 = 1;
     /// Queue it goes to.
     const QUEUE: &'static str = DEFAULT_QUEUE;
+    /// Never run twice: a run stopped by a shutdown fails instead of being
+    /// given back (use with `max_attempts() == 1` for effects that must not repeat).
+    const AT_MOST_ONCE: bool = false;
+
+    /// A short description shown in the panel's Queue page ("deploy demo/web
+    /// #12"): at most 200 characters, control characters removed. Holders of
+    /// `queue.view` see it: never put secrets or personal data in it.
+    fn describe(&self) -> Option<String> {
+        None
+    }
 
     /// Most runs (1 to 100).
     fn max_attempts() -> u32 {
@@ -183,6 +194,8 @@ pub struct QueueConfig {
     pub unknown_kind_grace_secs: u64,
     /// Failed jobs and receipts are deleted after this many days.
     pub failed_retention_days: u32,
+    /// Finished jobs are kept in the history this many days (0: no history).
+    pub history_retention_days: u32,
 }
 
 impl Default for QueueConfig {
@@ -198,6 +211,7 @@ impl Default for QueueConfig {
             clock_skew_secs: 5,
             unknown_kind_grace_secs: 3_600,
             failed_retention_days: 30,
+            history_retention_days: 7,
         }
     }
 }
@@ -232,6 +246,7 @@ impl QueueConfig {
         range("clock_skew_secs", self.clock_skew_secs, 0, 60)?;
         range("unknown_kind_grace_secs", self.unknown_kind_grace_secs, 0, 7 * 86_400)?;
         range("failed_retention_days", u64::from(self.failed_retention_days), 1, 3_650)?;
+        range("history_retention_days", u64::from(self.history_retention_days), 0, 3_650)?;
         anyhow::ensure!(!self.queues.is_empty(), "queue.queues lists no queue");
         for queue in &self.queues {
             anyhow::ensure!(valid_queue(queue), "queue.queues: `{queue}` is not 1–64 of `a-z`, `0-9`, `_`, `.`, `-`");
@@ -242,7 +257,8 @@ impl QueueConfig {
 
 /// How a run ended.
 pub(crate) enum Outcome {
-    Done,
+    /// Finished, with a short summary of what it did (schedule tasks).
+    Done(Option<String>),
     /// Retry (or fail, on the last attempt), keeping this safe message.
     Retry(String),
     /// Fail now: retrying cannot help.
@@ -256,6 +272,7 @@ pub(crate) enum Outcome {
 pub(crate) trait Handler: Send + Sync {
     fn backoff(&self, attempt: u32) -> Duration;
     fn timeout(&self) -> Duration;
+    fn at_most_once(&self) -> bool;
     async fn run(&self, version: u32, payload: Value, ctx: JobCtx) -> Outcome;
 }
 
@@ -269,6 +286,10 @@ impl<J: Job> Handler for Typed<J> {
 
     fn timeout(&self) -> Duration {
         J::timeout()
+    }
+
+    fn at_most_once(&self) -> bool {
+        J::AT_MOST_ONCE
     }
 
     async fn run(&self, version: u32, payload: Value, ctx: JobCtx) -> Outcome {
@@ -297,7 +318,7 @@ impl<J: Job> Handler for Typed<J> {
         };
         let id = ctx.id;
         match job.handle(ctx).await {
-            Ok(()) => Outcome::Done,
+            Ok(()) => Outcome::Done(None),
             Err(err) => {
                 // A failure's own text is safe to log; any other error is logged as it is.
                 if let Some(Permanent(failure)) = err.downcast_ref::<Permanent>() {
@@ -315,8 +336,23 @@ impl<J: Job> Handler for Typed<J> {
     }
 }
 
-fn cut(text: &str, max: usize) -> String {
+pub(crate) fn cut(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
+}
+
+/// `text` without control characters, at most `max` characters; `None` when empty.
+pub(crate) fn clean(text: &str, max: usize) -> Option<String> {
+    let text: String = text.chars().filter(|c| !c.is_control()).take(max).collect();
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
+/// The safe message of an error: a [`Failure`]'s (permanent or not), else a generic one.
+pub(crate) fn safe_message(err: &anyhow::Error) -> String {
+    const GENERIC: &str = "failed (see the logs)";
+    let failure = err.downcast_ref::<Permanent>().map(|p| &p.0).or_else(|| err.downcast_ref::<Failure>());
+    // Control characters (a NUL) never reach a text column.
+    failure.and_then(|f| clean(&f.to_string(), 500)).unwrap_or_else(|| GENERIC.to_owned())
 }
 
 /// The jobs an application handles (see [`crate::AppBuilder::job`]).
@@ -333,6 +369,7 @@ impl Jobs {
     /// On an invalid kind, a kind taken by another type, or limits out of range.
     pub fn register<J: Job>(&mut self) {
         assert!(valid_kind(J::KIND), "job `{}`: kinds are 1–64 of `a-z`, `0-9`, `_`, `.`", J::KIND);
+        assert!(!J::KIND.starts_with("rustcms."), "job `{}`: the `rustcms.` prefix is reserved", J::KIND);
         assert!(valid_queue(J::QUEUE), "job `{}`: invalid queue `{}`", J::KIND, J::QUEUE);
         assert!((1..=100).contains(&J::max_attempts()), "job `{}`: max_attempts must be 1 to 100", J::KIND);
         assert!(J::VERSION >= 1 && J::VERSION <= i32::MAX as u32, "job `{}`: VERSION must be at least 1", J::KIND);
@@ -343,6 +380,13 @@ impl Jobs {
             return;
         }
         self.handlers.insert(J::KIND, (id, Arc::new(Typed::<J>(std::marker::PhantomData))));
+    }
+
+    /// Registers one of the framework's own jobs (a `rustcms.` kind).
+    pub(crate) fn register_internal(&mut self, kind: &'static str, handler: Arc<dyn Handler>) {
+        assert!(kind.starts_with("rustcms.") && valid_kind(kind), "internal job kinds start with `rustcms.`");
+        let id = std::any::TypeId::of::<()>();
+        self.handlers.entry(kind).or_insert((id, handler));
     }
 
     pub(crate) fn get(&self, kind: &str) -> Option<&Arc<dyn Handler>> {
@@ -384,6 +428,8 @@ fn row<J: Job>(job: &J, at: DateTime<Utc>, initiated_by: Option<i64>) -> AppResu
         initiated_by: Set(initiated_by),
         created_at: Set(created),
         failed_at: Set(None),
+        started_at: Set(None),
+        description: Set(job.describe().and_then(|d| clean(&d, 200))),
     })
 }
 

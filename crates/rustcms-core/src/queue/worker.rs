@@ -10,6 +10,7 @@ use sea_orm::{ColumnTrait, DatabaseConnection, DbBackend, EntityTrait, QueryFilt
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
+use super::history::{self, Terminal};
 use super::{Handler, JobCtx, Jobs, MAX_PAYLOAD_BYTES, Outcome, QueueConfig, now};
 use crate::models::{job, job_receipt};
 use crate::{AppResult, AppState};
@@ -82,10 +83,12 @@ async fn claim(db: &DatabaseConnection, config: &QueueConfig, queues: &[String])
         .col_expr(job::Column::ReservedBy, Expr::value(token.clone()))
         .col_expr(job::Column::ReservedUntil, Expr::value(until))
         .col_expr(job::Column::Attempts, Expr::col(job::Column::Attempts).add(1))
+        .col_expr(job::Column::StartedAt, Expr::value(now))
         .filter(job::Column::Id.eq(row.id))
         .exec(&txn)
         .await?;
     txn.commit().await?;
+    row.started_at = Some(now);
     row.attempts += 1;
     row.reserved_by = Some(token.clone());
     row.reserved_until = Some(until);
@@ -111,7 +114,9 @@ async fn heartbeat(db: DatabaseConnection, owner: Owner, lease: Duration) -> App
     Ok(result.rows_affected == 1)
 }
 
-/// Settles a run as `outcome`, if the claim still owns the job.
+/// Settles a run as `outcome`, if the claim still owns the job. A terminal
+/// outcome is recorded (history, schedule run) in the same transaction, only
+/// when the transition changed the job.
 async fn settle(
     db: &DatabaseConnection,
     config: &QueueConfig,
@@ -119,6 +124,7 @@ async fn settle(
     claim: &Claimed,
     outcome: Outcome,
 ) -> AppResult<()> {
+    let txn = crate::db::begin_write(db).await?;
     let now = now();
     let row = &claim.row;
     let release = |update: sea_orm::UpdateMany<job::Entity>| {
@@ -127,45 +133,58 @@ async fn settle(
             .col_expr(job::Column::ReservedUntil, Expr::value(Option::<DateTime<Utc>>::None))
             .filter(owned(&claim.owner, now))
     };
-    let affected = match outcome {
-        Outcome::Done => job::Entity::delete_many().filter(owned(&claim.owner, now)).exec(db).await?.rows_affected,
+    let fail = |message: String| {
+        release(job::Entity::update_many())
+            .col_expr(job::Column::FailedAt, Expr::value(now))
+            .col_expr(job::Column::LastError, Expr::value(message))
+    };
+    let (affected, terminal) = match outcome {
+        Outcome::Done(summary) => {
+            let deleted = job::Entity::delete_many().filter(owned(&claim.owner, now)).exec(&txn).await?.rows_affected;
+            (deleted, Some((Terminal::Done, None, summary)))
+        }
         Outcome::Retry(message) if row.attempts < row.max_attempts => {
             let wait = handler.map_or(Duration::from_secs(60), |h| h.backoff(row.attempts as u32));
-            release(job::Entity::update_many())
+            let released = release(job::Entity::update_many())
                 .col_expr(job::Column::AvailableAt, Expr::value(after(now, wait)))
                 .col_expr(job::Column::LastError, Expr::value(message))
-                .exec(db)
+                .exec(&txn)
                 .await?
-                .rows_affected
+                .rows_affected;
+            (released, None)
         }
         Outcome::Retry(message) | Outcome::Fail(message) => {
-            release(job::Entity::update_many())
-                .col_expr(job::Column::FailedAt, Expr::value(now))
-                .col_expr(job::Column::LastError, Expr::value(message))
-                .exec(db)
-                .await?
-                .rows_affected
+            let failed = fail(message.clone()).exec(&txn).await?.rows_affected;
+            (failed, Some((Terminal::Failed, Some(message), None)))
         }
         Outcome::Unknown => {
             let grace = Duration::from_secs(config.unknown_kind_grace_secs);
-            let update = release(job::Entity::update_many());
-            let update = if row.created_at < before(now, grace) {
-                update.col_expr(job::Column::FailedAt, Expr::value(now)).col_expr(
-                    job::Column::LastError,
-                    Expr::value(format!("no worker handles `{}` (version {})", row.kind, row.version)),
-                )
+            if row.created_at < before(now, grace) {
+                let message = format!("no worker handles `{}` (version {})", row.kind, row.version);
+                let failed = fail(message.clone()).exec(&txn).await?.rows_affected;
+                (failed, Some((Terminal::Failed, Some(message), None)))
             } else {
                 // Not a run: the attempt is given back.
-                update
+                let released = release(job::Entity::update_many())
                     .col_expr(job::Column::Attempts, Expr::col(job::Column::Attempts).sub(1))
                     .col_expr(job::Column::AvailableAt, Expr::value(after(now, UNKNOWN_RETRY)))
-            };
-            update.exec(db).await?.rows_affected
+                    .exec(&txn)
+                    .await?
+                    .rows_affected;
+                (released, None)
+            }
         }
     };
     if affected == 0 {
+        txn.rollback().await?;
         tracing::warn!(kind = row.kind, id = %row.id, "job lost its lease before it was settled; it may run again");
+        return Ok(());
     }
+    if let Some((terminal, error, summary)) = terminal {
+        let keep = config.history_retention_days > 0;
+        history::record(&txn, row, terminal, error.as_deref(), summary.as_deref(), now, keep).await?;
+    }
+    txn.commit().await?;
     Ok(())
 }
 
@@ -191,37 +210,57 @@ async fn ids(db: &DatabaseConnection, select: sea_orm::Select<job::Entity>) -> A
     Ok(select.select_only().column(job::Column::Id).limit(1_000).into_tuple().all(db).await?)
 }
 
-/// Fails jobs whose lease expired on their last attempt (their worker died).
+/// Fails jobs whose lease expired on their last attempt (their worker died),
+/// each in its own transaction with its history.
 async fn reap(db: &DatabaseConnection, config: &QueueConfig) -> AppResult<u64> {
     let now = now();
     let stale = before(now, Duration::from_secs(config.clock_skew_secs));
-    let candidates = ids(
-        db,
-        job::Entity::find()
-            .filter(job::Column::FailedAt.is_null())
-            .filter(job::Column::ReservedUntil.lt(stale))
-            .filter(Expr::col(job::Column::Attempts).gte(Expr::col(job::Column::MaxAttempts))),
-    )
-    .await?;
-    if candidates.is_empty() {
-        return Ok(0);
+    let expired = || {
+        Condition::all()
+            .add(job::Column::FailedAt.is_null())
+            .add(job::Column::ReservedUntil.lt(stale))
+            .add(Expr::col(job::Column::Attempts).gte(Expr::col(job::Column::MaxAttempts)))
+    };
+    let candidates = ids(db, job::Entity::find().filter(expired())).await?;
+    let message = "the lease expired during the last attempt";
+    let mut reaped = 0;
+    for id in candidates {
+        let txn = crate::db::begin_write(db).await?;
+        let Some(row) = job::Entity::find_by_id(id).filter(expired()).one(&txn).await? else {
+            txn.rollback().await?;
+            continue;
+        };
+        let failed = job::Entity::update_many()
+            .col_expr(job::Column::FailedAt, Expr::value(now))
+            .col_expr(job::Column::LastError, Expr::value(message))
+            .col_expr(job::Column::ReservedBy, Expr::value(Option::<String>::None))
+            .col_expr(job::Column::ReservedUntil, Expr::value(Option::<DateTime<Utc>>::None))
+            .filter(job::Column::Id.eq(id))
+            .filter(expired())
+            .exec(&txn)
+            .await?
+            .rows_affected;
+        if failed == 1 {
+            let keep = config.history_retention_days > 0;
+            history::record(&txn, &row, Terminal::Failed, Some(message), None, now, keep).await?;
+            txn.commit().await?;
+            reaped += 1;
+        } else {
+            txn.rollback().await?;
+        }
     }
-    Ok(job::Entity::update_many()
-        .col_expr(job::Column::FailedAt, Expr::value(now))
-        .col_expr(job::Column::LastError, Expr::value("the lease expired during the last attempt"))
-        .col_expr(job::Column::ReservedBy, Expr::value(Option::<String>::None))
-        .col_expr(job::Column::ReservedUntil, Expr::value(Option::<DateTime<Utc>>::None))
-        .filter(job::Column::Id.is_in(candidates))
-        .filter(job::Column::FailedAt.is_null())
-        .filter(job::Column::ReservedUntil.lt(stale))
-        .filter(Expr::col(job::Column::Attempts).gte(Expr::col(job::Column::MaxAttempts)))
-        .exec(db)
-        .await?
-        .rows_affected)
+    Ok(reaped)
 }
 
-/// Deletes failed jobs and receipts past their retention.
-async fn maintain(db: &DatabaseConnection, config: &QueueConfig) -> AppResult<()> {
+/// Deletes failed jobs, receipts, the job history and schedule runs past
+/// their retention (schedule runs too: Run now records them where no
+/// scheduler runs).
+async fn maintain(state: &AppState, config: &QueueConfig) -> AppResult<()> {
+    let db = state.db();
+    if let Ok(schedule) = crate::schedule::ScheduleConfig::of(state.config()) {
+        let keep = chrono::Duration::days(i64::from(schedule.history_retention_days));
+        crate::schedule::prune_runs(db, now() - keep).await?;
+    }
     let cutoff = now() - chrono::Duration::days(i64::from(config.failed_retention_days));
     let old = ids(db, job::Entity::find().filter(job::Column::FailedAt.lt(cutoff))).await?;
     if !old.is_empty() {
@@ -242,6 +281,7 @@ async fn maintain(db: &DatabaseConnection, config: &QueueConfig) -> AppResult<()
     if !receipts.is_empty() {
         job_receipt::Entity::delete_many().filter(job_receipt::Column::Key.is_in(receipts)).exec(db).await?;
     }
+    history::prune(db, config.history_retention_days).await?;
     Ok(())
 }
 
@@ -358,6 +398,11 @@ async fn run(state: &AppState, jobs: &Jobs, config: &QueueConfig, claim: Claimed
         Ending::Settle(outcome) => {
             bookkeeping("settle a job", settle(db, config, Some(&handler), &claim, outcome)).await
         }
+        // Never run twice: the interrupted run fails instead of being given back.
+        Ending::GiveBack if handler.at_most_once() => {
+            let outcome = Outcome::Fail("interrupted by shutdown".into());
+            bookkeeping("fail an interrupted job", settle(db, config, Some(&handler), &claim, outcome)).await
+        }
         Ending::GiveBack => bookkeeping("give a job back", give_back(db, &claim.owner)).await,
         Ending::Lost => {}
     }
@@ -377,7 +422,7 @@ pub async fn run_until_idle(state: &AppState, queues: Option<Vec<String>>, max: 
     let (_keep, mut abort) = watch::channel(false);
     let mut ran = 0;
     // Bookkeeping never keeps the jobs from running.
-    if let Err(err) = maintain(state.db(), &config).await {
+    if let Err(err) = maintain(state, &config).await {
         tracing::warn!(%err, "queue maintenance failed");
     }
     if let Err(err) = reap(state.db(), &config).await {
@@ -417,7 +462,7 @@ impl Workers {
                     while !*stopped.borrow() {
                         if maintained.elapsed() >= MAINTENANCE_EVERY {
                             maintained = Instant::now();
-                            if let Err(err) = maintain(state.db(), &config).await {
+                            if let Err(err) = maintain(&state, &config).await {
                                 tracing::warn!(%err, "queue maintenance failed");
                             }
                         }

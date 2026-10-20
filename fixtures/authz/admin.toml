@@ -1111,6 +1111,210 @@ actor = "admin"
 status = 404
 
 [[case]]
+route = "GET /admin/api/queue/history"
+path = "/admin/api/queue/history?status=done"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/queue/history"
+path = "/admin/api/queue/history?status=done"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue/history"
+path = "/admin/api/queue/history?status=done"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue/history"
+path = "/admin/api/queue/history?status=done"
+actor = "manager"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue/history"
+path = "/admin/api/queue/history?status=done"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/queue/history"
+path = "/admin/api/queue/history?status=done"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "GET /admin/api/queue/jobs/{id}"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/queue/jobs/{id}"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue/jobs/{id}"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue/jobs/{id}"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2"
+actor = "manager"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue/jobs/{id}"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/queue/jobs/{id}"
+path = "/admin/api/queue/jobs/01a13e65-155b-7612-9f6f-1201e21f46c2"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "GET /admin/api/schedules"
+path = "/admin/api/schedules"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/schedules"
+path = "/admin/api/schedules"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/schedules"
+path = "/admin/api/schedules"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/schedules"
+path = "/admin/api/schedules"
+actor = "manager"
+status = 403
+
+[[case]]
+route = "GET /admin/api/schedules"
+path = "/admin/api/schedules"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/schedules"
+path = "/admin/api/schedules"
+actor = "admin"
+status = 200
+
+[[case]]
+route = "GET /admin/api/schedules/{name}/runs"
+path = "/admin/api/schedules/nope/runs"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/schedules/{name}/runs"
+path = "/admin/api/schedules/nope/runs"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/schedules/{name}/runs"
+path = "/admin/api/schedules/nope/runs"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/schedules/{name}/runs"
+path = "/admin/api/schedules/nope/runs"
+actor = "manager"
+status = 403
+
+[[case]]
+route = "GET /admin/api/schedules/{name}/runs"
+path = "/admin/api/schedules/nope/runs"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/schedules/{name}/runs"
+path = "/admin/api/schedules/nope/runs"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "GET /admin/api/queue/history"
+path = "/admin/api/queue/history?per_page=oops"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue/jobs/{id}"
+path = "/admin/api/queue/jobs/not-a-uuid"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/queue/jobs/{id}"
+path = "/admin/api/queue/jobs/not-a-uuid"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "POST /admin/api/schedules/{name}/run"
+path = "/admin/api/schedules/nope/run"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "POST /admin/api/schedules/{name}/run"
+path = "/admin/api/schedules/nope/run"
+actor = "member"
+status = 403
+
+[[case]]
+route = "POST /admin/api/schedules/{name}/run"
+path = "/admin/api/schedules/nope/run"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "POST /admin/api/schedules/{name}/run"
+path = "/admin/api/schedules/nope/run"
+actor = "manager"
+status = 403
+
+[[case]]
+route = "POST /admin/api/schedules/{name}/run"
+path = "/admin/api/schedules/nope/run"
+actor = "token"
+status = 403
+
+[[case]]
+route = "POST /admin/api/schedules/{name}/run"
+path = "/admin/api/schedules/nope/run"
+actor = "foreign"
+status = 403
+
+[[case]]
+route = "POST /admin/api/schedules/{name}/run"
+path = "/admin/api/schedules/nope/run"
+actor = "admin"
+status = 404
+
+[[case]]
 route = "GET /admin/api/pages/{slug}"
 path = "/admin/api/pages/nope"
 actor = "guest"

@@ -204,11 +204,11 @@ db_test!(panel_links_follow_permissions, |db: TestDb| async move {
     };
     assert_eq!(
         panel(&users.admin).await,
-        json!({"users": true, "roles": true, "createUsers": true, "inviteUsers": true, "createRoles": true, "audit": true, "queue": true})
+        json!({"users": true, "roles": true, "createUsers": true, "inviteUsers": true, "createRoles": true, "audit": true, "queue": true, "schedules": true})
     );
     assert_eq!(
         panel(&users.editor).await,
-        json!({"users": false, "roles": false, "createUsers": false, "inviteUsers": false, "createRoles": false, "audit": false, "queue": false})
+        json!({"users": false, "roles": false, "createUsers": false, "inviteUsers": false, "createRoles": false, "audit": false, "queue": false, "schedules": false})
     );
 });
 

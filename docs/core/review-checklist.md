@@ -16,6 +16,9 @@ review; reviewers use it as their dimensions.
   protected roles by super admins; at least one active super admin.
 - Bulk selections (matrix rows and columns, groups, presets) change only
   grantable permissions, and toggles only those shown (search, open areas).
+- History rows (`job_runs`, schedule outcomes) are written only in the
+  transaction of a transition that changed the job; texts shown to viewers
+  (descriptions, summaries, errors) are safe messages, never error text.
 - Runtime values reaching CSS or images go through the theme's checks
   (tokens, hex colors, PNG/WebP/ICO by magic bytes); never SVG or app CSS.
 
