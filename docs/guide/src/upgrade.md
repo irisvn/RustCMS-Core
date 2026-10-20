@@ -29,6 +29,15 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.8.0 to 0.8.1
+
+Nothing needs to change. To survive automatic rollbacks, keep migrations
+additive and start the image with `migrate --allow-newer`. Deploy that image
+before adding migrations: a rollback only accepts newer migrations when the
+image it returns to is 0.8.1 or later with the flag (a 0.8.0 image still
+refuses). Run migrations once per deployment, not in every replica
+([Deployment](getting-started/deployment.md#upgrading)).
+
 ## From 0.7.1 to 0.8.0
 
 Run `rustcms migrate`: it adds `jobs.started_at`, `jobs.description` and the

@@ -1,7 +1,15 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.8.0**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.8.1**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.8.1
+
+- **Rollbacks after migrations**: `migrate --allow-newer` (or
+  `[database] allow_newer_migrations = true`) lets an older binary start on a
+  database a newer one migrated, when migrations are additive; `migrate:status`
+  shows them as `Newer`; `rustcms::db::unknown_migrations` lists them
+  ([Deployment](getting-started/deployment.md#upgrading)).
 
 ## 0.8.0
 

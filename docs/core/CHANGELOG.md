@@ -6,6 +6,17 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-10-20
+
+### Added (0.8.1)
+- `migrate --allow-newer` and `[database] allow_newer_migrations`: migrations
+  applied by a newer binary (after a rollback) are logged and left as they
+  are, and this binary's pending ones still run (through a tolerant migrator
+  with a stand-in per unknown migration). Without it, `migrate` refuses with a
+  message naming them. `migrate:status` lists them as `Newer`.
+- `rustcms::db::{unknown_migrations, migrate_up, migration_status,
+  MigrationSettings}`.
+
 ## [0.8.0] — 2026-10-20
 
 ### Added (0.8.0)

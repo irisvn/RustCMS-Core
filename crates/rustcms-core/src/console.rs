@@ -29,7 +29,12 @@ enum Command {
         listen: Option<SocketAddr>,
     },
     /// Run pending migrations
-    Migrate,
+    Migrate {
+        /// Accept migrations applied by a newer version (after a rollback):
+        /// they are logged and left as they are; this version's pending ones run
+        #[arg(long)]
+        allow_newer: bool,
+    },
     /// Roll back the last migrations
     #[command(name = "migrate:rollback")]
     MigrateRollback {
@@ -138,10 +143,11 @@ impl<M: MigratorTrait> Console<M> {
                 let app = (self.build)(config).build().await?;
                 app.serve(listen).await
             }
-            Command::Migrate => {
+            Command::Migrate { allow_newer } => {
                 let db = connect_migrations(&config).await?;
                 crate::db::check(&db, true).await?;
-                Ok(M::up(&db, None).await?)
+                let allow = allow_newer || crate::db::MigrationSettings::of(&config).allow_newer_migrations;
+                crate::db::migrate_up::<M>(&db, allow).await
             }
             Command::MigrateRollback { step } => {
                 let db = connect_migrations(&config).await?;
@@ -180,8 +186,9 @@ impl<M: MigratorTrait> Console<M> {
             }
             Command::MigrateStatus => {
                 let db = connect(&config).await?;
-                for migration in M::get_migration_with_status(&db).await? {
-                    println!("{:<8} {}", format!("{:?}", migration.status()), migration.name());
+                // `Newer`: applied by a newer version, unknown to this one.
+                for (status, name) in crate::db::migration_status::<M>(&db).await? {
+                    println!("{status:<8} {name}");
                 }
                 Ok(())
             }

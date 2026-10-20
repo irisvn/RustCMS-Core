@@ -409,3 +409,77 @@ db_test!(a_partly_applied_invitation_migration_completes, |db: TestDb| async mov
         assert!(manager.has_column("users", column).await.unwrap(), "{column}");
     }
 });
+
+/// The binary of the previous version: every framework migration but the last.
+struct Older;
+
+impl MigratorTrait for Older {
+    fn migrations() -> Vec<Box<dyn sea_orm_migration::MigrationTrait>> {
+        let mut all = Migrator::migrations();
+        all.pop();
+        all
+    }
+}
+
+db_test!(after_a_rollback_newer_migrations_are_accepted_only_when_allowed, |db: TestDb| async move {
+    let db = db.single_connection().await;
+    let conn = db.conn();
+    // The newer version migrated everything; the deploy is rolled back.
+    Migrator::up(conn, None).await.unwrap();
+    let last = Migrator::migrations().last().unwrap().name().to_owned();
+    assert_eq!(rustcms_core::db::unknown_migrations::<Older>(conn).await.unwrap(), vec![last.clone()]);
+    let refused = rustcms_core::db::migrate_up::<Older>(conn, false).await.unwrap_err().to_string();
+    assert!(refused.contains(&last) && refused.contains("--allow-newer"), "{refused}");
+    rustcms_core::db::migrate_up::<Older>(conn, true).await.unwrap();
+    let status = rustcms_core::db::migration_status::<Older>(conn).await.unwrap();
+    assert_eq!(status.last().unwrap(), &("Newer".to_owned(), last));
+    assert!(status.iter().filter(|(s, _)| s == "Applied").count() == Older::migrations().len());
+    // The newer migration's tables are untouched.
+    assert!(has_table(&db, "schedule_runs").await);
+});
+
+db_test!(own_pending_migrations_still_run_beside_newer_ones, |db: TestDb| async move {
+    let db = db.single_connection().await;
+    let conn = db.conn();
+    let total = Migrator::migrations().len() as u32;
+    Migrator::up(conn, Some(total - 2)).await.unwrap();
+    // A migration only a newer binary has, recorded between ours.
+    conn.execute_unprepared(&format!(
+        "INSERT INTO seaql_migrations (version, applied_at) VALUES ('m29991231_000001_future', {})",
+        chrono::Utc::now().timestamp()
+    ))
+    .await
+    .unwrap();
+    assert!(Migrator::up(conn, None).await.is_err(), "sea-orm refuses it");
+    rustcms_core::db::migrate_up::<Migrator>(conn, true).await.unwrap();
+    let pending = Migrator::get_pending_migrations(conn).await;
+    assert!(pending.is_err(), "the unknown row stays");
+    let status = rustcms_core::db::migration_status::<Migrator>(conn).await.unwrap();
+    assert!(status.iter().all(|(s, n)| s == "Applied" || n == "m29991231_000001_future"), "{status:?}");
+    assert!(has_table(&db, "schedule_runs").await, "the last two ran");
+    // Nothing unknown: the same as `Migrator::up`.
+    rustcms_core::db::migrate_up::<Migrator>(conn, false).await.unwrap_err();
+});
+
+/// The framework's migrations, recorded in a table of its own name.
+struct Renamed;
+
+impl MigratorTrait for Renamed {
+    fn migrations() -> Vec<Box<dyn sea_orm_migration::MigrationTrait>> {
+        Migrator::migrations()
+    }
+
+    fn migration_table_name() -> sea_orm::DynIden {
+        use sea_orm::sea_query::IntoIden;
+        sea_orm::sea_query::Alias::new("app_migrations").into_iden()
+    }
+}
+
+db_test!(a_renamed_migration_table_is_the_one_read, |db: TestDb| async move {
+    let db = db.single_connection().await;
+    let conn = db.conn();
+    Renamed::up(conn, None).await.unwrap();
+    assert!(rustcms_core::db::unknown_migrations::<Renamed>(conn).await.unwrap().is_empty());
+    rustcms_core::db::migrate_up::<Renamed>(conn, false).await.unwrap();
+    assert!(!has_table(&db, "seaql_migrations").await);
+});

@@ -22,7 +22,7 @@ Optional features are enabled on the `rustcms` dependency:
 | `s3` | off | uploads on S3-compatible storage (`storage.disk = "s3"`) |
 
 ```toml
-rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.8.0", features = ["redis", "s3"] }
+rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.8.1", features = ["redis", "s3"] }
 ```
 
 Keep the tag your application already uses (`rustcms upgrade` sets it) when
@@ -95,6 +95,31 @@ Check `curl http://127.0.0.1:8000/health` → `{"status":"ok","database":"ok"}`
 To go back, roll back with the **new** binary first (only it knows its
 migrations): `./blog.new migrate:rollback --step N`, then start the old one.
 Migrations that drop data cannot restore it: use the backup.
+
+**Automatic rollbacks** (a Docker Swarm or Kubernetes rollout that returns to
+the previous image, whose start runs `migrate`): the older binary finds
+migrations it does not know and `migrate` refuses to run. If your migrations
+are **additive only** (new tables, new nullable columns or columns with
+defaults; never a rename, a drop or a stricter constraint), let it accept
+them: `migrate --allow-newer`, or `[database] allow_newer_migrations = true`
+(`RUSTCMS_DATABASE__ALLOW_NEWER_MIGRATIONS=true`). It logs the unknown ones,
+leaves them as they are and applies its own pending migrations, so the older
+version starts on the newer schema. Keeping migrations additive is the
+application's rule; the framework's own migrations follow it.
+Two things it does not do:
+- **Protect a rollback to an image older than 0.8.1**, or one started
+  without the flag: that image refuses as before. Roll out an image on 0.8.1
+  or later with `--allow-newer` first, and only then add migrations, so the
+  image a rollback returns to accepts them.
+- **Serialize replicas.** Two replicas running `migrate` at the same start
+  may race on the same pending migration, with or without the flag. Run
+  migrations once per deployment (a one-off task or job before the rollout,
+  or a single replica), not in every replica's entry point.
+
+`migrate:status` lists the unknown ones as `Newer`, and
+`rustcms::db::unknown_migrations::<Migrator>(state.db())` returns them (for
+a warning in your panel). `migrate:rollback` still needs the binary that knows
+a migration.
 
 `serve` stops gracefully on Ctrl-C or SIGTERM: requests in progress finish.
 

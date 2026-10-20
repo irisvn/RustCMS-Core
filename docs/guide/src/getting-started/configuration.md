@@ -25,6 +25,7 @@ Configuration is read when the application starts. Sources, last one wins:
 | `database.url`              | — (**required**)       | `sqlite://…`, `postgres://…` or `mysql://…` ([MySQL setup](../basics/database.md#mysql)) |
 | `database.max_connections`  | `10`                   |                                              |
 | `database.log_statements`   | `false`                |                                              |
+| `database.allow_newer_migrations` | `false`          | `migrate` accepts migrations a newer version applied (rollbacks; [additive migrations only](deployment.md#upgrading)) |
 | `http.body_limit`           | `1048576`              | bytes; larger bodies get 413                 |
 | `http.timeout_secs`         | `30`                   | slower requests get 408                      |
 | `http.trusted_proxies`      | `[]`                   | CIDRs allowed to set `X-Forwarded-For`       |

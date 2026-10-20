@@ -2,10 +2,12 @@
 
 mod check;
 mod locks;
+mod migrations;
 mod transactions;
 
 pub use check::*;
 pub use locks::*;
+pub use migrations::{MigrationSettings, migrate_up, migration_status, unknown_migrations};
 pub use transactions::*;
 
 use sea_orm::{

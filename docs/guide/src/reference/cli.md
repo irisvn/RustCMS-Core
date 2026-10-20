@@ -187,6 +187,10 @@ Start the HTTP server
 
 Run pending migrations
 
+| Argument | Description |
+|---|---|
+| `--allow-newer` | Accept migrations applied by a newer version (after a rollback): they are logged and left as they are; this version's pending ones run |
+
 ### `migrate:rollback`
 
 Roll back the last migrations
