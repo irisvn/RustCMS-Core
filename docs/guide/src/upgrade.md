@@ -29,6 +29,11 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.8.1 to 0.8.2
+
+Nothing needs to change (no rebuild of React pages either). A workaround that
+hid `session_changed` from reads may stay or go.
+
 ## From 0.8.0 to 0.8.1
 
 Nothing needs to change. To survive automatic rollbacks, keep migrations

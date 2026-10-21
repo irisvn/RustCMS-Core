@@ -7,6 +7,7 @@ import { setupServer } from "msw/node";
 import { readFileSync } from "node:fs";
 import type * as React from "react";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { SessionContext } from "@/api/context";
 import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
@@ -500,3 +501,60 @@ describe("ui 2 components", () => {
     Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
   });
 });
+
+describe("reads across a remount", () => {
+  it("a read in flight when a sub-path navigation remounts the view reaches the new view, not an error", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let gets = 0;
+    server.use(
+      http.get("*/admin/api/x/docker/status", async () => {
+        gets++;
+        await held;
+        return HttpResponse.json({ state: "running" });
+      }),
+      http.get("*/admin/api/resources/posts/records", async () => {
+        await held;
+        return HttpResponse.json({ data: [record("posts", "1")], meta: { total: 1 } });
+      }),
+    );
+    // As `useAdminQuery` and `useResource` do: one key per scope, shared by the
+    // view's mounts (a sub-path navigation mounts the view again).
+    function View(props: Props & { path: string; api: { get: <T>(path: string) => Promise<T> }; scope: { namespace: string; epoch: number } }) {
+      const status = useQuery({
+        queryKey: ["rustcms.x", props.scope.namespace, props.scope.epoch, "status"],
+        queryFn: () => props.api.get<{ state: string }>("/docker/status"),
+      });
+      const posts = useQuery({
+        queryKey: ["rustcms.r", "posts", props.scope.epoch, "list"],
+        queryFn: () => props.resources!.list("posts") as Promise<{ data: unknown[] }>,
+      });
+      const failure = (status.error ?? posts.error) as { code?: string } | null;
+      return (
+        <p>
+          at {props.path} · {status.data?.state ?? "…"} · {posts.data ? `${posts.data.data.length} posts` : "…"}
+          {failure && ` · error ${failure.code}`}
+        </p>
+      );
+    }
+    registerReactView("page", "test/react", View as never, { ui: 2 }, 2);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const session = createSession({ basePath: "/admin", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
+    const router = createAppRouter({ queryClient, session }, createMemoryHistory({ initialEntries: ["/p/react/advanced"] }));
+    render(
+      <SessionContext.Provider value={session}>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </SessionContext.Provider>,
+    );
+    await screen.findByText(/at advanced/);
+    await waitFor(() => expect(gets).toBe(1));
+    await act(() => router.navigate({ to: "/p/react/overview" } as never));
+    await screen.findByText(/at overview/);
+    release();
+    expect(await screen.findByText("at overview · running · 1 posts")).toBeInTheDocument();
+    expect(screen.queryByText(/error session_changed/)).toBeNull();
+  });
+});
+

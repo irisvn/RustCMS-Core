@@ -90,8 +90,12 @@ CSRF, sub-pages and permission-aware buttons, without shipping a second React.
   `useSyncExternalStore` and is keyed by it: sign-in, sign-out or rotation
   unmounts the instance with its handles. Every host callback (`navigate`,
   `reload`, `api.*`, realtime handlers) is bound to its mount; a stale call
-  rejects with `ApiError` `session_changed` and sends nothing, and a response
-  that arrives after the mount went stale is never delivered. Writes go
+  rejects with `ApiError` `session_changed` and sends nothing, and a write's
+  response that arrives after the mount went stale is never delivered. A
+  read started by a live mount and answered after it ended in the same
+  session epoch is delivered (0.8.2): its query key (with the epoch) is
+  shared with the remounted view, which would otherwise show a
+  `session_changed` error; across an epoch change it is still refused. Writes go
   through `guardedWrite` under the scope `x:<namespace>`, so an unknown
   outcome pauses later writes of that view like built-in writes; nothing is
   retried automatically.

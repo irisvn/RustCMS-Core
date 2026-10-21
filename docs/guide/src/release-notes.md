@@ -1,7 +1,13 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.8.1**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.8.2**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.8.2
+
+- React pages: a read still in flight when a sub-path navigation remounts
+  the view is delivered to the new view instead of a "session changed"
+  error ([React pages](admin/react-pages.md)).
 
 ## 0.8.1
 

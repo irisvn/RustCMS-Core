@@ -134,6 +134,10 @@ When the session changes (sign-in, sign-out, another tab), the view is
 mounted again for the new session; calls and callbacks of the old one do
 nothing (a call rejects with `ApiError` code `session_changed`). A refused
 CSRF token also ends the session state, so that call rejects the same way.
+A **read** (`api.get`, `resources.list`/`get`) answered after its view was
+mounted again in the same session (a sub-path navigation) is delivered: its
+query cache entry, shared with the new view, gets the data instead of an
+error. Writes answered late still reject.
 
 ## Records of your resources
 

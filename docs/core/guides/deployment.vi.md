@@ -27,7 +27,7 @@ strip target/release/blog      # tuỳ chọn: khoảng 29 MB → 23 MB
   | `s3` | tắt | lưu upload trên S3 / MinIO (`storage.disk = "s3"`) |
 
   ```toml
-  rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.8.1", features = ["redis", "s3"] }  # giữ tag app đang dùng
+  rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.8.2", features = ["redis", "s3"] }  # giữ tag app đang dùng
   ```
 - **Admin SPA** đã build sẵn trong crate `rustcms-admin`. App bình thường không
   cần chạy `npm`. Chỉ khi sửa mã nguồn SPA trong repo rustcms mới phải chạy

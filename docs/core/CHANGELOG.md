@@ -6,6 +6,16 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.2] — 2026-10-21
+
+### Fixed (0.8.2)
+- React pages (ADR 0032): a read (`props.api.get`, `props.resources` reads)
+  started by a live mount and answered after a same-session remount (a
+  sub-path navigation) resolves instead of rejecting with `session_changed`,
+  so the query cache shared with the new view no longer shows that error.
+  Reads started after the mount ended, and reads across a session change,
+  still reject; writes are unchanged.
+
 ## [0.8.1] — 2026-10-20
 
 ### Added (0.8.1)

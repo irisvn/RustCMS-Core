@@ -41,6 +41,14 @@ export const sessionChanged = () => clientError(0, "session_changed", "error.ses
 
 const live = (session: Session, mount: MountToken) => mount.alive && session.api.epoch === mount.epoch;
 
+/**
+ * Whether a read answered now may still be delivered: its view is live, or
+ * only the view ended (a sub-path navigation remounted it) in the same
+ * session. Its answer then belongs to the same scope (the cache keys carry
+ * the epoch), so a shared query keeps it instead of an error.
+ */
+const deliverable = (session: Session, mount: MountToken) => session.api.epoch === mount.epoch;
+
 export function extensionApi(session: Session, mount: MountToken, namespace: string): ExtensionApi {
   const call = async <T>(method: string, path: string, body: unknown, query: Query | undefined): Promise<T> => {
     if (!live(session, mount)) throw sessionChanged();
@@ -51,15 +59,18 @@ export function extensionApi(session: Session, mount: MountToken, namespace: str
     // Rechecked when it runs: a queued write of a mount that went stale is never sent.
     const run = () =>
       live(session, mount) ? session.api.request<T>(method, `/x${canonical}${search}`, body) : Promise.reject(sessionChanged());
+    const read = method === "GET";
+    // A write's answer reaches a live view only; a read's, any view of this session.
+    const still = () => (read ? deliverable(session, mount) : live(session, mount));
     let result: T;
     try {
       // A maybe-applied write is recorded by `guardedWrite` before this sees it.
-      result = method === "GET" ? await run() : await guardedWrite(session, `x:${namespace}`, run);
+      result = read ? await run() : await guardedWrite(session, `x:${namespace}`, run);
     } catch (e) {
-      if (!live(session, mount)) throw sessionChanged();
+      if (!still()) throw sessionChanged();
       throw e;
     }
-    if (!live(session, mount)) throw sessionChanged();
+    if (!still()) throw sessionChanged();
     return result;
   };
   return Object.freeze({
@@ -100,15 +111,17 @@ export function extensionResources(session: Session, mount: MountToken, client: 
   const settle = async <T,>(slug: string, write: boolean, run: () => Promise<T>): Promise<T> => {
     if (!alive()) throw sessionChanged();
     used(slug);
+    // A read's answer reaches any view of this session (see `deliverable`).
+    const still = () => (write ? alive() : deliverable(session, mount));
     let result: T;
     try {
       result = await run();
     } catch (e) {
-      if (!alive()) throw sessionChanged();
+      if (!still()) throw sessionChanged();
       throw e;
     }
     if (write) await invalidateAfterWrite(client, slug);
-    if (!alive()) throw sessionChanged();
+    if (!still()) throw sessionChanged();
     return result;
   };
   const read = <T,>(slug: string, segments: string[], query?: Query) => {
