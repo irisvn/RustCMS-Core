@@ -16,6 +16,11 @@ All notable changes are documented here. The format follows
   Reads started after the mount ended, and reads across a session change,
   still reject; writes are unchanged.
 
+### Security (0.8.2)
+- `rustls-webpki` 0.103.16, `webpki-roots` and `webpki-root-certs` 1.0.10
+  (RUSTSEC-2026-0381, -0382, -0383: distrusted intermediates). An exception
+  to the two-week rule for dependency updates, approved for these patches.
+
 ## [0.8.1] — 2026-10-20
 
 ### Added (0.8.1)

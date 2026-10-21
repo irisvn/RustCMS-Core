@@ -8,6 +8,8 @@ was the first published one.
 - React pages: a read still in flight when a sub-path navigation remounts
   the view is delivered to the new view instead of a "session changed"
   error ([React pages](admin/react-pages.md)).
+- Security: updated TLS certificate verification crates (`rustls-webpki`,
+  `webpki-roots`) for RUSTSEC-2026-0381, -0382 and -0383.
 
 ## 0.8.1
 
