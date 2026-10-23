@@ -166,6 +166,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if !allowed {
             return Err(AppError::Forbidden);
         }
+        let links = self.link_inputs(ctx, op, viewed.as_ref()).await;
         Ok(ResourceSchema {
             schema_version: SCHEMA_VERSION,
             vocabulary_version: VOCABULARY_VERSION,
@@ -174,7 +175,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             abilities,
             form: FormSchema {
                 columns: self.form.columns,
-                components: self.components(ctx, &self.form.components, op),
+                components: self.components(ctx, &self.form.components, op, &links),
             },
             table: self.table_schema(ctx).await,
             relations: match (&viewed, op) {
@@ -400,6 +401,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             return Err(AppError::Forbidden);
         }
         let mut input = input;
+        // Links chosen in the form (ADR 0035): admitted and checked, written after the record.
+        let links = self.take_links(&wctx, Operation::Create, &mut input).await?;
         let bound = ctx.bound.as_ref().map(|(_, field, parent)| (field.clone(), self.fk_value(field, parent)));
         if let Some((field, value)) = &bound {
             input.insert(field.clone(), value.clone());
@@ -416,6 +419,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         }
         // What is written, hooks included: references are checked last.
         self.check_written(&wctx, &txn, &data).await?;
+        // Link targets, before the row's foreign keys lock what they reference.
+        let links = self.lock_links(&wctx, &txn, links).await?;
 
         let mut active = <<Entity<R> as EntityTrait>::ActiveModel as ActiveModelBehavior>::new();
         self.apply(&wctx, &mut active, &data, Operation::Create, None)?;
@@ -433,9 +438,11 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         }
         let model = active.insert(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?;
         self.check_parent_stored(&wctx, &model, &parents)?;
+        let link_audits = self.write_links(&wctx, &txn, &model, links).await?;
         R::after_save(&wctx, &txn, &model).await?;
         // As stored once the hooks ran.
         self.audit_outcome(&wctx, &txn, "created", None, &model, false, true).await?;
+        self.audit_links(&wctx, &txn, &model, link_audits).await?;
         if let Some(row) = &ctx.import_row {
             crate::imports::record_row(txn.as_ref(), row, "created", &self.key_of(&model)).await?;
         }
@@ -459,6 +466,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 &serde_json::Value::Object(self.claim_input(ctx, &input)),
             )
         });
+        let mut input = input;
+        // Links chosen in the form (ADR 0035): admitted and checked, written after the record.
+        let links = self.take_links(ctx, Operation::Update, &mut input).await?;
         let input = self.accept_input(ctx, Operation::Update, input)?;
         let (txn, wctx) = self.begin(ctx).await?;
         if let Some(claim) = &claim
@@ -478,6 +488,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
         self.check_written(&wctx, &txn, &data).await?;
+        // Link targets, before the row's foreign keys lock what they reference.
+        let links = self.lock_links(&wctx, &txn, links).await?;
         let model = if data.is_empty() {
             model
         } else {
@@ -487,9 +499,11 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?
         };
         self.check_parent_stored(&wctx, &model, &parents)?;
+        let link_audits = self.write_links(&wctx, &txn, &model, links).await?;
         R::after_save(&wctx, &txn, &model).await?;
         // Nothing changed: nothing to record.
         self.audit_outcome(&wctx, &txn, "updated", Some(&before), &model, false, false).await?;
+        self.audit_links(&wctx, &txn, &model, link_audits).await?;
         if let Some(row) = &ctx.import_row {
             crate::imports::record_row(txn.as_ref(), row, "updated", &self.key_of(&model)).await?;
         }
@@ -821,6 +835,16 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         keys: &[String],
     ) -> AppResult<Vec<crate::links::LinkOption>> {
         ResourceAdapter::link_options(self, ctx, relation, key, search, keys).await
+    }
+
+    async fn link_options_new(
+        &self,
+        ctx: &Ctx,
+        relation: &str,
+        search: Option<&str>,
+        keys: &[String],
+    ) -> AppResult<Vec<crate::links::LinkOption>> {
+        ResourceAdapter::link_options_new(self, ctx, relation, search, keys).await
     }
 
     async fn keys_in_scope(&self, ctx: &Ctx, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>> {

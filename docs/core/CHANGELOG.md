@@ -6,12 +6,16 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
-### Added (Unreleased)
+## [0.9.0]
+
+### Added (0.9.0)
 - `Resource::after_trash` and `Resource::after_restore`: run in the
   transaction of a trashing and of a restore (soft deletes), after the write,
-  with the record as stored; an error rolls the write back. Restores still
-  call `after_save` (unchanged), then `after_restore`. `after_force_delete`
-  (unchanged) is documented with them.
+  with the record as stored; an error rolls the write back. Restores call
+  `after_restore`, whose default calls `after_save` (so restores behave as
+  before; an override replaces that call). `after_force_delete` (unchanged)
+  is documented with them. Core has no bulk trash, restore or force delete:
+  bulk actions write through their handlers.
 - `ActionField::datetime`: an instant in an action's form, edited and
   labelled in UTC like the form's `DateTimePicker` of an instant column;
   strict RFC 3339 on the wire (ADR 0003), canonical UTC
@@ -31,6 +35,25 @@ All notable changes are documented here. The format follows
   parent record and the changed target keys (`attached`, `detached`,
   `pivot_updated`); an error rolls the write back. The parent row is still
   not updated by link writes (`updated_at` included).
+- `BelongsToManySelect::make(relation)` (ADR 0035): belongs-to-many links
+  chosen in the record's own create and edit form. The payload sends a
+  change (`{attach?, detach?}` of target keys), never a set, so others' and
+  hidden links are kept; `attach_{rel}` / `detach_{rel}` are admitted before
+  the keys are read and decided on the record as stored by the write; the
+  targets are locked through `lock_visible`; pivot rows,
+  `after_relation_change`, then `after_save` in the record's transaction;
+  audit `attached` / `detached` after `created` / `updated`. Targets are
+  locked before the record's row is written (its foreign keys never upgrade
+  a shared lock), per target resource in the registry's lock order
+  (`Registry::lock_rank`, deterministic); at most 100 keys per `attach` or
+  `detach` and 500 per target resource and save; refused at boot for the
+  media library and for relations with required pivot fields. Route
+  `GET resources/{slug}/relations/{relation}/options` (create forms), oracle
+  cases. Vocabulary 9: `InputType::BelongsToMany`, `InputSchema.links`
+  (`LinksSchema {attach, detach}`); `DynResource::link_options_new`. The SPA
+  shows the current links as chips (from the relation's list, at most 100),
+  a search to add more (`RelationSelect` gains `exclude` and `onPick`), and
+  invalidates the record's relation lists after a save.
 
 - Record forms ask before leaving with unsaved changes: the panel's dialog
   for in-app navigation (TanStack Router `useBlocker`), the browser's prompt
@@ -38,7 +61,7 @@ All notable changes are documented here. The format follows
   uncertain, or when the session sends the tab elsewhere
   (`lib/leave.ts`).
 
-### Changed (Unreleased)
+### Changed (0.9.0)
 - Rich text: the link button opens a dialog (the panel's `Dialog`,
   translated; checked like the server; edits or removes the link at the
   cursor; inserts the address as linked text when nothing is selected)

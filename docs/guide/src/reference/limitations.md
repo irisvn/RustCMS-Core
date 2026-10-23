@@ -4,9 +4,11 @@ What RustCMS does not do yet, and behaviours to know before relying on it.
 
 ## Not supported yet
 
-- Choosing belongs-to-many links in the record's own form (use the relation
-  manager on its page); belongs-to-many to the same resource, two relations
-  over one pivot table, or to a resource declaring `lock_parent`.
+- Pivot columns in the record's own form (a `BelongsToManySelect` links with
+  the pivot's database defaults; edit pivot columns in the relation manager),
+  and a `BelongsToManySelect` for relations with required pivot fields or
+  records with more than 100 links; belongs-to-many to the same resource, two
+  relations over one pivot table, or to a resource declaring `lock_parent`.
 - Excel files; dashboard widgets other than counts (no sums or averages), charts in time zones other than UTC.
 - Email verification flows (invitations mark the address verified).
 - Mail rate limits shared between instances (`max_per_minute` counts per process); DKIM signing; attachments.

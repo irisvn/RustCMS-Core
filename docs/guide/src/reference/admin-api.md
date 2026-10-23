@@ -28,6 +28,8 @@ values follow the [wire format](wire-format.md).
 | POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (media library enabled) |
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
+| GET | `/resources/{slug}/records/{key}/relations/{relation}/options?search=&keys=` | `{data: [{value, label, attached}]}`: records to attach to a record (`attach_{relation}` on it) |
+| GET | `/resources/{slug}/relations/{relation}/options?search=&keys=` | `{data: [{value, label, attached: false}]}`: records to attach in a create form's [`BelongsToManySelect`](../admin/relationships.md#choosing-links-in-the-records-form) (`create` and `attach_{relation}`) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../admin/users-roles.md) |
 | GET | `/system/permission-presets` | `[{id, label, description?, permissions}]` (`roles.view_any` or `permissions.view_any`); `/system/permissions` items carry `area`, `areaLabel`, `areaSort`, and `label`/`description` when declared |
 | GET / PUT | `/settings/{group}` | settings pages, see [Settings](../admin/settings.md#api) |

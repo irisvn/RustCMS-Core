@@ -247,6 +247,7 @@ fn input_schema(ctx: &Ctx, field: &SettingField, input: &crate::ui::Input, disab
         widget: None,
         props: None,
         media: None,
+        links: None,
     }
 }
 

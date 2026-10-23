@@ -77,6 +77,23 @@
         "rules": [],
         "type": "date_time_picker",
         "valueType": "instant"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Tags",
+        "links": {
+          "attach": true,
+          "detach": false
+        },
+        "name": "tags",
+        "nullable": false,
+        "relationship": {
+          "resource": "tags"
+        },
+        "rules": [],
+        "type": "belongs_to_many",
+        "valueType": "links"
       }
     ]
   },
@@ -267,5 +284,5 @@
     ],
     "searchable": true
   },
-  "vocabularyVersion": 8
+  "vocabularyVersion": 9
 }

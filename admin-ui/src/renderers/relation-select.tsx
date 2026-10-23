@@ -58,7 +58,7 @@ export function RelationValue({ slug, field, record, value }: {
  * `value` is the JSON encoding of the related key, "" for none.
  */
 export function RelationSelect({
-  slug, field, path, record, value, onChange, disabled, invalid, id, placeholder, describedBy, onBlur,
+  slug, field, path, record, value, onChange, disabled, invalid, id, placeholder, describedBy, onBlur, exclude, onPick,
 }: {
   slug: string;
   field: string;
@@ -73,6 +73,10 @@ export function RelationSelect({
   placeholder?: string;
   describedBy?: string;
   onBlur?: () => void;
+  /** Keys not offered (already chosen elsewhere, e.g. a multi-select's records). */
+  exclude?: ReadonlySet<string>;
+  /** Called with the chosen option itself (its label), before `onChange`. */
+  onPick?: (option: SelectOption) => void;
 }) {
   const t = useT();
   const api = useApi();
@@ -93,7 +97,7 @@ export function RelationSelect({
   // Clear is a keyboard-selectable option too. Never choose stale results while a search is changing.
   const options: (SelectOption | null)[] = [
     ...(value !== "" ? [null] : []),
-    ...(search === debounced ? results.data ?? [] : []),
+    ...(search === debounced ? (results.data ?? []).filter((o) => !exclude?.has(keyOf(JSON.stringify(o.value)))) : []),
   ];
   const activeIndex = options.length ? Math.min(active, options.length - 1) : -1;
   const activeId = activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined;
@@ -117,6 +121,7 @@ export function RelationSelect({
     if (restoreFocus) trigger.current?.focus();
   };
   const choose = (option: SelectOption | null) => {
+    if (option) onPick?.(option);
     onChange(option ? JSON.stringify(option.value) : "");
     close(true);
   };
@@ -208,7 +213,7 @@ export function RelationSelect({
                 : t("relation.loadFailed")}
             </p>
           )}
-          {results.data?.length === 0 && search === debounced && <p role="status" className="px-2.5 py-2 text-sm text-muted-foreground">{t("list.noResults")}</p>}
+          {results.data && !options.some((o) => o !== null) && search === debounced && <p role="status" className="px-2.5 py-2 text-sm text-muted-foreground">{t("list.noResults")}</p>}
         </div>
       )}
     </div>

@@ -3,11 +3,11 @@
 RustCMS is in pre-release. The current version is **0.8.2**; 0.1.0-alpha.0
 was the first published one.
 
-## Unreleased
+## 0.9.0
 
 - **`Resource::after_trash` and `after_restore`** run in the transaction of a
-  trashing and of a restore, with the record; restores still call
-  `after_save` first ([Resources](admin/resources.md#hooks)).
+  trashing and of a restore, with the record; the default `after_restore`
+  calls `after_save`, as restores did ([Resources](admin/resources.md#hooks)).
 - **`ActionField::datetime`**: a date and time in an action's form, entered
   in UTC ([Actions](admin/actions.md)).
 - **`SettingsPage::after_save`** runs in the save's transaction with the old
@@ -17,6 +17,10 @@ was the first published one.
 - **`Resource::after_relation_change`** runs when links of a belongs-to-many
   relation change, in the same transaction
   ([Relationships](admin/relationships.md#reacting-to-link-changes)).
+- **Links in the record's form**: `BelongsToManySelect::make("tags")` lets
+  users choose belongs-to-many links while creating or editing a record,
+  with the relation manager's permissions
+  ([Relationships](admin/relationships.md#choosing-links-in-the-records-form)).
 - Rich text links are edited in a dialog; record forms ask before leaving
   with unsaved changes ([Forms](admin/forms.md#leaving-with-unsaved-changes)).
 

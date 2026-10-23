@@ -99,9 +99,9 @@ the policy allows `view` and `restore` or `force_delete` on it.
 `ResourceSchema` = `{schemaVersion, vocabularyVersion, resource, operation,
 abilities, form, table, relations?}` (`schemaVersion` 2: actions may carry a
 `form`; vocabulary 7: relations carry `kind`, `attach`, `detach`, `pivot`,
-`attachForm`, `pivotForm`; vocabulary 8 (current): encrypted fields are
+`attachForm`, `pivotForm`; vocabulary 8: encrypted fields are
 `secret` and `secret_map` inputs, with masked views and explicit write
-operations). It contains only what the user may see: inputs for
+operations; vocabulary 9 (current): `belongs_to_many` inputs, ADR 0035). It contains only what the user may see: inputs for
 fields they may write (create), readable fields with `disabled` set when not
 writable (edit), and actions they may run. The reference payload is
 [`fixtures/contract/posts.schema.json`](https://github.com/irisvn/RustCMS-Core/blob/main/fixtures/contract/posts.schema.json),
@@ -111,6 +111,15 @@ kinds that are not nullable, `""`) and client `rules` (`required`, `max_length`
 in characters); the server re-validates everything. List pages request
 `operation=view` without a key. Inputs marked `writeOnly` (writable but not readable, e.g. a
 password) carry no current value; omit them from the payload to keep the stored value.
+
+Vocabulary 9 adds `belongs_to_many` inputs (ADR 0035): `name` is a
+belongs-to-many relation, `relationship.resource` its target, `valueType`
+`links`, and `links: {attach, detach}` what the user may change. Records
+carry no value for it: edit forms read the current links from the relation's
+list. The payload sends a change, `{attach?: [keys], detach?: [keys]}`, and
+only when it changes something; create forms read options from
+`GET /resources/{slug}/relations/{relation}/options`, edit forms from the
+record's link options. Older clients render it read-only and never send it.
 
 Vocabulary 5 adds `secret` inputs (settings pages): the value is never sent;
 `SettingsResponse.secrets` gives each one's state (`set`, `unset`,

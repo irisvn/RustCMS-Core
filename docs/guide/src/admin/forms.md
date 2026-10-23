@@ -37,6 +37,7 @@ write are left out or disabled, and the server checks everything again.
 | `FileUpload`, `RichEditor` | [media and rich text](media.md) |
 | `CustomInput::make(field, "vendor/widget")` | a [custom widget](custom-fields.md) |
 | `SecretInput`, `SecretMapInput` | [encrypted fields](#encrypted-fields) (chosen for them by default) |
+| `BelongsToManySelect::make(relation)` | the links of a [belongs-to-many relation](relationships.md#choosing-links-in-the-records-form) |
 
 Common options: `.label(…)`, `.placeholder(…)`, `.help(…)`, `.column_span(n)`.
 `SelectInput` is named so it does not clash with `sea_orm::Select`.

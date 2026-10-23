@@ -56,6 +56,7 @@ fn the_admin_route_list_is_unchanged() {
         "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}/detach",
         "PATCH /admin/api/resources/{slug}/records/{key}/relations/{relation}/links/{target}",
         "GET /admin/api/resources/{slug}/records/{key}/relations/{relation}/options",
+        "GET /admin/api/resources/{slug}/relations/{relation}/options",
         "POST /admin/api/resources/{slug}/actions/{action}",
         "GET /admin/api/resources/{slug}/actions/{action}/fields/{field}/options",
         "GET /admin/api/resources/{slug}/fields/{field}/options",

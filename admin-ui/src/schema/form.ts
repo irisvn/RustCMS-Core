@@ -79,8 +79,9 @@ export function pairsOf(value: FormValue): [string, string][] {
 
 export const encodePair = (key: string, value: string) => JSON.stringify([key, value]);
 
-/** Input types of vocabulary version 5. */
+/** Input types of vocabulary version 9. */
 export const KNOWN_INPUT_TYPES = new Set<string>([
+  "belongs_to_many",
   "secret",
   "secret_map",
   "custom",
@@ -118,6 +119,9 @@ export function toFormValue(input: InputSchema, value: unknown): FormValue {
   if (isTriState(input)) return value === null || value === undefined ? "" : value ? "true" : "false";
   if (isResourceSecret(input)) return secretFormValue(value);
   switch (input.type) {
+    case "belongs_to_many":
+      // A change of links ("" for none): records never carry the links themselves.
+      return "";
     case "secret_map":
       return secretMapFormValue(value);
     case "toggle":
@@ -155,6 +159,8 @@ export function fromFormValue(input: InputSchema, value: FormValue): unknown {
   if (isTriState(input)) return value === "" ? null : value === "true";
   if (isResourceSecret(input)) return secretOperation(value);
   switch (input.type) {
+    case "belongs_to_many":
+      return value === "" ? undefined : (JSON.parse(value as string) as JsonValue);
     case "secret_map":
       return secretMapOperation(value);
     case "toggle":
@@ -228,6 +234,8 @@ export function payloadOf(
     // Hidden inputs only send back a value they were given; an unset one is left
     // to server defaults and hooks.
     if (input.type === "hidden" && value === "") continue;
+    // Links: only a change (attach / detach) is sent.
+    if (input.type === "belongs_to_many" && value === "") continue;
     out[input.name] = fromFormValue(input, value);
   }
   return out;
@@ -291,6 +299,9 @@ export function zodSchema(inputs: InputSchema[]) {
         });
         break;
       }
+      case "belongs_to_many":
+        shape[input.name] = z.string();
+        break;
       case "rich_editor":
         shape[input.name] = z.string().superRefine((value, ctx) => {
           if (!input.disabled && required && value === "") ctx.addIssue({ code: "custom", message: t("issue.required") });

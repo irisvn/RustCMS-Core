@@ -37,7 +37,7 @@ and scripts (ADR 0006).
   files with their own routes on top of `Storage`.
 - Document format changes need a new version and a migration path.
 
-## Amendment (after 0.8.2): seeing every file without managing it
+## Amendment (0.9.0): seeing every file without managing it
 
 The owner scope had one way out, `media.manage_all`, which also let its
 holder trash and delete other users' files (the scope opens them to every

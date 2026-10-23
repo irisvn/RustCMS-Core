@@ -225,7 +225,38 @@ impl<R: Resource> ResourceAdapter<R> {
                 input.name
             );
         }
+        let relations = R::relations();
+        let mut link_inputs = HashSet::new();
         for input in form.inputs() {
+            if input.kind == InputType::BelongsToMany {
+                // The links of a belongs-to-many relation (ADR 0035).
+                let name = input.name.as_str();
+                let relation = relations.iter().find(|r| r.name == name && r.is_many()).unwrap_or_else(|| {
+                    panic!("resource `{slug}`: BelongsToManySelect `{name}` is not a belongs-to-many relation")
+                });
+                assert!(
+                    !seen.contains(name),
+                    "resource `{slug}`: BelongsToManySelect `{name}` shares its name with a field"
+                );
+                assert!(link_inputs.insert(name), "resource `{slug}`: BelongsToManySelect `{name}` appears twice");
+                assert!(
+                    !relation.pivot_fields.iter().any(|f| f.required),
+                    "resource `{slug}`: relation `{name}` has required pivot columns; links are made in its \
+                     relation manager, not with a BelongsToManySelect"
+                );
+                assert!(
+                    input.options.is_empty() && input.widget.is_none(),
+                    "resource `{slug}`: BelongsToManySelect `{name}` takes its options from the relation"
+                );
+                // Writes check media references under shared locks first; locking
+                // the same rows as link targets afterwards would upgrade them.
+                assert!(
+                    relation.target != crate::media::SLUG,
+                    "resource `{slug}`: BelongsToManySelect `{name}` cannot link the media library; use a \
+                     `Field::media_list` field"
+                );
+                continue;
+            }
             assert!(
                 seen.contains(input.name.as_str()),
                 "resource `{slug}`: form input `{}` is not a field",
@@ -346,7 +377,7 @@ impl<R: Resource> ResourceAdapter<R> {
             pk_kind,
             policy: R::policy(),
             actions,
-            relations: R::relations(),
+            relations,
             form,
             key_values,
             secrets,

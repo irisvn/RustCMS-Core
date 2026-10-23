@@ -44,7 +44,7 @@ and add readable pivot columns by target key. Writes:
   history shows targets and pivot values (those readable now) only to readers
   who may list the target, else `{relation, count}`; pivot updates that change
   nothing are not written nor recorded.
-- `Resource::after_relation_change` (added after 0.8.2): the parent's hook,
+- `Resource::after_relation_change` (added in 0.9.0): the parent's hook,
   in the write's transaction after the pivot rows and the audit entry, with
   the parent model and a `RelationChange` of the targets that really changed;
   writes that change nothing call nothing. The parent row is not updated.
@@ -73,6 +73,6 @@ symmetric difference grantable).
   action abilities that need a permission should be listed in `admits`
   (documented).
 - Multi-select of links in the record form (replacing a set, stale checks,
-  hidden links) is deferred.
+  hidden links) is deferred (done in 0.9.0 as a change, not a set: ADR 0035).
 - Self relations and inverse managers over one pivot need another lock order
   first; refused at boot until then.

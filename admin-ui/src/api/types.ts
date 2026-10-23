@@ -4,7 +4,7 @@ export type * from "./types.gen";
 
 /** Schema and vocabulary versions this bundle understands. */
 export const SCHEMA_VERSION = 2;
-export const VOCABULARY_VERSION = 8;
+export const VOCABULARY_VERSION = 9;
 
 export interface Me {
   user: { id: string; name: string; email: string };

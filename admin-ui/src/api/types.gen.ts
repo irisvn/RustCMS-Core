@@ -2,7 +2,7 @@
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
-export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value" | "file_upload" | "rich_editor" | "custom" | "secret" | "secret_map";
+export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value" | "file_upload" | "rich_editor" | "custom" | "secret" | "secret_map" | "belongs_to_many";
 
 export type LayoutType = "section" | "grid" | "tabs" | "tab";
 
@@ -90,6 +90,16 @@ accept: Array<string>,
  * Largest accepted file, in bytes.
  */
 maxSize?: number, };
+
+export type LinksSchema = { 
+/**
+ * Link more records (`attach_{relation}`).
+ */
+attach: boolean, 
+/**
+ * Unlink linked records (`detach_{relation}`; edit forms only).
+ */
+detach: boolean, };
 
 export type RelationKind = "hasMany" | "belongsToMany";
 
@@ -246,7 +256,11 @@ props?: JsonValue,
 /**
  * Media references (`file_upload` inputs).
  */
-media?: MediaSchema, };
+media?: MediaSchema, 
+/**
+ * What the user may change (`belongs_to_many` inputs, vocabulary 9).
+ */
+links?: LinksSchema, };
 
 export type LayoutSchema = { 
 /**

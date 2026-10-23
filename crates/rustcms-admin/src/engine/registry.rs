@@ -177,6 +177,14 @@ pub trait DynResource: Send + Sync {
     ) -> AppResult<BTreeMap<String, Data>>;
     /// Attaches, detaches or updates links of record `key`.
     async fn link(&self, ctx: &Ctx, relation: &str, key: &str, request: LinkRequest) -> AppResult<LinkOutcome>;
+    /// Targets offered for attaching in a create form (no record yet).
+    async fn link_options_new(
+        &self,
+        ctx: &Ctx,
+        relation: &str,
+        search: Option<&str>,
+        keys: &[String],
+    ) -> AppResult<Vec<LinkOption>>;
     /// Targets offered for attaching to record `key`.
     async fn link_options(
         &self,
@@ -192,6 +200,9 @@ pub trait DynResource: Send + Sync {
 #[derive(Default)]
 pub struct Registry {
     resources: HashMap<&'static str, Arc<dyn DynResource>>,
+    /// Position of each resource in the lock order (ADR 0018, 0020): rows of
+    /// a lower position are locked first. Set by [`Registry::finish`].
+    lock_order: HashMap<&'static str, usize>,
 }
 
 impl Registry {
@@ -284,8 +295,18 @@ impl Registry {
                 );
             }
         }
-        self.check_lock_order();
-        Arc::new(self)
+        let mut registry = self;
+        registry.lock_order = registry.check_lock_order();
+        Arc::new(registry)
+    }
+
+    /// The order in which a write that locks rows of several resources (the
+    /// targets of a record form's links, ADR 0035) locks them: parents before
+    /// their targets and `lock_parent` children, as every other writer does;
+    /// resources the lock graph does not order, by slug.
+    #[doc(hidden)]
+    pub fn lock_rank(&self, slug: &str) -> (usize, String) {
+        (self.lock_order.get(slug).copied().unwrap_or(usize::MAX), slug.to_owned())
     }
 }
 
@@ -296,8 +317,8 @@ impl Registry {
     ///
     /// # Panics
     /// On a cycle.
-    fn check_lock_order(&self) {
-        let mut edges: HashMap<&str, Vec<&str>> = HashMap::new();
+    fn check_lock_order(&self) -> HashMap<&'static str, usize> {
+        let mut edges: HashMap<&'static str, Vec<&'static str>> = HashMap::new();
         for resource in self.resources.values() {
             if let Some((_, parent)) = &resource.meta().parent_lock {
                 edges.entry(*parent).or_default().push(resource.slug());
@@ -306,12 +327,18 @@ impl Registry {
                 edges.entry(resource.slug()).or_default().push(relation.target);
             }
         }
+        // The same order on every instance, whatever the maps' iteration order.
+        for targets in edges.values_mut() {
+            targets.sort_unstable();
+            targets.dedup();
+        }
         // Depth-first search; `on_path` holds the current path.
         fn visit<'a>(
             node: &'a str,
             edges: &HashMap<&'a str, Vec<&'a str>>,
             done: &mut HashSet<&'a str>,
             on_path: &mut Vec<&'a str>,
+            finished: &mut Vec<&'a str>,
         ) {
             if done.contains(node) {
                 return;
@@ -322,17 +349,21 @@ impl Registry {
             }
             on_path.push(node);
             for next in edges.get(node).into_iter().flatten() {
-                visit(next, edges, done, on_path);
+                visit(next, edges, done, on_path, finished);
             }
             on_path.pop();
             done.insert(node);
+            finished.push(node);
         }
         let mut done = HashSet::new();
+        let mut finished = Vec::new();
         let mut slugs: Vec<&str> = edges.keys().copied().collect();
         slugs.sort_unstable();
         for slug in slugs {
-            visit(slug, &edges, &mut done, &mut Vec::new());
+            visit(slug, &edges, &mut done, &mut Vec::new(), &mut finished);
         }
+        // A node finishes after everything it locks before: reversed, parents come first.
+        finished.into_iter().rev().enumerate().map(|(rank, slug)| (slug, rank)).collect()
     }
 }
 

@@ -23,6 +23,7 @@ import {
   type FormValues,
 } from "@/schema/form";
 import { RelationSelect, RelationValue } from "./relation-select";
+import { LinksWidget } from "./links";
 import { FileUploadWidget, MediaThumb } from "./media";
 import { RichEditorWidget, RichTextView } from "./rich-text";
 import { CustomField } from "./custom";
@@ -205,7 +206,8 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
         <ReadOnlyComponents components={component.components} data={data} slug={slug} record={record} />
       </SchemaLayout>;
     }
-    if (component.type === "hidden" || component.writeOnly) return null;
+    // Links are shown by the relation manager on the record's page.
+    if (component.type === "hidden" || component.type === "belongs_to_many" || component.writeOnly) return null;
     const supplied = Object.prototype.hasOwnProperty.call(data, component.name);
     const value = supplied ? data[component.name] : undefined;
     const unknown = !KNOWN_INPUTS.has(component.type);
@@ -424,6 +426,8 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
           ))}
         </NativeSelect>
       );
+    case "belongs_to_many":
+      return <LinksWidget id={id} input={input} slug={ctx.slug} record={ctx.record} value={text} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} onBlur={onBlur} />;
     case "file_upload":
       return <FileUploadWidget id={id} input={input} value={value} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} onBusy={(busy) => ctx.onBusy?.(input.name, busy)} />;
     case "rich_editor":

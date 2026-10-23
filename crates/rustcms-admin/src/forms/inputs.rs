@@ -42,6 +42,10 @@ pub enum InputType {
     /// Named secrets of a `Field::encrypted_map` field: the names, never the
     /// values; each kept, replaced or removed (vocabulary 8).
     SecretMap,
+    /// The links of a belongs-to-many relation, chosen in the record's own
+    /// form; the value is a change, `{attach?: [keys], detach?: [keys]}`
+    /// (vocabulary 9, ADR 0035).
+    BelongsToMany,
 }
 
 /// An option of a select, checkbox list or select filter.
@@ -216,4 +220,8 @@ input_types! {
     SecretInput => Secret,
     /// Named secrets of a `Field::encrypted_map` field.
     SecretMapInput => SecretMap,
+    /// Several records of a belongs-to-many relation, linked from the
+    /// record's own form: `BelongsToManySelect::make("tags")` names a
+    /// `Relation::belongs_to_many` of the resource (ADR 0035).
+    BelongsToManySelect => BelongsToMany,
 }

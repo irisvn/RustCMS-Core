@@ -325,6 +325,8 @@ impl Resource for PostResource {
             SelectInput::make("category_id"),
             Toggle::make("published"),
             DateTimePicker::make("published_at"),
+            // The tags, linked from the form (ADR 0035).
+            rustcms_admin::BelongsToManySelect::make("tags"),
         ])
     }
 

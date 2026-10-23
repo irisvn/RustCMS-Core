@@ -8,6 +8,7 @@ import { SessionContext } from "@/api/context";
 import type { ResourceSchema } from "@/api/types";
 import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
+import { LinksWidget, addLink, linksValue, removeLink } from "@/renderers/links";
 import postsList from "../../fixtures/contract/posts.schema.json";
 import postsView from "../../fixtures/contract/posts.schema.view.json";
 
@@ -192,6 +193,158 @@ it("edits an instant action field in UTC and sends it as RFC 3339", async () => 
   await userEvent.click(within(dialog).getByRole("button", { name: "Run" }));
   await waitFor(() => expect(runs).toHaveLength(1));
   expect(runs[0]).toEqual({ keys: [POST], data: { at: "2026-10-12T09:30:00Z" } });
+});
+
+it("links records from the create form and sends only the change", async () => {
+  const created: unknown[] = [];
+  server.use(
+    http.get("*/admin/api/resources/posts/schema", () => HttpResponse.json({ ...list, operation: "create" })),
+    http.get("*/admin/api/resources/posts/relations/tags/options", () =>
+      HttpResponse.json({ data: [{ value: "rust", label: "RUST", attached: false }, { value: "sql", label: "SQL", attached: false }] }),
+    ),
+    http.post("*/admin/api/resources/posts/records", async ({ request }) => {
+      created.push(await request.json());
+      return HttpResponse.json({ data: record(POST, "New") }, { status: 201 });
+    }),
+  );
+  mount("/r/posts/create");
+  await userEvent.type(await screen.findByLabelText(/^Title/), "New");
+  expect(screen.getByText("None linked.")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("combobox", { name: "Tags" }));
+  await userEvent.click(await screen.findByRole("button", { name: "SQL" }));
+  const chosen = screen.getByRole("list", { name: "Tags" });
+  expect(within(chosen).getByText("SQL")).toBeInTheDocument();
+  // A record chosen here can be put back before saving.
+  await userEvent.click(screen.getByRole("combobox", { name: "Tags" }));
+  await userEvent.click(await screen.findByRole("button", { name: "RUST" }));
+  await userEvent.click(within(screen.getByRole("list", { name: "Tags" })).getByRole("button", { name: "Remove RUST" }));
+  await userEvent.click(screen.getByRole("button", { name: "Create" }));
+  await waitFor(() => expect(created).toHaveLength(1));
+  expect(created[0]).toMatchObject({ title: "New", tags: { attach: ["sql"] } });
+});
+
+it("changes the links of a record from its edit form", async () => {
+  const patches: unknown[] = [];
+  const edit = structuredClone(list) as ResourceSchema;
+  const tagsInput = edit.form.components.find((c) => "name" in c && c.name === "tags") as { links?: { attach: boolean; detach: boolean } };
+  tagsInput.links = { attach: true, detach: true };
+  server.use(
+    http.get("*/admin/api/resources/posts/schema", ({ request }) =>
+      HttpResponse.json(new URL(request.url).searchParams.get("operation") === "edit" ? { ...edit, operation: "edit", abilities: { ...edit.abilities, view: true, update: true } } : { ...list, operation: "view" }),
+    ),
+    http.patch(`*/admin/api/resources/posts/records/${POST}`, async ({ request }) => {
+      patches.push(await request.json());
+      return HttpResponse.json({ data: record(POST, "Mine") });
+    }),
+  );
+  mount(`/r/posts/records/${POST}/edit`);
+  // The current links come from the relation's list.
+  const chosen = await screen.findByRole("list", { name: "Tags" });
+  await userEvent.click(within(chosen).getByRole("button", { name: "Remove RUST" }));
+  expect(screen.queryByRole("list", { name: "Tags" })).toBeNull();
+  await userEvent.click(screen.getByRole("combobox", { name: "Tags" }));
+  await userEvent.click(await screen.findByRole("button", { name: "SQL" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(patches).toHaveLength(1));
+  expect(patches[0]).toEqual({ tags: { attach: ["sql"], detach: ["rust"] } });
+});
+
+it("undoes a pending removal without the right to attach", async () => {
+  const patches: unknown[] = [];
+  const edit = structuredClone(list) as ResourceSchema;
+  const tagsInput = edit.form.components.find((c) => "name" in c && c.name === "tags") as { links?: { attach: boolean; detach: boolean } };
+  tagsInput.links = { attach: false, detach: true };
+  server.use(
+    http.get("*/admin/api/resources/posts/schema", () =>
+      HttpResponse.json({ ...edit, operation: "edit", abilities: { ...edit.abilities, view: true, update: true } }),
+    ),
+    http.patch(`*/admin/api/resources/posts/records/${POST}`, async ({ request }) => {
+      patches.push(await request.json());
+      return HttpResponse.json({ data: record(POST, "Mine") });
+    }),
+  );
+  mount(`/r/posts/records/${POST}/edit`);
+  const chosen = await screen.findByRole("list", { name: "Tags" });
+  expect(screen.queryByRole("combobox", { name: "Tags" })).toBeNull();
+  await userEvent.click(within(chosen).getByRole("button", { name: "Remove RUST" }));
+  const removed = screen.getByRole("list", { name: "Removed, not saved yet" });
+  await userEvent.click(within(removed).getByRole("button", { name: "Keep RUST" }));
+  expect(within(screen.getByRole("list", { name: "Tags" })).getByText("RUST")).toBeInTheDocument();
+  // Nothing changed: only the title is sent.
+  await userEvent.type(screen.getByLabelText(/^Title/), "!");
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(patches).toHaveLength(1));
+  expect(patches[0]).toEqual({ title: "Mine!" });
+});
+
+it("lets a blind editor attach without showing the current links", async () => {
+  const patches: unknown[] = [];
+  const edit = structuredClone(list) as ResourceSchema;
+  const tagsInput = edit.form.components.find((c) => "name" in c && c.name === "tags") as { links?: { attach: boolean; detach: boolean } };
+  tagsInput.links = { attach: true, detach: false };
+  server.use(
+    http.get("*/admin/api/resources/posts/schema", () =>
+      HttpResponse.json({ ...edit, operation: "edit", abilities: { ...edit.abilities, view: false, update: true } }),
+    ),
+    http.get(`*/admin/api/resources/posts/records/${POST}/relations/tags`, () =>
+      HttpResponse.json({ message: "Forbidden.", code: "forbidden" }, { status: 403 }),
+    ),
+    http.patch(`*/admin/api/resources/posts/records/${POST}`, async ({ request }) => {
+      patches.push(await request.json());
+      return HttpResponse.json({ data: { ...record(POST, "Mine"), abilities: { view: false, update: true } } });
+    }),
+  );
+  mount(`/r/posts/records/${POST}/edit`);
+  expect(await screen.findByText("You may link more records here, but not see the current links.")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("combobox", { name: "Tags" }));
+  await userEvent.click(await screen.findByRole("button", { name: "SQL" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(patches).toHaveLength(1));
+  expect(patches[0]).toEqual({ tags: { attach: ["sql"] } });
+});
+
+it("stops offering records once a save would attach the server's maximum", () => {
+  const many = JSON.stringify({ attach: Array.from({ length: 100 }, (_, i) => `t${i}`) });
+  const input = (list.form.components.find((c) => "name" in c && c.name === "tags") ?? null) as unknown as Parameters<typeof LinksWidget>[0]["input"];
+  const queryClient = new QueryClient();
+  const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, queryClient, () => {});
+  render(
+    <SessionContext.Provider value={session}>
+      <QueryClientProvider client={queryClient}>
+        <LinksWidget id="field-tags" input={input} slug="posts" value={many} onChange={() => {}} invalid={false} onBlur={() => {}} />
+      </QueryClientProvider>
+    </SessionContext.Provider>,
+  );
+  expect(screen.getByText("At most 100 records are linked per save: save, then add more.")).toBeInTheDocument();
+  expect(screen.queryByRole("combobox")).toBeNull();
+});
+
+it("shows linked records whatever their key, `__proto__` included", async () => {
+  const edit = structuredClone(list) as ResourceSchema;
+  const tagsInput = edit.form.components.find((c) => "name" in c && c.name === "tags") as { links?: { attach: boolean; detach: boolean } };
+  tagsInput.links = { attach: true, detach: true };
+  server.use(
+    http.get("*/admin/api/resources/posts/schema", () =>
+      HttpResponse.json({ ...edit, operation: "edit", abilities: { ...edit.abilities, view: true, update: true } }),
+    ),
+    http.get(`*/admin/api/resources/posts/records/${POST}/relations/tags`, () =>
+      HttpResponse.json({ data: [{ key: "__proto__", title: "Proto", abilities: { view: true }, data: {} }], meta: { page: 1, perPage: 100, total: 1, lastPage: 1 } }),
+    ),
+  );
+  mount(`/r/posts/records/${POST}/edit`);
+  const chosen = await screen.findByRole("list", { name: "Tags" });
+  expect(within(chosen).getByText("Proto")).toBeInTheDocument();
+});
+
+it("keeps a link change disjoint when the current links change meanwhile", () => {
+  // SQL was chosen here, then someone else linked it: removing its chip only drops the attach…
+  expect(removeLink({ attach: ["sql"], detach: [] }, "sql", new Set(["sql"]), false)).toEqual({ attach: [], detach: [] });
+  // …or, with `detach`, unlinks it, never both.
+  expect(removeLink({ attach: ["sql"], detach: [] }, "sql", new Set(["sql"]), true)).toEqual({ attach: [], detach: ["sql"] });
+  expect(addLink({ attach: [], detach: ["rust"] }, "rust", new Set(["rust"]))).toEqual({ attach: [], detach: [] });
+  expect(addLink({ attach: [], detach: [] }, "go", new Set())).toEqual({ attach: ["go"], detach: [] });
+  expect(linksValue({ attach: ["sql", "go"], detach: ["sql"] })).toBe(JSON.stringify({ attach: ["go"], detach: ["sql"] }));
+  expect(linksValue({ attach: [], detach: [] })).toBe("");
 });
 
 it("lays resource permissions out as a matrix and keeps what the user cannot change", async () => {

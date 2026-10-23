@@ -11,7 +11,7 @@ use crate::ui::{ColumnType, FilterType, InputType, LayoutType, SelectOption};
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 8;
+pub const VOCABULARY_VERSION: u32 = 9;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -164,6 +164,22 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media: Option<MediaSchema>,
+    /// What the user may change (`belongs_to_many` inputs, vocabulary 9).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub links: Option<LinksSchema>,
+}
+
+/// The changes a `belongs_to_many` input may send (checked again by the
+/// server on every write, on the record as stored then).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct LinksSchema {
+    /// Link more records (`attach_{relation}`).
+    pub attach: bool,
+    /// Unlink linked records (`detach_{relation}`; edit forms only).
+    pub detach: bool,
 }
 
 /// What a media input accepts (checked again by the server on every write).

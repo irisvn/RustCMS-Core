@@ -280,6 +280,8 @@ export function useSaveRecord(slug: string, key?: string, origin?: string, via?:
     onSuccess: async () => {
       await invalidateAfterWrite(client, slug);
       if (via) await client.invalidateQueries({ queryKey: keys.records(via.parent) });
+      // Links chosen in the form: this record's relation lists (cached under each target).
+      await client.invalidateQueries({ predicate: (q) => q.queryKey[0] === "records" && q.queryKey[2] === "relation" && q.queryKey[3] === slug });
     },
   });
 }
@@ -345,3 +347,23 @@ export function fetchOptions(
     })
     .then((r) => r.data);
 }
+
+/**
+ * The links of `via.record` a form's `belongs_to_many` input starts from: the
+ * relation's list (scope and policy of the target), at most `max`.
+ */
+export function useFormLinks(target: string, via: Via, max: number, enabled: boolean) {
+  const api = useApi();
+  return useQuery({
+    queryKey: [...keys.records(target), "relation", via.parent, via.record, via.relation, "form", max] as const,
+    queryFn: () => api.get<LinkPage>(relationPath(via), { per_page: String(max) }),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/** Where a form's `belongs_to_many` input reads the records it may attach. */
+export const formLinkOptionsPath = (slug: string, relation: string, record?: string) =>
+  record === undefined
+    ? `/resources/${enc(slug)}/relations/${enc(relation)}/options`
+    : `/resources/${enc(slug)}/records/${enc(record)}/relations/${enc(relation)}/options`;

@@ -97,6 +97,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::POST, format!("{resource}/records/{{key}}/relations/{{relation}}/detach")),
         (Method::PATCH, format!("{resource}/records/{{key}}/relations/{{relation}}/links/{{target}}")),
         (Method::GET, format!("{resource}/records/{{key}}/relations/{{relation}}/options")),
+        (Method::GET, format!("{resource}/relations/{{relation}}/options")),
         (Method::POST, format!("{resource}/actions/{{action}}")),
         (Method::GET, format!("{resource}/actions/{{action}}/fields/{{field}}/options")),
         (Method::GET, format!("{resource}/fields/{{field}}/options")),
@@ -134,6 +135,7 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
             patch(relation_update_pivot),
         )
         .route(&format!("{resource}/records/{{key}}/relations/{{relation}}/options"), get(relation_options))
+        .route(&format!("{resource}/relations/{{relation}}/options"), get(relation_new_options))
         .route(&format!("{resource}/actions/{{action}}"), post(run_action))
         .route(&format!("{resource}/actions/{{action}}/fields/{{field}}/options"), get(action_options))
         .route(&format!("{resource}/fields/{{field}}/options"), get(options))

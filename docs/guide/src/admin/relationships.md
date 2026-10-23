@@ -196,5 +196,49 @@ Attach and detach send no `Idempotency-Key`: sending one again gives the same
 links. If the answer is lost, the panel pauses writes to the resource until
 the page is reloaded, then shows the links as they are.
 
-Records are linked only from the relation manager for now; a multi-select of
-links in the record's own form is not available yet.
+### Choosing links in the record's form
+
+A `BelongsToManySelect` puts the links in the record's own create and edit
+form, next to its fields (tags on a post):
+
+```rust,ignore
+fn form() -> Form {
+    Form::new().schema(components![
+        TextInput::make("title"),
+        BelongsToManySelect::make("tags"),   // names the relation, not a field
+    ])
+}
+```
+
+The form shows the linked records (from the relation's list: the target's
+scope and policy) and a search over the records the user may attach. Saving
+sends what changed, never the whole set:
+
+```json
+{"title": "Hello", "tags": {"attach": ["rust"], "detach": ["sql"]}}
+```
+
+so links made by someone else meanwhile, and links to records the user
+cannot see, are kept. The record's write checks them as the relation manager
+does: `attach_{relation}` and `detach_{relation}` are admitted before the keys
+are read (403), then decided on the record as the write stores it (403; the
+whole save rolls back); each record to attach must be one the user may view
+(locked and checked again, 422 on the input otherwise), records to detach the
+user cannot see are left alone. Edits also need `update`, like any field.
+The pivot rows, `after_relation_change`, then `after_save` run in the
+record's transaction, and the history lists `attached` / `detached` after
+`created` / `updated`.
+
+- The input appears on create when the user may attach without a record
+  (`Policy::allows(…, None)`), on edit when they may attach or detach on the
+  record, and never on the record's page (the relation manager is there). The
+  create form searches `GET /admin/api/resources/{slug}/relations/{relation}/options`.
+- Not for the media library (link files with a
+  [`Field::media_list`](media.md#media-fields) field instead).
+- New links take the pivot columns' database defaults: a relation with a
+  `.required()` pivot field cannot have a `BelongsToManySelect` (the panel
+  refuses to start); edit pivot columns in the relation manager.
+- At most 100 records per `attach` or `detach` (and 500 of one target
+  resource per save, over all its relations). A record with more than 100
+  visible links shows them read-only in the form: change them on its page.
+- Detaching on create is refused (422).

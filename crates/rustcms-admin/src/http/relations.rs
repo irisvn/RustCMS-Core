@@ -149,6 +149,23 @@ pub(super) async fn relation_options(
     Ok(Json(DataResponse { data: options }))
 }
 
+/// `GET …/relations/{relation}/options?search=&keys=`: targets to attach in a
+/// create form (ADR 0035), for users who may create records and attach.
+pub(super) async fn relation_new_options(
+    AdminCtx(ctx): AdminCtx,
+    Path((slug, name)): Path<(String, String)>,
+    Query(query): Query<LinkOptionsQuery>,
+) -> AppResult<Json<DataResponse<Vec<LinkOption>>>> {
+    let parent = admitted_link(&ctx, &slug, &name, LinkOp::Attach).await?;
+    let keys: Vec<String> = query
+        .keys
+        .as_deref()
+        .map(|k| k.split(',').filter(|k| !k.is_empty()).map(str::to_owned).collect())
+        .unwrap_or_default();
+    let options = parent.link_options_new(&ctx, &name, query.search.as_deref(), &keys).await?;
+    Ok(Json(DataResponse { data: options }))
+}
+
 pub(super) async fn relation_create(
     AdminCtx(ctx): AdminCtx,
     Path((slug, key, name)): Path<(String, String, String)>,

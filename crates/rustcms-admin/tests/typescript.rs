@@ -27,6 +27,7 @@ fn bindings() -> String {
         Rule::decl(&cfg),
         Relationship::decl(&cfg),
         rustcms_admin::schema::MediaSchema::decl(&cfg),
+        rustcms_admin::schema::LinksSchema::decl(&cfg),
         rustcms_admin::schema::RelationKind::decl(&cfg),
         rustcms_admin::schema::RelationSchema::decl(&cfg),
         rustcms_admin::media::MediaItem::decl(&cfg),

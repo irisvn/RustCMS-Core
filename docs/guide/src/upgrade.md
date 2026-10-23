@@ -29,6 +29,22 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.8.2 to 0.9.0
+
+- New permission `media.view_all` (run `permission:sync` to list it). Roles
+  that held `media.manage_all` only to see other users' files can hold
+  `media.view_all` instead.
+- `InputType` has a `BelongsToMany` variant, `InputSchema` a `links` field and
+  `DynResource` a `link_options_new` method (exhaustive matches, struct
+  literals and hand-written implementations need them). Admin clients see
+  `vocabularyVersion` 9: an older admin SPA turns read-only, and an extension
+  that checks the vocabulary version should accept 9.
+- `Resource::after_relation_change` is new: a link write never updates the
+  parent row, so touch `updated_at` there if your application needs it.
+- Restores now call `after_restore`, whose default calls `after_save`:
+  nothing changes unless you override it (then call `Self::after_save` from
+  it if restores should still run your `after_save`).
+
 ## From 0.8.1 to 0.8.2
 
 Nothing needs to change (no rebuild of React pages either). A workaround that

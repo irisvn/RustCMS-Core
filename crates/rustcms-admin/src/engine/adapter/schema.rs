@@ -100,7 +100,15 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         let info = self.info();
         let mut out = vec![info.label, info.plural_label];
-        let field_label = |name: &str| self.field(name).map(|f| f.display_label());
+        let field_label = |name: &str| {
+            self.field(name).map(|f| f.display_label()).or_else(|| {
+                // A `BelongsToManySelect` is labelled by its relation.
+                self.relations
+                    .iter()
+                    .find(|r| r.name == name)
+                    .map(|r| r.label.clone().unwrap_or_else(|| humanize(r.name)))
+            })
+        };
         walk(&self.form.components, &mut out, &field_label);
         for column in &self.table_ui.columns {
             out.extend(column.label.clone().or_else(|| field_label(&column.name)));
@@ -217,16 +225,92 @@ impl<R: Resource> ResourceAdapter<R> {
                 accept: rule.accept.clone(),
                 max_size: rule.max_size,
             }),
+            links: None,
         })
     }
 
-    pub(super) fn components(&self, ctx: &Ctx, components: &[Component], op: SchemaOperation) -> Vec<ComponentSchema> {
+    /// What the user may change with each `BelongsToManySelect` of the form
+    /// (ADR 0035): on create, attach (admitted and allowed without a record);
+    /// on edit, attach or detach on `record`; never on view (the relation
+    /// manager shows the links). Inputs the user can change nothing with, or
+    /// whose target they may not list, are left out.
+    pub(super) async fn link_inputs(
+        &self,
+        ctx: &Ctx,
+        op: SchemaOperation,
+        record: Option<&Data>,
+    ) -> HashMap<String, crate::schema::LinksSchema> {
+        use crate::links::LinkOp;
+        let mut out = HashMap::new();
+        for input in self.form.inputs().into_iter().filter(|i| i.kind == InputType::BelongsToMany) {
+            let Some(relation) = self.relations.iter().find(|r| r.name == input.name) else { continue };
+            let Some(target) = ctx.registry.get(relation.target) else { continue };
+            if !target.allows(ctx, ability::VIEW_ANY).await {
+                continue;
+            }
+            let (attach, detach) = (LinkOp::Attach.ability(relation.name), LinkOp::Detach.ability(relation.name));
+            let links = match (op, record) {
+                (SchemaOperation::Create, _) => crate::schema::LinksSchema {
+                    attach: self.policy.admits(ctx, &attach).await && self.policy.allows(ctx, &attach, None).await,
+                    detach: false,
+                },
+                (SchemaOperation::Edit, Some(record)) => crate::schema::LinksSchema {
+                    attach: self.policy.allows(ctx, &attach, Some(record)).await,
+                    detach: self.policy.allows(ctx, &detach, Some(record)).await,
+                },
+                _ => continue,
+            };
+            if links.attach || links.detach {
+                out.insert(input.name.clone(), links);
+            }
+        }
+        out
+    }
+
+    /// The input of a `BelongsToManySelect` (its abilities from [`Self::link_inputs`]).
+    fn links_input_schema(&self, ctx: &Ctx, input: &Input, links: crate::schema::LinksSchema) -> Option<InputSchema> {
+        let relation = self.relations.iter().find(|r| r.name == input.name)?;
+        let label = input.label.clone().or_else(|| relation.label.clone()).unwrap_or_else(|| humanize(relation.name));
+        Some(InputSchema {
+            kind: InputType::BelongsToMany,
+            name: input.name.clone(),
+            label: ctx.t_in(R::SLUG, &label),
+            value_type: "links",
+            nullable: false,
+            default: None,
+            disabled: false,
+            write_only: false,
+            rules: Vec::new(),
+            column_span: input.column_span,
+            placeholder: input.placeholder.as_deref().map(|p| ctx.t_in(R::SLUG, p)),
+            help: input.help.as_deref().map(|h| ctx.t_in(R::SLUG, h)),
+            mode: None,
+            options: Vec::new(),
+            relationship: Some(Relationship { resource: relation.target }),
+            widget: None,
+            props: None,
+            media: None,
+            links: Some(links),
+        })
+    }
+
+    pub(super) fn components(
+        &self,
+        ctx: &Ctx,
+        components: &[Component],
+        op: SchemaOperation,
+        links: &HashMap<String, crate::schema::LinksSchema>,
+    ) -> Vec<ComponentSchema> {
         components
             .iter()
             .filter_map(|component| match component {
+                Component::Input(input) if input.kind == InputType::BelongsToMany => links
+                    .get(&input.name)
+                    .and_then(|l| self.links_input_schema(ctx, input, *l))
+                    .map(ComponentSchema::Input),
                 Component::Input(input) => self.input_schema(ctx, input, op).map(ComponentSchema::Input),
                 Component::Layout(layout) => {
-                    let children = self.components(ctx, &layout.children, op);
+                    let children = self.components(ctx, &layout.children, op, links);
                     (!children.is_empty()).then(|| {
                         ComponentSchema::Layout(LayoutSchema {
                             kind: layout.kind,
@@ -369,5 +453,6 @@ fn pivot_input_schema(
         widget: None,
         props: None,
         media: None,
+        links: None,
     }
 }

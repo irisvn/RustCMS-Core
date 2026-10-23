@@ -689,6 +689,50 @@ path = "/admin/api/resources/posts/records/{theirs}/relations/tags/options"
 actor = "admin"
 status = 200
 
+# Options of a create form's BelongsToManySelect (no record yet; ADR 0035):
+# admitted on `attach_{relation}`, then `create` and `attach` without a record.
+[[case]]
+route = "GET /admin/api/resources/{slug}/relations/{relation}/options"
+path = "/admin/api/resources/posts/relations/tags/options"
+actor = "guest"
+status = 401
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/relations/{relation}/options"
+path = "/admin/api/resources/posts/relations/tags/options"
+actor = "token"
+status = 401
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/relations/{relation}/options"
+path = "/admin/api/resources/posts/relations/tags/options"
+actor = "member"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/relations/{relation}/options"
+path = "/admin/api/resources/posts/relations/tags/options"
+actor = "editor"
+status = 403
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/relations/{relation}/options"
+path = "/admin/api/resources/posts/relations/nope/options"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/relations/{relation}/options"
+path = "/admin/api/resources/categories/relations/notes/options"
+actor = "admin"
+status = 404
+
+[[case]]
+route = "GET /admin/api/resources/{slug}/relations/{relation}/options"
+path = "/admin/api/resources/posts/relations/tags/options"
+actor = "admin"
+status = 200
+
 [[case]]
 route = "POST /admin/api/resources/{slug}/records/{key}/relations/{relation}"
 path = "/admin/api/resources/posts/records/{theirs}/relations/tags"
