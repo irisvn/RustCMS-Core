@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -183,5 +183,47 @@ describe("rich editor", () => {
     await waitFor(() => expect(emitted).not.toBe(""));
     expect(JSON.parse(emitted)).toEqual({ type: "doc", version: 1, content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }] });
     expect(screen.getByRole("toolbar", { name: "Body formatting" })).toBeInTheDocument();
+  });
+
+  it("adds, checks, edits and removes links in the panel's dialog (no browser prompt)", async () => {
+    const prompt = vi.spyOn(window, "prompt");
+    let emitted = "";
+    const doc = (text: string) => JSON.stringify({ type: "doc", version: 1, content: [{ type: "paragraph", content: [{ type: "text", text }] }] });
+    render(
+      <Providers>
+        <form onSubmit={() => { throw new Error("the record form was submitted"); }}>
+          <RichEditorWidget id="field-body" label="Body" value={doc("Read the docs")} onChange={(v) => (emitted = v)} invalid={false} nullable />
+        </form>
+      </Providers>,
+    );
+    const box = await screen.findByRole("textbox", { name: "Body" });
+    await userEvent.click(box);
+    await userEvent.keyboard("{Control>}a{/Control}");
+    await userEvent.click(screen.getByRole("button", { name: "Link" }));
+    let dialog = await screen.findByRole("dialog", { name: "Add link" });
+    const address = within(dialog).getByLabelText("Link address");
+    // Enter confirming an IME composition does not apply the address.
+    await userEvent.type(address, "https://ví");
+    fireEvent.keyDown(address, { key: "Enter", isComposing: true });
+    expect(screen.getByRole("dialog", { name: "Add link" })).toBeInTheDocument();
+    await userEvent.clear(address);
+    // Checked like the server: no `javascript:`; Enter never submits the record form.
+    await userEvent.type(address, "javascript:alert(1){Enter}");
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Links must start with https://, http:// or mailto:.");
+    await userEvent.clear(address);
+    await userEvent.type(address, "https://example.com{Enter}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add link" })).toBeNull());
+    const marks = () => JSON.parse(emitted).content[0].content[0].marks;
+    await waitFor(() => expect(marks()).toEqual([{ type: "link", attrs: { href: "https://example.com" } }]));
+
+    // On the link: the dialog edits it, and can remove it.
+    await userEvent.click(box);
+    await userEvent.keyboard("{Control>}a{/Control}");
+    await userEvent.click(screen.getByRole("button", { name: "Link" }));
+    dialog = await screen.findByRole("dialog", { name: "Edit link" });
+    expect(within(dialog).getByLabelText("Link address")).toHaveValue("https://example.com");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Remove link" }));
+    await waitFor(() => expect(marks()).toBeUndefined());
+    expect(prompt).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
 import { Pencil, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -21,6 +21,7 @@ import { type FormValues, defaultValues, inputsOf, payloadOf, protectLossyJson, 
 import { errorText, show, type Text, useLocale, useT } from "@/i18n";
 import { editResolver } from "@/schema/resolver";
 import type { PendingWrite } from "@/app/session";
+import { leavingOnPurpose } from "@/lib/leave";
 
 
 function useMounted() {
@@ -166,17 +167,40 @@ function RecordForm({
   const uncertain = useUncertain(slug);
 
   // After a failed save, the first input with an error (in form order) gets the
-  // focus, once enclosing tabs have opened it.
+  // focus, once enclosing tabs have opened it; only while this form is shown
+  // (another page's input may have the same id).
   const focusFirstError = () =>
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
+        if (!mounted.current) return;
         const first = inputs.find((i) => form.getFieldState(i.name).error);
         if (first) document.getElementById(`field-${first.name}`)?.focus();
       }),
     );
 
+  // Leaving with unsaved changes asks first (in-app navigation: a dialog;
+  // closing or reloading the tab: the browser's prompt). Not after a save, not
+  // while one is in flight or its outcome is unknown (the resource is paused
+  // and the retry is offered on any page; a late answer never
+  // takes over another page), nor when the session sends the tab elsewhere
+  // (sign-out, another user).
+  const done = useRef(false);
+  // Changed values; and for inputs submitted by intent (create, blind edits,
+  // write-only), touched ones, even when they equal their placeholder.
+  const unsaved = (form.formState.isDirty || [...touched.current].some(byIntent)) && !save.isPending && !uncertain;
+  const unsavedRef = useRef(unsaved);
+  unsavedRef.current = unsaved;
+  // Stable callbacks reading refs: the blocker is registered once, not on every keystroke.
+  const blocking = useCallback(() => unsavedRef.current && !done.current && !leavingOnPurpose(), []);
+  const shouldBlockFn = useCallback(
+    ({ next }: { next: { routeId: string } }) => blocking() && next.routeId !== "/login",
+    [blocking],
+  );
+  const blocker = useBlocker({ shouldBlockFn, enableBeforeUnload: blocking, withResolver: true });
+
   // After a save (or a retried one that went through).
   const afterSave = async (saved: Envelope) => {
+    done.current = true;
     if (via) {
       // Back to the parent, where the new record is listed.
       await navigate({ to: "/r/$slug/records/$key", params: { slug: via.parent, key: via.record } });
@@ -291,6 +315,17 @@ function RecordForm({
         </Link>
       </div>
     </form>
+    <Dialog open={blocker.status === "blocked"} onClose={() => blocker.reset?.()} title={t("record.leaveTitle")}>
+      <p className="text-sm text-muted-foreground">{t("record.leaveBody")}</p>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" onClick={() => blocker.reset?.()}>
+          {t("record.leaveStay")}
+        </Button>
+        <Button type="button" variant="destructive" onClick={() => blocker.proceed?.()}>
+          {t("record.leaveDiscard")}
+        </Button>
+      </div>
+    </Dialog>
     </Page>
   );
 }

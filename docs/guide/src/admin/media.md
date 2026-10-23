@@ -93,7 +93,10 @@ else is refused (422); documents are limited to 256 KiB, 10,000 elements,
 16 levels and 100 images. Images follow the media rules above (images only).
 
 The panel edits it with TipTap (no injected styles) and shows it with React
-elements. Headless apps render it with `rustcms::admin::rich_text::parse` and
+elements. The toolbar's **Link** button opens a dialog for the address of
+the selected text (or of the link at the cursor, which it can also remove;
+with nothing selected, the address is inserted as linked text); it accepts
+`http`, `https` and `mailto` addresses, as the server does. Headless apps render it with `rustcms::admin::rich_text::parse` and
 `to_html(&doc, &|id| Some(my_public_url(id)))`, which escapes all text and
 attributes.
 

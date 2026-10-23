@@ -41,6 +41,15 @@ write are left out or disabled, and the server checks everything again.
 Common options: `.label(…)`, `.placeholder(…)`, `.help(…)`, `.column_span(n)`.
 `SelectInput` is named so it does not clash with `sea_orm::Select`.
 
+## Leaving with unsaved changes
+
+A create or edit form with changes not saved asks before the user leaves it:
+the panel's dialog (*Keep editing* or *Discard changes*) for links and the
+browser's Back button, the browser's own prompt for closing or reloading the
+tab. It does not ask after a save, while a save is in flight or its outcome
+is unknown (the resource is paused and the retry is offered on any page), or
+when the session sends the tab elsewhere (sign-out, another user signing in).
+
 ## Layouts
 
 | Layout | Does |

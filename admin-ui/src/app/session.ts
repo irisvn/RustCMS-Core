@@ -3,6 +3,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { ApiClient } from "@/api/client";
 import { type PanelConfig, safeRedirect } from "@/lib/config";
+import { leaveOnPurpose } from "@/lib/leave";
 
 /**
  * A keyed write whose outcome is unknown, kept in memory to be re-sent with the
@@ -230,6 +231,7 @@ export function createSession(
       if (userId !== null && userId !== id) {
         invalidated = true;
         clear();
+        leaveOnPurpose();
         window.location.assign(`${config.basePath}/`);
         return;
       }
@@ -272,6 +274,7 @@ export function createSession(
     // Another tab signed in (maybe as someone else): drop this tab's data.
     if (event.data === "signed-in") {
       clear();
+      leaveOnPurpose();
       window.location.reload();
     }
   });

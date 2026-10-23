@@ -17,6 +17,8 @@ was the first published one.
 - **`Resource::after_relation_change`** runs when links of a belongs-to-many
   relation change, in the same transaction
   ([Relationships](admin/relationships.md#reacting-to-link-changes)).
+- Rich text links are edited in a dialog; record forms ask before leaving
+  with unsaved changes ([Forms](admin/forms.md#leaving-with-unsaved-changes)).
 
 ## 0.8.2
 

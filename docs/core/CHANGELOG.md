@@ -32,7 +32,17 @@ All notable changes are documented here. The format follows
   `pivot_updated`); an error rolls the write back. The parent row is still
   not updated by link writes (`updated_at` included).
 
+- Record forms ask before leaving with unsaved changes: the panel's dialog
+  for in-app navigation (TanStack Router `useBlocker`), the browser's prompt
+  for closing or reloading; not after a save, while one is in flight or
+  uncertain, or when the session sends the tab elsewhere
+  (`lib/leave.ts`).
+
 ### Changed (Unreleased)
+- Rich text: the link button opens a dialog (the panel's `Dialog`,
+  translated; checked like the server; edits or removes the link at the
+  cursor; inserts the address as linked text when nothing is selected)
+  instead of `window.prompt`.
 - LMS example: editors and viewers hold `media.view_all` instead of
   `media.manage_all` (they only view the news' images).
 

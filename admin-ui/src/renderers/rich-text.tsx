@@ -5,11 +5,13 @@ import Image from "@tiptap/extension-image";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Bold, Code, Heading2, Heading3, ImagePlus, Italic, Link, List, ListOrdered, Quote, Strikethrough } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type * as React from "react";
 import { ApiError } from "@/api/client";
 import { usePanelConfig, useSession } from "@/api/context";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { Input, Label } from "@/components/ui/input";
 import { type DocNode, type RichDocument, asDocument, isEmptyDocument, mediaUrl, safeHref, toDocument, toEditor } from "@/lib/rich-text";
 import { uploadMedia } from "./media";
 import { errorText, later, show, type Text, useT } from "@/i18n";
@@ -33,6 +35,8 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   const [uploading, setUploading] = useState(false);
   // An image upload with an unknown outcome: retried with the same file and key.
   const [retry, setRetry] = useState<{ file: File; key: string } | null>(null);
+  // The link dialog: the address it starts from, and whether a link is being edited.
+  const [linking, setLinking] = useState<{ href: string; editing: boolean } | null>(null);
   useEffect(() => {
     onBusy?.(uploading || retry !== null);
   }, [uploading, retry, onBusy]);
@@ -80,13 +84,21 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
     </Button>
   );
   const chain = () => editor!.chain().focus();
+  // The link dialog edits the link at the selection (or the one the cursor is in).
   const link = () => {
-    const href = window.prompt(t("rich.linkPrompt"), editor?.getAttributes("link").href ?? "");
-    if (href === null) return;
-    if (href === "") return void chain().unsetLink().run();
-    if (!safeHref(href)) return setError(() => later("rich.linkInvalid"));
+    if (!editor) return;
+    setLinking({ href: String(editor.getAttributes("link").href ?? ""), editing: editor.isActive("link") });
+  };
+  const applyLink = (href: string) => {
+    setLinking(null);
     setError(null);
-    chain().setLink({ href }).run();
+    if (!editor || editor.isDestroyed) return;
+    if (href === "") return void chain().extendMarkRange("link").unsetLink().run();
+    if (editor.state.selection.empty && !editor.isActive("link")) {
+      // Nothing selected: the address becomes the linked text.
+      return void chain().insertContent({ type: "text", text: href, marks: [{ type: "link", attrs: { href } }] }).run();
+    }
+    chain().extendMarkRange("link").setLink({ href }).run();
   };
   const image = async (file: File | undefined, key: string = crypto.randomUUID()) => {
     if (!file || !editor) return;
@@ -131,6 +143,84 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         </Button>
       )}
       {error && <p role="alert" className="mt-1 text-xs text-destructive">{show(error)}</p>}
+      <LinkDialog state={linking} onClose={() => {
+        setLinking(null);
+        editor?.commands.focus();
+      }} onApply={applyLink} />
+    </div>
+  );
+}
+
+/**
+ * The address of a link: checked as the server checks it (`http`, `https`,
+ * `mailto`). Not a <form>: the editor sits inside the record's form, so Enter
+ * is handled here and never submits it.
+ */
+function LinkDialog({ state, onClose, onApply }: {
+  state: { href: string; editing: boolean } | null;
+  onClose: () => void;
+  onApply: (href: string) => void;
+}) {
+  const t = useT();
+  return (
+    <Dialog open={state !== null} onClose={onClose} title={state?.editing ? t("rich.linkEdit") : t("rich.linkAdd")}>
+      {state && <LinkFields key={state.href} initial={state.href} editing={state.editing} onClose={onClose} onApply={onApply} />}
+    </Dialog>
+  );
+}
+
+function LinkFields({ initial, editing, onClose, onApply }: {
+  initial: string;
+  editing: boolean;
+  onClose: () => void;
+  onApply: (href: string) => void;
+}) {
+  const t = useT();
+  const id = useId();
+  const [href, setHref] = useState(initial);
+  const [invalid, setInvalid] = useState(false);
+  const apply = () => {
+    const value = href.trim();
+    if (value !== "" && !safeHref(value)) return setInvalid(true);
+    onApply(value);
+  };
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={id}>{t("rich.linkAddress")}</Label>
+        <Input
+          id={id}
+          type="url"
+          inputMode="url"
+          autoFocus
+          placeholder={t("rich.linkPlaceholder")}
+          value={href}
+          aria-invalid={invalid || undefined}
+          aria-describedby={invalid ? `${id}-error` : undefined}
+          onChange={(e) => {
+            setHref(e.target.value);
+            setInvalid(false);
+          }}
+          onKeyDown={(e) => {
+            // Enter that confirms an IME composition belongs to the composition.
+            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+            if (e.key === "Enter") {
+              e.preventDefault();
+              apply();
+            }
+          }}
+        />
+        {invalid && <p id={`${id}-error`} role="alert" className="text-xs leading-5 text-destructive">{t("rich.linkInvalid")}</p>}
+      </div>
+      <div className="flex flex-wrap justify-end gap-2">
+        {editing && (
+          <Button type="button" variant="ghost" className="mr-auto" onClick={() => onApply("")}>
+            {t("rich.linkRemove")}
+          </Button>
+        )}
+        <Button type="button" variant="outline" onClick={onClose}>{t("action.cancel")}</Button>
+        <Button type="button" onClick={apply}>{t("rich.linkApply")}</Button>
+      </div>
     </div>
   );
 }

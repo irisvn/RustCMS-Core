@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -8,6 +8,7 @@ import { SessionContext } from "@/api/context";
 import type { ResourceSchema } from "@/api/types";
 import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
+import { stayOnPurpose } from "@/lib/leave";
 import { defaultValues, inputsOf } from "@/schema/form";
 import { editResolver } from "@/schema/resolver";
 import create from "../../fixtures/contract/kitchen-sink.schema.create.json";
@@ -62,6 +63,8 @@ const server = setupServer(
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterAll(() => server.close());
 beforeEach(() => {
+  // A test that switched users "left" the page on purpose (jsdom does not navigate).
+  stayOnPurpose();
   patches = [];
   recordFetches = 0;
   viewable = true;
@@ -104,6 +107,66 @@ describe("edit form", () => {
     expect(await screen.findByText("has already been taken")).toBeInTheDocument();
     expect(patches).toEqual([{ name: "Draft name" }]);
     expect(screen.getByLabelText(/^Name/)).toHaveValue("Draft name");
+  });
+
+  it("asks before leaving with unsaved changes", async () => {
+    mount("/r/gadgets/records/1/edit");
+    // Untouched: leaving needs no confirmation.
+    await screen.findByLabelText(/^Name/);
+    await act(() => router.navigate({ to: "/r/$slug", params: { slug: "gadgets" } }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/r/gadgets"));
+
+    await act(() => router.navigate({ to: "/r/$slug/records/$key/edit", params: { slug: "gadgets", key: "1" } }));
+    const name = await screen.findByLabelText(/^Name/);
+    await userEvent.clear(name);
+    await userEvent.type(name, "Unsaved");
+    await userEvent.click(screen.getByRole("link", { name: "Cancel" }));
+    const dialog = await screen.findByRole("dialog", { name: "Discard unsaved changes?" });
+    // Keep editing: still here, with the draft.
+    await userEvent.click(within(dialog).getByRole("button", { name: "Keep editing" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Discard unsaved changes?" })).toBeNull());
+    expect(router.state.location.pathname).toBe("/r/gadgets/records/1/edit");
+    expect(screen.getByLabelText(/^Name/)).toHaveValue("Unsaved");
+    // A record whose key is `login` is not the sign-in page: still asked.
+    void router.navigate({ to: "/r/$slug/records/$key", params: { slug: "gadgets", key: "login" } });
+    const asked = await screen.findByRole("dialog", { name: "Discard unsaved changes?" });
+    await userEvent.click(within(asked).getByRole("button", { name: "Keep editing" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Discard unsaved changes?" })).toBeNull());
+    expect(router.state.location.pathname).toBe("/r/gadgets/records/1/edit");
+    // Discard: leaves.
+    await userEvent.click(screen.getByRole("link", { name: "Cancel" }));
+    const again = await screen.findByRole("dialog", { name: "Discard unsaved changes?" });
+    await userEvent.click(within(again).getByRole("button", { name: "Discard changes" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/r/gadgets"));
+  });
+
+  it("leaves without asking when an edit is put back as it was", async () => {
+    mount("/r/gadgets/records/1/edit");
+    const name = await screen.findByLabelText(/^Name/);
+    const original = (name as HTMLInputElement).value;
+    await userEvent.type(name, "x");
+    await userEvent.type(name, "{Backspace}");
+    expect(name).toHaveValue(original);
+    await userEvent.click(screen.getByRole("link", { name: "Cancel" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/r/gadgets"));
+    expect(screen.queryByRole("dialog", { name: "Discard unsaved changes?" })).toBeNull();
+  });
+
+  it("leaves without asking after a save", async () => {
+    server.use(
+      http.patch("*/admin/api/resources/gadgets/records/1", () => HttpResponse.json({ data: record })),
+    );
+    try {
+      mount("/r/gadgets/records/1/edit");
+      const name = await screen.findByLabelText(/^Name/);
+      await userEvent.clear(name);
+      await userEvent.type(name, "Saved");
+      await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      await waitFor(() => expect(router.state.location.pathname).toBe("/r/gadgets/records/1"));
+      expect(screen.queryByRole("dialog", { name: "Discard unsaved changes?" })).toBeNull();
+    } finally {
+      server.resetHandlers();
+    }
   });
 
   it("keeps the draft when a background refresh fails and recovers", async () => {
