@@ -85,6 +85,110 @@ db_test!(trashed_records_are_hidden_on_every_path, |db: TestDb| async move {
     assert!(matches!(notes.force_delete(&ctx, key).await, Err(AppError::NotFound)));
 });
 
+db_test!(trash_restore_and_force_delete_hooks_run_in_their_transactions, |db: TestDb| async move {
+    use support::NOTE_HOOKS;
+    let fx = Fixture::new(db).await;
+    let ctx = fx.ctx(admin());
+    let notes = fx.resource("notes");
+    let seen = |entry: &str| NOTE_HOOKS.lock().unwrap().iter().any(|e| e == entry);
+    let note = notes.create(&ctx, data(json!({"title": "Hooked"}))).await.unwrap();
+
+    // Trashing calls `after_trash` with the record as stored (trashed).
+    notes.delete(&ctx, &note.key).await.unwrap();
+    assert!(seen("trash:Hooked:true"));
+    // Restoring calls `after_restore` with the active record.
+    notes.restore(&ctx, &note.key).await.unwrap();
+    assert!(seen("restore:Hooked:false"));
+    // Force deleting calls `after_force_delete` after the delete, with the record as it was.
+    notes.delete(&ctx, &note.key).await.unwrap();
+    notes.force_delete(&ctx, &note.key).await.unwrap();
+    assert!(seen("force:Hooked:true"));
+
+    // A failing hook rolls its write back.
+    let stuck = notes.create(&ctx, data(json!({"title": "stuck-trash"}))).await.unwrap();
+    assert!(notes.delete(&ctx, &stuck.key).await.is_err());
+    assert!(!notes.find(&ctx, &stuck.key).await.unwrap().trashed, "still active");
+    let stuck = notes.create(&ctx, data(json!({"title": "stuck-restore"}))).await.unwrap();
+    notes.delete(&ctx, &stuck.key).await.unwrap();
+    assert!(notes.restore(&ctx, &stuck.key).await.is_err());
+    assert!(matches!(notes.find(&ctx, &stuck.key).await, Err(AppError::NotFound)), "still trashed");
+    let stuck = notes.create(&ctx, data(json!({"title": "stuck-force"}))).await.unwrap();
+    notes.delete(&ctx, &stuck.key).await.unwrap();
+    assert!(notes.force_delete(&ctx, &stuck.key).await.is_err());
+    let trash = notes.list(&ctx, &trashed(Trashed::Only)).await.unwrap();
+    assert!(trash.data.iter().any(|e| e.key == stuck.key), "still in the trash");
+});
+
+/// Notes with an `after_save` and the default `after_restore`.
+struct SavedNotes;
+
+/// What `SavedNotes::after_save` saw: `"{title}:{trashed}"`.
+static SAVED_NOTES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+#[async_trait::async_trait]
+impl rustcms_admin::Resource for SavedNotes {
+    type Entity = note::Entity;
+    const SLUG: &'static str = "saved_notes";
+
+    fn meta() -> rustcms_admin::ResourceMeta {
+        rustcms_admin::ResourceMeta::new("Note").soft_deletes()
+    }
+
+    fn fields() -> Vec<rustcms_admin::Field> {
+        vec![rustcms_admin::Field::make("title")]
+    }
+
+    async fn after_save(
+        _ctx: &rustcms_admin::Ctx,
+        _txn: &sea_orm::DatabaseTransaction,
+        record: &note::Model,
+    ) -> rustcms_core::AppResult<()> {
+        SAVED_NOTES.lock().unwrap().push(format!("{}:{}", record.title, record.deleted_at.is_some()));
+        if record.title.starts_with("refuse") { Err(AppError::internal("refused")) } else { Ok(()) }
+    }
+}
+
+db_test!(the_default_after_restore_calls_after_save, |db: TestDb| async move {
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    let fx = Fixture::new(db).await;
+    let tag = format!("{:?}", fx.db.backend());
+    let registry = rustcms_admin::Registry::new().register::<SavedNotes>().finish();
+    let ctx = rustcms_admin::Ctx::new(fx.db.conn().clone(), admin(), registry.clone());
+    let notes = registry.get("saved_notes").unwrap();
+    let title = format!("Kept {tag}");
+    let note = notes.create(&ctx, data(json!({"title": title}))).await.unwrap();
+    notes.delete(&ctx, &note.key).await.unwrap();
+    let saved = |entry: &str| SAVED_NOTES.lock().unwrap().iter().filter(|e| *e == entry).count();
+    assert_eq!(saved(&format!("{title}:false")), 1, "the create");
+    // Restoring calls `after_save` (the default `after_restore`), with the active record.
+    notes.restore(&ctx, &note.key).await.unwrap();
+    assert_eq!(saved(&format!("{title}:false")), 2);
+
+    // Its error rolls the restore back (a trashed note stored directly: no hook ran).
+    let refused = note::ActiveModel {
+        title: Set(format!("refuse {tag}")),
+        deleted_at: Set(Some(chrono::Utc::now())),
+        ..Default::default()
+    }
+    .insert(fx.db.conn())
+    .await
+    .unwrap();
+    let key = refused.id.to_string();
+    assert!(notes.restore(&ctx, &key).await.is_err());
+    assert!(matches!(notes.find(&ctx, &key).await, Err(AppError::NotFound)), "still trashed");
+
+    // An override replaces the call: `NoteResource` restores without `after_save`.
+    let notes = fx.resource("notes");
+    let admin_ctx = fx.ctx(admin());
+    let title = format!("Overridden {tag}");
+    let note = notes.create(&admin_ctx, data(json!({"title": title}))).await.unwrap();
+    notes.delete(&admin_ctx, &note.key).await.unwrap();
+    notes.restore(&admin_ctx, &note.key).await.unwrap();
+    let hooks = support::NOTE_HOOKS.lock().unwrap().clone();
+    assert!(hooks.contains(&format!("restore:{title}:false")));
+    assert_eq!(hooks.iter().filter(|h| **h == format!("save:{title}:false")).count(), 1, "only the create's");
+});
+
 db_test!(the_trash_needs_its_own_abilities, |db: TestDb| async move {
     let fx = Fixture::new(db).await;
     let notes = fx.resource("notes");

@@ -6,6 +6,13 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (Unreleased)
+- `Resource::after_trash` and `Resource::after_restore`: run in the
+  transaction of a trashing and of a restore (soft deletes), after the write,
+  with the record as stored; an error rolls the write back. Restores still
+  call `after_save` (unchanged), then `after_restore`. `after_force_delete`
+  (unchanged) is documented with them.
+
 ## [0.8.2] — 2026-10-21
 
 ### Fixed (0.8.2)

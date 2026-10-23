@@ -106,12 +106,25 @@ async fn after_save(ctx: &Ctx, txn: &DatabaseTransaction, post: &post::Model) ->
 }
 ```
 
-`mutate_before_update` receives the current record too. `after_delete` runs
-in the transaction that deletes a record of a resource without soft deletes,
-after the delete, with the record as it was: dispatch a job there to undo
-what the record configured (an error rolls the delete back). Trashing does
-not call it; `after_force_delete` runs when a trashed record is deleted for
-good. A message a hook returns is
+`mutate_before_update` receives the current record too. The other hooks run
+in the transaction of their write, after it, with the record; an error rolls
+the write back:
+
+| Hook | Runs when | Record |
+|---|---|---|
+| `after_save` | a create, an update; a restore through the default `after_restore` | as stored |
+| `after_delete` | a record of a resource without soft deletes is deleted | as it was |
+| `after_trash` | a record is moved to the [trash](#soft-deletes) | as stored (marker set) |
+| `after_restore` | a trashed record is restored (default: calls `after_save`) | as stored (marker cleared) |
+| `after_force_delete` | a trashed record is deleted for good | as it was |
+
+Dispatch a job there (outbox) to undo what the record configured, or to
+publish and unpublish it. Trashing does not call `after_delete`. The default
+`after_restore` calls `after_save`, so applications written before it existed
+behave as before; overriding `after_restore` replaces that call (call
+`Self::after_save(ctx, txn, record).await` from it to keep both).
+Bulk [actions](actions.md) write through their handler: they call none of
+these hooks. A message a hook returns is
 shown as written: translate it with `ctx.t("…")` ([i18n](i18n.md)).
 
 ## Parent locks
@@ -160,12 +173,12 @@ The marker is a nullable timestamp column (`Option<DateTimeUtc>` or
 - **Delete** sets the marker. Trashed records disappear everywhere: lists,
   reads, writes, actions, relationship options and labels (`#key`), and
   references from other records (422). No database cascade runs: related
-  records are kept.
+  records are kept. `after_trash` runs.
 - **Restore** (`{slug}.restore`) clears the marker. The record's relationships
-  must still point to records the user can see (422 otherwise); `after_save`
-  runs.
+  must still point to records the user can see (422 otherwise);
+  `after_restore` runs (by default, it calls `after_save`).
 - **Force delete** (`{slug}.force_delete`) removes a trashed record for good;
-  database foreign-key actions apply then.
+  database foreign-key actions apply then; `after_force_delete` runs.
 - The trash (`trashed=with|only`) needs `restore` or `force_delete`, and shows a
   record only if the policy allows `view` and one of them on it. With a custom
   policy, override `admits` for these abilities like the others.

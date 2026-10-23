@@ -3,6 +3,12 @@
 RustCMS is in pre-release. The current version is **0.8.2**; 0.1.0-alpha.0
 was the first published one.
 
+## Unreleased
+
+- **`Resource::after_trash` and `after_restore`** run in the transaction of a
+  trashing and of a restore, with the record; restores still call
+  `after_save` first ([Resources](admin/resources.md#hooks)).
+
 ## 0.8.2
 
 - React pages: a read still in flight when a sub-path navigation remounts

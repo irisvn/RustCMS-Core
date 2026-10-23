@@ -511,7 +511,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             // To the trash: related records are kept (no database cascade runs).
             let mut active = model.into_active_model();
             self.set_marker(&mut active, true)?;
-            active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?;
+            let model = active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?;
+            R::after_trash(&wctx, &txn, &model).await?;
         } else {
             Entity::<R>::delete_many()
                 .filter(self.pk.eq(model.get(self.pk)))
@@ -545,7 +546,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let mut active = model.into_active_model();
         self.set_marker(&mut active, false)?;
         let model = active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(&wctx, e))?;
-        R::after_save(&wctx, &txn, &model).await?;
+        // By default `after_restore` calls `after_save`, as restores always did.
+        R::after_restore(&wctx, &txn, &model).await?;
         self.audit_outcome(&wctx, &txn, "restored", Some(&before), &model, false, true).await?;
         Self::commit(txn, wctx).await?;
         Ok(self.committed_envelope(ctx, model).await)

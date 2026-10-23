@@ -300,8 +300,36 @@ pub trait Resource: Send + Sync + 'static {
         Ok(())
     }
 
+    /// Runs in the transaction that moves a record to the trash (soft
+    /// deletes), after the update, with the record as stored (its marker
+    /// set): e.g. unpublish what the record put online. An error rolls the
+    /// trashing back. Not called by hard deletes ([`Self::after_delete`]).
+    async fn after_trash(
+        _ctx: &Ctx,
+        _txn: &DatabaseTransaction,
+        _record: &<Self::Entity as EntityTrait>::Model,
+    ) -> AppResult<()> {
+        Ok(())
+    }
+
+    /// Runs in the transaction that restores a trashed record (soft deletes),
+    /// after the update, with the record as stored (its marker cleared). An
+    /// error rolls the restore back.
+    ///
+    /// By default it calls [`Self::after_save`], as restores did before this
+    /// hook existed; an override replaces that call (call `Self::after_save`
+    /// from it to keep both).
+    async fn after_restore(
+        ctx: &Ctx,
+        txn: &DatabaseTransaction,
+        record: &<Self::Entity as EntityTrait>::Model,
+    ) -> AppResult<()> {
+        Self::after_save(ctx, txn, record).await
+    }
+
     /// Runs in the transaction that deletes a trashed record for good (soft
-    /// deletes): e.g. queue the removal of files the record owned.
+    /// deletes), after the delete, with the record as it was: e.g. queue the
+    /// removal of files the record owned. An error rolls the delete back.
     async fn after_force_delete(
         _ctx: &Ctx,
         _txn: &DatabaseTransaction,

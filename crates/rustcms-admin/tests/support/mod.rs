@@ -165,6 +165,18 @@ pub mod note {
 /// Soft deletes, default permission policy (`notes.*`).
 pub struct NoteResource;
 
+/// What `NoteResource`'s trash, restore and force-delete hooks saw:
+/// `"{hook}:{title}:{trashed}"`.
+#[allow(dead_code)]
+pub static NOTE_HOOKS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Notes whose title starts with `stuck-{hook}` make that hook fail.
+fn note_hook(hook: &str, record: &note::Model) -> AppResult<()> {
+    NOTE_HOOKS.lock().unwrap().push(format!("{hook}:{}:{}", record.title, record.deleted_at.is_some()));
+    if record.title.starts_with(&format!("stuck-{hook}")) { Err(AppError::internal(hook.to_owned())) } else { Ok(()) }
+}
+
+#[async_trait::async_trait]
 impl Resource for NoteResource {
     type Entity = note::Entity;
     const SLUG: &'static str = "notes";
@@ -190,6 +202,25 @@ impl Resource for NoteResource {
 
     fn actions() -> Vec<Action<note::Entity>> {
         vec![Action::<note::Entity>::new("touch", |_, _, _, _| Box::pin(async { Ok(()) })).bulk().ability("update")]
+    }
+
+    async fn after_save(_ctx: &Ctx, _txn: &DatabaseTransaction, record: &note::Model) -> AppResult<()> {
+        note_hook("save", record)
+    }
+
+    async fn after_trash(_ctx: &Ctx, _txn: &DatabaseTransaction, record: &note::Model) -> AppResult<()> {
+        note_hook("trash", record)
+    }
+
+    /// Overridden: replaces the default call to `after_save`.
+    async fn after_restore(_ctx: &Ctx, _txn: &DatabaseTransaction, record: &note::Model) -> AppResult<()> {
+        note_hook("restore", record)
+    }
+
+    async fn after_force_delete(_ctx: &Ctx, txn: &DatabaseTransaction, record: &note::Model) -> AppResult<()> {
+        // Still in the delete's transaction: the row is gone here.
+        assert!(note::Entity::find_by_id(record.id).one(txn).await?.is_none(), "after the delete");
+        note_hook("force", record)
     }
 }
 
