@@ -139,6 +139,20 @@ db_test!(system_permission_groups_are_translated, |db: TestDb| async move {
     );
 });
 
+db_test!(media_library_permissions_have_labels_in_both_languages, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    let find = |list: &Value, name: &str| list.as_array().unwrap().iter().find(|p| p["name"] == name).cloned().unwrap();
+    let en = app.acting_as(&users.admin).await.get(&app.admin_api("system/permissions")).await.json();
+    let view_all = find(&en, "media.view_all");
+    assert_eq!((&view_all["label"], &view_all["area"]), (&json!("See every file"), &json!("resources")));
+    assert!(view_all["description"].as_str().unwrap().contains("Manage every file"));
+    assert_eq!(find(&en, "media.manage_all")["label"], json!("Manage every file"));
+    let vi = app.acting_as(&users.admin).await.languages("vi").get(&app.admin_api("system/permissions")).await.json();
+    assert_eq!(find(&vi, "media.view_all")["label"], json!("Xem mọi tệp"));
+    assert_eq!(find(&vi, "media.manage_all")["label"], json!("Quản lý mọi tệp"));
+    assert!(find(&vi, "media.view_all")["description"].as_str().unwrap().starts_with("Liệt kê"));
+});
+
 db_test!(labels_follow_the_language_the_panel_shows, |db: TestDb| async move {
     let (app, users) = setup(db).await;
     // The tab shows English while the account's saved choice is Vietnamese

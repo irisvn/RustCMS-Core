@@ -206,7 +206,9 @@ pub(super) async fn list_permissions(
             .into_iter()
             .map(|p| {
                 let (resource, ability) = cells.get(&p.name).cloned().unzip();
-                let meta = catalog.meta(ADMIN_GUARD, &p.name);
+                // The app's declaration first, then the framework's own (media).
+                let fallback = crate::media::permission_meta(&p.name);
+                let meta = catalog.meta(ADMIN_GUARD, &p.name).or(fallback.as_ref());
                 let area = meta
                     .and_then(|m| m.area.clone())
                     .unwrap_or_else(|| if resource.is_some() { RESOURCES_AREA } else { OTHER_AREA }.to_owned());

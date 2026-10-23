@@ -49,9 +49,10 @@ impl Resource for MediaResource {
         Arc::new(MediaPolicy)
     }
 
-    /// Own uploads only, unless `media.manage_all`.
+    /// Own uploads only, unless `media.view_all` (see and reference every
+    /// file) or `media.manage_all` (also trash, restore and delete them).
     fn scope(query: sea_orm::Select<entity::Entity>, ctx: &Ctx) -> sea_orm::Select<entity::Entity> {
-        if ctx.can("media.manage_all") {
+        if ctx.can(MANAGE_ALL) || ctx.can(VIEW_ALL) {
             return query;
         }
         let owner = ctx.principal.id.parse::<i64>().unwrap_or(-1);
@@ -63,14 +64,51 @@ impl Resource for MediaResource {
     }
 }
 
+/// Sees every file and may reference it, without trashing, restoring or
+/// deleting other users' files.
+pub const VIEW_ALL: &str = "media.view_all";
+
+/// Sees every file and may trash, restore and delete it (with `media.delete`,
+/// `media.restore`, `media.force_delete`).
+pub const MANAGE_ALL: &str = "media.manage_all";
+
+/// How the Roles page shows the library's own permissions, unless the
+/// application declares `permission_meta` for them (`manage_all` includes
+/// everything `view_all` grants).
+pub(crate) fn permission_meta(name: &str) -> Option<rustcms_auth::PermissionMeta> {
+    let meta = rustcms_auth::PermissionMeta::new().area(rustcms_auth::catalog::RESOURCES_AREA);
+    match name {
+        VIEW_ALL => Some(meta.label("See every file").description(
+            "List, open and use every file of the media library in records, not only one's own uploads. \
+             Trashing, restoring or deleting another user's file needs \"Manage every file\".",
+        )),
+        MANAGE_ALL => Some(meta.label("Manage every file").description(
+            "See every file, and trash, restore or delete other users' files (with the delete, restore and \
+             force delete permissions of the media library).",
+        )),
+        _ => None,
+    }
+}
+
 /// `media.{ability}`; uploads need `media.create` (checked by the upload
 /// route); the generic create and update endpoints are always refused.
+/// Trashing, restoring and deleting another user's file also needs
+/// `media.manage_all` (`media.view_all` only shows it).
 pub struct MediaPolicy;
 
 #[async_trait]
 impl Policy for MediaPolicy {
-    async fn allows(&self, ctx: &Ctx, ability: &str, _record: Option<&Data>) -> bool {
-        !matches!(ability, "create" | "update") && ctx.can(&format!("{SLUG}.{ability}"))
+    async fn allows(&self, ctx: &Ctx, ability: &str, record: Option<&Data>) -> bool {
+        if matches!(ability, "create" | "update") || !ctx.can(&format!("{SLUG}.{ability}")) {
+            return false;
+        }
+        match (ability, record) {
+            ("delete" | "restore" | "force_delete", Some(record)) if !ctx.can(MANAGE_ALL) => {
+                // `owner_id` is an i64: a string on the wire (ADR 0003).
+                record.get("owner_id").and_then(|v| v.as_str()) == Some(ctx.principal.id.as_str())
+            }
+            _ => true,
+        }
     }
 
     async fn admits(&self, ctx: &Ctx, ability: &str) -> bool {

@@ -134,13 +134,13 @@ impl Resource for GadgetResource {
     /// An action form with every kind the vocabulary has for it.
     fn actions() -> Vec<Action<gadget::Entity>> {
         vec![
-            Action::<gadget::Entity>::new("schedule", |_, _, _, _| Box::pin(async { Ok(()) }))
-                .label("Schedule…")
-                .form(vec![
+            Action::<gadget::Entity>::new("schedule", |_, _, _, _| Box::pin(async { Ok(()) })).label("Schedule…").form(
+                vec![
                     ActionField::datetime("at").label("Run at").required(),
                     ActionField::date("day"),
                     ActionField::text("note").max_length(20),
-                ]),
+                ],
+            ),
         ]
     }
 

@@ -297,7 +297,8 @@ impl ServiceProvider for AdminProvider {
                 .expect("register StorageProvider before AdminProvider::media()")
                 .as_ref()
                 .clone();
-            auth.permissions.declare(ADMIN_GUARD, "media.manage_all", Some(crate::media::SLUG));
+            auth.permissions.declare(ADMIN_GUARD, crate::media::MANAGE_ALL, Some(crate::media::SLUG));
+            auth.permissions.declare(ADMIN_GUARD, crate::media::VIEW_ALL, Some(crate::media::SLUG));
             // The upload route alone accepts bodies up to the upload limit (plus multipart framing).
             let limit = usize::try_from(config.max_upload_bytes).unwrap_or(usize::MAX).saturating_add(64 * 1024);
             app.body_limit(axum::http::Method::POST, format!("{}/api/media", admin_path.trim_end_matches('/')), limit);

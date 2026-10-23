@@ -36,3 +36,15 @@ and scripts (ADR 0006).
 - No public media URLs, thumbnails or range requests in 0.2: apps serve public
   files with their own routes on top of `Storage`.
 - Document format changes need a new version and a migration path.
+
+## Amendment (after 0.8.2): seeing every file without managing it
+
+The owner scope had one way out, `media.manage_all`, which also let its
+holder trash and delete other users' files (the scope opens them to every
+write). `media.view_all` opens the scope only: every file is listed,
+downloaded and referenced. `MediaPolicy` refuses `delete`, `restore` and
+`force_delete` of a file whose `owner_id` is not the user's unless
+`media.manage_all`, so the decision stays server-side on every path (the
+record routes, row abilities, the trash listing). `view` stays independent of
+the record (`view_depends_on_record` is false), so lists keep their single
+query.

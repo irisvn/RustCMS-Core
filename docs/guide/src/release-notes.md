@@ -12,6 +12,8 @@ was the first published one.
   in UTC ([Actions](admin/actions.md)).
 - **`SettingsPage::after_save`** runs in the save's transaction with the old
   and new values ([Settings](admin/settings.md)).
+- **`media.view_all`**: see and use every file of the media library without
+  the right to remove other users' files ([Media](admin/media.md#whose-files-a-user-sees)).
 
 ## 0.8.2
 

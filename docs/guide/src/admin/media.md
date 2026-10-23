@@ -12,7 +12,26 @@ app.provider(AdminProvider::new().media().resource::<PostResource>());
 
 `media()` adds the **Media** resource (permissions `media.view_any`, `media.view`,
 `media.create`, `media.delete`, `media.restore`, `media.force_delete`,
-`media.manage_all`), the upload route and `media:prune`.
+`media.view_all`, `media.manage_all`), the upload route and `media:prune`.
+
+## Whose files a user sees
+
+| Permission | Sees and references | Trashes, restores, deletes (with `media.delete`, `media.restore`, `media.force_delete`) |
+|---|---|---|
+| neither | own uploads | own uploads |
+| `media.view_all` | every file | own uploads |
+| `media.manage_all` | every file | every file |
+
+`media.view_all` suits editors who put other people's images in their
+records (covers, galleries, images in rich text) and readers of those
+records, without the right to remove them. The scope decides what is listed,
+downloaded and accepted as a reference; the policy refuses the trash,
+restore and delete of another user's file (403) unless `media.manage_all`,
+and the trash lists only the files the user may restore or delete.
+`media.manage_all` includes everything `media.view_all` grants. The Roles
+page shows them as *See every file* and *Manage every file* (under
+Resources, in English and Vietnamese); an application's `permission_meta`
+for them takes precedence.
 
 Files are kept on the configured [storage](../digging-deeper/storage.md)
 (local disk or S3-compatible).
@@ -35,7 +54,7 @@ Files are kept on the configured [storage](../digging-deeper/storage.md)
 
 `GET {admin}/api/media/{id}/file` serves the bytes through the application (no
 presigned URLs) to users who may view the media record (scope: own uploads
-unless `media.manage_all`). Trashed media is not served. Headers:
+unless `media.view_all` or `media.manage_all`). Trashed media is not served. Headers:
 `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox;
 default-src 'none'`, `Cache-Control: private, no-store`, and
 `Content-Disposition: inline` for png/jpeg/gif/webp, `attachment` otherwise.

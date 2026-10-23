@@ -35,6 +35,10 @@ struct Extra {
     manager: rustcms_core::models::user::Model,
     /// Super admin of the admin guard only.
     panel_super: rustcms_core::models::user::Model,
+    /// media.view_any, media.view, media.delete, media.view_all.
+    librarian: rustcms_core::models::user::Model,
+    /// media.view_any, media.view, media.delete (own files only).
+    uploader: rustcms_core::models::user::Model,
 }
 
 async fn extra(app: &TestApp) -> Extra {
@@ -51,13 +55,24 @@ async fn extra(app: &TestApp) -> Extra {
     let panel_super = UserFactory::new().name("Panel super").create(db).await;
     let super_role = rustcms_auth::entities::role::super_admin_id(db, ADMIN_GUARD).await.unwrap().unwrap();
     rbac.assign_role(Actor::System, panel_super.id, super_role).await.unwrap();
-    Extra { manager, panel_super }
+    let media_user = async |name: &str, permissions: &[&str]| {
+        let permissions: Vec<String> = permissions.iter().map(|p| (*p).to_owned()).collect();
+        let role = rbac.create_role(Actor::System, ADMIN_GUARD, name, &permissions).await.unwrap();
+        let user = UserFactory::new().name(name).create(db).await;
+        rbac.assign_role(Actor::System, user.id, role.id).await.unwrap();
+        user
+    };
+    let uploader = media_user("uploader", &["media.view_any", "media.view", "media.delete"]).await;
+    let librarian = media_user("librarian", &["media.view_any", "media.view", "media.delete", "media.view_all"]).await;
+    Extra { manager, panel_super, librarian, uploader }
 }
 
 async fn actor<'a>(app: &'a TestApp, users: &Users, extra: &Extra, name: &str) -> TestClient<'a> {
     match name {
         "manager" => app.acting_as(&extra.manager).await,
         "panel_super" => app.acting_as(&extra.panel_super).await,
+        "librarian" => app.acting_as(&extra.librarian).await,
+        "uploader" => app.acting_as(&extra.uploader).await,
         "guest" => {
             let client = app.client();
             client.fetch_csrf().await;
@@ -109,6 +124,29 @@ db_test!(oracle_matches_the_admin_api, |db: TestDb| async move {
         .send(Method::DELETE, &app.admin_api(&format!("resources/notes/records/{trashed_note}")), None)
         .await
         .assert_status(StatusCode::NO_CONTENT);
+    // A file of the admin's (inserted directly: the oracle needs no storage).
+    let media = {
+        use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+        let id = uuid::Uuid::now_v7();
+        rustcms_admin::media::entity::ActiveModel {
+            id: Set(id),
+            disk: Set("local".into()),
+            key: Set(format!("media/{id}")),
+            name: Set("theirs.png".into()),
+            mime: Set("image/png".into()),
+            size: Set(1),
+            sha256: Set("0".repeat(64)),
+            width: Set(None),
+            height: Set(None),
+            owner_id: Set(users.admin.id),
+            created_at: Set(chrono::Utc::now()),
+            deleted_at: Set(None),
+        }
+        .insert(app.state().db())
+        .await
+        .unwrap();
+        id.to_string()
+    };
     let role_id = async |name: &str| {
         use rustcms_auth::entities::role;
         use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -131,7 +169,8 @@ db_test!(oracle_matches_the_admin_api, |db: TestDb| async move {
             .replace("{spare}", &spare)
             .replace("{theirs}", &theirs)
             .replace("{note}", &active_note)
-            .replace("{trashed}", &trashed_note);
+            .replace("{trashed}", &trashed_note)
+            .replace("{media}", &media);
         for (placeholder, value) in &ids {
             text = text.replace(placeholder, value);
         }

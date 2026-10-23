@@ -233,3 +233,78 @@ db_test!(pruning_never_deletes_a_committed_file, |db: TestDb| async move {
     rustcms_admin::media::prune(app.state().db(), storage.as_ref()).await.unwrap();
     assert!(storage.exists(&key).await.unwrap(), "used by a committed row");
 });
+
+/// A media row owned by `owner`, inserted directly.
+async fn stored_media(db: &sea_orm::DatabaseConnection, owner: i64, name: &str) -> String {
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    let id = uuid::Uuid::now_v7();
+    media::ActiveModel {
+        id: Set(id),
+        disk: Set("local".into()),
+        key: Set(format!("media/{id}")),
+        name: Set(name.into()),
+        mime: Set("image/png".into()),
+        size: Set(100),
+        sha256: Set("0".repeat(64)),
+        width: Set(Some(1)),
+        height: Set(Some(1)),
+        owner_id: Set(owner),
+        created_at: Set(chrono::Utc::now()),
+        deleted_at: Set(None),
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    id.to_string()
+}
+
+db_test!(view_all_shows_and_references_every_file_without_managing_others, |db: TestDb| async move {
+    use rustcms_admin::{Data, ListQuery, Trashed};
+    use rustcms_core::{AppError, Principal};
+    use support::{Fixture, PrincipalExt, admin};
+    let fx = Fixture::new(db).await;
+    let library = fx.resource("media");
+    let notes = fx.resource("notes");
+    let theirs = stored_media(fx.db.conn(), 1, "theirs.png").await;
+    let mine = stored_media(fx.db.conn(), 7, "mine.png").await;
+    let user = |extra: &[&str]| {
+        let base = ["media.view_any", "media.view", "media.delete", "media.restore", "media.force_delete"];
+        let principal = Principal { id: "7".into(), guard: "admin".into(), ..Default::default() };
+        fx.ctx(principal.with(&base).with(&["notes.view_any", "notes.view", "notes.create"]).with(extra))
+    };
+    let cover =
+        |id: &str| -> Data { json!({"title": format!("cover {id}"), "cover": id}).as_object().unwrap().clone() };
+
+    // Own files only, by default: others' are neither shown nor referenceable.
+    let own = user(&[]);
+    assert_eq!(library.list(&own, &ListQuery::default()).await.unwrap().meta.total, 1);
+    assert!(matches!(library.find(&own, &theirs).await, Err(AppError::NotFound)));
+    let refused = notes.create(&own, cover(&theirs)).await.unwrap_err();
+    assert!(matches!(refused, AppError::Validation(ref v) if v.errors.contains_key("cover")), "{refused:?}");
+
+    // `media.view_all`: every file is listed, read and referenced…
+    let viewer = user(&["media.view_all"]);
+    assert_eq!(library.list(&viewer, &ListQuery::default()).await.unwrap().meta.total, 2);
+    let found = library.find(&viewer, &theirs).await.unwrap();
+    assert!(!found.abilities["delete"], "others' files are not offered for trashing");
+    notes.create(&viewer, cover(&theirs)).await.unwrap();
+    // …but another user's file is never trashed, restored or deleted.
+    assert!(matches!(library.delete(&viewer, &theirs).await, Err(AppError::Forbidden)));
+    library.delete(&admin_ctx(&fx), &theirs).await.unwrap();
+    assert!(matches!(library.restore(&viewer, &theirs).await, Err(AppError::Forbidden)));
+    assert!(matches!(library.force_delete(&viewer, &theirs).await, Err(AppError::Forbidden)));
+    let trash = library.list(&viewer, &ListQuery { trashed: Trashed::Only, ..Default::default() }).await.unwrap();
+    assert_eq!(trash.meta.total, 0, "others' trashed files are not in the user's trash");
+    // Own files: as before.
+    library.delete(&viewer, &mine).await.unwrap();
+    library.restore(&viewer, &mine).await.unwrap();
+
+    // `media.manage_all` still manages them.
+    let manager = user(&["media.manage_all"]);
+    library.restore(&manager, &theirs).await.unwrap();
+    library.delete(&manager, &theirs).await.unwrap();
+
+    fn admin_ctx(fx: &Fixture) -> rustcms_admin::Ctx {
+        fx.ctx(admin())
+    }
+});

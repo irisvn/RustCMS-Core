@@ -20,6 +20,15 @@ All notable changes are documented here. The format follows
   save's transaction after the row and its audit entry are written, with the
   group as it was and as saved (typed); an error rolls the save back. Not
   called when a save changes nothing.
+- `media.view_all` (`rustcms::admin::media::VIEW_ALL`): every file is
+  listed, downloaded and accepted as a reference (media fields, rich text),
+  but trashing, restoring and deleting another user's file still needs
+  `media.manage_all` (`MediaPolicy` decides per file; 403). Oracle actors
+  `uploader` and `librarian`.
+
+### Changed (Unreleased)
+- LMS example: editors and viewers hold `media.view_all` instead of
+  `media.manage_all` (they only view the news' images).
 
 ## [0.8.2] — 2026-10-21
 
