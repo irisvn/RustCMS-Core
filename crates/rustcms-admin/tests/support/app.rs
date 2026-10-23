@@ -96,7 +96,43 @@ impl SettingsPage for GeneralSettings {
         }
         Ok(())
     }
+
+    /// Notes `(before, after, secret set after, stored row seen)`; a site named
+    /// `rollback` fails.
+    async fn after_save(
+        _state: &rustcms_core::AppState,
+        ctx: &Ctx,
+        txn: &sea_orm::DatabaseTransaction,
+        before: &Self,
+        after: &Self,
+    ) -> rustcms_core::AppResult<()> {
+        use sea_orm::EntityTrait;
+        assert!(ctx.txn.is_some(), "the save's context");
+        // In the save's transaction: the new values are written.
+        let row = rustcms_core::models::setting::Entity::find_by_id("general".to_owned()).one(txn).await?;
+        let seen = row.is_some_and(|r| r.value["site_name"] == serde_json::json!(after.site_name));
+        SAVED_GENERAL.lock().unwrap().push((
+            before.site_name.clone(),
+            after.site_name.clone(),
+            after.smtp_password.expose().is_some(),
+            seen,
+        ));
+        if after.site_name == "leak-old" {
+            // A careless message quoting the secret as it was: the server redacts it.
+            let quoted = before.smtp_password.expose().unwrap_or_default();
+            return Err(ValidationErrors::field("site_name", format!("was set with {quoted}")).into());
+        }
+        if after.site_name == "leak-new" {
+            let quoted = after.smtp_password.expose().unwrap_or_default();
+            return Err(ValidationErrors::field("site_name", format!("is now set with {quoted}")).into());
+        }
+        if after.site_name == "rollback" { Err(rustcms_core::AppError::internal("rollback")) } else { Ok(()) }
+    }
 }
+
+/// What `GeneralSettings::after_save` saw.
+#[allow(dead_code)]
+pub static SAVED_GENERAL: std::sync::Mutex<Vec<(String, String, bool, bool)>> = std::sync::Mutex::new(Vec::new());
 
 /// Vietnamese labels of the test resources (`[posts]` overrides for that resource).
 pub const VI: &str = r#"

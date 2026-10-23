@@ -10,6 +10,8 @@ was the first published one.
   `after_save` first ([Resources](admin/resources.md#hooks)).
 - **`ActionField::datetime`**: a date and time in an action's form, entered
   in UTC ([Actions](admin/actions.md)).
+- **`SettingsPage::after_save`** runs in the save's transaction with the old
+  and new values ([Settings](admin/settings.md)).
 
 ## 0.8.2
 

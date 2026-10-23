@@ -12,7 +12,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rustcms_core::settings::{Settings, Stored, typed, valid_group};
-use rustcms_core::{AppResult, AppState, ValidationErrors};
+use rustcms_core::{AppError, AppResult, AppState, ValidationErrors};
+use sea_orm::DatabaseTransaction;
 use serde_json::{Map, Value};
 
 pub use http::{SecretStatus, SettingsAbilities, SettingsLink, SettingsResponse};
@@ -289,6 +290,21 @@ pub trait SettingsPage: Settings {
     async fn validate_in(_state: &AppState, ctx: &Ctx, settings: &Self) -> Result<(), ValidationErrors> {
         Self::validate(ctx, settings).await
     }
+
+    /// Runs in the save's transaction after the new values are written (and
+    /// the audit entry recorded), before the commit, with the group as it was
+    /// (`before`: defaults when never saved; a secret that could not be
+    /// decrypted reads as unset) and as saved (`after`). An error rolls the
+    /// save back. Not called when a save changes nothing (nothing is written).
+    async fn after_save(
+        _state: &AppState,
+        _ctx: &Ctx,
+        _txn: &DatabaseTransaction,
+        _before: &Self,
+        _after: &Self,
+    ) -> AppResult<()> {
+        Ok(())
+    }
 }
 
 /// A registered settings page, type-erased.
@@ -301,6 +317,15 @@ pub(crate) trait DynSettings: Send + Sync {
     fn defaults(&self) -> &Map<String, Value>;
     /// The group as stored, typed and checked by the application.
     async fn validate(&self, state: &AppState, ctx: &Ctx, stored: &Stored) -> AppResult<()>;
+    /// The application's hook after a save, with the group before and after (typed).
+    async fn after_save(
+        &self,
+        state: &AppState,
+        ctx: &Ctx,
+        txn: &DatabaseTransaction,
+        before: &Stored,
+        after: &Stored,
+    ) -> AppResult<()>;
 }
 
 pub(crate) struct SettingsAdapter<T> {
@@ -445,20 +470,60 @@ impl<T: SettingsPage> DynSettings for SettingsAdapter<T> {
 
     async fn validate(&self, state: &AppState, ctx: &Ctx, stored: &Stored) -> AppResult<()> {
         let settings: T = typed(stored)?;
-        T::validate_in(state, ctx, &settings).await.map_err(|errors| redacted(errors, stored).into())
+        T::validate_in(state, ctx, &settings).await.map_err(|errors| redacted(errors, &[stored]).into())
+    }
+
+    async fn after_save(
+        &self,
+        state: &AppState,
+        ctx: &Ctx,
+        txn: &DatabaseTransaction,
+        before: &Stored,
+        after: &Stored,
+    ) -> AppResult<()> {
+        // A secret that could not be decrypted was replaced or cleared by this
+        // save (or it would have been refused): it reads as unset.
+        let mut readable = before.clone();
+        readable.secrets.retain(|_, state| *state != rustcms_core::settings::SecretState::Unreadable);
+        // Stored values that no longer fit the struct (a declaration changed)
+        // read as their defaults: the save that replaces them must not fail.
+        let old: T = typed(&readable).or_else(|_| {
+            readable.values.retain(|name, value| {
+                let mut one = Stored::default();
+                one.values.insert(name.clone(), value.clone());
+                typed::<T>(&one).is_ok()
+            });
+            // Secrets too (a field that is no longer a `Secret`).
+            readable.secrets.retain(|name, state| {
+                let mut one = Stored::default();
+                one.secrets.insert(name.clone(), state.clone());
+                typed::<T>(&one).is_ok()
+            });
+            typed(&readable)
+        })?;
+        let new: T = typed(after)?;
+        // A message may quote a secret as it was or as it is now: neither is sent.
+        T::after_save(state, ctx, txn, &old, &new).await.map_err(|err| match err {
+            AppError::Validation(errors) => redacted(errors, &[before, after]).into(),
+            other => other,
+        })
     }
 }
 
-/// `errors` without the secrets of `stored`: a hook's message may quote one.
-fn redacted(mut errors: ValidationErrors, stored: &Stored) -> ValidationErrors {
-    let secrets: Vec<&str> = stored
-        .secrets
-        .values()
+/// `errors` without the secrets of `stored` (each version given): a hook's
+/// message may quote one. Longest first, so a secret containing another is
+/// never left half redacted.
+fn redacted(mut errors: ValidationErrors, stored: &[&Stored]) -> ValidationErrors {
+    let mut secrets: Vec<&str> = stored
+        .iter()
+        .flat_map(|s| s.secrets.values())
         .filter_map(|s| match s {
             rustcms_core::settings::SecretState::Set(plain) if !plain.is_empty() => Some(plain.as_str()),
             _ => None,
         })
         .collect();
+    secrets.sort_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
+    secrets.dedup();
     let clean = |message: &mut String| {
         for secret in &secrets {
             if message.contains(secret) {

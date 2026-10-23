@@ -188,6 +188,41 @@ with a server it was not given for.
 `validate_in(state, ctx, settings)` is `validate` with the application (its
 configuration and services), for checks that depend on them.
 
+`after_save` runs in the save's transaction once the new values are written
+(and the audit entry recorded), before the commit, with the group as it was
+and as saved; an error rolls the save back. Use it to react to a change in
+the same transaction, e.g. dispatch a job that rebuilds what depends on the
+setting:
+
+```rust,ignore
+async fn after_save(
+    _state: &AppState,
+    _ctx: &Ctx,
+    txn: &DatabaseTransaction,
+    before: &Self,
+    after: &Self,
+) -> AppResult<()> {
+    if before.site_name != after.site_name {
+        rustcms::queue::dispatch(txn, &RebuildSitemap).await?; // committed with the save
+    }
+    Ok(())
+}
+```
+
+`before` holds the defaults when the group was never saved; a secret that
+could not be decrypted (which the save replaced or cleared) reads as unset
+there, and a stored value that no longer fits the struct (its declaration
+changed) reads as its default, so the save that replaces it still succeeds. A save that changes nothing writes nothing and does not call it.
+Secrets quoted in a `ValidationErrors` it returns, as they were or as
+saved, are redacted like `validate`'s.
+
+The hook sees secrets as values: `before.smtp_password.expose()` and
+`after.smtp_password.expose()` are the plaintext (an unset or unreadable one
+is `None`). Compare them, or hand them to the service that needs them, but
+never write them to logs, the audit log, a job's description, an error
+message or anything sent to the browser (ADR 0030's rule for secrets): a
+job that needs the secret reads the settings itself when it runs.
+
 ## Mail
 
 `AdminProvider::mail_settings()` adds the **Mail** page: the SMTP server of

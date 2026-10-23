@@ -405,6 +405,14 @@ async fn update(
     settings::write(&txn, key, page.group(), after.version, values, &secrets, user_id).await?;
     let entry = AuditEntry::new("settings.updated", "settings").key(page.group()).changes(Value::Object(changes));
     audit::record(&txn, &ctx.audit_context, entry).await?;
+    // The application's hook, in the save's transaction, as the user is now.
+    let txn = Arc::new(txn);
+    let mut within = ctx.within(txn.clone());
+    within.principal = current.clone();
+    page.after_save(&state, &within, txn.as_ref(), &stored, &after).await?;
+    drop(within);
+    let txn =
+        Arc::try_unwrap(txn).map_err(|_| AppError::internal("settings: the write transaction is still in use"))?;
     txn.commit().await?;
     Ok(Json(response(&ctx, page.as_ref(), &after)))
 }

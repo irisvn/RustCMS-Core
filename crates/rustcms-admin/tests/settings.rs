@@ -161,6 +161,75 @@ db_test!(saving_validates_versions_and_audits, |db: TestDb| async move {
     assert_eq!(admin.get(&url(&app)).await.json()["version"], json!("1"));
 });
 
+db_test!(after_save_runs_in_the_save_with_old_and_new_values, |db: TestDb| async move {
+    let (app, users) = app(db).await;
+    let admin = app.acting_as(&users.admin).await;
+    let saved = |entry: (&str, &str, bool)| {
+        support::app::SAVED_GENERAL
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(b, a, secret, seen)| (b.as_str(), a.as_str(), *secret) == entry && *seen)
+    };
+    // The first save: the defaults before, the saved values after (secrets readable).
+    put(&app, &admin, "0", json!({"site_name": "LMS", "smtp_password": "pw-1"})).await.assert_status(StatusCode::OK);
+    assert!(saved(("Academy", "LMS", true)));
+    put(&app, &admin, "1", json!({"site_name": "School"})).await.assert_status(StatusCode::OK);
+    assert!(saved(("LMS", "School", true)));
+    // Nothing changed: nothing written, no hook (no `School` → `School` call;
+    // other tests of this process record their own names meanwhile).
+    put(&app, &admin, "2", json!({"site_name": "School"})).await.assert_status(StatusCode::OK);
+    let unchanged = |(b, a, _, _): &(String, String, bool, bool)| b == "School" && a == "School";
+    assert!(!support::app::SAVED_GENERAL.lock().unwrap().iter().any(unchanged));
+    // The hook fails: the save, its version and its entry roll back.
+    put(&app, &admin, "2", json!({"site_name": "rollback"})).await.assert_status(StatusCode::INTERNAL_SERVER_ERROR);
+    let read: GeneralSettings = settings::get(app.state()).await.unwrap();
+    assert_eq!(read.site_name, "School");
+    assert_eq!(admin.get(&url(&app)).await.json()["version"], json!("2"));
+    assert_eq!(entries(&app).await.len(), 2);
+    // Its messages never quote a secret, as it was or as saved.
+    let refused = put(&app, &admin, "2", json!({"site_name": "leak-old", "smtp_password": "pw-2"})).await;
+    refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+    let text = refused.text();
+    assert!(!text.contains("pw-1") && !text.contains("pw-2") && text.contains("[redacted]"), "{text}");
+    // A replacement containing the old secret is redacted whole, never in part.
+    let refused = put(&app, &admin, "2", json!({"site_name": "leak-new", "smtp_password": "pw-1-new"})).await;
+    refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+    let text = refused.text();
+    assert!(!text.contains("-new") && text.contains("[redacted]"), "{text}");
+});
+
+db_test!(a_stored_value_that_no_longer_fits_can_be_replaced, |db: TestDb| async move {
+    let (app, users) = app(db).await;
+    let admin = app.acting_as(&users.admin).await;
+    put(&app, &admin, "0", json!({"site_name": "LMS"})).await.assert_status(StatusCode::OK);
+    // The declaration changed since: the stored `class_size` is no longer an i32.
+    let row = setting::Entity::find_by_id("general".to_owned()).one(app.state().db()).await.unwrap().unwrap();
+    let mut value = row.value.clone();
+    value["class_size"] = json!("thirty");
+    let mut active: setting::ActiveModel = row.into();
+    active.value = sea_orm::Set(value);
+    sea_orm::ActiveModelTrait::update(active, app.state().db()).await.unwrap();
+    // Replacing it saves; the hook sees the default as the value it replaced.
+    put(&app, &admin, "1", json!({"class_size": 12})).await.assert_status(StatusCode::OK);
+    let read: GeneralSettings = settings::get(app.state()).await.unwrap();
+    assert_eq!((read.site_name.as_str(), read.class_size), ("LMS", 12));
+    assert!(support::app::SAVED_GENERAL.lock().unwrap().iter().any(|(b, a, _, _)| b == "LMS" && a == "LMS"));
+
+    // A field that was a secret and is an integer now: its stored secret is ignored too.
+    let stored = settings::read(app.state().db(), app.state().keyring(), "general", false).await.unwrap();
+    let txn = rustcms_core::db::begin_write(app.state().db()).await.unwrap();
+    let secrets = std::collections::BTreeMap::from([("class_size".to_owned(), "was-a-secret".to_owned())]);
+    let mut values = stored.values.clone();
+    values.remove("class_size");
+    settings::write(&txn, app.state().keyring(), "general", stored.version + 1, values, &secrets, None).await.unwrap();
+    txn.commit().await.unwrap();
+    let version = (stored.version + 1).to_string();
+    put(&app, &admin, &version, json!({"class_size": 13})).await.assert_status(StatusCode::OK);
+    let read: GeneralSettings = settings::get(app.state()).await.unwrap();
+    assert_eq!(read.class_size, 13);
+});
+
 db_test!(secrets_are_encrypted_and_never_sent, |db: TestDb| async move {
     let (app, users) = app(db).await;
     let admin = app.acting_as(&users.admin).await;

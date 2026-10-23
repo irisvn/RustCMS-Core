@@ -46,8 +46,16 @@ validated like any input, audited, and some of them secret.
   missing row is version 0; simultaneous first writes: one wins, the other
   is stale), validation, the application's `validate` (inside the
   transaction, with the reloaded principal), then the row and a
-  `settings.updated` audit entry in one transaction. A save that changes
-  nothing writes nothing. `update` requires `view` too.
+  `settings.updated` audit entry in one transaction, then the application's
+  `after_save(state, ctx, txn, before, after)` in it (typed values; an
+  unreadable secret reads as unset in `before`, a stored value that no longer
+  fits the struct as its default, so a save repairing it never fails there;
+  its messages are redacted against both versions' secrets; its error rolls
+  the save back; added in 0.9.0). The hook receives secrets in plaintext
+  (`Secret::expose`): like every secret (ADR 0030) they must never reach
+  logs, the audit log, job payloads or descriptions, or responses; jobs it
+  dispatches read the settings when they run. A save that changes nothing writes nothing and
+  calls no hook. `update` requires `view` too.
 - Unknown groups answer 404 only to users who may view some settings group
   (403 otherwise), so group names do not leak.
 

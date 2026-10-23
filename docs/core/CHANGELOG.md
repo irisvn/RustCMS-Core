@@ -16,6 +16,10 @@ All notable changes are documented here. The format follows
   labelled in UTC like the form's `DateTimePicker` of an instant column;
   strict RFC 3339 on the wire (ADR 0003), canonical UTC
   (`2026-10-12T02:30:00Z`) in the handler's `data`.
+- `SettingsPage::after_save(state, ctx, txn, before, after)`: runs in the
+  save's transaction after the row and its audit entry are written, with the
+  group as it was and as saved (typed); an error rolls the save back. Not
+  called when a save changes nothing.
 
 ## [0.8.2] — 2026-10-21
 
