@@ -44,6 +44,10 @@ and add readable pivot columns by target key. Writes:
   history shows targets and pivot values (those readable now) only to readers
   who may list the target, else `{relation, count}`; pivot updates that change
   nothing are not written nor recorded.
+- `Resource::after_relation_change` (added after 0.8.2): the parent's hook,
+  in the write's transaction after the pivot rows and the audit entry, with
+  the parent model and a `RelationChange` of the targets that really changed;
+  writes that change nothing call nothing. The parent row is not updated.
 
 **Action forms.** `Action::form(vec![ActionField::…])` (text, textarea,
 integer, boolean, date, `datetime` (an instant, edited in UTC; added

@@ -117,6 +117,7 @@ the write back:
 | `after_trash` | a record is moved to the [trash](#soft-deletes) | as stored (marker set) |
 | `after_restore` | a trashed record is restored (default: calls `after_save`) | as stored (marker cleared) |
 | `after_force_delete` | a trashed record is deleted for good | as it was |
+| `after_relation_change` | links of a [belongs-to-many](relationships.md#reacting-to-link-changes) relation change | the parent, as stored |
 
 Dispatch a job there (outbox) to undo what the record configured, or to
 publish and unpublish it. Trashing does not call `after_delete`. The default

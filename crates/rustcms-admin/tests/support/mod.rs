@@ -444,6 +444,30 @@ impl Resource for PostResource {
         ]
     }
 
+    /// Notes each change with the pivot rows it sees; `stuck-links*` posts refuse.
+    async fn after_relation_change(
+        _ctx: &Ctx,
+        txn: &DatabaseTransaction,
+        record: &post::Model,
+        change: &rustcms_admin::RelationChange,
+    ) -> AppResult<()> {
+        let mut linked: Vec<String> = post_tag::Entity::find()
+            .filter(post_tag::Column::PostId.eq(record.id))
+            .all(txn)
+            .await?
+            .into_iter()
+            .map(|r| r.tag_slug)
+            .collect();
+        linked.sort();
+        POST_LINKS.lock().unwrap().push(PostLinks {
+            post: record.id.to_string(),
+            title: record.title.clone(),
+            change: change.clone(),
+            linked,
+        });
+        if record.title.starts_with("stuck-links") { Err(AppError::internal("stuck")) } else { Ok(()) }
+    }
+
     async fn mutate_before_create(ctx: &Ctx, _txn: &DatabaseTransaction, mut data: Data) -> AppResult<Data> {
         data.insert("author_id".into(), json!(ctx.principal.id));
         if data.get("title") == Some(&json!("expand")) {
@@ -451,6 +475,25 @@ impl Resource for PostResource {
         }
         Ok(data)
     }
+}
+
+/// What `PostResource::after_relation_change` saw: the post, the change and
+/// the post's links in the write's transaction.
+#[derive(Debug, Clone)]
+pub struct PostLinks {
+    pub post: String,
+    pub title: String,
+    pub change: rustcms_admin::RelationChange,
+    pub linked: Vec<String>,
+}
+
+#[allow(dead_code)]
+pub static POST_LINKS: std::sync::Mutex<Vec<PostLinks>> = std::sync::Mutex::new(Vec::new());
+
+/// The changes `PostResource::after_relation_change` saw for `post`.
+#[allow(dead_code)]
+pub fn post_links(post: &str) -> Vec<PostLinks> {
+    POST_LINKS.lock().unwrap().iter().filter(|l| l.post == post).cloned().collect()
 }
 
 pub struct TagResource;

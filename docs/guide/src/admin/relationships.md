@@ -146,6 +146,37 @@ only the pivot columns the user filled in (the others keep their database
 defaults); editing a link sends only what changed, and a change to the values
 already stored writes and records nothing.
 
+### Reacting to link changes
+
+`Resource::after_relation_change` runs in the transaction of every write
+that changed links of the record, after the pivot rows are written, with the
+parent record and what changed (target keys, canonical, sorted):
+
+```rust,ignore
+async fn after_relation_change(
+    _ctx: &Ctx,
+    txn: &DatabaseTransaction,
+    post: &post::Model,
+    change: &RelationChange,
+) -> AppResult<()> {
+    if change.relation == "tags" {
+        // change.attached, change.detached, change.pivot_updated: Vec<String>
+        let mut active = post.clone().into_active_model();
+        active.updated_at = Set(chrono::Utc::now()); // links count as an edit
+        active.update(txn).await?;
+    }
+    Ok(())
+}
+```
+
+It runs once per relation and write: an attach, a detach or a link edit from
+the relation manager, or the links chosen in the record's own form. Writes
+that change nothing (attaching what is already linked, detaching what is not,
+a link edit to the stored values) do not call it. An error rolls the whole
+write back. The engine never updates the parent row for a link change (its
+`updated_at` included): do it here when your application needs it; the
+parent is already locked by the write.
+
 ### Rules checked at boot
 
 - The two key columns exist in the pivot with the types of the two keys.

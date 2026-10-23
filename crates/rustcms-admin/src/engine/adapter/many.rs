@@ -10,7 +10,7 @@ use serde_json::{Map, Value as Json};
 use rustcms_core::audit::{self, AuditEntry};
 
 use super::*;
-use crate::links::{LinkOp, LinkOption, LinkOutcome, LinkRequest};
+use crate::links::{LinkOp, LinkOption, LinkOutcome, LinkRequest, RelationChange};
 use crate::resource::Through;
 
 /// Most targets one attach or detach names.
@@ -211,6 +211,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let target_values: Vec<Value> =
             processed.iter().map(|k| Self::target_value(pivot.as_ref(), k)).collect::<AppResult<_>>()?;
         let linked = pivot.rows(DbConn::Txn(&txn), parent_value.clone(), target_values).await?;
+        let mut change = RelationChange::new(relation.name);
         match op {
             LinkOp::Attach => {
                 // Links already there keep their pivot values.
@@ -222,6 +223,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 }
                 let meta = LinkMeta { relation: name, targets: &added, pivot: Self::pivot_audit(relation, &values) };
                 self.audit_link(&wctx, &txn, "attached", &parent_key, meta).await?;
+                change.attached = added;
             }
             LinkOp::Detach => {
                 let removed: Vec<String> = processed.iter().filter(|k| linked.contains_key(*k)).cloned().collect();
@@ -230,6 +232,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 pivot.delete(&txn, parent_value.clone(), removing).await?;
                 let meta = LinkMeta { relation: name, targets: &removed, pivot: None };
                 self.audit_link(&wctx, &txn, "detached", &parent_key, meta).await?;
+                change.detached = removed;
             }
             LinkOp::UpdatePivot => {
                 // A target not visible, or not linked: as missing.
@@ -259,8 +262,12 @@ impl<R: Resource> ResourceAdapter<R> {
                     let meta =
                         LinkMeta { relation: name, targets: &targets, pivot: Self::pivot_audit(relation, &changed) };
                     self.audit_link(&wctx, &txn, "pivot_updated", &parent_key, meta).await?;
+                    change.pivot_updated = targets.into();
                 }
             }
+        }
+        if !change.is_empty() {
+            R::after_relation_change(&wctx, &txn, &parent, &change).await?;
         }
         Self::commit(txn, wctx).await?;
         processed.sort();

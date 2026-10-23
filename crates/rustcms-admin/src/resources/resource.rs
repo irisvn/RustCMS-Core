@@ -327,6 +327,22 @@ pub trait Resource: Send + Sync + 'static {
         Self::after_save(ctx, txn, record).await
     }
 
+    /// Runs in the transaction of a write that changed links of a
+    /// belongs-to-many relation of `record` (the parent, as stored): an
+    /// attach, a detach or a pivot update from the relation manager, or the
+    /// links chosen in the record's own form. Once per relation and write,
+    /// after the pivot rows are written; an error rolls the whole write back.
+    /// The parent row is locked but not updated: touch its `updated_at` here
+    /// if links count as a change of the record.
+    async fn after_relation_change(
+        _ctx: &Ctx,
+        _txn: &DatabaseTransaction,
+        _record: &<Self::Entity as EntityTrait>::Model,
+        _change: &crate::links::RelationChange,
+    ) -> AppResult<()> {
+        Ok(())
+    }
+
     /// Runs in the transaction that deletes a trashed record for good (soft
     /// deletes), after the delete, with the record as it was: e.g. queue the
     /// removal of files the record owned. An error rolls the delete back.

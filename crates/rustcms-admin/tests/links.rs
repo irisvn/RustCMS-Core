@@ -166,6 +166,60 @@ db_test!(attach_list_detach_and_update_links, |db: TestDb| async move {
     );
 });
 
+db_test!(link_writes_call_after_relation_change_in_their_transaction, |db: TestDb| async move {
+    use support::post_links;
+    let (app, users) = setup(db).await;
+    tags(&app, &["rust", "sql"]).await;
+    let admin = app.acting_as(&users.admin).await;
+    let post = post_of(&admin, &app, "Hooked").await;
+    // (attached, detached, pivot_updated, linked) per call.
+    type Seen = (Vec<String>, Vec<String>, Vec<String>, Vec<String>);
+    let summary = |post: &str| -> Vec<Seen> {
+        post_links(post)
+            .into_iter()
+            .map(|l| {
+                assert_eq!(l.change.relation, "tags");
+                (l.change.attached, l.change.detached, l.change.pivot_updated, l.linked)
+            })
+            .collect()
+    };
+    let v = |items: &[&str]| items.iter().map(|s| (*s).to_owned()).collect::<Vec<String>>();
+
+    admin
+        .post_json(&rel(&app, &post, "/attach"), &json!({"keys": ["rust", "sql"]}))
+        .await
+        .assert_status(StatusCode::OK);
+    // Already linked: nothing changes, no call.
+    admin.post_json(&rel(&app, &post, "/attach"), &json!({"keys": ["rust"]})).await.assert_status(StatusCode::OK);
+    admin
+        .send(Method::PATCH, &rel(&app, &post, "/links/rust"), Some(&json!({"position": 4})))
+        .await
+        .assert_status(StatusCode::OK);
+    admin
+        .send(Method::PATCH, &rel(&app, &post, "/links/rust"), Some(&json!({"position": 4})))
+        .await
+        .assert_status(StatusCode::OK);
+    admin
+        .post_json(&rel(&app, &post, "/detach"), &json!({"keys": ["sql", "nope"]}))
+        .await
+        .assert_status(StatusCode::OK);
+    assert_eq!(
+        summary(&post),
+        [
+            (v(&["rust", "sql"]), v(&[]), v(&[]), v(&["rust", "sql"])),
+            (v(&[]), v(&[]), v(&["rust"]), v(&["rust", "sql"])),
+            (v(&[]), v(&["sql"]), v(&[]), v(&["rust"])),
+        ],
+        "once per write that changed links, with the pivot rows of the write"
+    );
+
+    // A failing hook rolls the link write back.
+    let stuck = post_of(&admin, &app, "stuck-links").await;
+    let refused = admin.post_json(&rel(&app, &stuck, "/attach"), &json!({"keys": ["rust"]})).await;
+    refused.assert_status(StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(links(&app, &stuck).await.is_empty());
+});
+
 async fn list_pivot(client: &TestClient<'_>, app: &TestApp, post: &str) -> Value {
     client.get(&rel(app, post, "")).await.json()["pivot"].clone()
 }

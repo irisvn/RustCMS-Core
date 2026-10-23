@@ -72,3 +72,31 @@ pub struct LinkOption {
     /// Already linked to the record.
     pub attached: bool,
 }
+
+/// What one write changed in a belongs-to-many relation of a record, given to
+/// [`crate::Resource::after_relation_change`]. Keys are the targets' canonical
+/// keys, sorted; only links that really changed are listed (attaching a
+/// linked target or detaching an unlinked one changes nothing).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct RelationChange {
+    /// The relation's name (`Relation::belongs_to_many`'s first argument).
+    pub relation: &'static str,
+    /// Targets linked by the write.
+    pub attached: Vec<String>,
+    /// Targets unlinked by the write.
+    pub detached: Vec<String>,
+    /// Targets whose pivot columns the write changed.
+    pub pivot_updated: Vec<String>,
+}
+
+impl RelationChange {
+    pub(crate) fn new(relation: &'static str) -> Self {
+        Self { relation, ..Self::default() }
+    }
+
+    /// Whether the write changed nothing.
+    pub fn is_empty(&self) -> bool {
+        self.attached.is_empty() && self.detached.is_empty() && self.pivot_updated.is_empty()
+    }
+}

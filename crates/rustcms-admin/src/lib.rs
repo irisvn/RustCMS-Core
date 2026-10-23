@@ -35,7 +35,7 @@ pub use adapter::ImportField;
 pub use context::Ctx;
 pub use field::{Field, Operation};
 pub use http::{AdminCtx, AdminPanel, LinkPage};
-pub use links::{LinkOp, LinkOption, LinkOutcome, LinkRequest};
+pub use links::{LinkOp, LinkOption, LinkOutcome, LinkRequest, RelationChange};
 pub use policy::{PermissionPolicy, Policy};
 pub use provider::AdminProvider;
 pub use registry::{DynResource, Registry};

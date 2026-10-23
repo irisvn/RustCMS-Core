@@ -25,6 +25,12 @@ All notable changes are documented here. The format follows
   but trashing, restoring and deleting another user's file still needs
   `media.manage_all` (`MediaPolicy` decides per file; 403). Oracle actors
   `uploader` and `librarian`.
+- `Resource::after_relation_change(ctx, txn, record, &RelationChange)`:
+  runs in the transaction of a belongs-to-many write that changed links
+  (attach, detach, pivot update), once per relation and write, with the
+  parent record and the changed target keys (`attached`, `detached`,
+  `pivot_updated`); an error rolls the write back. The parent row is still
+  not updated by link writes (`updated_at` included).
 
 ### Changed (Unreleased)
 - LMS example: editors and viewers hold `media.view_all` instead of

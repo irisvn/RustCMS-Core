@@ -14,6 +14,9 @@ was the first published one.
   and new values ([Settings](admin/settings.md)).
 - **`media.view_all`**: see and use every file of the media library without
   the right to remove other users' files ([Media](admin/media.md#whose-files-a-user-sees)).
+- **`Resource::after_relation_change`** runs when links of a belongs-to-many
+  relation change, in the same transaction
+  ([Relationships](admin/relationships.md#reacting-to-link-changes)).
 
 ## 0.8.2
 
