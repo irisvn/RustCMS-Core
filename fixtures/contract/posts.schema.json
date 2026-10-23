@@ -178,6 +178,30 @@
         },
         "label": "Move to category…",
         "name": "move"
+      },
+      {
+        "bulk": false,
+        "form": {
+          "columns": 1,
+          "components": [
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Publish at",
+              "name": "at",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                }
+              ],
+              "type": "date_time_picker",
+              "valueType": "instant"
+            }
+          ]
+        },
+        "label": "Schedule…",
+        "name": "schedule"
       }
     ],
     "columns": [

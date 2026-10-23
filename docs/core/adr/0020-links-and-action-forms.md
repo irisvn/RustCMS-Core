@@ -46,7 +46,8 @@ and add readable pivot columns by target key. Writes:
   nothing are not written nor recorded.
 
 **Action forms.** `Action::form(vec![ActionField::…])` (text, textarea,
-integer, boolean, date, select, `belongs_to(field, target)`). Order:
+integer, boolean, date, `datetime` (an instant, edited in UTC; added
+later), select, `belongs_to(field, target)`). Order:
 admission (`requires_permission`, `admits`) before the body; static checks
 and canonical values (every field present, defaults, re-encoded by kind,
 canonical keys) before the idempotency claim, so equivalent requests share

@@ -421,6 +421,26 @@ impl Resource for PostResource {
                 rustcms_admin::ActionField::integer("weight"),
                 rustcms_admin::ActionField::text("note").max_length(10),
             ]),
+            // An instant (UTC): the handler gets it canonical and stores it.
+            Action::<post::Entity>::new("schedule", |_ctx, txn, posts, data| {
+                Box::pin(async move {
+                    let at = data["at"].as_str().map(|at| {
+                        chrono::DateTime::parse_from_rfc3339(at)
+                            .expect("canonical RFC 3339")
+                            .with_timezone(&chrono::Utc)
+                    });
+                    for post in posts {
+                        let mut active = post.into_active_model();
+                        active.published_at = Set(at);
+                        active.update(txn).await?;
+                    }
+                    Ok(())
+                })
+            })
+            .label("Schedule…")
+            .ability("publish")
+            .requires_permission("posts.publish")
+            .form(vec![rustcms_admin::ActionField::datetime("at").label("Publish at").required()]),
         ]
     }
 

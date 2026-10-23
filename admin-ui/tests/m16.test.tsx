@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -168,6 +168,30 @@ it("runs an action with a form and shows the server's field errors", async () =>
   await waitFor(() => expect(runs).toHaveLength(2));
   expect(runs[1]).toMatchObject({ keys: [POST], data: { category_id: "7", mode: "move", note: "long note!" } });
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Move to category…" })).toBeNull());
+});
+
+it("edits an instant action field in UTC and sends it as RFC 3339", async () => {
+  const runs: unknown[] = [];
+  server.use(
+    http.get("*/admin/api/resources/posts/records", () =>
+      HttpResponse.json({ data: [{ ...record(POST, "Mine"), abilities: { view: true, schedule: true } }], meta: { page: 1, perPage: 25, total: 1, lastPage: 1 } }),
+    ),
+    http.post("*/admin/api/resources/posts/actions/schedule", async ({ request }) => {
+      runs.push(await request.json());
+      return HttpResponse.json({ processed: [POST], denied: [], missing: [] });
+    }),
+  );
+  mount("/r/posts");
+  await userEvent.click(await screen.findByRole("button", { name: "Schedule…" }));
+  const dialog = await screen.findByRole("dialog", { name: "Schedule…" });
+  const at = within(dialog).getByLabelText(/^Publish at/);
+  expect(at).toHaveAttribute("type", "datetime-local");
+  // Labelled UTC, like the form's picker of an instant column.
+  expect(within(dialog).getByText("UTC")).toBeInTheDocument();
+  fireEvent.change(at, { target: { value: "2026-10-12T09:30" } });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Run" }));
+  await waitFor(() => expect(runs).toHaveLength(1));
+  expect(runs[0]).toEqual({ keys: [POST], data: { at: "2026-10-12T09:30:00Z" } });
 });
 
 it("lays resource permissions out as a matrix and keeps what the user cannot change", async () => {

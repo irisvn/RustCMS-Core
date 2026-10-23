@@ -62,6 +62,7 @@ Action::<post::Entity>::new("move", |_ctx, txn, posts, data| {
 | `integer` | a 32-bit integer (JSON number) |
 | `boolean` | `true` / `false` |
 | `date` | `"YYYY-MM-DD"` |
+| `datetime` | a point in time, entered in UTC (the input says so) like a form's `DateTimePicker` of an instant column; sent as RFC 3339 and given to the handler in UTC: `"2026-10-12T02:30:00Z"` (`chrono::DateTime::parse_from_rfc3339`) |
 | `belongs_to(field, target)` | the key of a record of `target` the user may view, as text (`"12"`, a UUID) |
 
 Fields left empty are `null` (`.required()` refuses that), or their

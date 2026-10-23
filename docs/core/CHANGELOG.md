@@ -12,6 +12,10 @@ All notable changes are documented here. The format follows
   with the record as stored; an error rolls the write back. Restores still
   call `after_save` (unchanged), then `after_restore`. `after_force_delete`
   (unchanged) is documented with them.
+- `ActionField::datetime`: an instant in an action's form, edited and
+  labelled in UTC like the form's `DateTimePicker` of an instant column;
+  strict RFC 3339 on the wire (ADR 0003), canonical UTC
+  (`2026-10-12T02:30:00Z`) in the handler's `data`.
 
 ## [0.8.2] — 2026-10-21
 

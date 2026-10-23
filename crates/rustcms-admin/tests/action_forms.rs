@@ -153,3 +153,28 @@ db_test!(action_form_options_and_schema, |db: TestDb| async move {
     assert_eq!(form["components"][1]["default"], json!("move"));
     assert_eq!(schema.json()["schemaVersion"], json!(2));
 });
+
+db_test!(datetime_action_fields_are_instants_in_canonical_utc, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    let admin = app.acting_as(&users.admin).await;
+    let post = create(&admin, &app, "resources/posts/records", json!({"title": "Later"})).await;
+    let path = app.admin_api("resources/posts/actions/schedule");
+    let run = |at: Value| json!({"keys": [post], "data": {"at": at}});
+
+    // Only RFC 3339 with an offset (ADR 0003): no dates, local times or numbers.
+    for at in [json!("2026-10-12"), json!("2026-10-12T09:30:00"), json!(1_760_000_000), json!(null)] {
+        admin.post_json(&path, &run(at.clone())).await.assert_validation_error("at");
+    }
+    // The handler gets the instant in UTC, whatever offset it was sent with.
+    admin.post_json(&path, &run(json!("2026-10-12T09:30:00+07:00"))).await.assert_status(StatusCode::OK);
+    let row =
+        post::Entity::find_by_id(post.parse::<uuid::Uuid>().unwrap()).one(app.state().db()).await.unwrap().unwrap();
+    assert_eq!(row.published_at.unwrap().to_rfc3339(), "2026-10-12T02:30:00+00:00");
+
+    // The schema offers it as the form's instant picker.
+    let schema = admin.get(&app.admin_api("resources/posts/schema")).await.json();
+    let action =
+        schema["table"]["actions"].as_array().unwrap().iter().find(|a| a["name"] == json!("schedule")).cloned();
+    let input = action.unwrap()["form"]["components"][0].clone();
+    assert_eq!((&input["type"], &input["valueType"]), (&json!("date_time_picker"), &json!("instant")));
+});

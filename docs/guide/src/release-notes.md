@@ -8,6 +8,8 @@ was the first published one.
 - **`Resource::after_trash` and `after_restore`** run in the transaction of a
   trashing and of a restore, with the record; restores still call
   `after_save` first ([Resources](admin/resources.md#hooks)).
+- **`ActionField::datetime`**: a date and time in an action's form, entered
+  in UTC ([Actions](admin/actions.md)).
 
 ## 0.8.2
 

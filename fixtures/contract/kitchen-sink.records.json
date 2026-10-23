@@ -5,6 +5,7 @@
         "delete": true,
         "force_delete": false,
         "restore": false,
+        "schedule": true,
         "update": true,
         "view": true
       },

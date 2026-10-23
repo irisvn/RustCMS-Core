@@ -353,7 +353,57 @@
   },
   "schemaVersion": 2,
   "table": {
-    "actions": [],
+    "actions": [
+      {
+        "bulk": false,
+        "form": {
+          "columns": 1,
+          "components": [
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Run at",
+              "name": "at",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                }
+              ],
+              "type": "date_time_picker",
+              "valueType": "instant"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Day",
+              "name": "day",
+              "nullable": true,
+              "rules": [],
+              "type": "date_picker",
+              "valueType": "date"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Note",
+              "name": "note",
+              "nullable": true,
+              "rules": [
+                {
+                  "rule": "max_length",
+                  "value": 20
+                }
+              ],
+              "type": "text_input",
+              "valueType": "string"
+            }
+          ]
+        },
+        "label": "Schedule…",
+        "name": "schedule"
+      }
+    ],
     "columns": [
       {
         "label": "Name",

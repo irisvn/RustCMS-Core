@@ -193,6 +193,15 @@ impl ActionField {
         Self::new(name, crate::wire::FieldKind::Date, crate::ui::InputType::DatePicker)
     }
 
+    /// A point in time, edited and labelled in UTC like the form's
+    /// `DateTimePicker` of an instant column. Sent as RFC 3339 with an offset
+    /// (ADR 0003); the handler gets it in canonical form, in UTC
+    /// (`"2026-10-12T02:30:00Z"`): parse it with
+    /// `chrono::DateTime::parse_from_rfc3339`.
+    pub fn datetime(name: impl Into<String>) -> Self {
+        Self::new(name, crate::wire::FieldKind::Instant, crate::ui::InputType::DateTimePicker)
+    }
+
     /// One of `options` (`(value, label)`).
     pub fn select<L: Into<String>>(
         name: impl Into<String>,
