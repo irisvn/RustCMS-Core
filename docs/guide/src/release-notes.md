@@ -1,6 +1,6 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.8.2**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.9.0**; 0.1.0-alpha.0
 was the first published one.
 
 ## 0.9.0
@@ -11,7 +11,7 @@ was the first published one.
 - **`ActionField::datetime`**: a date and time in an action's form, entered
   in UTC ([Actions](admin/actions.md)).
 - **`SettingsPage::after_save`** runs in the save's transaction with the old
-  and new values ([Settings](admin/settings.md)).
+  and new values ([Settings](admin/settings.md#reacting-to-a-save)).
 - **`media.view_all`**: see and use every file of the media library without
   the right to remove other users' files ([Media](admin/media.md#whose-files-a-user-sees)).
 - **`Resource::after_relation_change`** runs when links of a belongs-to-many

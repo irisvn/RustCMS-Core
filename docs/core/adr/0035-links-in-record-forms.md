@@ -52,8 +52,19 @@ authorizes differently. Three risks shaped the decision:
   and could deadlock two such writes), the targets named are locked through
   `lock_visible` (scope and view policy,
   re-checked under the lock, key order; the targets of every relation sent
-  that share a target resource are locked together, resources in slug order,
-  so two relations to one resource never lock its rows in different orders).
+  that share a target resource are locked together, resources in the
+  registry's lock order (`Registry::lock_rank`: parents before their
+  belongs-to-many targets and `lock_parent` children, resources the lock
+  graph does not order by slug), so two relations to one resource never lock
+  its rows in different orders). When the row's own `belongs_to` keys
+  reference rows of a target resource, those rows are locked in the same
+  pass (`DynResource::lock_visible_with`: one key-order pass, references
+  locked whoever may view them, hidden targets never locked): otherwise the
+  row's write would take their shared locks after the targets' exclusive
+  ones, and two writes crossing (a post's primary tag one way, its tags the
+  other) could deadlock. References into other resources keep their shared
+  locks: locking them exclusively here would invert the order of writers
+  that lock them first (a category's delete setting its posts' key to null).
   After the row is written (and its parent lock checked), the policy decides
   `attach_{rel}` / `detach_{rel}` on the record as stored by this write (403,
   the whole write rolls back), and a target to attach that is not
@@ -88,6 +99,6 @@ authorizes differently. Three risks shaped the decision:
   fields keep the relation manager only.
 - `InputType`, `InputSchema` (`links`) and `DynResource`
   (`link_options_new`) gain members: exhaustive matches and struct literals
-  in applications need them. Older SPAs see vocabulary 9 and turn read-only.
+  in applications need them. Older SPAs see vocabulary 9: they show these inputs read-only and never send them.
 - No idempotency beyond the record's: a create's `Idempotency-Key` claim
   covers its links (the claim hashes the whole input).

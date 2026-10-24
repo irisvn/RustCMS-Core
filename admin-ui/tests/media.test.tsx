@@ -88,6 +88,9 @@ describe("documents", () => {
     const doc = toDocument({ type: "doc", content: [{ type: "image", attrs: { src: `${API}/media/${ID}/file`, alt } }] }, API);
     expect([...String(doc.content[0]!.attrs!.alt)]).toHaveLength(500);
     expect(safeHref(`https://x.test/${"é".repeat(1100)}`)).toBe(false);
+    // Every control the server refuses (Rust's `char::is_control`), C1 included.
+    for (const c of ["\u0000", "\u007f", "\u0080", "\u0085", "\u009f"]) expect(safeHref(`https://x.test/${c}`)).toBe(false);
+    expect(safeHref("https://x.test/\u00a9")).toBe(true);
   });
 
   it("render as elements, never as injected HTML", () => {

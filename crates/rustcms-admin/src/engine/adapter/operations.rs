@@ -420,7 +420,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         // What is written, hooks included: references are checked last.
         self.check_written(&wctx, &txn, &data).await?;
         // Link targets, before the row's foreign keys lock what they reference.
-        let links = self.lock_links(&wctx, &txn, links).await?;
+        let links = self.lock_links(&wctx, &txn, links, &data).await?;
 
         let mut active = <<Entity<R> as EntityTrait>::ActiveModel as ActiveModelBehavior>::new();
         self.apply(&wctx, &mut active, &data, Operation::Create, None)?;
@@ -489,7 +489,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.check_parent_written(&wctx, &data, &parents)?;
         self.check_written(&wctx, &txn, &data).await?;
         // Link targets, before the row's foreign keys lock what they reference.
-        let links = self.lock_links(&wctx, &txn, links).await?;
+        let links = self.lock_links(&wctx, &txn, links, &data).await?;
         let model = if data.is_empty() {
             model
         } else {
@@ -790,7 +790,17 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
     }
 
     async fn lock_visible(&self, ctx: &Ctx, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>> {
-        self.locked_visible(ctx, txn, keys).await
+        self.locked_visible(ctx, txn, keys, &[]).await
+    }
+
+    async fn lock_visible_with(
+        &self,
+        ctx: &Ctx,
+        txn: &DatabaseTransaction,
+        keys: &[String],
+        also: &[String],
+    ) -> AppResult<HashSet<String>> {
+        self.locked_visible(ctx, txn, keys, also).await
     }
 
     async fn admit_link(&self, ctx: &Ctx, relation: &str, op: crate::links::LinkOp) -> AppResult<()> {

@@ -122,6 +122,11 @@ impl SettingsPage for GeneralSettings {
             let quoted = before.smtp_password.expose().unwrap_or_default();
             return Err(ValidationErrors::field("site_name", format!("was set with {quoted}")).into());
         }
+        if after.site_name == "leak-bad" {
+            // Not a validation error: its message is sent too, so it is redacted the same.
+            let quoted = after.smtp_password.expose().unwrap_or_default();
+            return Err(rustcms_core::AppError::BadRequest(format!("refused {quoted}")));
+        }
         if after.site_name == "leak-new" {
             let quoted = after.smtp_password.expose().unwrap_or_default();
             return Err(ValidationErrors::field("site_name", format!("is now set with {quoted}")).into());

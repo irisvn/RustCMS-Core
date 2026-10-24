@@ -197,6 +197,11 @@ db_test!(after_save_runs_in_the_save_with_old_and_new_values, |db: TestDb| async
     refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
     let text = refused.text();
     assert!(!text.contains("-new") && text.contains("[redacted]"), "{text}");
+    // Any message the hook returns, not only validation errors.
+    let refused = put(&app, &admin, "2", json!({"site_name": "leak-bad", "smtp_password": "pw-3"})).await;
+    refused.assert_status(StatusCode::BAD_REQUEST);
+    let text = refused.text();
+    assert!(!text.contains("pw-3") && text.contains("[redacted]"), "{text}");
 });
 
 db_test!(a_stored_value_that_no_longer_fits_can_be_replaced, |db: TestDb| async move {

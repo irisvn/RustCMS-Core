@@ -4,7 +4,7 @@
 // user cannot see, are never undone by a save. The server checks every key and
 // ability again when the record is saved.
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/api/client";
 import { formLinkOptionsPath, useFormLinks } from "@/api/queries";
 import type { InputSchema } from "@/api/types";
@@ -92,15 +92,32 @@ export function LinksWidget({ id, input, slug, record, value, onChange, disabled
   const shown = [...rows.map((r) => r.key).filter((k) => !detached.has(k)), ...change.attach.filter((k) => !rows.some((r) => r.key === k))];
   const linked = new Set(rows.map((r) => r.key));
   const locked = disabled || tooMany;
-  const remove = (key: string) => onChange(linksValue(removeLink(change, key, linked, abilities.detach)));
+  const box = useRef<HTMLDivElement>(null);
+  // The removed chip's button is gone: once rendered, focus goes to the
+  // search, else to the input itself.
+  const [moved, setMoved] = useState(0);
+  useEffect(() => {
+    if (moved === 0) return;
+    const search = document.getElementById(id);
+    (search && box.current?.contains(search) ? search : box.current)?.focus();
+  }, [moved, id]);
+  const refocus = () => setMoved((n) => n + 1);
+  const remove = (key: string) => {
+    onChange(linksValue(removeLink(change, key, linked, abilities.detach)));
+    refocus();
+  };
   const add = (key: string) => onChange(linksValue(addLink(change, key, linked)));
+  const searching = abilities.attach && !locked && change.attach.length < MAX_FORM_LINKS;
   return (
-    <div className="flex min-w-0 flex-col gap-2">
+    // Without the search, the input itself carries the field's id (label,
+    // help, errors and focus after a refused save).
+    <div ref={box} className="flex min-w-0 flex-col gap-2 rounded-md focus-visible:outline-none"
+      {...(searching ? {} : { id, tabIndex: -1, role: "group", "aria-label": input.label, "aria-describedby": describedBy, "aria-invalid": invalid || undefined })}>
       {record !== undefined && current.isLoading && <p role="status" className="text-sm text-muted-foreground">{t("state.loading")}</p>}
       {current.error && (blind
         ? <p className="text-sm text-muted-foreground">{t("links.blind")}</p>
         : <p role="alert" className="text-sm text-destructive">{t("links.loadFailed")}</p>)}
-      {tooMany && <p className="text-sm text-muted-foreground">{t("links.tooMany", { max: MAX_FORM_LINKS })}</p>}
+      {tooMany && <p className="text-sm text-muted-foreground">{t("links.tooMany", { max: rows.length })}</p>}
       {shown.length === 0 && known && <p className="text-sm text-muted-foreground">{t("links.none")}</p>}
       {shown.length > 0 && (
         <ul aria-label={input.label} className="flex flex-wrap gap-2">
@@ -133,7 +150,7 @@ export function LinksWidget({ id, input, slug, record, value, onChange, disabled
               <li key={row.key} className="flex items-center gap-1 text-sm text-muted-foreground">
                 <s>{label}</s>
                 {!locked && (
-                  <button type="button" aria-label={t("links.keep", { label })} onClick={() => add(row.key)}
+                  <button type="button" aria-label={t("links.keep", { label })} onClick={() => { add(row.key); refocus(); }}
                     className="rounded px-1 text-xs underline hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     {t("links.undo")}
                   </button>
@@ -146,7 +163,7 @@ export function LinksWidget({ id, input, slug, record, value, onChange, disabled
       {abilities.attach && !locked && change.attach.length >= MAX_FORM_LINKS && (
         <p className="text-sm text-muted-foreground">{t("links.full", { max: MAX_FORM_LINKS })}</p>
       )}
-      {abilities.attach && !locked && change.attach.length < MAX_FORM_LINKS && (
+      {searching && (
         <RelationSelect
           id={id}
           slug={slug}

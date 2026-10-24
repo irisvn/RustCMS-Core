@@ -503,38 +503,58 @@ impl<T: SettingsPage> DynSettings for SettingsAdapter<T> {
         })?;
         let new: T = typed(after)?;
         // A message may quote a secret as it was or as it is now: neither is sent.
+        // Sent (validation, bad request) or logged (internal): never with a secret.
         T::after_save(state, ctx, txn, &old, &new).await.map_err(|err| match err {
             AppError::Validation(errors) => redacted(errors, &[before, after]).into(),
+            AppError::BadRequest(mut message) => {
+                Redactor::new(&[before, after]).clean(&mut message);
+                AppError::BadRequest(message)
+            }
+            AppError::Internal(mut message) => {
+                Redactor::new(&[before, after]).clean(&mut message);
+                AppError::Internal(message)
+            }
             other => other,
         })
     }
 }
 
-/// `errors` without the secrets of `stored` (each version given): a hook's
-/// message may quote one. Longest first, so a secret containing another is
-/// never left half redacted.
-fn redacted(mut errors: ValidationErrors, stored: &[&Stored]) -> ValidationErrors {
-    let mut secrets: Vec<&str> = stored
-        .iter()
-        .flat_map(|s| s.secrets.values())
-        .filter_map(|s| match s {
-            rustcms_core::settings::SecretState::Set(plain) if !plain.is_empty() => Some(plain.as_str()),
-            _ => None,
-        })
-        .collect();
-    secrets.sort_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
-    secrets.dedup();
-    let clean = |message: &mut String| {
-        for secret in &secrets {
+/// Replaces the secrets of each version of the settings given in messages.
+/// Longest first, so a secret containing another is never left half redacted.
+struct Redactor<'a>(Vec<&'a str>);
+
+impl<'a> Redactor<'a> {
+    fn new(stored: &[&'a Stored]) -> Self {
+        let mut secrets: Vec<&str> = stored
+            .iter()
+            .flat_map(|s| s.secrets.values())
+            .filter_map(|s| match s {
+                rustcms_core::settings::SecretState::Set(plain) if !plain.is_empty() => Some(plain.as_str()),
+                _ => None,
+            })
+            .collect();
+        secrets.sort_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
+        secrets.dedup();
+        Self(secrets)
+    }
+
+    fn clean(&self, message: &mut String) {
+        for secret in &self.0 {
             if message.contains(secret) {
                 *message = message.replace(secret, rustcms_core::audit::REDACTED);
             }
         }
-    };
-    for messages in errors.errors.values_mut() {
-        messages.iter_mut().for_each(&clean);
     }
-    errors.form_errors.iter_mut().for_each(&clean);
+}
+
+/// `errors` without the secrets of `stored` (each version given): a hook's
+/// message may quote one.
+fn redacted(mut errors: ValidationErrors, stored: &[&Stored]) -> ValidationErrors {
+    let redactor = Redactor::new(stored);
+    for messages in errors.errors.values_mut() {
+        messages.iter_mut().for_each(|m| redactor.clean(m));
+    }
+    errors.form_errors.iter_mut().for_each(|m| redactor.clean(m));
     errors
 }
 

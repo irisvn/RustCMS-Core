@@ -1,6 +1,6 @@
 //! Posts: soft deletes, an owner scope, a policy, bulk actions (one with a
 //! form), hooks, a tabbed form with key/value attributes, and tags (a
-//! belongs-to-many relation with a pivot column).
+//! belongs-to-many relation with a pivot column, also chosen in the form).
 
 use std::sync::Arc;
 
@@ -49,6 +49,8 @@ impl Resource for PostResource {
                 SelectInput::make("category_id"),
                 Toggle::make("published"),
                 DateTimePicker::make("published_at"),
+                // Linked from the form too, not only on the post's page (ADR 0035).
+                BelongsToManySelect::make("tags"),
             ]),
             Tab::make("Attributes").schema(components![
                 KeyValue::make("attributes").help("Extra details shown with the post, e.g. reading_time = 5 min"),

@@ -1,6 +1,7 @@
 // The dialog's close button (0.7.1): after the content, labelled, blocked while busy.
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Profiler } from "react";
 import { Dialog } from "@/components/ui/dialog";
 
 describe("Dialog", () => {
@@ -34,5 +35,21 @@ describe("Dialog", () => {
   it("can leave the button out", () => {
     render(<Dialog open onClose={() => {}} title="Menu" closeButton={false}>x</Dialog>);
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+  });
+
+  it("renders once per parent render, open or closed (its ref is stable)", () => {
+    // A new ref callback each render was detached and attached on every
+    // commit, setting state each time: a closed dialog on a busy form
+    // rendered until React gave up (error #185).
+    let commits = 0;
+    const tree = (n: number, open: boolean) => (
+      <Profiler id="dialog" onRender={() => { commits += 1; }}>
+        <Dialog open={open} onClose={() => {}} title={`T${n}`}>x</Dialog>
+      </Profiler>
+    );
+    const { rerender } = render(tree(0, false));
+    commits = 0;
+    for (let n = 1; n <= 5; n++) rerender(tree(n, n % 2 === 0));
+    expect(commits).toBe(5);
   });
 });

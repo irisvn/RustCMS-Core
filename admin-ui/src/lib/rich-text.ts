@@ -27,7 +27,7 @@ export function safeHref(href: string): boolean {
   const lower = href.toLowerCase();
   const bytes = new TextEncoder().encode(href).length;
   // eslint-disable-next-line no-control-regex
-  return bytes <= 2048 && href.length > 7 && !/[\s\u0000-\u001f\u007f]/.test(href) &&
+  return bytes <= 2048 && href.length > 7 && !/[\s\u0000-\u001f\u007f-\u009f]/.test(href) &&
     (lower.startsWith("https://") || lower.startsWith("http://") || lower.startsWith("mailto:"));
 }
 

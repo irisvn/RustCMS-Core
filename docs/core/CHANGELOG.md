@@ -6,7 +6,7 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.9.0]
+## [0.9.0] — 2026-10-24
 
 ### Added (0.9.0)
 - `Resource::after_trash` and `Resource::after_restore`: run in the
@@ -22,8 +22,9 @@ All notable changes are documented here. The format follows
   (`2026-10-12T02:30:00Z`) in the handler's `data`.
 - `SettingsPage::after_save(state, ctx, txn, before, after)`: runs in the
   save's transaction after the row and its audit entry are written, with the
-  group as it was and as saved (typed); an error rolls the save back. Not
-  called when a save changes nothing.
+  group as it was and as saved (typed); an error rolls the save back, and
+  the secrets of either version are redacted from its message (validation,
+  bad request or internal). Not called when a save changes nothing.
 - `media.view_all` (`rustcms::admin::media::VIEW_ALL`): every file is
   listed, downloaded and accepted as a reference (media fields, rich text),
   but trashing, restoring and deleting another user's file still needs
@@ -45,15 +46,20 @@ All notable changes are documented here. The format follows
   audit `attached` / `detached` after `created` / `updated`. Targets are
   locked before the record's row is written (its foreign keys never upgrade
   a shared lock), per target resource in the registry's lock order
-  (`Registry::lock_rank`, deterministic); at most 100 keys per `attach` or
+  (`Registry::lock_rank`, deterministic), together with the rows of those
+  resources the row's own `belongs_to` keys reference
+  (`DynResource::lock_visible_with`, with a default; a `belongs_to` and links
+  into one resource never cross); at most 100 keys per `attach` or
   `detach` and 500 per target resource and save; refused at boot for the
   media library and for relations with required pivot fields. Route
-  `GET resources/{slug}/relations/{relation}/options` (create forms), oracle
-  cases. Vocabulary 9: `InputType::BelongsToMany`, `InputSchema.links`
+  `GET resources/{slug}/relations/{relation}/options` (create forms; only
+  relations the form links, 404 otherwise), oracle cases. Vocabulary 9: `InputType::BelongsToMany`, `InputSchema.links`
   (`LinksSchema {attach, detach}`); `DynResource::link_options_new`. The SPA
   shows the current links as chips (from the relation's list, at most 100),
   a search to add more (`RelationSelect` gains `exclude` and `onPick`), and
-  invalidates the record's relation lists after a save.
+  invalidates the record's relation lists after a save; without the search
+  the input itself carries the field's id, and focus never falls to the page
+  when a chip is removed.
 
 - Record forms ask before leaving with unsaved changes: the panel's dialog
   for in-app navigation (TanStack Router `useBlocker`), the browser's prompt
@@ -65,9 +71,18 @@ All notable changes are documented here. The format follows
 - Rich text: the link button opens a dialog (the panel's `Dialog`,
   translated; checked like the server; edits or removes the link at the
   cursor; inserts the address as linked text when nothing is selected)
-  instead of `window.prompt`.
+  instead of `window.prompt`. The client's link check refuses C1 controls
+  (U+0080–U+009F) like the server's.
 - LMS example: editors and viewers hold `media.view_all` instead of
   `media.manage_all` (they only view the news' images).
+- Demo: posts choose their tags in the form too (`BelongsToManySelect`);
+  E2E `form-links.spec.ts` (form links, the link dialog, the leave dialog).
+
+### Fixed (0.9.0)
+- The panel's `Dialog` passed a new ref callback on every render: each
+  commit detached and attached it again, setting state, so a dialog that
+  stays mounted (closed) in a busy form rendered until React gave up
+  (error #185). Its ref is stable now.
 
 ## [0.8.2] — 2026-10-21
 

@@ -188,6 +188,8 @@ with a server it was not given for.
 `validate_in(state, ctx, settings)` is `validate` with the application (its
 configuration and services), for checks that depend on them.
 
+### Reacting to a save
+
 `after_save` runs in the save's transaction once the new values are written
 (and the audit entry recorded), before the commit, with the group as it was
 and as saved; an error rolls the save back. Use it to react to a change in
@@ -213,6 +215,9 @@ async fn after_save(
 could not be decrypted (which the save replaced or cleared) reads as unset
 there, and a stored value that no longer fits the struct (its declaration
 changed) reads as its default, so the save that replaces it still succeeds. A save that changes nothing writes nothing and does not call it.
+`before` and `after` hold secrets in plain text: never log them or put them in
+a job's payload. Secrets of either version are replaced by `[redacted]` in the
+messages of the errors it returns (validation, bad request and internal).
 Secrets quoted in a `ValidationErrors` it returns, as they were or as
 saved, are redacted like `validate`'s.
 

@@ -37,7 +37,8 @@
 - `InputType` has a `BelongsToMany` variant, `InputSchema` a `links` field and
   `DynResource` a `link_options_new` method (exhaustive matches, struct
   literals and hand-written implementations need them). Admin clients see
-  `vocabularyVersion` 9: an older admin SPA turns read-only, and an extension
+  `vocabularyVersion` 9: an older admin SPA shows these inputs read-only and
+  never sends them, and an extension
   that checks the vocabulary version should accept 9.
 - `Resource::after_relation_change` is new: a link write never updates the
   parent row, so touch `updated_at` there if your application needs it.

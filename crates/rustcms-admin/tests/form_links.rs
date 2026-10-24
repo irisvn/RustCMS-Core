@@ -246,6 +246,10 @@ db_test!(form_links_in_schemas_and_create_options, |db: TestDb| async move {
     found.assert_status(StatusCode::OK);
     assert_eq!(found.json()["data"], json!([{"value": "rust", "label": "RUST", "attached": false}]));
     editor.get(&options).await.assert_status(StatusCode::FORBIDDEN);
+    // May attach, but not create: no create form, so no options for one.
+    let linker = WRITER.iter().copied().filter(|p| *p != "posts.create").collect::<Vec<_>>();
+    let linker = user_with(&app, "Linker", &linker).await;
+    app.acting_as(&linker).await.get(&options).await.assert_status(StatusCode::FORBIDDEN);
     client.get(&app.admin_api("resources/posts/relations/nope/options")).await.assert_status(StatusCode::NOT_FOUND);
 });
 
@@ -312,3 +316,67 @@ fn a_links_input_never_targets_the_media_library() {
     }
     let _ = rustcms_admin::Registry::new().register::<Files>().finish();
 }
+
+db_test!(form_links_are_bounded_before_anything_is_read, |db: TestDb| async move {
+    let (app, _) = setup(db).await;
+    let writer = user_with(&app, "Writer", &WRITER).await;
+    let client = app.acting_as(&writer).await;
+    let before = posts(&app).await;
+    let many: Vec<String> = (0..101).map(|i| format!("t{i}")).collect();
+    for side in ["attach", "detach"] {
+        let post = key(&create(&client, &app, json!({"title": format!("Bounded {side}")})).await);
+        let refused = update(&client, &app, &post, json!({"tags": {side: many}})).await;
+        refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(refused.text().contains("may not have more than 100 items"), "{}", refused.text());
+    }
+    let refused = create(&client, &app, json!({"title": "Bounded", "tags": {"attach": many}})).await;
+    refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(posts(&app).await, before + 2, "nothing written for a refused create");
+    // At the bound: unknown tags are refused as options, not as too many.
+    let at: Vec<String> = many[..100].to_vec();
+    let refused = create(&client, &app, json!({"title": "At the bound", "tags": {"attach": at}})).await;
+    refused.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(refused.text().contains("is not one of the options"), "{}", refused.text());
+});
+
+db_test!(concurrent_form_links_never_deadlock, |db: TestDb| async move {
+    let (app, _) = setup(db).await;
+    let writer = user_with(&app, "Writer", &WRITER).await;
+    let one = app.acting_as(&writer).await;
+    let two = app.acting_as(&writer).await;
+    // PostgreSQL and MySQL wait for each other's locks (one lock order: never a
+    // deadlock, so never a 409); SQLite serializes writers and may answer busy.
+    let waits = app.state().db().get_database_backend() != sea_orm::DbBackend::Sqlite;
+    let ok = |response: &TestResponse| {
+        let allowed = response.status == StatusCode::OK || (!waits && response.status == StatusCode::CONFLICT);
+        assert!(allowed, "{} {}", response.status, response.text());
+    };
+    for round in 0..4 {
+        let (a, b, c) = (format!("a-{round}"), format!("b-{round}"), format!("c-{round}"));
+        tags(&app, &[&a, &b, &c]).await;
+        let first = key(&create(&one, &app, json!({"title": format!("First {round}")})).await);
+        let second = key(&create(&one, &app, json!({"title": format!("Second {round}")})).await);
+        // Two records' forms linking the same tags, sent in opposite orders.
+        let (x, y) = tokio::join!(
+            update(&one, &app, &first, json!({"title": "x", "tags": {"attach": [c, b, a]}})),
+            update(&two, &app, &second, json!({"title": "y", "tags": {"attach": [a, b, c]}})),
+        );
+        ok(&x);
+        ok(&y);
+        // One record's form and its relation manager at once: both land, once each.
+        let manager = app.admin_api(&format!("resources/posts/records/{first}/relations/tags/detach"));
+        let only_c = json!({"keys": [c]});
+        let (form, detached) = tokio::join!(
+            update(&one, &app, &first, json!({"title": "z", "tags": {"detach": [a], "attach": [b]}})),
+            two.post_json(&manager, &only_c),
+        );
+        ok(&form);
+        ok(&detached);
+        let linked = links(&app, &first).await;
+        assert!(!linked.contains(&a) && linked.len() <= 2, "{linked:?}");
+        if waits {
+            assert_eq!(linked, std::slice::from_ref(&b));
+            assert_eq!(links(&app, &second).await, [a, b, c]);
+        }
+    }
+});

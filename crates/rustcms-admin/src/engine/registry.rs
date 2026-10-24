@@ -161,6 +161,22 @@ pub trait DynResource: Send + Sync {
     /// The records of `keys` the user may view, locked in key order and
     /// checked again under the lock (targets of link writes).
     async fn lock_visible(&self, ctx: &Ctx, txn: &DatabaseTransaction, keys: &[String]) -> AppResult<HashSet<String>>;
+    /// [`Self::lock_visible`], locking the records of `also` (whoever may
+    /// view them) in the same key-order pass: those a writing row's foreign
+    /// keys reference (ADR 0035).
+    async fn lock_visible_with(
+        &self,
+        ctx: &Ctx,
+        txn: &DatabaseTransaction,
+        keys: &[String],
+        also: &[String],
+    ) -> AppResult<HashSet<String>> {
+        let mut all: Vec<String> = keys.iter().chain(also).cloned().collect();
+        all.sort();
+        all.dedup();
+        self.lock_keys(txn, &all).await?;
+        self.lock_visible(ctx, txn, keys).await
+    }
     /// Refuses a write to the belongs-to-many relation `relation` the policy
     /// does not admit (403 before anything is read; 404 for no such relation).
     async fn admit_link(&self, ctx: &Ctx, relation: &str, op: LinkOp) -> AppResult<()>;

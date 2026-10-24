@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type * as React from "react";
 import { X } from "lucide-react";
 import { useT } from "@/i18n";
@@ -33,6 +33,12 @@ export function Dialog({
   const ref = useRef<HTMLDialogElement>(null);
   // Menus and tooltips inside render into the dialog (the top layer).
   const [element, setElement] = useState<HTMLDialogElement | null>(null);
+  // Stable: a new callback each render would be detached (null) and attached
+  // again on every commit, each time setting the state, which renders again.
+  const attach = useCallback((el: HTMLDialogElement | null) => {
+    ref.current = el;
+    setElement(el);
+  }, []);
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
@@ -46,10 +52,7 @@ export function Dialog({
   }, [open]);
   return (
     <dialog
-      ref={(el) => {
-        ref.current = el;
-        setElement(el);
-      }}
+      ref={attach}
       aria-labelledby={titleId}
       onCancel={(e) => {
         e.preventDefault();

@@ -482,29 +482,53 @@ impl<R: Resource> ResourceAdapter<R> {
     /// `lock_visible` (keys in key order), resources in the registry's lock
     /// order (a resource before the targets of its own relations), so two
     /// relations to one resource never lock its rows in different orders and
-    /// other writers never lock them the other way round.
+    /// other writers never lock them the other way round. The records the
+    /// row's own `belongs_to` keys in `data` reference are locked in the same
+    /// pass when they are rows of a target resource (keys in key order):
+    /// otherwise the row's write would take their shared locks after the
+    /// targets' exclusive ones, and two such writes crossing (a post's primary
+    /// tag one way, its tags the other) could wait on each other.
     pub(super) async fn lock_links(
         &self,
         ctx: &Ctx,
         txn: &DatabaseTransaction,
         links: FormLinks,
+        data: &Data,
     ) -> AppResult<FormLinks> {
         let mut links = links;
         if links.0.is_empty() {
             return Ok(links);
         }
-        let mut wanted: BTreeMap<&'static str, BTreeSet<String>> = BTreeMap::new();
+        let mut wanted: BTreeMap<&'static str, (BTreeSet<String>, BTreeSet<String>)> = BTreeMap::new();
         for link in &links.0 {
             let (relation, _) = self.many(link.relation)?;
-            wanted.entry(relation.target).or_default().extend(link.attach.iter().chain(&link.detach).cloned());
+            wanted.entry(relation.target).or_default().0.extend(link.attach.iter().chain(&link.detach).cloned());
         }
-        let mut wanted: Vec<(&'static str, BTreeSet<String>)> = wanted.into_iter().collect();
+        for field in &self.fields {
+            let (Some(slug), Some(value)) = (field.belongs_to, data.get(&field.name)) else { continue };
+            // Only into resources the links lock: other references keep
+            // their shared locks (locking them here would invert the order
+            // of writers that lock them first, e.g. a delete cascading here).
+            let Some((_, referenced)) = wanted.get_mut(slug) else { continue };
+            let key = match value {
+                Json::String(key) => key.clone(),
+                Json::Number(key) => key.to_string(),
+                _ => continue,
+            };
+            let target =
+                ctx.registry.get(slug).ok_or_else(|| AppError::internal(format!("unknown resource `{slug}`")))?;
+            if let Some(key) = target.canonical_key(&key) {
+                referenced.insert(key);
+            }
+        }
+        let mut wanted: Vec<_> = wanted.into_iter().collect();
         wanted.sort_by_cached_key(|(slug, _)| ctx.registry.lock_rank(slug));
-        for (slug, keys) in wanted {
+        for (slug, (keys, referenced)) in wanted {
             let target =
                 ctx.registry.get(slug).ok_or_else(|| AppError::internal(format!("unknown resource `{slug}`")))?;
             let keys: Vec<String> = keys.into_iter().collect();
-            links.1.insert(slug, target.lock_visible(ctx, txn, &keys).await?);
+            let referenced: Vec<String> = referenced.into_iter().collect();
+            links.1.insert(slug, target.lock_visible_with(ctx, txn, &keys, &referenced).await?);
         }
         Ok(links)
     }
@@ -588,6 +612,10 @@ impl<R: Resource> ResourceAdapter<R> {
         keys: &[String],
     ) -> AppResult<Vec<LinkOption>> {
         let (relation, _) = self.many(name)?;
+        // Only for a relation the create form links (deny by default).
+        if !self.form.inputs().iter().any(|i| i.kind == InputType::BelongsToMany && i.name == name) {
+            return Err(AppError::NotFound);
+        }
         let ability = LinkOp::Attach.ability(name);
         self.admit(ctx, &ability).await?;
         if !self.policy.allows(ctx, ability::CREATE, None).await || !self.policy.allows(ctx, &ability, None).await {
@@ -600,22 +628,31 @@ impl<R: Resource> ResourceAdapter<R> {
 
     /// The records of `keys` the user may view, locked in key order and
     /// checked again under the lock: only these may be linked or unlinked.
+    /// The records of `also` (referenced by the writing row's own foreign
+    /// keys, already checked) are locked in the same pass, whoever may view
+    /// them; records of `keys` the user may not view are never locked.
     pub(super) async fn locked_visible(
         &self,
         ctx: &Ctx,
         txn: &DatabaseTransaction,
         keys: &[String],
+        also: &[String],
     ) -> AppResult<HashSet<String>> {
-        if !self.policy.allows(ctx, ability::VIEW_ANY, None).await {
-            return Ok(HashSet::new());
-        }
         let mut candidates = Vec::new();
-        for (model, record) in self.models_in_scope(ctx, txn, keys).await? {
-            if self.policy.allows(ctx, ability::VIEW, Some(&record)).await {
-                candidates.push(self.key_of(&model));
+        if self.policy.allows(ctx, ability::VIEW_ANY, None).await {
+            for (model, record) in self.models_in_scope(ctx, txn, keys).await? {
+                if self.policy.allows(ctx, ability::VIEW, Some(&record)).await {
+                    candidates.push(self.key_of(&model));
+                }
             }
         }
-        let locked = self.lock_rows(txn, &candidates, Trashed::Without).await?;
+        let wanted: Vec<String> = candidates.iter().chain(also).cloned().collect::<BTreeSet<_>>().into_iter().collect();
+        if wanted.is_empty() {
+            return Ok(HashSet::new());
+        }
+        // Trashed rows too (a reference may still name one): the check below
+        // leaves out what is trashed, gone or hidden now.
+        let locked = self.lock_rows(txn, &wanted, Trashed::With).await?;
         candidates.retain(|k| locked.contains(k));
         let mut out = HashSet::new();
         for (model, record) in self.models_in_scope(ctx, txn, &candidates).await? {

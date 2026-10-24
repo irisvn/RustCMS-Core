@@ -229,10 +229,16 @@ The pivot rows, `after_relation_change`, then `after_save` run in the
 record's transaction, and the history lists `attached` / `detached` after
 `created` / `updated`.
 
-- The input appears on create when the user may attach without a record
-  (`Policy::allows(…, None)`), on edit when they may attach or detach on the
-  record, and never on the record's page (the relation manager is there). The
-  create form searches `GET /admin/api/resources/{slug}/relations/{relation}/options`.
+- The input appears when the user may list the target (`view_any`): on
+  create when the attach ability is admitted and allowed without a record
+  (`Policy::admits`, then `Policy::allows(…, None)`), on edit when they may
+  attach or detach on the record, and never on the record's page (the
+  relation manager is there). The create form searches
+  `GET {admin}/api/resources/{slug}/relations/{relation}/options`, which
+  serves only relations the form links.
+- The current links are read with the target's page size: give the target
+  a `per_page` limit of at least 100, or a record with more links than one
+  page holds is changed on its page only.
 - Not for the media library (link files with a
   [`Field::media_list`](media.md#media-fields) field instead).
 - New links take the pivot columns' database defaults: a relation with a

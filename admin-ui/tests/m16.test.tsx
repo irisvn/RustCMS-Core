@@ -242,6 +242,8 @@ it("changes the links of a record from its edit form", async () => {
   const chosen = await screen.findByRole("list", { name: "Tags" });
   await userEvent.click(within(chosen).getByRole("button", { name: "Remove RUST" }));
   expect(screen.queryByRole("list", { name: "Tags" })).toBeNull();
+  // The removed chip's button is gone: focus moves to the search.
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Tags" })).toHaveFocus());
   await userEvent.click(screen.getByRole("combobox", { name: "Tags" }));
   await userEvent.click(await screen.findByRole("button", { name: "SQL" }));
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -266,7 +268,11 @@ it("undoes a pending removal without the right to attach", async () => {
   mount(`/r/posts/records/${POST}/edit`);
   const chosen = await screen.findByRole("list", { name: "Tags" });
   expect(screen.queryByRole("combobox", { name: "Tags" })).toBeNull();
+  // Without the search, the input itself is the field (labelled, focusable).
+  const field = screen.getByRole("group", { name: "Tags" });
+  expect(field).toHaveAttribute("id", "field-tags");
   await userEvent.click(within(chosen).getByRole("button", { name: "Remove RUST" }));
+  await waitFor(() => expect(field).toHaveFocus());
   const removed = screen.getByRole("list", { name: "Removed, not saved yet" });
   await userEvent.click(within(removed).getByRole("button", { name: "Keep RUST" }));
   expect(within(screen.getByRole("list", { name: "Tags" })).getByText("RUST")).toBeInTheDocument();

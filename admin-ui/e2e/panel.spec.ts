@@ -27,7 +27,7 @@ test("admin manages posts end to end", async ({ page, watch: _ }) => {
   await page.getByLabel("Body").fill("Written by a robot.");
   // Tabs: category and publishing on the second, key/value attributes on the third.
   await page.getByRole("tab", { name: "Publishing" }).click();
-  await page.getByRole("combobox").click();
+  await page.getByRole("combobox", { name: /Category/ }).click();
   await page.getByPlaceholder("Search…").fill("Gui");
   await page.getByRole("button", { name: "Guides" }).click();
   await page.getByRole("switch", { name: "Published" }).click();
