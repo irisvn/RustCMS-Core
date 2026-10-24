@@ -408,8 +408,18 @@ async fn update(
         if !changed(&field.name) {
             continue;
         }
-        if let Some(ids) = crate::media::reference_ids(&field.name, rule, &values[&field.name], &mut errors) {
-            wanted.push((field.name.as_str(), rule, ids));
+        if let Some(mut ids) = crate::media::reference_ids(&field.name, rule, &values[&field.name], &mut errors) {
+            // Files the setting already referred to are kept as they were
+            // (reordering or removing others checks nothing about them).
+            let kept: Vec<&str> = match stored.values.get(&field.name) {
+                Some(serde_json::Value::String(id)) => vec![id.as_str()],
+                Some(serde_json::Value::Array(items)) => items.iter().filter_map(|v| v.as_str()).collect(),
+                _ => Vec::new(),
+            };
+            ids.retain(|id| !kept.iter().any(|k| uuid::Uuid::parse_str(k).is_ok_and(|k| k == *id)));
+            if !ids.is_empty() {
+                wanted.push((field.name.as_str(), rule, ids));
+            }
         }
     }
     errors.into_result()?;

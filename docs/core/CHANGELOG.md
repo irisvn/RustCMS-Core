@@ -6,16 +6,19 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.10.1]
+## [0.10.1] — 2026-10-24
 
 ### Added (0.10.1)
 - The Media page shows the library as a grid of thumbnails (the
   authorized file URL in an `<img>`, scaled by the browser; other files as
   an icon) or as the usual table, a choice remembered per user in the
-  browser. Its **Upload files** button sends several files one at a time
-  through `POST {admin}/api/media` (an idempotency key per file, the same
-  on a retry), each with its state, error and retry. The media schema has
-  an `upload` ability (`media.create`); `create` stays refused.
+  browser; the grid shows at most 24 thumbnails a page. Its **Upload
+  files** button sends several files through the panel's upload queue
+  (`useUploads`: at most 2 at a time, a 429 sent again after `Retry-After`,
+  an idempotency key per file, the same on a retry). The media schema has
+  an `upload` ability (`media.create`); `create` stays refused. Images
+  inserted from the library take the file's alternative text; a trashed or
+  missing file shows "File unavailable" on its page and in the editor.
 - Media names and alternative text: a nullable `media.alt` column
   (framework migration `m20261201_000022_add_alt_to_media`, re-runnable on
   MySQL), and the media record's edit form changes exactly `name` (a rename,
@@ -24,7 +27,6 @@ All notable changes are documented here. The format follows
   files, and on others' only with `media.manage_all` (like trashing); every
   other column stays refused. `alt` is read with the record and returned in
   `MediaItem` (`alt?`). The record page shows the file and what was detected.
-
 - `SettingField::media(name)` and `SettingField::media_list(name, max)`
   (with `.accept(…)`, `.max_size(…)`): settings holding media ids
   (`Option<Uuid>`, `Vec<Uuid>`), edited with the media input. A save checks
@@ -91,12 +93,6 @@ All notable changes are documented here. The format follows
 - The navigation (and the dashboard's resource cards) lists resources in
   registration order instead of by slug; `ResourceMeta::sort` still
   reorders them.
-- `Ctx` has a new public field `admin_path` (the panel's URL prefix, set
-  from the auth configuration; `/admin` for `Ctx::new`). Code that builds a
-  `Ctx` literal without `..` adds it.
-- `ActionOutcome` serializes in camelCase and has two new fields,
-  `message` and `open_url` (code building it with a struct literal adds
-  `..Default::default()`).
 - `media::entity::Model` has a new field `alt: Option<String>` (code that
   builds `media::ActiveModel` literals sets it).
 

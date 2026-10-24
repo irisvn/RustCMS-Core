@@ -29,6 +29,38 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.10.0 to 0.10.1
+
+- **Run `rustcms migrate`** (`m20261201_000022_add_alt_to_media`, a nullable
+  column): `serve` does not wait for it, and media queries fail until it
+  has run. 0.10.0 binaries read the migrated database: to roll back, run
+  them with `migrate --allow-newer` (or `[database] allow_newer_migrations`);
+  leave the column in place (`migrate:rollback` would undo the application's
+  own latest migrations first).
+- **`media.update` now grants something**: renaming one's own files and
+  editing their alternative text (before, updates were always refused); with
+  `media.manage_all`, everyone's files. Review roles that hold `media.*` as a
+  whole.
+- The navigation and the dashboard's resource cards follow registration
+  order, not slugs: use `ResourceMeta::sort` to keep an order.
+- Every `.bulk()` action is also offered on rows where the record's
+  abilities allow it; an action offered only for a selection is not
+  supported (`visible_when` also applies when the action runs, so hiding
+  it on every row would leave a bulk run nothing to process).
+- Action dialogs no longer say "Run": their button is the action's label
+  without "…" (or `submit_label`); empty values read "Not set". Update
+  end-to-end selectors.
+- Vocabulary 10: `ActionSchema.primary` and `submitLabel`,
+  `ColumnSchema.hideBelow`; per-record `abilities` include `visible_when`.
+  An older admin SPA shows the banner and every offered action as a button;
+  extensions that check the vocabulary version should accept 10.
+- Struct literals: `ActionOutcome` has `message` and `open` (add
+  `..Default::default()`); `media::entity::Model` / `ActiveModel` have `alt`.
+  Clients that build wire types by hand gain `MediaItem.alt`,
+  `RecentColumn.valueType`, `options` and `column`, and `RecentRecord.data`.
+- `Action::new` is unchanged; handlers that return an outcome use
+  `Action::with_outcome`.
+
 ## From 0.9.0 to 0.10.0
 
 - Rich text documents have a version 2 (tables, embeds, callouts, image

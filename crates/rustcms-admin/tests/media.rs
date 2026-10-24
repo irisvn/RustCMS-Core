@@ -356,6 +356,9 @@ db_test!(owners_rename_files_and_set_their_alt_others_need_manage_all, |db: Test
     assert_eq!(found.data["alt"], json!("A cat"));
     // Cleared to `null`; bounded; required name.
     library.update(&owner, &mine, input(json!({"alt": null}))).await.unwrap();
+    // Blank alternative text is none.
+    let blank = library.update(&owner, &mine, input(json!({"alt": "  "}))).await.unwrap();
+    assert_eq!(blank.data["alt"], json!(null));
     let long = library.update(&owner, &mine, input(json!({"alt": "x".repeat(501)}))).await.unwrap_err();
     assert!(matches!(long, AppError::Validation(ref v) if v.errors.contains_key("alt")), "{long:?}");
     for name in ["", " ", "../"] {

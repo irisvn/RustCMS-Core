@@ -148,10 +148,10 @@ describe("action outcomes", () => {
 
 describe("openable URLs", () => {
   it("follow the server's rules", () => {
-    for (const ok of ["https://example.com/x?y#z", "HTTPS://example.com", "/admin", "/admin/r/posts?page=2", "/blog/a", "https://example.com:8443/x", "https://[::1]:8443/x", "https://127.0.0.1/x"]) {
+    for (const ok of ["https://example.com/x?y#z", "HTTPS://example.com", "/admin", "/admin/r/posts?page=2", "/blog/a", "https://example.com:8443/x", "https://[::1]:8443/x", "https://[2001:DB8::1]/x", "https://[0:0:0:0:0:0:0:1]/", "https://[::ffff:1.2.3.4]/", "https://127.0.0.1/x"]) {
       expect(openableUrl(ok), ok).toBe(true);
     }
-    for (const bad of ["http://example.com", "javascript:alert(1)", "//evil", "https://u:p@evil", "https://", "/admin/../x", "/admin/%2e%2e/x", "relative", "https://a b", "https://a\\b", "", "data:text/html,x", `https://a.b/${"x".repeat(2048)}`, "https://example.com:abc/", "https://example.com:99999/", "https://[]/", "https://[/", "https://:", "https://a..b/", "https://-a.example/"]) {
+    for (const bad of ["http://example.com", "javascript:alert(1)", "//evil", "https://u:p@evil", "https://", "/admin/../x", "/admin/%2e%2e/x", "relative", "https://a b", "https://a\\b", "", "data:text/html,x", `https://a.b/${"x".repeat(2048)}`, "https://example.com:abc/", "https://example.com:99999/", "https://[]/", "https://[/", "https://[x@[::1]/", "https://[x@[::1]:443/", "https://[::1@evil]/", "https://[evil.com]/", "https://:", "https://a..b/", "https://-a.example/"]) {
       expect(openableUrl(bad), bad).toBe(false);
     }
   });

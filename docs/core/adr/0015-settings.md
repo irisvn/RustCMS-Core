@@ -66,3 +66,14 @@ validated like any input, audited, and some of them secret.
   them to the new key (amended in 0.4.1, ADR 0030).
 - Settings writes wait for the RBAC lock (rare writes; acceptable).
 - Wider numeric kinds need a codec; deferred.
+
+## Amendment (0.10.1): media settings
+
+`SettingField::media` and `media_list` hold media ids. A save checks, inside
+its transaction and as the user then, each file it **adds** (exists, not
+trashed, visible to the user, accepted type and size), locking those rows
+shared; files a setting already referred to are not checked again, so a
+reorder or a removal never fails because another file was trashed or is
+outside the user's scope. References are never cascaded: a trashed or
+deleted file shows as unavailable. They need the media library and an empty
+default (boot refuses otherwise).

@@ -63,6 +63,10 @@ impl Resource for MediaResource {
             let cleaned = cleaned_name(name).ok_or_else(|| ValidationErrors::field("name", "is required"))?;
             data.insert("name".into(), serde_json::Value::String(cleaned));
         }
+        // No alternative text is `null`, never an empty string.
+        if data.get("alt").and_then(serde_json::Value::as_str).is_some_and(|alt| alt.trim().is_empty()) {
+            data.insert("alt".into(), serde_json::Value::Null);
+        }
         Ok(data)
     }
 

@@ -1,7 +1,29 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.10.0**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.10.1**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.10.1
+
+- **Media page**: a grid of thumbnails or the table (remembered per user)
+  and an upload button for several files ([The Media page](admin/media.md#the-media-page));
+  files can be renamed and given an alternative text, which the editor and
+  the picker pre-fill ([Names and alternative text](admin/media.md#names-and-alternative-text)).
+- **Media settings**: `SettingField::media` and `media_list`
+  ([Media settings](admin/settings.md#media-settings)).
+- **Actions per record**: `Action::visible_when`, `primary` and
+  `destructive`; list rows show one labelled action and a ⋯ menu, and record
+  pages and relation tables show their actions too
+  ([Per-record visibility](admin/actions.md#per-record-visibility)).
+- **Action outcomes**: `Action::with_outcome` returns a message and a page
+  to open in a new tab ([Outcomes](admin/actions.md#outcomes-a-message-a-page-to-open)).
+- **Narrow screens**: `TableColumn::hide_below(Breakpoint::Md)`
+  ([Narrow screens](admin/tables.md#narrow-screens)).
+- Fixes: bulk actions are offered on rows too; action dialogs are titled
+  without "…" and their button is the action's label (`submit_label`);
+  record pages format dates and times; the recent-records widget shows
+  labels and dates; files that cannot be loaded show "File unavailable";
+  empty values read "Not set"; navigation keeps the registration order.
 
 ## 0.10.0
 

@@ -315,6 +315,25 @@ describe("rich editor (version 2)", () => {
     expect(figure.querySelector("[style]")).toBeNull();
   });
 
+  it("shows a missing image as unavailable in the editor, keeping it in the document", async () => {
+    // A paragraph first: jsdom has no layout, so a click may put the cursor at
+    // the start of the document, which must not be the image (typing would replace it).
+    const { box, doc } = await editorOn([p("Before"), { type: "image", attrs: { media: ID, alt: "Cat", caption: "Our cat" } }, p("After")]);
+    const img = box.querySelector("figure[data-rich-image] img")!;
+    expect(img).toHaveAttribute("src", SRC);
+    expect(img).toHaveAttribute("alt", "Cat");
+    fireEvent.error(img);
+    const figure = box.querySelector("figure[data-rich-image]")!;
+    expect(within(figure as HTMLElement).getByRole("img", { name: "File unavailable" })).toHaveTextContent("File unavailable");
+    expect(figure.querySelector("img")).toBeNull();
+    expect(figure.querySelector("figcaption")).toHaveTextContent("Our cat");
+    expect(figure.querySelector("[style]")).toBeNull();
+    // Editing elsewhere keeps the image as it was.
+    await userEvent.click(within(box).getByText("After"));
+    await userEvent.keyboard("!");
+    await waitFor(() => expect(doc()?.content.find((n) => n.type === "image")).toEqual({ type: "image", attrs: { media: ID, alt: "Cat", caption: "Our cat" } }));
+  });
+
   it("drops pasted images that are not this panel's media, keeps the panel's own", async () => {
     const { box, doc } = await editorOn(null);
     const html = `<p>Hi</p><img src="https://evil.test/x.png" alt="x"><figure data-rich-image data-width="wide"><img src="${SRC}" alt="Ours"><figcaption>Cap</figcaption></figure><img src="data:image/png;base64,AAAA">`;

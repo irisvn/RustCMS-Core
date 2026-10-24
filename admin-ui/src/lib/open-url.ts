@@ -16,9 +16,13 @@ function validAuthority(authority: string): boolean {
     const after = authority.slice(end + 1);
     if (after !== "" && !after.startsWith(":")) return false;
     port = after === "" ? undefined : after.slice(1);
-    // The browser's own parser decides what an IPv6 address is.
+    // Hex digits, colons and dots only (never `x@[::1`), and the browser's own
+    // parser must read an IPv6 address (in its own spelling: `[0:0::1]` is
+    // `[::1]`) with no credentials.
+    if (!/^[0-9A-Fa-f:.]+$/.test(ip)) return false;
     try {
-      if (new URL(`https://[${ip}]/`).hostname === "") return false;
+      const parsed = new URL(`https://[${ip}]/`);
+      if (parsed.username !== "" || parsed.password !== "" || !/^\[[0-9a-f:.]+\]$/.test(parsed.hostname)) return false;
     } catch {
       return false;
     }

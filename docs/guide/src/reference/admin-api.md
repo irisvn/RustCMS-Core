@@ -24,8 +24,8 @@ values follow the [wire format](wire-format.md).
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
 | GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable belongs-to-many pivot columns by target key) |
 | POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key set by the server |
-| POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing}` |
-| POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (media library enabled) |
+| POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing, replayed?, message?, open?}`: a run on one record hidden by `visible_when` is 403 (nothing runs), hidden records of a run on several are `denied`; `open` only on a run on one record (422 `one_record_only` otherwise) |
+| POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (with `alt`, its alternative text; media library enabled; the media schema's `upload` ability says whether the user may) |
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | GET | `/resources/{slug}/records/{key}/relations/{relation}/options?search=&keys=` | `{data: [{value, label, attached}]}`: records to attach to a record (`attach_{relation}` on it) |
@@ -85,7 +85,7 @@ the policy allows `view` and `restore` or `force_delete` on it.
 
 - `data` holds readable fields only, and is empty (no `title`, no `labels`) when
   the user may not view the record, e.g. the result of an update-only write.
-- `abilities` also holds one entry per action (`"publish": true`).
+- `abilities` also holds one entry per action (`"publish": true`), decided by the policy and the action's `visible_when` on that record.
 - `labels` holds titles of related records. A related record the user may not
   see is shown as `#<key>`.
 - `trashed: true` marks a record in the trash (soft deletes; absent otherwise).
@@ -105,7 +105,8 @@ same key, by the same user, within 24 hours:
   see it **now** (key only when no longer visible); an action answers the first
   run's outcome with `"replayed": true`. Admission is checked again (403 if the
   user lost the ability). Action outcomes, first or replayed, list processed
-  and denied keys only for records the user may view now;
+  and denied keys only for records the user may view now, and drop `message`
+  and `open` unless the user may still view every processed record;
 - different request → 422 on `idempotency_key`;
 - the first request still running → the retry waits (up to 5 s), then answers
   409 `write_conflict` (nothing applied; retry later).

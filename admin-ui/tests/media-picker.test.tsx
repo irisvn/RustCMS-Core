@@ -17,7 +17,7 @@ const API = "http://localhost/admin/api";
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const idOf = (n: number) => `0199d3a4-1b2c-7d3e-8f40-${String(n).padStart(12, "0")}`;
 
-interface Row { n: number; name: string; mime: string; size: number }
+interface Row { n: number; name: string; mime: string; size: number; alt?: string }
 
 /**
  * The library: `rows` in scope, 24 a page; records every list query (answered
@@ -53,7 +53,7 @@ function library(rows: Row[], { permissions = ["media.view_any", "media.view", "
       const data = found.slice((page - 1) * 24, page * 24).map((r) => ({
         key: idOf(r.n), title: r.name, abilities: {},
         // i64 columns are strings on the wire.
-        data: { name: r.name, mime: r.mime, size: String(r.size), width: 10, height: 10, owner_id: "1" },
+        data: { name: r.name, mime: r.mime, size: String(r.size), width: 10, height: 10, owner_id: "1", ...(r.alt !== undefined ? { alt: r.alt } : {}) },
       }));
       return json({ data, meta: { page, perPage: 24, total: found.length, lastPage: Math.max(1, Math.ceil(found.length / 24)) } });
     }
@@ -297,6 +297,31 @@ describe("editor image picker", () => {
     const content = JSON.parse(emitted).content as { type: string; attrs?: { media?: string } }[];
     expect(content.map((n) => n.type)).toEqual(["paragraph", "image", "image", "paragraph"]);
     expect(content.filter((n) => n.type === "image").map((n) => n.attrs?.media)).toEqual([idOf(2), idOf(1)]);
+  });
+
+  it("fills in each image's alternative text from its media, never the file name", async () => {
+    library([{ n: 1, name: "cat.png", mime: "image/png", size: 1, alt: "A cat on a mat" }, { n: 2, name: "dog.png", mime: "image/png", size: 1 }, { n: 3, name: "x.png", mime: "image/png", size: 1, alt: "" }]);
+    let emitted = "";
+    const client = new QueryClient();
+    const session = createSession({ basePath: "/admin", apiPath: API }, client, () => {});
+    render(
+      <SessionContext.Provider value={session}>
+        <QueryClientProvider client={client}>
+          <RichEditorWidget id="field-body" label="Body" value="" onChange={(v) => (emitted = v)} invalid={false} nullable />
+        </QueryClientProvider>
+      </SessionContext.Provider>,
+    );
+    await userEvent.click(await screen.findByRole("textbox", { name: "Body" }));
+    const button = screen.getByRole("button", { name: "Insert image" });
+    await waitFor(() => expect(button).toBeEnabled());
+    await userEvent.click(button);
+    const dialog = await screen.findByRole("dialog", { name: "Insert images" });
+    const items = await within(dialog).findByRole("list", { name: "Files" });
+    for (const name of [/cat\.png/, /dog\.png/, /x\.png/]) await userEvent.click(within(items).getByRole("button", { name }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Insert" }));
+    await waitFor(() => expect(emitted).not.toBe(""));
+    const content = JSON.parse(emitted).content as { type: string; attrs?: { media?: string; alt?: string } }[];
+    expect(content.filter((n) => n.type === "image").map((n) => [n.attrs?.media, n.attrs?.alt])).toEqual([[idOf(1), "A cat on a mat"], [idOf(2), ""], [idOf(3), ""]]);
   });
 });
 

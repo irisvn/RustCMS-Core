@@ -153,7 +153,8 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   insertImages.current = (items, chained) => {
     if (!editor || editor.isDestroyed || items.length === 0) return;
     const { state, view } = editor;
-    const nodes = items.map((item) => state.schema.nodes.image!.create({ src: mediaUrl(apiPath, item.id), alt: item.name }));
+    // The media's own alternative text, else none to fill in (a file name describes nothing).
+    const nodes = items.map((item) => state.schema.nodes.image!.create({ src: mediaUrl(apiPath, item.id), alt: item.alt ?? "" }));
     const fresh = !chained || anchor.current === null || anchor.current > state.doc.content.size;
     const at = fresh ? blockEnd(state) : anchor.current!;
     // The selection stays the user's: typing on never replaces an image that arrived meanwhile.

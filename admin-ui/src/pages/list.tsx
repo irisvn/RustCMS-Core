@@ -18,7 +18,7 @@ import { Input, NativeSelect } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Cell, FilterControl, KNOWN_FILTERS, columnClass, type FilterParams } from "@/renderers/table";
 import { cn } from "@/lib/utils";
-import { MEDIA_SLUG, MediaGrid, MediaUploader, MediaViewToggle, useMediaView } from "@/renderers/media-library";
+import { GRID_PER_PAGE, MEDIA_SLUG, MediaGrid, MediaUploader, MediaViewToggle, gridPageSizes, useMediaView } from "@/renderers/media-library";
 import { errorText, formatCount, later, t as translate, useT } from "@/i18n";
 
 export type ListSearch = Record<string, string>;
@@ -53,7 +53,17 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   const t = useT();
   const navigate = useNavigate();
   const schema = useSchema(slug, "view");
-  const query = useMemo(() => listQuery(search), [search]);
+  // The media library: thumbnails in a grid, or the table.
+  const media = slug === MEDIA_SLUG;
+  const [mediaView, setMediaView] = useMediaView();
+  const grid = media && mediaView === "grid";
+  const query = useMemo(() => {
+    const params = listQuery(search);
+    // Every thumbnail loads its file: the grid holds a bounded page.
+    const asked = Number(params.get("per_page"));
+    if (grid && !(asked > 0 && asked <= GRID_PER_PAGE)) params.set("per_page", String(GRID_PER_PAGE));
+    return params;
+  }, [search, grid]);
   // What an export takes: the list's query without its page.
   const exportQuery = useMemo(() => {
     const params = new URLSearchParams(query);
@@ -62,10 +72,6 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     return params;
   }, [query]);
   const records = useRecords(slug, query);
-  // The media library: thumbnails in a grid, or the table.
-  const media = slug === MEDIA_SLUG;
-  const [mediaView, setMediaView] = useMediaView();
-  const grid = media && mediaView === "grid";
   const del = useDeleteRecord(slug);
   const restore = useRestoreRecord(slug);
   const forceDelete = useForceDeleteRecord(slug);
@@ -368,6 +374,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
             {!records.isLoading && rows.length === 0 && <p className="p-8 text-center text-muted-foreground">{t("list.empty")}</p>}
             <MediaGrid
               rows={rows}
+              generation={records.dataUpdatedAt}
               select={bulkActions.length > 0 ? selectOf : undefined}
               actions={rowActionsOf}
               badge={(record) => record.trashed && <Badge className="self-start">{t("list.trashedBadge")}</Badge>}
@@ -453,7 +460,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                 value={String(meta.perPage)}
                 onChange={(e) => setSearch({ per_page: e.target.value })}
               >
-                {table.perPageOptions.map((n) => (
+                {(grid ? gridPageSizes(table.perPageOptions) : table.perPageOptions).map((n) => (
                   <option key={n} value={n}>
                     {n}
                   </option>

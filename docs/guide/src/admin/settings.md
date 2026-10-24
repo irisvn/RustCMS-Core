@@ -128,19 +128,19 @@ SettingField::media_list("slides", 5),                                 // slides
 
 They hold ids of files of the [media library](media.md) (it must be enabled
 with `AdminProvider::media()`; boot fails otherwise), edited with the same
-media input as resource fields (`FileUpload`): upload a file, remove or
-reorder them; the page is not saved while an upload is on its way. Each file
+media input as resource fields (`FileUpload`): upload a file or pick one
+from the library, remove or reorder them; the page is not saved while an
+upload is on its way. Each file
 a save **changes** to is checked like a resource's media field, inside the
 save and as the user is then: it exists, is not trashed, is visible to the
 user (`media.view_any` and `media.view`; their own uploads, or every file
 with `media.view_all` or `media.manage_all`), and matches `.accept(…)` and `.max_size(…)`; a list
 holds at most `max` distinct ids. The referenced rows are locked (shared)
-until the save commits. A reference kept as it was is not checked again
-(a file trashed later stays referenced until the setting changes; see
+until the save commits. A reference kept as it was is not checked again,
+in a list too (reordering or removing files checks only those added; a
+file trashed later stays referenced until it is removed; see
 [when a referenced file is trashed or deleted](media.md#when-a-referenced-file-is-trashed-or-deleted)).
-The input is the resource fields' media input (`FileUpload`): upload, remove,
-reorder. Their default must
-be empty (`None`, `vec![]`).
+Their default must be empty (`None`, `vec![]`).
 
 ### Layout and checks
 

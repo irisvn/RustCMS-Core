@@ -8,6 +8,7 @@ import { findWrapping, liftTarget } from "@tiptap/pm/transform";
 import { TableMap } from "@tiptap/pm/tables";
 import Image from "@tiptap/extension-image";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
+import { t } from "@/i18n";
 import { CALLOUT_TONES, EMBED_NAMES, type CalloutTone, IMAGE_WIDTHS, type ImageWidth, LIMITS, embedUrl, mediaIdOf, validEmbed } from "@/lib/rich-text";
 
 declare module "@tiptap/core" {
@@ -74,8 +75,59 @@ export const RichImage = Image.extend<{ apiPath: string; inline: boolean; allowB
   addInputRules() {
     return [];
   },
+  // The figure of `renderHTML`, built with DOM calls (no HTML strings); a file
+  // that cannot be loaded shows the "File unavailable" chip in place of a
+  // broken image, until its source changes.
   addNodeView() {
-    return null;
+    return ({ node: initial }) => {
+      const figure = document.createElement("figure");
+      figure.setAttribute("data-rich-image", "");
+      figure.className = "rich-figure";
+      let current = initial;
+      let failed: string | null = null;
+      const img = document.createElement("img");
+      const chip = document.createElement("span");
+      chip.setAttribute("role", "img");
+      chip.className = "inline-flex items-center gap-2 rounded-md border border-dashed border-border px-2 py-1 text-sm text-muted-foreground";
+      const caption = document.createElement("figcaption");
+      img.addEventListener("error", () => {
+        // The source that failed (a later one is tried again).
+        failed = img.getAttribute("src");
+        render();
+      });
+      const render = () => {
+        const { src, alt, caption: text, size } = current.attrs;
+        figure.setAttribute("data-width", String(size ?? "normal"));
+        const broken = failed !== null && failed === String(src ?? "");
+        if (broken) {
+          chip.setAttribute("aria-label", t("media.unavailable"));
+          chip.textContent = t("media.unavailable");
+          if (img.parentNode === figure) img.replaceWith(chip);
+          else if (chip.parentNode !== figure) figure.prepend(chip);
+        } else {
+          if (img.getAttribute("src") !== src) img.setAttribute("src", String(src ?? ""));
+          img.setAttribute("alt", String(alt ?? ""));
+          if (chip.parentNode === figure) chip.replaceWith(img);
+          else if (img.parentNode !== figure) figure.prepend(img);
+        }
+        if (text) {
+          caption.textContent = String(text);
+          if (caption.parentNode !== figure) figure.append(caption);
+        } else {
+          caption.remove();
+        }
+      };
+      render();
+      return {
+        dom: figure,
+        update: (next) => {
+          if (next.type !== current.type) return false;
+          current = next;
+          render();
+          return true;
+        },
+      };
+    };
   },
 });
 

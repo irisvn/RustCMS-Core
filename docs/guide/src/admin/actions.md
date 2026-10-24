@@ -76,14 +76,23 @@ Action::<invoice::Entity>::with_outcome("pdf", |_ctx, _txn, invoices, _data| {
   (`http:`, `javascript:`, `data:`) fails the action with a server error and
   rolls it back. A page is opened only for a run on **one** record: a run
   on several records whose handler returns one is refused (422, rolled
-  back). The panel checks the URL again before opening it.
+  back). That is decided once the handler has returned, from the keys the
+  request named (a request naming two records, one of them hidden, reaches
+  the handler with one record and is still refused): its database writes
+  roll back, not what it did elsewhere. Do work outside the database in a
+  [job](../digging-deeper/queues.md) dispatched in the action's
+  transaction, so a refused run never does it.
+  The panel checks the URL again before opening it.
 
 The keys (`processed`, `denied`, `missing`) are the framework's: whatever
 the handler sets there is ignored. The outcome is part of the idempotency
 receipt, so a retried request answers with the same message and page, but
 only to a user who may still view every record it processed: otherwise (the
 action or someone else hid a record meanwhile) the message and page are
-left out of the answer, first or replayed.
+left out of the answer, first or replayed. Receipts are kept for 24 hours:
+never put a secret in `open` (a presigned or bearer URL is stored and
+answered again as it was, possibly expired); link to a page of the app that
+checks the user instead.
 
 ## Placement in lists
 
@@ -104,8 +113,8 @@ abilities for each record decide, and running one is authorized as from the
 list.
 
 ```rust,ignore
-Action::<post::Entity>::new("publish", publish).visible_when(|p| !p.published).primary(),
-Action::<post::Entity>::new("unpublish", unpublish).visible_when(|p| p.published).primary(),
+Action::<post::Entity>::new("publish", publish).visible_when(|_ctx, p| !p.published).primary(),
+Action::<post::Entity>::new("unpublish", unpublish).visible_when(|_ctx, p| p.published).primary(),
 Action::<post::Entity>::new("purge_cache", purge).destructive(),
 ```
 

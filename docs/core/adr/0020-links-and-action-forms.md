@@ -76,3 +76,23 @@ symmetric difference grantable).
   hidden links) is deferred (done in 0.9.0 as a change, not a set: ADR 0035).
 - Self relations and inverse managers over one pivot need another lock order
   first; refused at boot until then.
+
+## Amendment (0.10.1): per-record actions and outcomes
+
+- `Action::visible_when(|ctx, record| bool)` decides per record whether an
+  action is offered. It is part of the record's `abilities` (with the
+  policy) and decided again on the locked record when the action runs: one
+  hidden record is 403 and nothing runs; hidden records of a run on several
+  are `denied`, never passed to the handler. `primary()` marks the labelled
+  row action (others under ⋯), `destructive()` sorts last.
+- `Action::with_outcome` handlers return an `ActionOutcome` with an optional
+  `message` (≤ 500 characters, shown as text) and `open` (a page to open in
+  a new tab). `open` is checked before the commit: `https://` without
+  credentials (DNS name, IPv4, bracketed IPv6, port 1–65535) or an absolute
+  path of the site (no `//`, dot segments, backslashes, whitespace), at most
+  2,048 bytes; anything else is an application error (500, rolled back). A
+  run on several records may not return one (422 `one_record_only`, decided
+  after the handler, documented). The panel opens it after the commit with
+  `noopener` and `noreferrer`, checking it again. Outcomes are kept in the
+  idempotency receipt and left out of any answer when the user may no
+  longer view every processed record.

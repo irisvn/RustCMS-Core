@@ -410,7 +410,7 @@ db_test!(a_partly_applied_invitation_migration_completes, |db: TestDb| async mov
     }
 });
 
-// 0.9 → 0.10: media files get an optional alternative text; existing files
+// 0.10.0 → 0.10.1: media files get an optional alternative text; existing files
 // keep theirs empty. A run that already added the column (MySQL commits DDL
 // before the migration is recorded) completes on the next; rollbacks are clean.
 db_test!(upgrade_adds_media_alt, |db: TestDb| async move {
@@ -469,8 +469,8 @@ db_test!(after_a_rollback_newer_migrations_are_accepted_only_when_allowed, |db: 
     let status = rustcms_core::db::migration_status::<Older>(conn).await.unwrap();
     assert_eq!(status.last().unwrap(), &("Newer".to_owned(), last));
     assert!(status.iter().filter(|(s, _)| s == "Applied").count() == Older::migrations().len());
-    // The newer migration's tables are untouched.
-    assert!(has_table(&db, "schedule_runs").await);
+    // The newer migration's changes are untouched.
+    assert!(SchemaManager::new(conn).has_column("media", "alt").await.unwrap());
 });
 
 db_test!(own_pending_migrations_still_run_beside_newer_ones, |db: TestDb| async move {

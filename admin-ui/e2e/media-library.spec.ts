@@ -17,10 +17,11 @@ test("the media library uploads several files and shows them as a grid or a tabl
   ]);
   const queue = page.getByRole("region", { name: "Uploads" });
   await expect(queue.getByText("Uploads finished")).toBeVisible();
-  await expect(queue.getByText("Uploaded")).toHaveCount(2);
-  // The server refuses the text file; it can be retried (and is refused again).
-  await expect(queue.getByText("Failed")).toHaveCount(1);
+  await expect(queue.getByText("2 files uploaded")).toBeVisible();
+  // The server refuses the text file: no retry is offered (it would be refused again).
+  await expect(queue.getByRole("alert")).toHaveCount(1);
   await expect(queue.getByRole("alert")).toContainText("not an accepted file type");
+  await expect(queue.getByRole("button", { name: "Retry uploading notes.txt" })).toHaveCount(0);
   // Thumbnails: the authorized file URL, scaled by the browser.
   const thumb = page.getByRole("main").getByRole("img", { name: "grid-one.png" });
   await expect(thumb).toBeVisible();

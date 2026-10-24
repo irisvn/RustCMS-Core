@@ -10,7 +10,7 @@ test("a media file is renamed and gets an alternative text", async ({ page, watc
   await signIn(page, "admin@example.test");
   await page.goto("/admin/r/media");
   await page.getByTestId("media-upload-input").setInputFiles({ name: "to-rename.png", mimeType: "image/png", buffer: PNG });
-  await expect(page.getByRole("region", { name: "Uploads" }).getByText("Uploaded")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Uploads" }).getByText("1 file uploaded")).toBeVisible();
   const card = page.getByRole("listitem").filter({ hasText: "to-rename.png" });
   await card.getByRole("link", { name: "View" }).click();
   await expect(page.getByRole("heading", { name: "to-rename.png" })).toBeVisible();

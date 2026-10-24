@@ -56,10 +56,12 @@ The Media resource is shown as a grid of thumbnails: each image is its
 download URL below (so the same authorization applies), scaled by the
 browser; other files show an icon. A toggle switches to the usual table;
 the choice is kept per user in the browser. Users with `media.create` get an
-**Upload files** button: several files are sent one at a time, each with its
-state (waiting, uploading, uploaded, failed), the server's error, and a
-retry that reuses the file's idempotency key, so a file is never stored
-twice. The media schema reports this as the `upload` ability (`create`
+**Upload files** button: several files go through the panel's upload queue
+(at most 2 at a time, files over `max_upload_bytes` refused before sending,
+a 429 sent again after `Retry-After`), each pending one with its state and
+the server's error, and a retry (when another try can succeed) that reuses
+the file's idempotency key, so a file is never stored twice; the grid shows
+at most 24 thumbnails a page. The media schema reports this as the `upload` ability (`create`
 stays refused: files enter the library only by upload).
 
 ## Names and alternative text

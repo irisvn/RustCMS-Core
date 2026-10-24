@@ -22,7 +22,11 @@ import { UploadList, useUploads } from "./uploads";
 /** Types the media library stores (`rustcms_admin::media`), and those shown inline. */
 const TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"];
 const INLINE = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
-const PER_PAGE = 24;
+/** Thumbnails per page: each one loads the original file. */
+export const PER_PAGE = 24;
+
+/** Whether the browser shows the file inline (the server serves these types `inline`). */
+export const isInlineImage = (mime: unknown): mime is string => typeof mime === "string" && INLINE.has(mime);
 
 /** Whether `mime` matches an `accept` list (`image/*`; empty accepts all). */
 export const accepts = (accept: string[], mime: string) =>
@@ -49,7 +53,9 @@ function itemOf(record: Envelope): MediaItem {
     size: number(d.size) ?? 0,
     width: number(d.width),
     height: number(d.height),
-    inline: INLINE.has(mime),
+    inline: isInlineImage(mime),
+    // Its alternative text, when the record has one.
+    ...(typeof d.alt === "string" && d.alt !== "" ? { alt: d.alt } : {}),
   };
 }
 

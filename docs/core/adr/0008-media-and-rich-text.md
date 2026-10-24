@@ -97,3 +97,18 @@ Following "format changes need a new version and a migration path":
 - **Tables in the editor** use `@tiptap/extension-table` with the node views,
   column widths, resizing and cell alignment removed: they render `style`
   attributes, which the panel's CSP forbids.
+
+## Amendment (0.10.1): editable names and alternative text
+
+- A file's `name` and `alt` (nullable column, ≤ 500 characters, blank stored
+  as `null`) are the only columns an update may write; the stored key, disk,
+  type and size never change. `MediaPolicy` allows `update` with
+  `media.update`, and for another user's file `media.manage_all` as well
+  (`media.view_all` sees, never edits). Names are cleaned as uploads are.
+- The media schema has an `upload` ability (`media.create`, the upload
+  route's own check); `create` stays refused (files arrive only by upload).
+- Every upload list of the panel (the Media page, file fields, the editor,
+  the picker) shares one queue implementation: at most 2 in flight, a 429
+  sent again after `Retry-After` with the same key.
+- Media references in settings (`SettingField::media`, `media_list`) are
+  checked by the same `media::check_references` as resource fields.

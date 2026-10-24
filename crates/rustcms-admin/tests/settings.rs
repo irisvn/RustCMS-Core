@@ -720,6 +720,25 @@ db_test!(media_settings_reference_only_available_visible_accepted_files, |db: Te
     // Cleared.
     let cleared = client.send(Method::PUT, &brand, Some(&json!({"version": "3", "data": {"logo": null}}))).await;
     assert_eq!(cleared.json()["data"]["logo"], Value::Null);
+    // In a list too: files kept are not checked again when others are
+    // reordered or removed, files added are.
+    let put = |version: &str, slides: Value| {
+        let body = json!({"version": version, "data": {"slides": slides}});
+        let (client, brand) = (&client, &brand);
+        async move { client.send(Method::PUT, brand, Some(&body)).await }
+    };
+    put("4", json!([pdf, mine])).await.assert_status(StatusCode::OK);
+    rustcms_admin::media::entity::Entity::update_many()
+        .col_expr(rustcms_admin::media::entity::Column::DeletedAt, sea_orm::sea_query::Expr::value(chrono::Utc::now()))
+        .filter(rustcms_admin::media::entity::Column::Id.eq(uuid::Uuid::parse_str(&pdf).unwrap()))
+        .exec(app.state().db())
+        .await
+        .unwrap();
+    put("5", json!([mine, pdf])).await.assert_status(StatusCode::OK);
+    put("6", json!([mine, trashed])).await.assert_validation_error("slides");
+    put("6", json!([mine])).await.assert_status(StatusCode::OK);
+    // Once removed, a trashed file is a new reference again: refused.
+    put("7", json!([mine, pdf])).await.assert_validation_error("slides");
 });
 
 #[test]
