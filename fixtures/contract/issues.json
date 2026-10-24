@@ -38,12 +38,21 @@
   "document_alt": [
     "has an image description longer than {max} characters"
   ],
+  "document_caption": [
+    "has an image caption longer than {max} characters"
+  ],
   "document_depth": [
     "is nested too deeply"
   ],
+  "document_embed": [
+    "has an embed whose provider is not youtube or vimeo",
+    "has an embed with an invalid id",
+    "has an embed with unexpected attributes"
+  ],
   "document_image": [
     "has an image that is not a media item",
-    "has an image with unexpected attributes"
+    "has an image with unexpected attributes",
+    "has an image width other than `normal`, `wide` or `full`"
   ],
   "document_invalid": [
     "is not a valid document"
@@ -51,6 +60,13 @@
   "document_link": [
     "has a link that is not http, https or mailto",
     "has a link with unexpected attributes"
+  ],
+  "document_needs_version": [
+    "has a table, which needs document version 2",
+    "has an embed, which needs document version 2",
+    "has a callout, which needs document version 2",
+    "has an image caption, which needs document version 2",
+    "has an image width, which needs document version 2"
   ],
   "document_structure": [
     "has a list item outside a list",
@@ -65,10 +81,24 @@
     "has a text with the same mark twice",
     "has a text with too many marks",
     "has a text without text",
-    "has an empty text"
+    "has an empty text",
+    "has a table holding something else than rows",
+    "has a table whose rows have different lengths",
+    "has a table cell out of place (header cells make up the first row only)",
+    "has a table cell holding something else than paragraphs",
+    "has a callout holding something else than paragraphs and lists",
+    "has a callout holding a table or a callout",
+    "has a callout with unexpected attributes",
+    "has a callout whose tone is not `info` or `warn`"
+  ],
+  "document_table_columns": [
+    "has a table row with no cells or more than {max} cells"
+  ],
+  "document_table_rows": [
+    "has a table with no rows or more than {max} rows"
   ],
   "document_version": [
-    "is not a valid document (version 1)"
+    "is not a valid document (version 1 or 2)"
   ],
   "duplicate_file": [
     "may not list the same file twice"
@@ -153,6 +183,9 @@
   ],
   "max_elements": [
     "may not have more than {max} elements"
+  ],
+  "max_embeds": [
+    "may not have more than {max} embeds"
   ],
   "max_images": [
     "may not have more than {max} images"

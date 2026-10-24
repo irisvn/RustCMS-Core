@@ -3,7 +3,7 @@
 //! `UPDATE_TYPES=1 cargo test -p rustcms-admin --features ts --test typescript`.
 #![cfg(feature = "ts")]
 
-use rustcms_admin::http::{DataResponse, PanelResponse, PanelUser};
+use rustcms_admin::http::{DataResponse, PanelResponse, PanelUploads, PanelUser};
 use rustcms_admin::schema::*;
 use rustcms_admin::system::{
     PermissionInfo, PermissionPresetInfo, RoleRef, SystemLinks, SystemRole, SystemUser, UserPage,
@@ -55,6 +55,7 @@ fn bindings() -> String {
         rustcms_admin::imports::ImportView::decl(&cfg),
         rustcms_admin::imports::ImportPreview::decl(&cfg),
         PanelUser::decl(&cfg),
+        PanelUploads::decl(&cfg),
         SystemLinks::decl(&cfg),
         RoleRef::decl(&cfg),
         SystemUser::decl(&cfg),

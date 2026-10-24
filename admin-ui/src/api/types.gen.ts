@@ -766,6 +766,17 @@ name: string,
  */
 email: string, };
 
+export type PanelUploads = { 
+/**
+ * Largest accepted file, in bytes (`max_upload_bytes`).
+ */
+maxBytes: number, 
+/**
+ * Uploads the server processes at once (`max_concurrent_uploads`; more
+ * answer 429): the panel sends at most this many at a time.
+ */
+maxConcurrent: number, };
+
 export type SystemLinks = { 
 /**
  * Users page (`users.view_any`).
@@ -1687,7 +1698,12 @@ home?: string,
  * declared one for a super admin): for showing or hiding controls in
  * extensions (`can`); the server checks every request.
  */
-permissions: Array<string>, };
+permissions: Array<string>, 
+/**
+ * Upload limits, when the media library is enabled and the user may
+ * upload (`media.create`).
+ */
+uploads?: PanelUploads, };
 
 export type DataResponse<T> = { 
 /**

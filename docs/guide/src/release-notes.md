@@ -1,7 +1,20 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.9.0**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.10.0**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.10.0
+
+- **Rich text version 2**: tables, YouTube/Vimeo embeds, callouts, image
+  captions and widths; version 1 documents are read as they are
+  ([Rich text](admin/media.md#rich-text)).
+- **Editor**: several images uploaded at once (choose, drop, paste) with
+  per-file status and retry; a media library picker shared with
+  `FileUpload` fields ([The media library picker](admin/media.md#the-media-library-picker)).
+- **Headless HTML**: images as figures with their size
+  (`rich_text::to_html_with`), stable heading ids with Vietnamese diacritics
+  folded, and `rich_text::outline` for a table of contents
+  ([Headless rendering](admin/media.md#headless-rendering)).
 
 ## 0.9.0
 

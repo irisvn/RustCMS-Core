@@ -526,4 +526,50 @@ db_test!(rich_text_is_a_validated_document_with_visible_images, |db: TestDb| asy
         let err = notes.create(&writer, data(json!({"title": title, "body": value}))).await.unwrap_err();
         assert_eq!(field_errors(err), ["body"], "{title}");
     }
+
+    // Version 2: captions, widths, tables, embeds and callouts; its images follow the same rules.
+    let v2 = |media: &str, provider: &str, id: &str| {
+        let cell = |kind: &str| json!({"type": kind, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "c"}]}]});
+        json!({"type": "doc", "version": 2, "content": [
+            {"type": "image", "attrs": {"media": media, "alt": "x", "caption": "Cap", "width": "full"}},
+            {"type": "table", "content": [
+                {"type": "tableRow", "content": [cell("tableHeader"), cell("tableHeader")]},
+                {"type": "tableRow", "content": [cell("tableCell"), cell("tableCell")]}
+            ]},
+            {"type": "embed", "attrs": {"provider": provider, "id": id}},
+            {"type": "callout", "attrs": {"tone": "info"}, "content": [{"type": "paragraph"}]}
+        ]})
+    };
+    let created = notes
+        .create(&writer, data(json!({"title": "V2", "body": v2(&image, "youtube", "dQw4w9WgXcQ")})))
+        .await
+        .unwrap();
+    assert_eq!(created.data["body"], v2(&image, "youtube", "dQw4w9WgXcQ"));
+    for (title, value) in [
+        ("v2 theirs", v2(&theirs, "youtube", "dQw4w9WgXcQ")),
+        ("v2 pdf", v2(&pdf, "vimeo", "1")),
+        ("v2 provider", v2(&image, "evil", "dQw4w9WgXcQ")),
+        ("v2 x", v2(&image, "x", "1460323737035677698")),
+        ("v2 id", v2(&image, "youtube", "javascript:x")),
+        ("v1 table", {
+            let mut doc = v2(&image, "youtube", "dQw4w9WgXcQ");
+            doc["version"] = json!(1);
+            doc
+        }),
+    ] {
+        let err = notes.create(&writer, data(json!({"title": title, "body": value}))).await.unwrap_err();
+        assert_eq!(field_errors(err), ["body"], "{title}");
+    }
+    // Images deep in a callout (callout → list → item) follow the same rules.
+    let nested = |media: &str| {
+        let item = json!({"type": "listItem", "content": [{"type": "image", "attrs": {"media": media, "alt": "x"}}]});
+        json!({"type": "doc", "version": 2, "content": [
+            {"type": "callout", "attrs": {"tone": "warn"}, "content": [{"type": "bulletList", "content": [item]}]}
+        ]})
+    };
+    notes.create(&writer, data(json!({"title": "Nested", "body": nested(&image)}))).await.unwrap();
+    for (title, media) in [("nested theirs", &theirs), ("nested pdf", &pdf)] {
+        let err = notes.create(&writer, data(json!({"title": title, "body": nested(media)}))).await.unwrap_err();
+        assert_eq!(field_errors(err), ["body"], "{title}");
+    }
 });

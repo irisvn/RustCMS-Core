@@ -7,8 +7,18 @@ use std::path::{Path, PathBuf};
 use rustcms_core::i18n::{CUSTOM, Issue, TEMPLATES};
 
 /// Calls whose last string literal is a user-visible validation message.
-const MARKERS: &[&str] =
-    &["ValidationErrors::field(", ".add(", ".add_form(", "invalid(", "DecodeError(", "err(", "bad("];
+const MARKERS: &[&str] = &[
+    "ValidationErrors::field(",
+    ".add(",
+    ".add_form(",
+    "invalid(",
+    "DecodeError(",
+    "err(",
+    "bad(",
+    "needs_v2(",
+    "only_attrs(",
+    "paragraphs(",
+];
 
 fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(dir).unwrap() {

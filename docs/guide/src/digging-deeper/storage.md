@@ -17,7 +17,7 @@ app.provider(rustcms::storage::StorageProvider);   // reads `[storage]`
 | `root` | `storage/app` | local disk root (outside the web root; symlinks inside it are refused) |
 | `max_upload_bytes` | 10 MiB | per upload (the route's body limit follows) |
 | `max_pixels` | 40,000,000 | images, width × height |
-| `max_concurrent_uploads` | 4 | more answer 429 |
+| `max_concurrent_uploads` | 4 | uploads at once for the whole server (all users); more answer 429. Each upload list of the admin panel sends at most 2 at a time and retries a 429 after `Retry-After` |
 | `allowed_types` | `["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"]` | MIME types, a subset of these five |
 | `s3.bucket`, `s3.region`, `s3.endpoint`, `s3.allow_http` | | private bucket; credentials from `AWS_*` variables |
 | `s3.timeout_secs` | `30` | longest wait for a control request (exists, delete, opening a download), retries included (1 to 600) |

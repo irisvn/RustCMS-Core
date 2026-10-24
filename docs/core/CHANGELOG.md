@@ -100,6 +100,51 @@ All notable changes are documented here. The format follows
 - `media::entity::Model` has a new field `alt: Option<String>` (code that
   builds `media::ActiveModel` literals sets it).
 
+## [0.10.0] — 2026-10-24
+
+### Added (0.10.0)
+- Rich text document version 2 (ADR 0008 amendment): `table` (a header
+  row, rows of cells holding paragraphs, rectangular, at most 50 × 20),
+  `embed` (`{provider, id}` for YouTube and Vimeo, strict per-provider ids,
+  never a URL or HTML; `Embed::from_url`), `callout` (`info`/`warn`,
+  paragraphs and lists, no table or callout inside), and image `caption` and `width`
+  (`normal | wide | full`). `rich_text::parse` reads versions 1 and 2 (v2
+  parts refused in v1); `rich_text::upgrade_value(&Value) -> Value`; the
+  editor writes the lowest version a document needs (v1 without v2 parts,
+  so 0.9 still reads it);
+  `Document::version`; the limits `MAX_NODES`, `MAX_DEPTH`, `MAX_IMAGES`,
+  `MAX_EMBEDS`, `MAX_ALT`, `MAX_CAPTION`, `MAX_TABLE_ROWS`,
+  `MAX_TABLE_COLUMNS`, `MAX_HREF` are public; issue codes
+  `document_needs_version`, `document_caption`, `document_table_rows`,
+  `document_table_columns`, `document_embed`, `max_embeds`.
+- `rich_text::to_html_with(&doc, &HashMap<Uuid, ImageInfo>)`: images as
+  `<figure><img src width height alt><figcaption>`, sizes from the
+  map (`ImageInfo { url, width, height }`, `ImageInfo::new(url).size(w, h)`).
+- Stable heading ids in `to_html` (diacritics folded to ASCII, Vietnamese included;
+  `-2`, `-3` for repeats) and `rich_text::outline(&doc) -> Vec<Heading { level, text, id }>`,
+  `rich_text::slug`.
+- Editor: multi-image upload (picker multi-select, drop, paste of files) with
+  per-file status, error and retry (same idempotency key), at most 2 at a
+  time per list (never more than `max_concurrent_uploads`), a 429 retried
+  by itself after `Retry-After` (up to 3 times); image details (alt text, caption,
+  width); tables; embeds from YouTube/Vimeo addresses (a text card, no
+  iframe, no thumbnail); callouts; Heading 4 and horizontal rule buttons; saves the lowest version
+  the document needs.
+- Media library picker, shared by the editor and `FileUpload` /
+  `media_list` inputs: thumbnails, search, pages, upload tab; the media
+  scope, `accept` and `max_size` apply; English and Vietnamese.
+- `PanelResponse.uploads` (`PanelUploads { maxBytes, maxConcurrent }`) for
+  users who may upload.
+- E2E `rich-text.spec.ts` (the editor's v2 nodes, multi-image upload, the
+  media library picker; CSP watcher).
+
+### Changed (0.10.0)
+- `rich_text::to_html` writes images as figures and headings with ids (same
+  signature). `rich_text::Node` is `#[non_exhaustive]`; `Node::Image` holds
+  an `Image` struct; new variants `Table`, `Embed`, `Callout`.
+- Pasted HTML images other than the panel's own media are dropped when
+  pasted (they were dropped on save).
+
 ## [0.9.0] — 2026-10-24
 
 ### Added (0.9.0)

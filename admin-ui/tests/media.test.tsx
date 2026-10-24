@@ -17,6 +17,7 @@ const keys: (string | null)[] = [];
 
 const server = setupServer(
   http.get("*/admin/api/auth/csrf", () => HttpResponse.json({ csrfToken: "t", userId: "1" })),
+  http.get("*/admin/api/panel", () => HttpResponse.json({ brand: "x", user: { id: "1", name: "a", email: "a@b.c" }, navigation: [], system: {}, settings: [], pages: [], permissions: [] })),
 );
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterAll(() => server.close());
@@ -52,6 +53,7 @@ describe("documents", () => {
     };
     expect(toDocument(editor, API)).toEqual({
       type: "doc",
+      // Only version 1 nodes: written as version 1.
       version: 1,
       content: [
         { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "T" }] },
@@ -220,8 +222,26 @@ describe("rich editor", () => {
     await userEvent.click(box);
     await userEvent.keyboard("Hello");
     await waitFor(() => expect(emitted).not.toBe(""));
+    // Nothing only version 2 has: written as version 1 (0.9 still reads it).
     expect(JSON.parse(emitted)).toEqual({ type: "doc", version: 1, content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }] });
     expect(screen.getByRole("toolbar", { name: "Body formatting" })).toBeInTheDocument();
+  });
+
+  it("makes level 4 headings and horizontal rules from the toolbar", async () => {
+    let emitted = "";
+    render(
+      <Providers>
+        <RichEditorWidget id="field-body" label="Body" value="" onChange={(v) => (emitted = v)} invalid={false} nullable />
+      </Providers>,
+    );
+    const box = await screen.findByRole("textbox", { name: "Body" });
+    await userEvent.click(box);
+    await userEvent.keyboard("Part");
+    await userEvent.click(screen.getByRole("button", { name: "Heading 4" }));
+    await userEvent.click(screen.getByRole("button", { name: "Horizontal rule" }));
+    await waitFor(() => expect(JSON.parse(emitted).content.map((n: DocNode) => n.type)).toContain("horizontalRule"));
+    const content = JSON.parse(emitted).content as DocNode[];
+    expect(content[0]).toEqual({ type: "heading", attrs: { level: 4 }, content: [{ type: "text", text: "Part" }] });
   });
 
   it("adds, checks, edits and removes links in the panel's dialog (no browser prompt)", async () => {

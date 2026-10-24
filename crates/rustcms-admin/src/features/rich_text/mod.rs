@@ -2,39 +2,55 @@
 //!
 //! The document is validated strictly on every write: unknown node types,
 //! marks or attributes are refused, links are limited to `http`, `https` and
-//! `mailto`, images reference media items by id. [`to_html`] renders it with
-//! every text and attribute escaped, for headless consumers.
+//! `mailto`, images reference media items by id, embeds name an allowed
+//! provider and an id (never a URL or HTML). [`to_html`] and [`to_html_with`]
+//! render it with every text and attribute escaped, for headless consumers;
+//! [`outline`] lists its headings with the ids the HTML gives them.
 //!
 //! ```json
-//! {"type": "doc", "version": 1, "content": [
+//! {"type": "doc", "version": 2, "content": [
 //!   {"type": "paragraph", "content": [{"type": "text", "text": "Hi", "marks": [{"type": "bold"}]}]},
-//!   {"type": "image", "attrs": {"media": "0199d3a4-…", "alt": "A cat"}}
+//!   {"type": "image", "attrs": {"media": "0199d3a4-…", "alt": "A cat", "caption": "Our cat", "width": "wide"}},
+//!   {"type": "embed", "attrs": {"provider": "youtube", "id": "dQw4w9WgXcQ"}}
 //! ]}
 //! ```
+//!
+//! Versions: version 1 (0.2–0.9) is a subset of version 2 (0.10). Both are
+//! read as they are; tables, embeds, callouts, image captions and image
+//! widths are only valid in version 2. [`upgrade_value`] turns a stored
+//! version 1 document into the same document in version 2 (only the version
+//! changes).
 
 mod html;
+mod outline;
 mod parse;
 
 pub use html::*;
+pub use outline::*;
 pub use parse::*;
 
 use serde::Deserialize;
 use serde_json::Value;
 
-/// Document format version.
-pub const VERSION: u64 = 1;
+/// Current document format version (what the panel's editor saves).
+pub const VERSION: u64 = 2;
+/// Oldest document format version still read (as it is).
+pub const OLDEST_VERSION: u64 = 1;
 /// Largest stored document (bytes of JSON).
 pub const MAX_BYTES: usize = 256 * 1024;
 
 /// A validated document.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Document {
+    /// Format version it was written in ([`OLDEST_VERSION`]..=[`VERSION`]).
+    pub version: u64,
     /// Top-level blocks.
     pub content: Vec<Node>,
 }
 
 /// A block or inline node.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Node {
     /// Paragraph.
     Paragraph(Vec<Node>),
@@ -55,14 +71,195 @@ pub enum Node {
     /// Line break.
     HardBreak,
     /// Image from the media library.
-    Image {
-        /// Media id.
-        media: uuid::Uuid,
-        /// Alternative text.
-        alt: String,
-    },
+    Image(Image),
+    /// Table (version 2).
+    Table(Table),
+    /// Video of an allowed provider (version 2).
+    Embed(Embed),
+    /// Highlighted paragraphs and lists, no table or callout inside (version 2).
+    Callout(CalloutTone, Vec<Node>),
     /// Text with marks.
     Text(String, Vec<Mark>),
+}
+
+/// An image block.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Image {
+    /// Media id.
+    pub media: uuid::Uuid,
+    /// Alternative text (may be empty).
+    pub alt: String,
+    /// Caption, plain text (empty: none; version 2).
+    pub caption: String,
+    /// How wide it is shown (version 2).
+    pub width: ImageWidth,
+}
+
+/// How wide an image is shown: a closed set the frontend styles.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ImageWidth {
+    /// The text's width (the default).
+    #[default]
+    Normal,
+    /// Wider than the text.
+    Wide,
+    /// The page's full width.
+    Full,
+}
+
+impl ImageWidth {
+    /// Its name in documents (`normal`, `wide`, `full`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Wide => "wide",
+            Self::Full => "full",
+        }
+    }
+}
+
+/// A table: rows of cells, all rows of the same length; the first row may be
+/// a header row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Table {
+    /// Whether the first row is a header row.
+    pub header: bool,
+    /// Rows of cells (at least one row of at least one cell).
+    pub rows: Vec<Vec<Cell>>,
+}
+
+/// A table cell: paragraphs (inline marks only).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cell {
+    /// At least one paragraph.
+    pub content: Vec<Node>,
+}
+
+/// An embedded video: a provider and its id, never a URL or HTML.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Embed {
+    /// Provider.
+    pub provider: EmbedProvider,
+    /// The provider's id (checked against its format).
+    pub id: String,
+}
+
+impl Embed {
+    /// The provider's public page for it (`https://`).
+    pub fn url(&self) -> String {
+        match self.provider {
+            EmbedProvider::YouTube => format!("https://www.youtube.com/watch?v={}", self.id),
+            EmbedProvider::Vimeo => format!("https://vimeo.com/{}", self.id),
+        }
+    }
+
+    /// The embed an address points to, from an allowlist of hosts and paths,
+    /// or `None` (the same allowlist as the panel's editor, which also refuses
+    /// what this refuses):
+    /// `youtube.com/watch?v=ID` (also `www.`, `m.`, `youtube-nocookie.com`),
+    /// `youtube.com/{embed,shorts,live,v}/ID`, `youtu.be/ID`,
+    /// `vimeo.com/ID` (and `vimeo.com/ID/hash`, the hash not kept),
+    /// `player.vimeo.com/video/ID`. `http` or `https`, no user, password or
+    /// port; the id must have the provider's format.
+    pub fn from_url(url: &str) -> Option<Embed> {
+        let url = url.trim();
+        let lower = url.to_ascii_lowercase();
+        let rest = if lower.starts_with("https://") {
+            &url[8..]
+        } else if lower.starts_with("http://") {
+            &url[7..]
+        } else {
+            return None;
+        };
+        if url.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return None;
+        }
+        let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        let (authority, rest) = rest.split_at(end);
+        if authority.contains(['@', ':']) {
+            return None;
+        }
+        let host = authority.to_ascii_lowercase();
+        let host = ["www.", "m.", "mobile."].iter().find_map(|p| host.strip_prefix(p)).unwrap_or(&host).to_owned();
+        let rest = rest.split('#').next().unwrap_or_default();
+        let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
+        let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+        let pick = |provider: EmbedProvider, id: Option<&str>| {
+            id.filter(|id| provider.valid_id(id)).map(|id| Embed { provider, id: id.to_owned() })
+        };
+        match (host.as_str(), parts.as_slice()) {
+            ("youtube.com" | "youtube-nocookie.com", ["watch"]) => {
+                pick(EmbedProvider::YouTube, query.split('&').find_map(|pair| pair.strip_prefix("v=")))
+            }
+            ("youtube.com" | "youtube-nocookie.com", ["embed" | "shorts" | "live" | "v", id]) => {
+                pick(EmbedProvider::YouTube, Some(id))
+            }
+            ("youtu.be", [id]) => pick(EmbedProvider::YouTube, Some(id)),
+            ("vimeo.com", [id] | [id, _]) => pick(EmbedProvider::Vimeo, Some(id)),
+            ("player.vimeo.com", ["video", id]) => pick(EmbedProvider::Vimeo, Some(id)),
+            _ => None,
+        }
+    }
+}
+
+/// Embed providers (an allowlist).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EmbedProvider {
+    /// `youtube`: 11-character video ids (`[A-Za-z0-9_-]{11}`).
+    YouTube,
+    /// `vimeo`: numeric video ids (`[1-9][0-9]{0,14}`).
+    Vimeo,
+}
+
+impl EmbedProvider {
+    /// Its name in documents (`youtube`, `vimeo`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::YouTube => "youtube",
+            Self::Vimeo => "vimeo",
+        }
+    }
+
+    /// The provider named `name`, if allowed.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "youtube" => Some(Self::YouTube),
+            "vimeo" => Some(Self::Vimeo),
+            _ => None,
+        }
+    }
+
+    /// Whether `id` has the provider's id format.
+    pub fn valid_id(self, id: &str) -> bool {
+        match self {
+            Self::YouTube => id.len() == 11 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'),
+            Self::Vimeo => {
+                (1..=15).contains(&id.len()) && !id.starts_with('0') && id.bytes().all(|b| b.is_ascii_digit())
+            }
+        }
+    }
+}
+
+/// A callout's tone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CalloutTone {
+    /// `info`.
+    Info,
+    /// `warn`.
+    Warn,
+}
+
+impl CalloutTone {
+    /// Its name in documents (`info`, `warn`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Warn => "warn",
+        }
+    }
 }
 
 /// Inline formatting.
@@ -94,118 +291,57 @@ pub fn safe_href(href: &str) -> bool {
         && href.len() > "mailto:".len()
 }
 
-/// Media items the document's images reference, in order, without repeats.
-pub fn media_ids(doc: &Document) -> Vec<uuid::Uuid> {
-    fn walk(nodes: &[Node], out: &mut Vec<uuid::Uuid>) {
-        for node in nodes {
-            match node {
-                Node::Image { media, .. } if !out.contains(media) => out.push(*media),
-                Node::Paragraph(c)
-                | Node::Heading(_, c)
-                | Node::BulletList(c)
-                | Node::OrderedList(c)
-                | Node::ListItem(c)
-                | Node::Blockquote(c) => walk(c, out),
-                _ => {}
+/// Calls `f` on every node in document order (a node before its children).
+pub(crate) fn walk<'a>(nodes: &'a [Node], f: &mut impl FnMut(&'a Node)) {
+    for node in nodes {
+        f(node);
+        match node {
+            Node::Paragraph(c)
+            | Node::Heading(_, c)
+            | Node::BulletList(c)
+            | Node::OrderedList(c)
+            | Node::ListItem(c)
+            | Node::Blockquote(c)
+            | Node::Callout(_, c) => walk(c, f),
+            Node::Table(table) => {
+                for cell in table.rows.iter().flatten() {
+                    walk(&cell.content, f);
+                }
             }
+            _ => {}
         }
     }
+}
+
+/// Media items the document's images reference, in order, without repeats.
+pub fn media_ids(doc: &Document) -> Vec<uuid::Uuid> {
     let mut out = Vec::new();
-    walk(&doc.content, &mut out);
+    walk(&doc.content, &mut |node| {
+        if let Node::Image(image) = node
+            && !out.contains(&image.media)
+        {
+            out.push(image.media);
+        }
+    });
+    out
+}
+
+/// A stored value in the current format [`VERSION`], for rewriting stored
+/// documents: version 1 is a subset of version 2 (no node or attribute
+/// changes shape), so a version 1 document comes back as version 2 with only
+/// `version` changed; anything else
+/// (a current document, a value that is not a document) as it is. It does not
+/// validate: [`parse`] the result.
+pub fn upgrade_value(value: &Value) -> Value {
+    let mut out = value.clone();
+    if let Value::Object(map) = &mut out
+        && map.get("type").and_then(Value::as_str) == Some("doc")
+        && map.get("version").and_then(Value::as_u64) == Some(1)
+    {
+        map.insert("version".into(), Value::from(VERSION));
+    }
     out
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn doc(content: Value) -> Value {
-        json!({"type": "doc", "version": 1, "content": content})
-    }
-
-    #[test]
-    fn valid_documents_round_trip_to_escaped_html() {
-        let media = "0199d3a4-1b2c-7d3e-8f40-123456789abc";
-        let value = doc(json!([
-            {"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": "Title <script>"}]},
-            {"type": "paragraph", "content": [
-                {"type": "text", "text": "a \"b\" & 'c'", "marks": [{"type": "bold"}, {"type": "link", "attrs": {"href": "https://x.test/?a=1&b=\"2\""}}]},
-                {"type": "hardBreak"}
-            ]},
-            {"type": "bulletList", "content": [{"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "i"}]}]}]},
-            {"type": "codeBlock", "content": [{"type": "text", "text": "<b>x</b>"}]},
-            {"type": "image", "attrs": {"media": media, "alt": "\" onerror=\"x"}},
-            {"type": "horizontalRule"}
-        ]));
-        let parsed = parse(&value).unwrap();
-        assert_eq!(media_ids(&parsed), vec![uuid::Uuid::parse_str(media).unwrap()]);
-        let html = to_html(&parsed, &|id| Some(format!("/media/{id}")));
-        assert_eq!(
-            html,
-            "<h2>Title &lt;script&gt;</h2><p><a href=\"https://x.test/?a=1&amp;b=&quot;2&quot;\" rel=\"noopener noreferrer nofollow\">\
-             <strong>a &quot;b&quot; &amp; &#39;c&#39;</strong></a><br></p><ul><li><p>i</p></li></ul>\
-             <pre><code>&lt;b&gt;x&lt;/b&gt;</code></pre><img src=\"/media/0199d3a4-1b2c-7d3e-8f40-123456789abc\" alt=\"&quot; onerror=&quot;x\"><hr>"
-        );
-        assert!(!to_html(&parsed, &|_| None).contains("<img"));
-    }
-
-    #[test]
-    fn anything_else_is_refused() {
-        let text = |t: &str| json!({"type": "text", "text": t});
-        let para = |inline: Value| json!({"type": "paragraph", "content": [inline]});
-        for bad in [
-            json!({"type": "doc", "content": []}),
-            json!({"type": "doc", "version": 2, "content": []}),
-            json!("<p>html</p>"),
-            doc(json!([{"type": "script", "content": []}])),
-            doc(json!([{"type": "paragraph", "attrs": {"style": "x"}, "content": []}])),
-            doc(json!([para(
-                json!({"type": "text", "text": "x", "marks": [{"type": "link", "attrs": {"href": "javascript:alert(1)"}}]})
-            )])),
-            doc(json!([para(
-                json!({"type": "text", "text": "x", "marks": [{"type": "link", "attrs": {"href": "data:text/html,x"}}]})
-            )])),
-            doc(json!([para(
-                json!({"type": "text", "text": "x", "marks": [{"type": "link", "attrs": {"href": "https://a b"}}]})
-            )])),
-            doc(json!([para(
-                json!({"type": "text", "text": "x", "marks": [{"type": "link", "attrs": {"href": "https://x", "target": "_blank"}}]})
-            )])),
-            doc(json!([para(json!({"type": "text", "text": "x", "marks": [{"type": "underline"}]}))])),
-            doc(json!([para(json!({"type": "text", "text": "", "marks": []}))])),
-            doc(json!([para(json!({"type": "text", "text": "x", "onclick": "y"}))])),
-            doc(json!([{"type": "heading", "attrs": {"level": 1}, "content": [text("x")]}])),
-            doc(json!([{"type": "image", "attrs": {"src": "https://evil.test/x.png"}}])),
-            doc(json!([{"type": "image", "attrs": {"media": "not-a-uuid"}}])),
-            doc(json!([{"type": "bulletList", "content": [para(text("x"))]}])),
-            doc(
-                json!([{"type": "codeBlock", "content": [{"type": "text", "text": "x", "marks": [{"type": "bold"}]}]}]),
-            ),
-            doc(json!([para(json!({"type": "text", "text": "x", "marks": [{"type": "bold"}, {"type": "bold"}]}))])),
-            doc(json!([para(json!({"type": "image", "attrs": {"media": "0199d3a4-1b2c-7d3e-8f40-123456789abc"}}))])),
-            doc(json!([{"type": "listItem", "content": [para(text("x"))]}])),
-            json!({"type": "doc", "version": 1, "content": [], "marks": [{"type": "evil", "attrs": {"x": 1}}]}),
-        ] {
-            assert!(parse(&bad).is_err(), "{bad}");
-        }
-    }
-
-    #[test]
-    fn documents_are_bounded() {
-        let many: Vec<Value> = (0..10_001).map(|_| json!({"type": "horizontalRule"})).collect();
-        assert!(parse(&doc(Value::Array(many))).is_err());
-        let mut nested = json!({"type": "paragraph", "content": [{"type": "text", "text": "x"}]});
-        for _ in 0..20 {
-            nested = json!({"type": "blockquote", "content": [nested]});
-        }
-        assert!(parse(&doc(json!([nested]))).is_err());
-        let marks: Vec<Value> = (0..15_000).map(|_| json!({"type": "bold"})).collect();
-        assert!(
-            parse(&doc(json!([{"type": "paragraph", "content": [{"type": "text", "text": "x", "marks": marks}]}])))
-                .is_err()
-        );
-        let big = "x".repeat(MAX_BYTES);
-        assert!(parse(&doc(json!([{"type": "paragraph", "content": [{"type": "text", "text": big}]}]))).is_err());
-    }
-}
+mod tests;

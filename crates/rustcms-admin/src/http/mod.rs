@@ -54,6 +54,26 @@ pub struct PanelResponse {
     /// declared one for a super admin): for showing or hiding controls in
     /// extensions (`can`); the server checks every request.
     pub permissions: Vec<String>,
+    /// Upload limits, when the media library is enabled and the user may
+    /// upload (`media.create`).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uploads: Option<PanelUploads>,
+}
+
+/// The `[storage]` limits uploading clients respect (`PanelResponse.uploads`);
+/// the upload route enforces them.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct PanelUploads {
+    /// Largest accepted file, in bytes (`max_upload_bytes`).
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
+    pub max_bytes: u64,
+    /// Uploads the server processes at once (`max_concurrent_uploads`; more
+    /// answer 429): the panel sends at most this many at a time.
+    pub max_concurrent: u32,
 }
 
 /// The signed-in user in [`PanelResponse`].

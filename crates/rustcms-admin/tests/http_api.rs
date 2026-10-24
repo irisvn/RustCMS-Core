@@ -27,6 +27,10 @@ db_test!(panel_lists_what_the_user_may_see, |db: TestDb| async move {
         [json!("categories"), json!("posts"), json!("notes")]
     );
     assert!(nav(app.acting_as(&users.member).await.get(&api(&app, "panel")).await.json()).is_empty());
+    // Upload limits for those who may upload (`[storage]`, 64 KiB in tests; 4 at a time by default).
+    assert_eq!(admin.json()["uploads"], json!({"maxBytes": 64 * 1024, "maxConcurrent": 4}));
+    let editor = app.acting_as(&users.editor).await.get(&api(&app, "panel")).await.json();
+    assert!(editor.get("uploads").is_none(), "{editor}");
 
     // An API token never reaches the admin panel.
     app.with_token(&users.admin, &["*"]).await.get(&api(&app, "panel")).await.assert_status(StatusCode::UNAUTHORIZED);

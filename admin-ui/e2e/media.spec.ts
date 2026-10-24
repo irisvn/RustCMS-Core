@@ -26,7 +26,13 @@ test("a cover image and rich text with an image are saved and shown", async ({ p
   await page.keyboard.type("world");
   await page.getByRole("button", { name: "Bulleted list" }).click();
   await page.keyboard.type("an item");
-  await pickers.nth(1).setInputFiles({ name: "inline.png", mimeType: "image/png", buffer: PNG });
+  // Images go through the media library picker's upload tab.
+  await page.getByRole("button", { name: "Insert image" }).click();
+  const picker = page.getByRole("dialog", { name: "Insert images" });
+  await picker.getByRole("tab", { name: "Upload" }).click();
+  await picker.locator("input[type=file]").setInputFiles({ name: "inline.png", mimeType: "image/png", buffer: PNG });
+  await expect(picker.getByText("1 of at most 20 chosen")).toBeVisible();
+  await picker.getByRole("button", { name: "Insert" }).click();
   await expect(editor.locator("img")).toHaveCount(1);
 
   await page.getByRole("button", { name: "Create" }).click();

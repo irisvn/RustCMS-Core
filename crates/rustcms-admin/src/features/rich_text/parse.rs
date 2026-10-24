@@ -1,17 +1,26 @@
 //! Parsing: a JSON value becomes a [`Document`] only if it follows the closed
-//! grammar within the size limits.
+//! grammar of its version within the size limits.
 
 use super::*;
 
-pub(super) const MAX_NODES: usize = 10_000;
-
-pub(super) const MAX_DEPTH: usize = 16;
-
-pub(super) const MAX_IMAGES: usize = 100;
-
-pub(super) const MAX_HREF: usize = 2_048;
-
-pub(super) const MAX_ALT: usize = 500;
+/// Most elements (nodes, table rows and cells included).
+pub const MAX_NODES: usize = 10_000;
+/// Deepest nesting of blocks.
+pub const MAX_DEPTH: usize = 16;
+/// Most images.
+pub const MAX_IMAGES: usize = 100;
+/// Most embeds.
+pub const MAX_EMBEDS: usize = 50;
+/// Longest link address (bytes).
+pub const MAX_HREF: usize = 2_048;
+/// Longest image description (characters).
+pub const MAX_ALT: usize = 500;
+/// Longest image caption (characters).
+pub const MAX_CAPTION: usize = 1_000;
+/// Most rows of a table (the header row included).
+pub const MAX_TABLE_ROWS: usize = 50;
+/// Most columns of a table.
+pub const MAX_TABLE_COLUMNS: usize = 20;
 
 /// Marks on one text (each kind at most once).
 pub(super) const MAX_MARKS: usize = 5;
@@ -47,37 +56,47 @@ pub(super) struct RawMark {
 }
 
 pub(super) struct Budget {
+    version: u64,
+    /// Inside a callout: no table or callout.
+    in_callout: bool,
     nodes: usize,
     images: usize,
+    embeds: usize,
 }
 
-/// Parses and validates a stored or submitted document.
+impl Budget {
+    /// Refuses a version 2 part (`message`) in a version 1 document.
+    fn needs_v2(&self, message: &'static str) -> Result<(), DocumentError> {
+        if self.version >= 2 { Ok(()) } else { Err(err(message)) }
+    }
+}
+
+/// Parses and validates a stored or submitted document (version 1 or 2).
 pub fn parse(value: &Value) -> Result<Document, DocumentError> {
     // Bounded before any deep work.
     let bytes = serde_json::to_vec(value).map_err(|_| err("is not a document"))?.len();
     if bytes > MAX_BYTES {
         return Err(err(format!("may not be larger than {} KiB", MAX_BYTES / 1024)));
     }
+    // A table nests four levels below its block (row, cell, paragraph, text).
     if depth(value, 0) > MAX_DEPTH * 2 + 4 {
         return Err(err("is nested too deeply"));
     }
     let raw: RawNode = serde_json::from_value(value.clone()).map_err(|_| err("is not a valid document"))?;
-    if raw.kind != "doc"
-        || raw.version != Some(VERSION)
-        || raw.attrs.is_some()
-        || raw.text.is_some()
-        || raw.marks.is_some()
-    {
-        return Err(err("is not a valid document (version 1)"));
-    }
-    let mut budget = Budget { nodes: 0, images: 0 };
+    let version = raw.version.filter(|v| (OLDEST_VERSION..=VERSION).contains(v));
+    let (Some(version), "doc", None, None, None) =
+        (version, raw.kind.as_str(), raw.attrs.as_ref(), raw.text.as_ref(), raw.marks.as_ref())
+    else {
+        return Err(err("is not a valid document (version 1 or 2)"));
+    };
+    let mut budget = Budget { version, in_callout: false, nodes: 0, images: 0, embeds: 0 };
     let content = raw.content.unwrap_or_default();
     // List items only inside lists (as the editor's schema requires).
     if content.iter().any(|n| n.kind == "listItem") {
         return Err(err("has a list item outside a list"));
     }
     let content = blocks(content, &mut budget, 1)?;
-    Ok(Document { content })
+    Ok(Document { version, content })
 }
 
 /// JSON nesting depth (arrays and objects).
@@ -112,15 +131,41 @@ pub(super) fn no_extras(
         && (marks || raw.marks.is_none())
         && (content || raw.content.is_none())
         && raw.version.is_none();
-    if ok { Ok(()) } else { Err(err(format!("has unexpected properties on `{}`", raw.kind))) }
+    if ok { Ok(()) } else { Err(err(format!("has unexpected properties on `{}`", raw.kind.escape_debug()))) }
+}
+
+/// Only the attributes `allowed` (else `message`).
+fn only_attrs(
+    attrs: &serde_json::Map<String, Value>,
+    allowed: &[&str],
+    message: &'static str,
+) -> Result<(), DocumentError> {
+    if attrs.keys().all(|k| allowed.contains(&k.as_str())) { Ok(()) } else { Err(err(message)) }
 }
 
 pub(super) fn blocks(raw: Vec<RawNode>, budget: &mut Budget, level: usize) -> Result<Vec<Node>, DocumentError> {
     raw.into_iter().map(|node| block(node, budget, level)).collect()
 }
 
+/// At least one paragraph, nothing else (table cells; else `message`).
+fn paragraphs(
+    raw: Option<Vec<RawNode>>,
+    budget: &mut Budget,
+    level: usize,
+    message: &'static str,
+) -> Result<Vec<Node>, DocumentError> {
+    let items = raw.unwrap_or_default();
+    if items.is_empty() || items.iter().any(|n| n.kind != "paragraph") {
+        return Err(err(message));
+    }
+    blocks(items, budget, level)
+}
+
 pub(super) fn block(raw: RawNode, budget: &mut Budget, level: usize) -> Result<Node, DocumentError> {
     count(budget, level)?;
+    if budget.in_callout && (raw.kind == "table" || raw.kind == "callout") {
+        return Err(err("has a callout holding a table or a callout"));
+    }
     Ok(match raw.kind.as_str() {
         "paragraph" => {
             no_extras(&raw, false, false, false, true)?;
@@ -176,6 +221,29 @@ pub(super) fn block(raw: RawNode, budget: &mut Budget, level: usize) -> Result<N
             Node::HorizontalRule
         }
         "image" => image(raw, budget)?,
+        "table" => table(raw, budget, level)?,
+        "embed" => embed(raw, budget)?,
+        "callout" => {
+            budget.needs_v2("has a callout, which needs document version 2")?;
+            no_extras(&raw, true, false, false, true)?;
+            let attrs = raw.attrs.unwrap_or_default();
+            only_attrs(&attrs, &["tone"], "has a callout with unexpected attributes")?;
+            let tone = match attrs.get("tone").and_then(Value::as_str) {
+                Some("info") => CalloutTone::Info,
+                Some("warn") => CalloutTone::Warn,
+                _ => return Err(err("has a callout whose tone is not `info` or `warn`")),
+            };
+            let items = raw.content.unwrap_or_default();
+            if items.is_empty()
+                || items.iter().any(|n| !matches!(n.kind.as_str(), "paragraph" | "bulletList" | "orderedList"))
+            {
+                return Err(err("has a callout holding something else than paragraphs and lists"));
+            }
+            budget.in_callout = true;
+            let items = blocks(items, budget, level + 1);
+            budget.in_callout = false;
+            Node::Callout(tone, items?)
+        }
         other => return Err(err(format!("has an unknown block `{}`", other.escape_debug()))),
     })
 }
@@ -187,9 +255,7 @@ pub(super) fn image(raw: RawNode, budget: &mut Budget) -> Result<Node, DocumentE
         return Err(err(format!("may not have more than {MAX_IMAGES} images")));
     }
     let attrs = raw.attrs.unwrap_or_default();
-    if attrs.keys().any(|k| k != "media" && k != "alt") {
-        return Err(err("has an image with unexpected attributes"));
-    }
+    only_attrs(&attrs, &["media", "alt", "caption", "width"], "has an image with unexpected attributes")?;
     let media = attrs
         .get("media")
         .and_then(Value::as_str)
@@ -200,7 +266,84 @@ pub(super) fn image(raw: RawNode, budget: &mut Budget) -> Result<Node, DocumentE
         Some(Value::String(alt)) if alt.chars().count() <= MAX_ALT => alt.clone(),
         _ => return Err(err(format!("has an image description longer than {MAX_ALT} characters"))),
     };
-    Ok(Node::Image { media, alt })
+    let caption = match attrs.get("caption") {
+        None => String::new(),
+        Some(_) if budget.version < 2 => return Err(err("has an image caption, which needs document version 2")),
+        Some(Value::Null) => String::new(),
+        Some(Value::String(caption)) if caption.chars().count() <= MAX_CAPTION => caption.clone(),
+        _ => return Err(err(format!("has an image caption longer than {MAX_CAPTION} characters"))),
+    };
+    let width = match attrs.get("width") {
+        None => ImageWidth::Normal,
+        Some(_) if budget.version < 2 => return Err(err("has an image width, which needs document version 2")),
+        Some(Value::String(w)) if w == "normal" => ImageWidth::Normal,
+        Some(Value::String(w)) if w == "wide" => ImageWidth::Wide,
+        Some(Value::String(w)) if w == "full" => ImageWidth::Full,
+        _ => return Err(err("has an image width other than `normal`, `wide` or `full`")),
+    };
+    Ok(Node::Image(Image { media, alt, caption, width }))
+}
+
+pub(super) fn table(raw: RawNode, budget: &mut Budget, level: usize) -> Result<Node, DocumentError> {
+    budget.needs_v2("has a table, which needs document version 2")?;
+    no_extras(&raw, false, false, false, true)?;
+    let rows = raw.content.unwrap_or_default();
+    if rows.is_empty() || rows.len() > MAX_TABLE_ROWS {
+        return Err(err(format!("has a table with no rows or more than {MAX_TABLE_ROWS} rows")));
+    }
+    let header = rows[0].content.as_ref().and_then(|cells| cells.first()).is_some_and(|c| c.kind == "tableHeader");
+    let mut width = None;
+    let mut out = Vec::with_capacity(rows.len());
+    for (index, row) in rows.into_iter().enumerate() {
+        count(budget, level + 1)?;
+        if row.kind != "tableRow" {
+            return Err(err("has a table holding something else than rows"));
+        }
+        no_extras(&row, false, false, false, true)?;
+        let cells = row.content.unwrap_or_default();
+        if cells.is_empty() || cells.len() > MAX_TABLE_COLUMNS {
+            return Err(err(format!("has a table row with no cells or more than {MAX_TABLE_COLUMNS} cells")));
+        }
+        if *width.get_or_insert(cells.len()) != cells.len() {
+            return Err(err("has a table whose rows have different lengths"));
+        }
+        // Header cells make up the first row, or nothing.
+        let kind = if header && index == 0 { "tableHeader" } else { "tableCell" };
+        let mut parsed = Vec::with_capacity(cells.len());
+        for cell in cells {
+            count(budget, level + 2)?;
+            if cell.kind != kind {
+                return Err(err("has a table cell out of place (header cells make up the first row only)"));
+            }
+            no_extras(&cell, false, false, false, true)?;
+            let content =
+                paragraphs(cell.content, budget, level + 3, "has a table cell holding something else than paragraphs")?;
+            parsed.push(Cell { content });
+        }
+        out.push(parsed);
+    }
+    Ok(Node::Table(Table { header, rows: out }))
+}
+
+pub(super) fn embed(raw: RawNode, budget: &mut Budget) -> Result<Node, DocumentError> {
+    budget.needs_v2("has an embed, which needs document version 2")?;
+    no_extras(&raw, true, false, false, false)?;
+    budget.embeds += 1;
+    if budget.embeds > MAX_EMBEDS {
+        return Err(err(format!("may not have more than {MAX_EMBEDS} embeds")));
+    }
+    let attrs = raw.attrs.unwrap_or_default();
+    only_attrs(&attrs, &["provider", "id"], "has an embed with unexpected attributes")?;
+    let provider = attrs
+        .get("provider")
+        .and_then(Value::as_str)
+        .and_then(EmbedProvider::from_name)
+        .ok_or_else(|| err("has an embed whose provider is not youtube or vimeo"))?;
+    let id = attrs.get("id").and_then(Value::as_str).unwrap_or_default();
+    if !provider.valid_id(id) {
+        return Err(err("has an embed with an invalid id"));
+    }
+    Ok(Node::Embed(Embed { provider, id: id.to_owned() }))
 }
 
 pub(super) fn inlines(raw: Vec<RawNode>, budget: &mut Budget, level: usize) -> Result<Vec<Node>, DocumentError> {

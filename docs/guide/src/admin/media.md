@@ -118,19 +118,159 @@ Field::column(post::Column::Content).rich_text(),   // JSON column
 RichEditor::make("content"),
 ```
 
-Rich text is stored as a **document** (JSON), not HTML: paragraphs, headings
-2–4, lists, quotes, code blocks, rules, line breaks, images (media ids) and the
-marks bold, italic, strike, code and link (`http`, `https`, `mailto`). Anything
-else is refused (422); documents are limited to 256 KiB, 10,000 elements,
-16 levels and 100 images. Images follow the media rules above (images only).
+Rich text is stored as a **document** (JSON), not HTML. The panel's editor
+saves version 2; version 1 documents (0.2–0.9) stay valid and are read as
+they are (version 1 is a subset of version 2: nothing to migrate).
 
-The panel edits it with TipTap (no injected styles) and shows it with React
-elements. The toolbar's **Link** button opens a dialog for the address of
-the selected text (or of the link at the cursor, which it can also remove;
-with nothing selected, the address is inserted as linked text); it accepts
-`http`, `https` and `mailto` addresses, as the server does. Headless apps render it with `rustcms::admin::rich_text::parse` and
-`to_html(&doc, &|id| Some(my_public_url(id)))`, which escapes all text and
-attributes.
+```json
+{"type": "doc", "version": 2, "content": [
+  {"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": "Giới thiệu"}]},
+  {"type": "image", "attrs": {"media": "0199d3a4-…", "alt": "A cat", "caption": "Our cat", "width": "wide"}},
+  {"type": "table", "content": [
+    {"type": "tableRow", "content": [{"type": "tableHeader", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Plan"}]}]}]},
+    {"type": "tableRow", "content": [{"type": "tableCell", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Pro"}]}]}]}
+  ]},
+  {"type": "embed", "attrs": {"provider": "youtube", "id": "dQw4w9WgXcQ"}},
+  {"type": "callout", "attrs": {"tone": "info"}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Note"}]}]}
+]}
+```
+
+| Node | Version | Content |
+|---|---|---|
+| `paragraph`, `heading` (levels 2–4) | 1 | text and line breaks |
+| `bulletList`, `orderedList`, `listItem`, `blockquote` | 1 | blocks |
+| `codeBlock` | 1 | plain text |
+| `horizontalRule` | 1 | |
+| `image` | 1 | `media` (a media id), `alt`; version 2 adds `caption` (plain text) and `width` (`normal`, `wide` or `full`) |
+| `table` | 2 | `tableRow`s of `tableHeader` or `tableCell`; every row as long as the first (rectangular); header cells make up the first row (the header row) or nothing; cells hold paragraphs of text with marks only; no `colspan`, `rowspan`, widths or styles; at most 50 rows × 20 columns (1,000 cells) |
+| `embed` | 2 | `provider` (`youtube` or `vimeo`) and `id` matching that provider (YouTube `[A-Za-z0-9_-]{11}`, Vimeo `[1-9][0-9]{0,14}`); never a URL or HTML |
+| `callout` | 2 | `tone` (`info` or `warn`), paragraphs and lists; never a table or a callout inside, at any depth |
+
+Marks: bold, italic, strike, code and link (`http`, `https`, `mailto`).
+Anything else is refused (422), and so are version 2 nodes and attributes in
+a version 1 document. Limits (`rustcms::admin::rich_text::MAX_*`): 256 KiB,
+10,000 elements (table rows and cells count), 16 levels, 100 images, 50
+embeds, tables of at most 50 rows (the header row included) of 20 cells,
+500 characters of image description and 1,000 of caption (plain text,
+no marks). The server's validator (`rich_text::parse`) owns every bound;
+the editor only follows them. Images follow
+the media rules above (images only).
+
+### In the panel
+
+The editor is TipTap (no injected styles; its nodes render no `style`
+attribute, so the CSP is unchanged). Its toolbar has headings 2–4, lists,
+quote, code block, horizontal rule, info and warning callouts, links, images,
+image details, tables and embeds.
+
+- **Images**: *Insert image* opens the media library picker (below) to
+  choose images or upload several at once. Image files dropped on the
+  editor or pasted into it are uploaded too; pasted HTML images that are not
+  this panel's media (another site's, `data:` URLs) are dropped. Each file
+  shows its status, its error and a retry (the same `Idempotency-Key`); each
+  upload list sends at most 2 at a time (never more than
+  `max_concurrent_uploads`, a limit shared by every user of the server), a
+  file refused because the server is busy (429) is sent again by itself
+  after `Retry-After`, up to 3 times, files over
+  `max_upload_bytes` are refused before sending, and the record cannot be
+  saved while an upload is pending. Images go after the block holding the
+  cursor, in the order they were added. *Image details* (with an image
+  selected) edits its alternative text, caption and width.
+- **Tables** start with 3 × 3 cells and a header row; when the cursor is in a
+  table, a second toolbar adds and removes rows and columns (within 50 × 20)
+  and toggles the header row.
+- **Embeds**: paste a YouTube (`watch?v=`, `youtu.be/`, `embed/`, `shorts/`,
+  `live/`, `v/`; `www.`, `m.`, `mobile.` and `youtube-nocookie.com` hosts) or Vimeo (`vimeo.com/123`, `player.vimeo.com/video/123`)
+  address; only the provider and the id are kept (an unlisted Vimeo video's
+  hash is not). The server parses addresses with the same allowlist
+  (`rich_text::Embed::from_url`, e.g. for importers). The panel shows a text
+  card (provider, id, page), never an iframe or a remote thumbnail.
+- **Callouts** wrap the selected paragraphs, or a list as a whole; the
+  table button is off inside a callout.
+
+The read-only view renders the same nodes with React elements.
+
+### The media library picker
+
+*Insert image* and the **Media library** button of `FileUpload` /
+`media_list` fields open the same dialog:
+
+- **Library** (with `media.view_any` and `media.view`): the files the user
+  may reference (own uploads, or every file with `media.view_all`), newest
+  first, 24 a page, searched by name. Thumbnails are the file's own
+  authorized URL, scaled by the browser (no resized copies). Only the
+  field's `accept` types are listed; files over its `max_size` and files
+  already in the field are shown but cannot be chosen; a list field offers
+  as many as it has room for.
+- **Upload** (with `media.create`): drop or choose files; they upload as
+  above and are chosen once stored.
+
+The server checks every chosen reference again on save (scope, trash,
+`accept`, `max_size`), as it does for any write.
+
+### Headless rendering
+
+```rust,ignore
+use std::collections::HashMap;
+use rustcms::admin::rich_text::{self, ImageInfo};
+use uuid::Uuid;
+
+let doc = rich_text::parse(&post.content)?;                 // version 1 or 2
+// Sizes from the media rows (`rustcms::admin::media::entity`), so browsers reserve the space.
+// The media rows of rich_text::media_ids(&doc), loaded by your app (its own scope).
+let images: HashMap<Uuid, ImageInfo> = rows
+    .iter()
+    .map(|row| {
+        let info = ImageInfo::new(my_public_url(row.id));
+        let info = match (row.width, row.height) {
+            (Some(w), Some(h)) => info.size(w as u32, h as u32),
+            _ => info,
+        };
+        (row.id, info)
+    })
+    .collect();
+let html = rich_text::to_html_with(&doc, &images);
+let toc = rich_text::outline(&doc);                        // [Heading { level, text, id }]
+```
+
+`to_html_with` escapes every text and attribute. Its output:
+
+- headings carry stable ids, `<h2 id="gioi-thieu">`: the heading's text
+  with diacritics folded (Vietnamese included: `Đà Nẵng` → `da-nang`), lower
+  case, ASCII letters and digits only (anything else is a `-`), at most 80
+  characters; repeats get `-2`, `-3`, …; a heading without letters or digits
+  is `section`. The fold uses Unicode decomposition (the
+  `unicode-normalization` crate, 0.1.25) plus `đ`, `ø`, `ł`, `ß`, `æ`, `œ`. `outline`
+  returns the same ids for a table of contents, and `rich_text::slug` the
+  rule alone;
+- images: `<figure data-width="wide"><img src="…" width="800" height="600"
+  alt="…"><figcaption>…</figcaption></figure>` (`data-width` only for `wide`
+  and `full`, `width`/`height` only when the `ImageInfo` has both, no
+  `figcaption` without a caption); images missing from the map (or whose
+  `to_html` callback returns `None`) are left out;
+- tables: `<table><thead><tr><th>…</th></tr></thead><tbody>…</tbody></table>`;
+- embeds, a plain link:
+
+  ```html
+  <figure data-embed="youtube" data-id="ID"><a href="https://www.youtube.com/watch?v=ID" rel="noopener noreferrer">https://www.youtube.com/watch?v=ID</a></figure>
+  <figure data-embed="vimeo" data-id="ID"><a href="https://vimeo.com/ID" rel="noopener noreferrer">https://vimeo.com/ID</a></figure>
+  ```
+
+  A public frontend may replace it with the provider's player (an iframe
+  built from `data-embed` and `data-id`, which are checked formats, e.g.
+  `https://www.youtube-nocookie.com/embed/ID` or
+  `https://player.vimeo.com/video/ID`), with its own CSP for that provider;
+- callouts: `<aside class="callout" data-tone="info">`.
+
+No attribute outside this closed set is written. `to_html(&doc, &|id|
+Some(url))` keeps its 0.9 signature (figures without sizes).
+`rich_text::upgrade_value(&value)` rewrites a stored version 1 document as
+version 2 (only `version` changes: version 1 is a subset), for applications
+that want to rewrite stored documents. It is never needed to read them. The
+editor writes the lowest version a document needs: version 1 unless it holds
+a table, an embed, a callout, or an image with a caption or a width, so
+documents edited without those stay readable by 0.9 (a rollback, an older
+reader of the same database).
 
 ## Limits and operations
 
@@ -146,7 +286,8 @@ attributes.
   probed at boot; the first upload reports a misconfiguration.
 - Local disk: files are synced before their row commits; staged and partial files
   of interrupted uploads are removed by `media:prune` after an hour.
-- Downloads are rate limited per user (600 per minute).
+- Downloads are rate limited per user (600 per minute). A library page in
+  the picker loads up to 24 thumbnails.
 
 ## When a referenced file is trashed or deleted
 
