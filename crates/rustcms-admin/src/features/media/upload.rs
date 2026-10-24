@@ -20,7 +20,7 @@ pub(crate) async fn upload(
     request: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<crate::http::DataResponse<MediaItem>>)> {
     // Admission first: nothing is parsed or read for users who may not upload.
-    if !ctx.can("media.create") {
+    if !ctx.can(UPLOAD) {
         return Err(AppError::Forbidden);
     }
     let media = state_of(&app)?;

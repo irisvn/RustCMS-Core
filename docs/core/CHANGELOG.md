@@ -6,6 +6,17 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.1]
+
+### Added (0.10.1)
+- The Media page shows the library as a grid of thumbnails (the
+  authorized file URL in an `<img>`, scaled by the browser; other files as
+  an icon) or as the usual table, a choice remembered per user in the
+  browser. Its **Upload files** button sends several files one at a time
+  through `POST {admin}/api/media` (an idempotency key per file, the same
+  on a retry), each with its state, error and retry. The media schema has
+  an `upload` ability (`media.create`); `create` stays refused.
+
 ## [0.9.0] — 2026-10-24
 
 ### Added (0.9.0)

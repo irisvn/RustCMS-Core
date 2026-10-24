@@ -111,6 +111,8 @@ kinds that are not nullable, `""`) and client `rules` (`required`, `max_length`
 in characters); the server re-validates everything. List pages request
 `operation=view` without a key. Inputs marked `writeOnly` (writable but not readable, e.g. a
 password) carry no current value; omit them from the payload to keep the stored value.
+The media library's schema also carries `abilities.upload` (`media.create`:
+`POST /media` is allowed); its `create` is always false.
 
 Vocabulary 9 adds `belongs_to_many` inputs (ADR 0035): `name` is a
 belongs-to-many relation, `relationship.resource` its target, `valueType`

@@ -50,6 +50,18 @@ Files are kept on the configured [storage](../digging-deeper/storage.md)
 - An upload is recorded before its file is stored and committed with its row; a
   crash in between is cleaned by `media:prune` (also run every minute by `serve`).
 
+## The Media page
+
+The Media resource is shown as a grid of thumbnails: each image is its
+download URL below (so the same authorization applies), scaled by the
+browser; other files show an icon. A toggle switches to the usual table;
+the choice is kept per user in the browser. Users with `media.create` get an
+**Upload files** button: several files are sent one at a time, each with its
+state (waiting, uploading, uploaded, failed), the server's error, and a
+retry that reuses the file's idempotency key, so a file is never stored
+twice. The media schema reports this as the `upload` ability (`create`
+stays refused: files enter the library only by upload).
+
 ## Downloads
 
 `GET {admin}/api/media/{id}/file` serves the bytes through the application (no

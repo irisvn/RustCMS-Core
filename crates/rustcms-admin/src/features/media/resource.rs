@@ -64,6 +64,10 @@ impl Resource for MediaResource {
     }
 }
 
+/// Uploads files (`POST {admin}/api/media`); the media schema says so as the
+/// `upload` ability.
+pub(crate) const UPLOAD: &str = "media.create";
+
 /// Sees every file and may reference it, without trashing, restoring or
 /// deleting other users' files.
 pub const VIEW_ALL: &str = "media.view_all";

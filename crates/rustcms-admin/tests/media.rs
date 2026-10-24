@@ -308,3 +308,26 @@ db_test!(view_all_shows_and_references_every_file_without_managing_others, |db: 
         fx.ctx(admin())
     }
 });
+
+db_test!(the_media_schema_says_who_may_upload, |db: TestDb| async move {
+    use rustcms_admin::SchemaOperation;
+    use rustcms_core::Principal;
+    use support::{Fixture, PrincipalExt};
+    let fx = Fixture::new(db).await;
+    let library = fx.resource("media");
+    let user = |extra: &[&str]| {
+        let principal = Principal { id: "7".into(), guard: "admin".into(), ..Default::default() };
+        fx.ctx(principal.with(&["media.view_any", "media.view"]).with(extra))
+    };
+    let schema = library.schema(&user(&["media.create"]), SchemaOperation::View, None).await.unwrap();
+    assert_eq!(
+        (schema.abilities["upload"], schema.abilities["create"]),
+        (true, false),
+        "uploads, never the generic create"
+    );
+    let schema = library.schema(&user(&[]), SchemaOperation::View, None).await.unwrap();
+    assert!(!schema.abilities["upload"]);
+    // Other resources have no such ability.
+    let notes = fx.resource("notes").schema(&fx.ctx(support::admin()), SchemaOperation::View, None).await.unwrap();
+    assert!(!notes.abilities.contains_key("upload"));
+});

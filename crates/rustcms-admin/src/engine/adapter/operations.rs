@@ -134,6 +134,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let mut abilities = BTreeMap::new();
         abilities.insert("viewAny", self.policy.allows(ctx, ability::VIEW_ANY, None).await);
         abilities.insert("create", self.policy.allows(ctx, ability::CREATE, None).await);
+        // The media library is filled by uploads (`POST media`), never by the generic create.
+        if std::any::TypeId::of::<R>() == std::any::TypeId::of::<crate::media::MediaResource>() {
+            abilities.insert("upload", ctx.can(crate::media::UPLOAD));
+        }
         // The record history (`audit.view`; each record is checked when it is opened).
         abilities.insert("history", self.meta.audit && ctx.can(crate::audit::VIEW));
         if self.meta.exportable {

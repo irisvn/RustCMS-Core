@@ -17,6 +17,7 @@ import { ExportButton, ExportsPanel } from "@/components/exports";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Cell, FilterControl, KNOWN_FILTERS, type FilterParams } from "@/renderers/table";
+import { MEDIA_SLUG, MediaGrid, MediaUploader, MediaViewToggle, useMediaView } from "@/renderers/media-library";
 import { errorText, formatCount, later, show, t as translate, type Text, useT } from "@/i18n";
 
 export type ListSearch = Record<string, string>;
@@ -65,6 +66,10 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     return params;
   }, [query]);
   const records = useRecords(slug, query);
+  // The media library: thumbnails in a grid, or the table.
+  const media = slug === MEDIA_SLUG;
+  const [mediaView, setMediaView] = useMediaView();
+  const grid = media && mediaView === "grid";
   const del = useDeleteRecord(slug);
   const restore = useRestoreRecord(slug);
   const forceDelete = useForceDeleteRecord(slug);
@@ -216,10 +221,73 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     setSelected(new Set());
   };
 
+  /** A record's actions (table rows and grid cards). */
+  const rowActionsOf = (record: Envelope) => (
+    <div className="flex justify-end gap-1">
+      {rowActions
+        .filter((a) => record.abilities[a.name])
+        .map((a) => (
+          <Button key={a.name} size="sm" variant="ghost" disabled={run.isPending || stale} onClick={() => startAction(a, [record.key])}>
+            {a.label}
+          </Button>
+        ))}
+      {record.abilities.view && !record.trashed && (
+        <Link
+          to="/r/$slug/records/$key"
+          params={{ slug, key: record.key }}
+          aria-label={t("action.view")}
+          className="inline-flex size-9 items-center justify-center rounded-md hover:bg-muted [&_svg]:size-4"
+        >
+          <Eye />
+        </Link>
+      )}
+      {record.abilities.update && !readOnly && (
+        <Link
+          to="/r/$slug/records/$key/edit"
+          params={{ slug, key: record.key }}
+          aria-label={t("action.edit")}
+          className="inline-flex size-9 items-center justify-center rounded-md hover:bg-muted [&_svg]:size-4"
+        >
+          <Pencil />
+        </Link>
+      )}
+      {record.abilities.delete && !locked && (
+        <Button size="icon" variant="ghost" aria-label={t("action.delete")} disabled={del.isPending || stale} onClick={() => setConfirm({ kind: "delete", record })}>
+          <Trash2 />
+        </Button>
+      )}
+      {record.trashed && record.abilities.restore && !locked && (
+        <Button size="sm" variant="ghost" disabled={restore.isPending || stale} onClick={() => void restoreRecord(record)}>
+          <RotateCcw /> {t("action.restore")}
+        </Button>
+      )}
+      {record.trashed && record.abilities.force_delete && !locked && (
+        <Button size="sm" variant="ghost" className="text-destructive" disabled={forceDelete.isPending || stale} onClick={() => setConfirm({ kind: "force", record })}>
+          {t("action.forceDelete")}
+        </Button>
+      )}
+    </div>
+  );
+  const selectOf = (record: Envelope) => (
+    <Checkbox
+      aria-label={t("list.select", { record: record.title ?? record.key })}
+      disabled={stale}
+      checked={selected.has(record.key)}
+      onChange={(e) => {
+        const next = new Set(selected);
+        if (e.target.checked) next.add(record.key);
+        else next.delete(record.key);
+        setSelected(next);
+      }}
+    />
+  );
+
   return (
     <Page>
       <PageHeader title={s.resource.pluralLabel} description={t("list.description", { resource: s.resource.pluralLabel.toLocaleLowerCase() })} actions={
         <div className="flex flex-wrap items-start gap-2">
+          {media && <MediaViewToggle view={mediaView} onChange={setMediaView} />}
+          {media && s.abilities.upload && !readOnly && <MediaUploader />}
           {s.abilities.export && <ExportButton slug={slug} query={exportQuery} />}
           {s.abilities.import && !readOnly && (
             <Link to="/r/$slug/import" params={{ slug }} className={buttonVariants({ variant: "outline" })}>
@@ -275,6 +343,28 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
 
         {records.error ? (
           <ErrorState error={records.error} />
+        ) : grid ? (
+          <>
+            {bulkActions.length > 0 && rows.length > 0 && (
+              <label className="flex items-center gap-2 px-4 pt-4 text-sm sm:px-5">
+                <Checkbox
+                  disabled={stale}
+                  checked={rows.every((r) => selected.has(r.key))}
+                  indeterminate={rows.some((r) => selected.has(r.key)) && !rows.every((r) => selected.has(r.key))}
+                  onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.key)) : new Set())}
+                />
+                {t("list.selectAll")}
+              </label>
+            )}
+            {records.isLoading && <Loading />}
+            {!records.isLoading && rows.length === 0 && <p className="p-8 text-center text-muted-foreground">{t("list.empty")}</p>}
+            <MediaGrid
+              rows={rows}
+              select={bulkActions.length > 0 ? selectOf : undefined}
+              actions={rowActionsOf}
+              badge={(record) => record.trashed && <Badge className="self-start">{t("list.trashedBadge")}</Badge>}
+            />
+          </>
         ) : (
           <Table>
               <TableHeader>
@@ -326,19 +416,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                 {rows.map((record) => (
                   <TableRow key={record.key} data-selected={selected.has(record.key) || undefined} className="data-[selected=true]:bg-muted/60">
                     {bulkActions.length > 0 && (
-                      <td className="p-3">
-                        <Checkbox
-                          aria-label={t("list.select", { record: record.title ?? record.key })}
-                          disabled={stale}
-                          checked={selected.has(record.key)}
-                          onChange={(e) => {
-                            const next = new Set(selected);
-                            if (e.target.checked) next.add(record.key);
-                            else next.delete(record.key);
-                            setSelected(next);
-                          }}
-                        />
-                      </td>
+                      <td className="p-3">{selectOf(record)}</td>
                     )}
                     {table.columns.map((c, i) => (
                       <td key={c.name} className="p-3">
@@ -347,50 +425,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                       </td>
                     ))}
                     <td className="p-3">
-                      <div className="flex justify-end gap-1">
-                        {rowActions
-                          .filter((a) => record.abilities[a.name])
-                          .map((a) => (
-                            <Button key={a.name} size="sm" variant="ghost" disabled={run.isPending || stale} onClick={() => startAction(a, [record.key])}>
-                              {a.label}
-                            </Button>
-                          ))}
-                        {record.abilities.view && !record.trashed && (
-                          <Link
-                            to="/r/$slug/records/$key"
-                            params={{ slug, key: record.key }}
-                            aria-label={t("action.view")}
-                            className="inline-flex size-9 items-center justify-center rounded-md hover:bg-muted [&_svg]:size-4"
-                          >
-                            <Eye />
-                          </Link>
-                        )}
-                        {record.abilities.update && !readOnly && (
-                          <Link
-                            to="/r/$slug/records/$key/edit"
-                            params={{ slug, key: record.key }}
-                            aria-label={t("action.edit")}
-                            className="inline-flex size-9 items-center justify-center rounded-md hover:bg-muted [&_svg]:size-4"
-                          >
-                            <Pencil />
-                          </Link>
-                        )}
-                        {record.abilities.delete && !locked && (
-                          <Button size="icon" variant="ghost" aria-label={t("action.delete")} disabled={del.isPending || stale} onClick={() => setConfirm({ kind: "delete", record })}>
-                            <Trash2 />
-                          </Button>
-                        )}
-                        {record.trashed && record.abilities.restore && !locked && (
-                          <Button size="sm" variant="ghost" disabled={restore.isPending || stale} onClick={() => void restoreRecord(record)}>
-                            <RotateCcw /> {t("action.restore")}
-                          </Button>
-                        )}
-                        {record.trashed && record.abilities.force_delete && !locked && (
-                          <Button size="sm" variant="ghost" className="text-destructive" disabled={forceDelete.isPending || stale} onClick={() => setConfirm({ kind: "force", record })}>
-                            {t("action.forceDelete")}
-                          </Button>
-                        )}
-                      </div>
+                      {rowActionsOf(record)}
                     </td>
                   </TableRow>
                 ))}
