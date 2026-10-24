@@ -98,6 +98,8 @@ The page appears under **Settings** in the navigation, at
 | `key_value(name)` | `BTreeMap<String, String>` | key/value rows (`.max_items(n)`, `.max_length(n)` per value) |
 | `date(name)` | `chrono::NaiveDate` (`Option` with `.nullable()`) | date picker |
 | `secret(name)` | `Secret` | [see below](#secrets) |
+| `media(name)` | `Option<uuid::Uuid>` (always nullable) | [media input](media.md#media-fields): pick or upload one file |
+| `media_list(name, max)` | `Vec<uuid::Uuid>` | up to `max` files, in order |
 
 Rules: `.required()`, `.nullable()`, `.max_length(n)`; presentation:
 `.label(…)`, `.help(…)`, `.placeholder(…)`, `.email()`, `.url()`;
@@ -116,6 +118,29 @@ field or offers other values than its field, or a group registered twice.
 
 For larger numbers or decimals, store them as text and parse them where you
 read them.
+
+### Media settings
+
+```rust,ignore
+SettingField::media("logo").accept(&["image/*"]).max_size(500_000),   // logo: Option<Uuid>
+SettingField::media_list("slides", 5),                                 // slides: Vec<Uuid>
+```
+
+They hold ids of files of the [media library](media.md) (it must be enabled
+with `AdminProvider::media()`; boot fails otherwise), edited with the same
+media input as resource fields (`FileUpload`): upload a file, remove or
+reorder them; the page is not saved while an upload is on its way. Each file
+a save **changes** to is checked like a resource's media field, inside the
+save and as the user is then: it exists, is not trashed, is visible to the
+user (`media.view_any` and `media.view`; their own uploads, or every file
+with `media.view_all` or `media.manage_all`), and matches `.accept(…)` and `.max_size(…)`; a list
+holds at most `max` distinct ids. The referenced rows are locked (shared)
+until the save commits. A reference kept as it was is not checked again
+(a file trashed later stays referenced until the setting changes; see
+[when a referenced file is trashed or deleted](media.md#when-a-referenced-file-is-trashed-or-deleted)).
+The input is the resource fields' media input (`FileUpload`): upload, remove,
+reorder. Their default must
+be empty (`None`, `vec![]`).
 
 ### Layout and checks
 

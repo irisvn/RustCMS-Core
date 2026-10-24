@@ -123,6 +123,11 @@ only when it changes something; create forms read options from
 `GET /resources/{slug}/relations/{relation}/options`, edit forms from the
 record's link options. Older clients render it read-only and never send it.
 
+Settings pages may hold `file_upload` inputs (`SettingField::media`,
+`media_list`) with the same `media` rules as resource inputs (`valueType`
+`uuid` for one file, `json` for a list); see
+[`fixtures/contract/settings.brand.json`](https://github.com/irisvn/RustCMS-Core/blob/main/fixtures/contract/settings.brand.json).
+
 Vocabulary 5 adds `secret` inputs (settings pages): the value is never sent;
 `SettingsResponse.secrets` gives each one's state (`set`, `unset`,
 `unreadable`), and a save sends a string (replace), `null` (clear) or nothing

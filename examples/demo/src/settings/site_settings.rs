@@ -13,6 +13,9 @@ pub struct SiteSettings {
     pub comments_open: bool,
     pub posts_per_page: i32,
     pub mail_password: Secret,
+    /// The site's logo, a file of the media library (`SettingField::media`).
+    #[serde(default)]
+    pub logo: Option<sea_orm::prelude::Uuid>,
 }
 
 impl Default for SiteSettings {
@@ -23,6 +26,7 @@ impl Default for SiteSettings {
             comments_open: true,
             posts_per_page: 10,
             mail_password: Secret::default(),
+            logo: None,
         }
     }
 }

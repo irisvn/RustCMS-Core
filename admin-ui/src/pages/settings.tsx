@@ -1,5 +1,5 @@
 // A settings page: the group's form, saved with the version it was loaded at.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { ApiError } from "@/api/client";
 import { settingsScope, useSaveSettings, useSettings } from "@/api/settings";
@@ -50,6 +50,17 @@ function SettingsForm({ group, latest, refreshError, refetch }: {
   const form = useForm<FormValues>({ defaultValues: defaultValues(inputs, base.data), resolver });
   dirty.current = (name) => form.getFieldState(name).isDirty;
   const [intents, setIntents] = useState<Record<string, SecretIntent>>({});
+  // Inputs with background work (media uploads): saving waits for them.
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const onBusy = useCallback((name: string, working: boolean) => {
+    setBusy((current) => {
+      if (current.has(name) === working) return current;
+      const next = new Set(current);
+      if (working) next.add(name);
+      else next.delete(name);
+      return next;
+    });
+  }, []);
   const [stale, setStale] = useState(false);
   const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: () => string } | null>(null);
   const save = useSaveSettings(group);
@@ -87,6 +98,7 @@ function SettingsForm({ group, latest, refreshError, refetch }: {
   };
 
   const submit = form.handleSubmit(async (values) => {
+    if (busy.size > 0) return;
     setNotice(null);
     refused.current = null;
     const empty = Object.entries(intents).find(([, i]) => i.kind === "replace" && i.value === "");
@@ -150,6 +162,7 @@ function SettingsForm({ group, latest, refreshError, refetch }: {
                 errors: form.formState.errors,
                 readOnly: !editable || save.isPending,
                 submitCount: form.formState.submitCount,
+                onBusy,
                 secrets: {
                   status: base.secrets,
                   intents,
@@ -164,7 +177,7 @@ function SettingsForm({ group, latest, refreshError, refetch }: {
         </Card>
         {editable && (
           <div className="flex flex-wrap items-center gap-3 border-t border-border pt-5">
-            <Button type="submit" disabled={save.isPending || stale}>
+            <Button type="submit" disabled={save.isPending || stale || busy.size > 0}>
               {save.isPending ? t("record.saving") : t("settings.save")}
             </Button>
           </div>

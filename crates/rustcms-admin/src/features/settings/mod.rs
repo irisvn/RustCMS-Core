@@ -26,6 +26,9 @@ use crate::engine::validate::InputRule;
 use crate::ui::{Component, Form, Input, InputType, SelectOption, humanize};
 use crate::wire::FieldKind;
 
+/// A media id the declaration checks round-trip through the struct.
+const MEDIA_PROBE: &str = "0199d3a4-1b2c-7d3e-8f40-123456789abc";
+
 /// What a setting holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingKind {
@@ -45,6 +48,10 @@ pub enum SettingKind {
     Date,
     /// A [`rustcms_core::settings::Secret`], stored encrypted and never sent back.
     Secret,
+    /// A file of the media library (`Option<uuid::Uuid>`; its id).
+    Media,
+    /// Files of the media library, in order (`Vec<uuid::Uuid>`; their ids).
+    MediaList,
 }
 
 impl SettingKind {
@@ -53,8 +60,9 @@ impl SettingKind {
             Self::Text | Self::Textarea | Self::Select | Self::Secret => FieldKind::String,
             Self::Integer => FieldKind::I32,
             Self::Boolean => FieldKind::Bool,
-            Self::KeyValue => FieldKind::Json,
+            Self::KeyValue | Self::MediaList => FieldKind::Json,
             Self::Date => FieldKind::Date,
+            Self::Media => FieldKind::Uuid,
         }
     }
 
@@ -68,6 +76,7 @@ impl SettingKind {
             Self::KeyValue => InputType::KeyValue,
             Self::Date => InputType::DatePicker,
             Self::Secret => InputType::Secret,
+            Self::Media | Self::MediaList => InputType::FileUpload,
         }
     }
 }
@@ -84,6 +93,7 @@ pub struct SettingField {
     pub(crate) key_value: Option<(usize, usize)>,
     pub(crate) audit_redact: bool,
     pub(crate) kept_while: Vec<String>,
+    pub(crate) media: Option<crate::field::MediaRule>,
 }
 
 macro_rules! kinds {
@@ -108,6 +118,7 @@ impl SettingField {
             key_value,
             audit_redact: false,
             kept_while: Vec::new(),
+            media: None,
         }
     }
 
@@ -136,6 +147,45 @@ impl SettingField {
         let mut field = Self::new(name.into(), SettingKind::Select);
         field.input = field.input.options(options);
         field
+    }
+
+    /// A file of the media library, by id (the struct field is an
+    /// `Option<uuid::Uuid>`; nullable). On save, a new value must be a file
+    /// that exists, is not trashed, is visible to the user saving it (scope of
+    /// the media library) and matches [`Self::accept`] and [`Self::max_size`],
+    /// as for a resource's [`crate::Field::media`]. Needs
+    /// [`crate::AdminProvider::media`].
+    pub fn media(name: impl Into<String>) -> Self {
+        let mut field = Self::new(name.into(), SettingKind::Media);
+        field.nullable = true;
+        field.media =
+            Some(crate::field::MediaRule { multiple: false, max_items: 1, accept: Vec::new(), max_size: None });
+        field
+    }
+
+    /// Up to `max` files of the media library, in order (the struct field is a
+    /// `Vec<uuid::Uuid>`), checked like [`Self::media`].
+    pub fn media_list(name: impl Into<String>, max: usize) -> Self {
+        let mut field = Self::new(name.into(), SettingKind::MediaList);
+        field.media =
+            Some(crate::field::MediaRule { multiple: true, max_items: max.max(1), accept: Vec::new(), max_size: None });
+        field
+    }
+
+    /// Accepted MIME types of a media setting's files (`image/*`, `application/pdf`).
+    pub fn accept(mut self, types: &[&str]) -> Self {
+        if let Some(rule) = &mut self.media {
+            rule.accept = types.iter().map(|t| (*t).to_owned()).collect();
+        }
+        self
+    }
+
+    /// Largest accepted file of a media setting, in bytes.
+    pub fn max_size(mut self, bytes: u64) -> Self {
+        if let Some(rule) = &mut self.media {
+            rule.max_size = Some(bytes);
+        }
+        self
     }
 
     /// Must have a value (not `null`; for secrets: set).
@@ -393,6 +443,8 @@ impl<T: SettingsPage> SettingsAdapter<T> {
                 }
                 SettingKind::KeyValue => serde_json::json!({"key": "value"}),
                 SettingKind::Date => Value::String("2001-02-03".into()),
+                SettingKind::Media => Value::String(MEDIA_PROBE.into()),
+                SettingKind::MediaList => serde_json::json!([MEDIA_PROBE]),
                 SettingKind::Secret => unreachable!(),
             };
             assert!(
@@ -419,6 +471,13 @@ impl<T: SettingsPage> SettingsAdapter<T> {
                 "settings `{group}`: the default of `{name}` does not fit its kind ({:?})",
                 field.kind
             );
+            // A default is never checked against the library: no file by default.
+            if field.media.is_some() {
+                assert!(
+                    matches!(&defaults[name], Value::Null) || defaults[name] == Value::Array(Vec::new()),
+                    "settings `{group}`: the default of media `{name}` must be empty"
+                );
+            }
         }
         let form = T::form();
         let mut used = BTreeSet::new();

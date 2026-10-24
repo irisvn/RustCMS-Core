@@ -13,7 +13,7 @@ use rustcms_testing::{TestApp, TestClient, TestDb, TestResponse, db_test};
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use support::app::{GeneralSettings, Users, setup};
+use support::app::{BrandSettings, GeneralSettings, Users, setup};
 
 fn url(app: &TestApp) -> String {
     app.admin_api("settings/general")
@@ -78,7 +78,11 @@ db_test!(defaults_are_shown_and_access_is_per_group, |db: TestDb| async move {
     let panel = admin.get(&app.admin_api("panel")).await.json();
     assert_eq!(
         panel["settings"],
-        json!([{"group": "general", "label": "General", "icon": "settings"}, {"group": "mail", "label": "Mail", "icon": "mail"}])
+        json!([
+            {"group": "general", "label": "General", "icon": "settings"},
+            {"group": "brand", "label": "Brand"},
+            {"group": "mail", "label": "Mail", "icon": "mail"}
+        ])
     );
 
     // No settings permission: 403 for any group (existing or not), no link.
@@ -626,4 +630,121 @@ impl SettingsPage for OtherOptions {
 #[should_panic(expected = "offers other values")]
 fn a_form_offers_the_values_its_field_accepts() {
     let _ = rustcms_admin::AdminProvider::new().settings::<OtherOptions>();
+}
+
+/// A media row owned by `owner`, inserted directly.
+async fn stored_media(app: &TestApp, owner: i64, mime: &str, size: i64, trashed: bool) -> String {
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    let id = uuid::Uuid::now_v7();
+    rustcms_admin::media::entity::ActiveModel {
+        id: Set(id),
+        disk: Set("local".into()),
+        key: Set(format!("media/{id}")),
+        name: Set("f".into()),
+        mime: Set(mime.into()),
+        size: Set(size),
+        sha256: Set("0".repeat(64)),
+        width: Set(None),
+        height: Set(None),
+        alt: Set(None),
+        owner_id: Set(owner),
+        created_at: Set(chrono::Utc::now()),
+        deleted_at: Set(trashed.then(chrono::Utc::now)),
+    }
+    .insert(app.state().db())
+    .await
+    .unwrap();
+    id.to_string()
+}
+
+db_test!(media_settings_reference_only_available_visible_accepted_files, |db: TestDb| async move {
+    let (app, users) = app(db).await;
+    let brand = app.admin_api("settings/brand");
+    let editor = &users.editor;
+    grant(&app, editor, "brand", &["settings.brand.view", "settings.brand.update", "media.view_any", "media.view"])
+        .await;
+    let client = app.acting_as(editor).await;
+    let save = async |version: &str, data: Value| {
+        client.fetch_csrf().await;
+        client.send(Method::PUT, &brand, Some(&json!({"version": version, "data": data}))).await
+    };
+    let mine = stored_media(&app, editor.id, "image/png", 100, false).await;
+    let theirs = stored_media(&app, users.admin.id, "image/png", 100, false).await;
+    let trashed = stored_media(&app, editor.id, "image/png", 100, true).await;
+    let pdf = stored_media(&app, editor.id, "application/pdf", 100, false).await;
+    let large = stored_media(&app, editor.id, "image/png", 20_000, false).await;
+
+    // The form: a media input with the field's rules.
+    let shown = client.get(&brand).await.json();
+    let logo = &shown["form"]["components"][0];
+    assert_eq!(
+        (&logo["type"], &logo["valueType"], &logo["nullable"]),
+        (&json!("file_upload"), &json!("uuid"), &json!(true))
+    );
+    assert_eq!(logo["media"], json!({"multiple": false, "maxItems": 1, "accept": ["image/*"], "maxSize": 10_000}));
+    assert_eq!(shown["form"]["components"][1]["media"]["maxItems"], json!(2));
+    assert_eq!((&shown["data"]["logo"], &shown["data"]["slides"]), (&Value::Null, &json!([])));
+    support::contract("settings.brand.json", &shown);
+
+    // Another user's file, a trashed one, a missing one, the wrong type, too large: refused.
+    for id in [&theirs, &trashed, &uuid::Uuid::now_v7().to_string(), &pdf, &large] {
+        save("0", json!({"logo": id})).await.assert_validation_error("logo");
+    }
+    for slides in [json!([mine, mine]), json!([mine, pdf, large]), json!(["not-a-uuid"]), json!([theirs]), json!(mine)]
+    {
+        save("0", json!({"slides": slides})).await.assert_validation_error("slides");
+    }
+    save("0", json!({"logo": "not-a-uuid"})).await.assert_validation_error("logo");
+    let saved = save("0", json!({"logo": mine, "slides": [pdf, mine]})).await;
+    saved.assert_status(StatusCode::OK);
+    assert_eq!((&saved.json()["data"]["logo"], &saved.json()["data"]["slides"]), (&json!(mine), &json!([pdf, mine])));
+    let stored: BrandSettings = settings::get(app.state()).await.unwrap();
+    assert_eq!(stored.logo.map(|id| id.to_string()), Some(mine.clone()));
+
+    // `media.view_all`: other users' files may be referenced.
+    grant(&app, editor, "brand-all", &["media.view_all"]).await;
+    let client = app.acting_as(editor).await;
+    client.fetch_csrf().await;
+    let saved = client.send(Method::PUT, &brand, Some(&json!({"version": "1", "data": {"logo": theirs}}))).await;
+    saved.assert_status(StatusCode::OK);
+    // A reference kept as it was is not checked again (only what a save writes).
+    rustcms_admin::media::entity::Entity::update_many()
+        .col_expr(rustcms_admin::media::entity::Column::DeletedAt, sea_orm::sea_query::Expr::value(chrono::Utc::now()))
+        .filter(rustcms_admin::media::entity::Column::Id.eq(uuid::Uuid::parse_str(&theirs).unwrap()))
+        .exec(app.state().db())
+        .await
+        .unwrap();
+    let kept =
+        client.send(Method::PUT, &brand, Some(&json!({"version": "2", "data": {"logo": theirs, "slides": []}}))).await;
+    kept.assert_status(StatusCode::OK);
+    // Cleared.
+    let cleared = client.send(Method::PUT, &brand, Some(&json!({"version": "3", "data": {"logo": null}}))).await;
+    assert_eq!(cleared.json()["data"]["logo"], Value::Null);
+});
+
+#[test]
+#[should_panic(expected = "the default of media `logo` must be empty")]
+fn media_settings_have_no_default_file() {
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct Defaulted {
+        logo: Option<uuid::Uuid>,
+    }
+    impl Default for Defaulted {
+        fn default() -> Self {
+            Self { logo: Some(uuid::Uuid::nil()) }
+        }
+    }
+    impl Settings for Defaulted {
+        const GROUP: &'static str = "defaulted";
+    }
+    #[async_trait::async_trait]
+    impl SettingsPage for Defaulted {
+        fn meta() -> SettingsMeta {
+            SettingsMeta::new("Defaulted")
+        }
+        fn fields() -> Vec<SettingField> {
+            vec![SettingField::media("logo")]
+        }
+    }
+    let _ = rustcms_admin::AdminProvider::new().settings::<Defaulted>();
 }

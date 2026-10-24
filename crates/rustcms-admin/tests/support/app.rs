@@ -135,6 +135,28 @@ impl SettingsPage for GeneralSettings {
     }
 }
 
+/// Settings that reference files of the media library (`settings.brand.*`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BrandSettings {
+    pub logo: Option<uuid::Uuid>,
+    pub slides: Vec<uuid::Uuid>,
+}
+
+impl Settings for BrandSettings {
+    const GROUP: &'static str = "brand";
+}
+
+#[async_trait::async_trait]
+impl SettingsPage for BrandSettings {
+    fn meta() -> SettingsMeta {
+        SettingsMeta::new("Brand")
+    }
+
+    fn fields() -> Vec<SettingField> {
+        vec![SettingField::media("logo").accept(&["image/*"]).max_size(10_000), SettingField::media_list("slides", 2)]
+    }
+}
+
 /// What `GeneralSettings::after_save` saw.
 #[allow(dead_code)]
 pub static SAVED_GENERAL: std::sync::Mutex<Vec<(String, String, bool, bool)>> = std::sync::Mutex::new(Vec::new());
@@ -230,6 +252,7 @@ pub fn build(config: Config) -> AppBuilder {
             .resource::<TagResource>()
             .resource::<NoteResource>()
             .settings::<GeneralSettings>()
+            .settings::<BrandSettings>()
             .mail_settings()
             .dashboard(dashboard())
             .translations("vi", VI),

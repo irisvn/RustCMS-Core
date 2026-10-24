@@ -1,0 +1,54 @@
+{
+  "abilities": {
+    "test": false,
+    "update": true
+  },
+  "data": {
+    "logo": null,
+    "slides": []
+  },
+  "form": {
+    "columns": 1,
+    "components": [
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Logo",
+        "media": {
+          "accept": [
+            "image/*"
+          ],
+          "maxItems": 1,
+          "maxSize": 10000,
+          "multiple": false
+        },
+        "name": "logo",
+        "nullable": true,
+        "rules": [],
+        "type": "file_upload",
+        "valueType": "uuid"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Slides",
+        "media": {
+          "accept": [],
+          "maxItems": 2,
+          "multiple": true
+        },
+        "name": "slides",
+        "nullable": false,
+        "rules": [],
+        "type": "file_upload",
+        "valueType": "json"
+      }
+    ]
+  },
+  "group": "brand",
+  "label": "Brand",
+  "schemaVersion": 2,
+  "secrets": {},
+  "version": "0",
+  "vocabularyVersion": 9
+}

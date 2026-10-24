@@ -268,6 +268,14 @@ impl ServiceProvider for AdminProvider {
             auth.permissions.declare(ADMIN_GUARD, &permission, Some("dashboard"));
         }
         for page in self.settings.all() {
+            if let Some(field) = page.fields().iter().find(|f| f.media.is_some()) {
+                assert!(
+                    self.media,
+                    "settings `{}`: media setting `{}` needs the media library (`AdminProvider::media`)",
+                    page.group(),
+                    field.name
+                );
+            }
             for permission in crate::settings::permissions(page.group()) {
                 auth.permissions.declare(ADMIN_GUARD, &permission, Some("settings"));
             }

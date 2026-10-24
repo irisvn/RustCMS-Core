@@ -15,6 +15,7 @@ mod detect;
 mod download;
 pub mod entity;
 mod prune;
+mod references;
 mod resource;
 mod upload;
 mod uploads;
@@ -22,6 +23,7 @@ mod uploads;
 pub use detect::*;
 pub(crate) use download::*;
 pub use prune::*;
+pub(crate) use references::*;
 pub use resource::*;
 pub(crate) use upload::*;
 

@@ -69,11 +69,14 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
   useEffect(() => () => {
     mounted.current = false;
   }, []);
-  // The form may not save while an upload or its retry is pending.
+  // The form may not save while an upload or its retry is pending. The
+  // callback may be a new function on every render: only state changes report.
+  const reportBusy = useRef(onBusy);
+  reportBusy.current = onBusy;
   useEffect(() => {
-    onBusy?.(busy || retry !== null);
-  }, [busy, retry, onBusy]);
-  useEffect(() => () => onBusy?.(false), [onBusy]);
+    reportBusy.current?.(busy || retry !== null);
+  }, [busy, retry]);
+  useEffect(() => () => reportBusy.current?.(false), []);
 
   const send = async (file: File, key: string) => {
     setBusy(true);

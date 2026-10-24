@@ -246,7 +246,12 @@ fn input_schema(ctx: &Ctx, field: &SettingField, input: &crate::ui::Input, disab
         relationship: None,
         widget: None,
         props: None,
-        media: None,
+        media: field.media.as_ref().map(|rule| crate::schema::MediaSchema {
+            multiple: rule.multiple,
+            max_items: rule.max_items,
+            accept: rule.accept.clone(),
+            max_size: rule.max_size,
+        }),
         links: None,
     }
 }
@@ -324,7 +329,11 @@ async fn update(
         }
         let options = field.options();
         let rule = InputRule { options: (!options.is_empty()).then_some(options.as_slice()), ..field.rule() };
-        check_input(name, &rule, value, &mut errors);
+        if check_input(name, &rule, value, &mut errors)
+            && let Some(media) = &field.media
+        {
+            crate::media::reference_ids(name, media, value, &mut errors);
+        }
     }
     errors.into_result()?;
 
@@ -391,6 +400,20 @@ async fn update(
     // The application's check runs inside the write, as the user is now.
     let mut within = ctx.within(txn.clone());
     within.principal = current.clone();
+    // Files newly referenced: visible to the user now, available, accepted (locked meanwhile).
+    let mut errors = ValidationErrors::new();
+    let mut wanted = Vec::new();
+    for field in page.fields() {
+        let Some(rule) = &field.media else { continue };
+        if !changed(&field.name) {
+            continue;
+        }
+        if let Some(ids) = crate::media::reference_ids(&field.name, rule, &values[&field.name], &mut errors) {
+            wanted.push((field.name.as_str(), rule, ids));
+        }
+    }
+    errors.into_result()?;
+    crate::media::check_references(&within, txn.as_ref(), wanted).await?;
     page.validate(&state, &within, &after).await?;
     drop(within);
     let txn =

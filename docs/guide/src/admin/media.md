@@ -143,3 +143,22 @@ attributes.
 - Local disk: files are synced before their row commits; staged and partial files
   of interrupted uploads are removed by `media:prune` after an hour.
 - Downloads are rate limited per user (600 per minute).
+
+## When a referenced file is trashed or deleted
+
+References are never cascaded. Trashing or deleting a file for good leaves
+its id in the records (media fields, rich text) and settings
+(`SettingField::media`, `media_list`) that reference it:
+
+- the file is no longer served (404), so the panel shows it as unavailable;
+  restoring it from the trash brings it back everywhere;
+- a write that **sets** a reference to it is refused (422 "refers to a file
+  that is not available"), for resource fields and settings alike;
+- a reference **kept as it was** is not checked again: a resource write
+  checks the media values it sends (the panel sends only the fields that
+  changed), a settings save the media values that differ from the stored
+  ones. So an unrelated edit still saves; to drop the reference, clear or
+  replace the file.
+
+Applications that render references themselves (`rich_text::to_html`, their
+own pages) should treat an id they cannot resolve the same way.

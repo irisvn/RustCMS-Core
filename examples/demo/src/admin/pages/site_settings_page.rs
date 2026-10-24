@@ -19,6 +19,7 @@ impl SettingsPage for SiteSettings {
             SettingField::boolean("comments_open"),
             SettingField::integer("posts_per_page").help("Between 1 and 100"),
             SettingField::secret("mail_password").label("Mail password"),
+            SettingField::media("logo").accept(&["image/*"]).help("An image of the media library"),
         ]
     }
 

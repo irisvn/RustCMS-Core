@@ -25,6 +25,20 @@ All notable changes are documented here. The format follows
   other column stays refused. `alt` is read with the record and returned in
   `MediaItem` (`alt?`). The record page shows the file and what was detected.
 
+- `SettingField::media(name)` and `SettingField::media_list(name, max)`
+  (with `.accept(…)`, `.max_size(…)`): settings holding media ids
+  (`Option<Uuid>`, `Vec<Uuid>`), edited with the media input. A save checks
+  each changed reference as resource media fields are checked (exists, not
+  trashed, visible to the saver now, accepted type and size; rows locked
+  in the save's transaction). Boot refuses them without
+  `AdminProvider::media()` or with a non-empty default. Contract fixture
+  `settings.brand.json`.
+
+### Fixed (0.10.1)
+- The media input reported its pending upload again on every render of its
+  form (a new `onBusy` callback each time), re-rendering the form without
+  end while a file was being uploaded.
+
 ### Changed (0.10.1)
 - `media::entity::Model` has a new field `alt: Option<String>` (code that
   builds `media::ActiveModel` literals sets it).
