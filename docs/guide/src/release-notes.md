@@ -1,7 +1,13 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.10.2**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.10.3**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.10.3
+
+- Record pages on a phone keep the primary action and ⋯ in the header (the
+  other actions, Edit and Delete under ⋯); a viewed text input shows its
+  prefix and suffix ([Actions](admin/actions.md#placement-in-lists)).
 
 ## 0.10.2
 

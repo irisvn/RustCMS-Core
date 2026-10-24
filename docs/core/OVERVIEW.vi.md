@@ -1,6 +1,6 @@
-# rustcms — Tài liệu tổng quan (bản 0.10.2)
+# rustcms — Tài liệu tổng quan (bản 0.10.3)
 
-> Cập nhật: 24/10/2026 · tag `v0.10.2`
+> Cập nhật: 24/10/2026 · tag `v0.10.3`
 
 rustcms là framework Rust dùng để dựng nhanh **CMS và Admin Dashboard**, lấy cảm
 hứng từ Laravel và FilamentPHP:

@@ -50,18 +50,34 @@ test("an editor layout: full width and a sticky aside at 1440px, one column at 3
   expect(await page.locator("[style]").count(), "no inline styles").toBe(0);
 });
 
-// A record page on a phone: the title keeps its width, the actions wrap below it.
-test("a record's title is not squeezed by its actions at 390px", async ({ page, watch: _ }) => {
+// A record page on a phone: the primary action and ⋯ (the others, Edit and
+// Delete included, Delete last), the title keeping its width; inline on a
+// wide screen.
+test("a record page's actions on a phone: the primary one and ⋯, inline on a wide screen", async ({ page, watch: _ }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, "admin@example.test");
   await page.goto("/admin/r/posts/records/3");
   const title = page.getByRole("heading", { level: 1 });
   await expect(title).toBeVisible();
-  const edit = page.getByRole("link", { name: "Edit" });
-  await expect(edit).toBeVisible();
-  const titleBox = (await title.boundingBox())!;
-  const editBox = (await edit.boundingBox())!;
-  expect(titleBox.width).toBeGreaterThanOrEqual(250);
-  expect(editBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height);
+  await expect(page.getByRole("link", { name: "Edit" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+  const more = page.getByRole("button", { name: /^More actions for/ });
+  await expect(more).toBeVisible();
+  expect((await title.boundingBox())!.width).toBeGreaterThanOrEqual(250);
+  await more.click();
+  const menu = page.getByRole("menu");
+  const items = await menu.locator(":scope > *").evaluateAll((list) =>
+    list.map((el) => (el.getAttribute("role") === "separator" ? "---" : (el.textContent ?? "").trim())));
+  expect(items).toContain("Edit");
+  expect(items.at(-1)).toBe("Delete");
+  expect(items.at(-2)).toBe("---");
+  await menu.getByRole("menuitem", { name: "Edit" }).click();
+  await expect(page).toHaveURL(/\/admin\/r\/posts\/records\/3\/edit$/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+  // Wide: every action inline again.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/admin/r/posts/records/3");
+  await expect(page.getByRole("link", { name: "Edit" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
 });

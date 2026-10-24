@@ -29,6 +29,11 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.10.2 to 0.10.3
+
+- Nothing to change. On phones a record page's Edit and Delete are in its
+  ⋯ menu: end-to-end tests at phone widths open the menu first.
+
 ## From 0.10.1 to 0.10.2
 
 - Vocabulary 11: layouts `split` and `pane`, `collapsed` and `compact` on

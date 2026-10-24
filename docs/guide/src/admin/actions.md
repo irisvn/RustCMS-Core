@@ -112,7 +112,8 @@ the action goes last in the **⋯** menu and its bulk button is the
 destructive variant. `.icon(…)` is accepted but not shown yet.
 
 A record's page shows its actions the same way (the first primary one it
-offers labelled, the others under ⋯), and so do the rows of relation tables
+offers labelled, the others under ⋯; on a phone Edit and Delete go under ⋯
+too, Delete last), and so do the rows of relation tables
 on a parent's page, with the related resource's actions: the server's
 abilities for each record decide, and running one is authorized as from the
 list.

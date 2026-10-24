@@ -1,3 +1,4 @@
+import { PHONE } from "@/lib/media-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
@@ -68,6 +69,29 @@ it("shows a record's actions on its page: the primary one labelled, the others u
   await userEvent.click(touch);
   await waitFor(() => expect(runs).toEqual([{ action: "touch", body: { keys: ["a"], data: {} } }]));
   expect(await screen.findByText(/^Done here\./)).toBeInTheDocument();
+});
+
+it("on a phone, keeps the primary action and puts the others, Edit and Delete included, under ⋯", async () => {
+  const wide = window.matchMedia;
+  window.matchMedia = ((query: string) => ({ ...wide(query), matches: query === PHONE })) as typeof window.matchMedia;
+  onTestFinished(() => {
+    window.matchMedia = wide;
+    server.resetHandlers();
+  });
+  server.use(http.get("*/admin/api/resources/posts/records/a", () =>
+    HttpResponse.json({ data: post("a", { touch: true, archive: true, unpublish: true, update: true, delete: true }) })));
+  mount("/r/posts/records/a");
+  expect(await screen.findByRole("button", { name: "Touch" })).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Edit" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "More actions for Post a" }));
+  const menu = await screen.findByRole("menu");
+  const items = [...menu.children].map((c) => c.getAttribute("role") === "separator" ? "---" : c.textContent);
+  expect(items[items.length - 1]).toBe("Delete");
+  expect(items).toEqual(expect.arrayContaining(["Archive", "Edit", "---", "Unpublish"]));
+  expect(items.indexOf("Edit")).toBeLessThan(items.indexOf("---"));
+  await userEvent.click(within(menu).getByRole("menuitem", { name: "Delete" }));
+  expect(await screen.findByRole("dialog")).toBeInTheDocument();
 });
 
 it("shows the related resource's row actions in relation tables", async () => {

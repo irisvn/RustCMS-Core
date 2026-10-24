@@ -24,6 +24,7 @@ import { errorText, show, type Text, useLocale, useT } from "@/i18n";
 import { editResolver } from "@/schema/resolver";
 import type { PendingWrite } from "@/app/session";
 import { leavingOnPurpose } from "@/lib/leave";
+import { PHONE, useMediaQuery } from "@/lib/media-query";
 
 
 function useMounted() {
@@ -334,6 +335,7 @@ function RecordForm({
 
 export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string }) {
   const t = useT();
+  const phone = useMediaQuery(PHONE);
   const navigate = useNavigate();
   // Completion redirects only apply while the page that started the write is shown.
   const mounted = useMounted();
@@ -360,6 +362,8 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
     }
   };
 
+  const canEdit = record.data.abilities.update && !readOnly;
+  const canDelete = record.data.abilities.delete && !readOnly;
   return (
     <Page className={formWidthClass(s.form.width)}>
       <PageHeader
@@ -367,19 +371,30 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
         eyebrow={s.resource.pluralLabel}
         description={t("record.details")}
         actions={<>
-          {!readOnly && !record.data.trashed && (
-            <RecordActions actions={s.table.actions} record={record.data} size="default" disabled={actions.pending}
-              onStart={(action) => actions.start(action, [recordKey])} />
-          )}
-          {record.data.abilities.update && !readOnly && (
-            <Link to="/r/$slug/records/$key/edit" params={{ slug, key: recordKey }} className={linkClass}>
-              <Pencil /> {t("action.edit")}
-            </Link>
-          )}
-          {record.data.abilities.delete && !readOnly && (
-            <Button variant="destructive" onClick={() => setConfirming(true)} disabled={del.isPending}>
-              <Trash2 /> {t("action.delete")}
-            </Button>
+          {!phone && <>
+            {!readOnly && !record.data.trashed && (
+              <RecordActions actions={s.table.actions} record={record.data} size="default" disabled={actions.pending}
+                onStart={(action) => actions.start(action, [recordKey])} />
+            )}
+            {canEdit && (
+              <Link to="/r/$slug/records/$key/edit" params={{ slug, key: recordKey }} className={linkClass}>
+                <Pencil /> {t("action.edit")}
+              </Link>
+            )}
+            {canDelete && (
+              <Button variant="destructive" onClick={() => setConfirming(true)} disabled={del.isPending}>
+                <Trash2 /> {t("action.delete")}
+              </Button>
+            )}
+          </>}
+          {/* Phones: the primary action and ⋯ with the rest, Edit and Delete included (Delete last). */}
+          {phone && (
+            <RecordActions actions={!readOnly && !record.data.trashed ? s.table.actions : []} record={record.data} size="default"
+              disabled={actions.pending} onStart={(action) => actions.start(action, [recordKey])}
+              more={{
+                safe: canEdit ? [{ key: "edit", label: t("action.edit"), onSelect: () => void navigate({ to: "/r/$slug/records/$key/edit", params: { slug, key: recordKey } }) }] : [],
+                destructive: canDelete ? [{ key: "delete", label: t("action.delete"), onSelect: () => setConfirming(true), disabled: del.isPending }] : [],
+              }} />
           )}
         </>}
       />

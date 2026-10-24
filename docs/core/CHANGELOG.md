@@ -6,9 +6,13 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-- Page headers keep at least 16rem for the title: on a phone a record page's
-  actions wrap below the title instead of squeezing it.
+## [0.10.3] — 2026-10-24
+
+### Fixed (0.10.3)
+- Record pages on a phone (below `sm`, 40rem): the header keeps the primary
+  action and ⋯, which holds the other actions, then Edit, then Delete last
+  after a separator; wide screens keep every action inline. Page headers
+  keep at least 16rem for the title (actions wrap below it).
 - A viewed record shows a text input's prefix and suffix around its value
   (`/posts/hello`), as the input does.
 

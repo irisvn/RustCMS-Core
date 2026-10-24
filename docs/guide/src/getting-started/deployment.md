@@ -23,7 +23,7 @@ Optional features are enabled on the `rustcms` dependency:
 | `mail` | on | [mail](../digging-deeper/mail.md): SMTP, templates, the Mail settings page |
 
 ```toml
-rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.10.2", features = ["redis", "s3"] }
+rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.10.3", features = ["redis", "s3"] }
 ```
 
 Keep the tag your application already uses (`rustcms upgrade` sets it) when

@@ -73,19 +73,30 @@ export function ActionNoticeView({ notice }: { notice: ActionNotice }) {
 }
 
 /** The actions `record` offers: the first primary one labelled, the others under ⋯, destructive ones last. */
-export function RecordActions({ actions, record, disabled, onStart, size = "sm" }: {
+/** A menu entry besides the actions (a record page's Edit and Delete on phones). */
+export interface MenuEntry {
+  key: string;
+  label: string;
+  onSelect: () => void;
+  disabled?: boolean;
+}
+
+export function RecordActions({ actions, record, disabled, onStart, size = "sm", more }: {
   actions: ActionSchema[];
   record: Envelope;
   disabled?: boolean;
   onStart: (action: ActionSchema) => void;
   size?: "sm" | "default";
+  /** Entries added to the menu: safe ones after the actions, destructive ones last. */
+  more?: { safe?: MenuEntry[]; destructive?: MenuEntry[] };
 }) {
   const t = useT();
   const offered = actions.filter((a) => record.abilities[a.name] === true);
   const primary = offered.find((a) => a.primary);
   const rest = offered.filter((a) => a !== primary);
-  const safe = rest.filter((a) => a.color !== "danger");
-  const destructive = rest.filter((a) => a.color === "danger");
+  const entry = (a: ActionSchema): MenuEntry => ({ key: `action:${a.name}`, label: a.label, onSelect: () => onStart(a), disabled });
+  const safe = [...rest.filter((a) => a.color !== "danger").map(entry), ...(more?.safe ?? [])];
+  const destructive = [...rest.filter((a) => a.color === "danger").map(entry), ...(more?.destructive ?? [])];
   return (
     <>
       {primary && (
@@ -93,14 +104,14 @@ export function RecordActions({ actions, record, disabled, onStart, size = "sm" 
           {primary.label}
         </Button>
       )}
-      {rest.length > 0 && (
+      {safe.length + destructive.length > 0 && (
         <DropdownMenu trigger={<Ellipsis />} variant={size === "sm" ? "ghost" : "outline"} size="icon" align="end" aria-label={t("list.moreActions", { record: record.title ?? record.key })}>
-          {safe.map((a) => (
-            <DropdownMenuItem key={a.name} disabled={disabled} onSelect={() => onStart(a)}>{a.label}</DropdownMenuItem>
+          {safe.map((e) => (
+            <DropdownMenuItem key={e.key} disabled={e.disabled} onSelect={e.onSelect}>{e.label}</DropdownMenuItem>
           ))}
           {safe.length > 0 && destructive.length > 0 && <DropdownMenuSeparator />}
-          {destructive.map((a) => (
-            <DropdownMenuItem key={a.name} destructive disabled={disabled} onSelect={() => onStart(a)}>{a.label}</DropdownMenuItem>
+          {destructive.map((e) => (
+            <DropdownMenuItem key={e.key} destructive disabled={e.disabled} onSelect={e.onSelect}>{e.label}</DropdownMenuItem>
           ))}
         </DropdownMenu>
       )}
