@@ -17,6 +17,7 @@ const keys: (string | null)[] = [];
 
 const server = setupServer(
   http.get("*/admin/api/auth/csrf", () => HttpResponse.json({ csrfToken: "t", userId: "1" })),
+  http.get("*/admin/api/panel", () => HttpResponse.json({ brand: "x", user: { id: "1", name: "a", email: "a@b.c" }, navigation: [], system: {}, settings: [], pages: [], permissions: [] })),
 );
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterAll(() => server.close());

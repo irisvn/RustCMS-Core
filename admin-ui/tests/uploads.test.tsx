@@ -65,6 +65,17 @@ function renderEditor() {
   return { container, images, busy: () => busy };
 }
 
+/** Opens the editor's image picker on its upload tab; returns its file input. */
+async function openUpload(): Promise<HTMLInputElement> {
+  const button = screen.getByRole("button", { name: "Insert image" });
+  // Enabled once the panel's permissions are in.
+  await waitFor(() => expect(button).toBeEnabled());
+  await userEvent.click(button);
+  const dialog = await screen.findByRole("dialog", { name: "Insert images" });
+  expect(within(dialog).getByRole("tab", { name: "Upload" })).toHaveAttribute("aria-selected", "true");
+  return dialog.querySelector("input[type=file]") as HTMLInputElement;
+}
+
 const png = (name: string, size = 3) => new File(["x".repeat(size)], name, { type: "image/png" });
 
 afterEach(() => vi.unstubAllGlobals());
@@ -72,65 +83,68 @@ afterEach(() => vi.unstubAllGlobals());
 describe("image uploads in the editor", () => {
   it("send several files at most max_concurrent_uploads at a time, each with its key, inserted in their order", async () => {
     const server = fakeServer({ maxConcurrent: 2 });
-    const { container, images, busy } = renderEditor();
+    const { images } = renderEditor();
     await userEvent.click(await screen.findByRole("textbox", { name: "Body" }));
-    const picker = container.querySelector("input[type=file]") as HTMLInputElement;
+    const picker = await openUpload();
     expect(picker.multiple).toBe(true);
-    // The panel's limits arrive first (until then one at a time).
-    await waitFor(() => expect(container.ownerDocument.body).toBeTruthy());
-    await new Promise((r) => setTimeout(r, 50));
     await userEvent.upload(picker, [png("p1.png"), png("p2.png"), png("p3.png")]);
     await waitFor(() => expect(server.waiting()).toEqual(["p1.png", "p2.png"]));
-    expect(screen.getByRole("list", { name: "Uploads" })).toHaveTextContent("Waiting…");
-    expect(busy()).toBe(true);
+    const dialog = screen.getByRole("dialog", { name: "Insert images" });
+    expect(within(dialog).getByRole("list", { name: "Uploads" })).toHaveTextContent("Waiting…");
     // The second finishes first: held back until the first is in.
     await server.release("p2.png");
     await server.release("p3.png");
     await new Promise((r) => setTimeout(r, 20));
-    expect(images()).toEqual([]);
+    expect(within(dialog).getByText("0 of at most 20 chosen")).toBeInTheDocument();
     await server.release("p1.png");
-    await waitFor(() => expect(images()).toEqual([idOf(1), idOf(2), idOf(3)]));
+    await within(dialog).findByText("3 of at most 20 chosen");
     expect(server.maxInFlight()).toBe(2);
     expect(new Set(server.sent.map((s) => s.key)).size).toBe(3);
-    await waitFor(() => expect(busy()).toBe(false));
-    expect(screen.queryByRole("list", { name: "Uploads" })).toBeNull();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Insert" }));
+    await waitFor(() => expect(images()).toEqual([idOf(1), idOf(2), idOf(3)]));
+    expect(screen.queryByRole("dialog", { name: "Insert images" })).toBeNull();
   });
 
   it("show each failure with its own retry (same key) and refuse what is not sent", async () => {
     const server = fakeServer({ maxConcurrent: 4, maxBytes: 10, fail: new Set(["p2.png"]) });
-    const { container, images } = renderEditor();
+    const { images } = renderEditor();
     await userEvent.click(await screen.findByRole("textbox", { name: "Body" }));
-    await new Promise((r) => setTimeout(r, 50));
-    const picker = container.querySelector("input[type=file]") as HTMLInputElement;
+    const picker = await openUpload();
     const pdf = new File(["%PDF"], "doc.pdf", { type: "application/pdf" });
     await userEvent.upload(picker, [png("p1.png"), png("p2.png"), png("big9.png", 11), pdf], { applyAccept: false });
-    const list = await screen.findByRole("list", { name: "Uploads" });
+    const dialog = screen.getByRole("dialog", { name: "Insert images" });
+    const list = await within(dialog).findByRole("list", { name: "Uploads" });
     expect(within(list).getByText("big9.png is too large.")).toBeInTheDocument();
-    expect(within(list).getByText("doc.pdf: only images can be inserted.")).toBeInTheDocument();
+    expect(within(list).getByText("doc.pdf: this kind of file is not accepted.")).toBeInTheDocument();
     await server.release("p1.png");
     await server.release("p2.png");
     // The first is in; the failed one does not hold it back.
-    await waitFor(() => expect(images()).toEqual([idOf(1)]));
+    await within(dialog).findByText("1 of at most 20 chosen");
     const retry = await within(list).findByRole("button", { name: "Retry uploading p2.png" });
     expect(within(list).queryByRole("button", { name: "Retry uploading big9.png" })).toBeNull();
     await userEvent.click(retry);
     await server.release("p2.png");
-    await waitFor(() => expect(images()).toEqual([idOf(1), idOf(2)]));
+    await within(dialog).findByText("2 of at most 20 chosen");
     const p2 = server.sent.filter((s) => s.name === "p2.png");
     expect(p2).toHaveLength(2);
     expect(p2[1]!.key).toBe(p2[0]!.key);
     expect(server.sent.map((s) => s.name).sort()).toEqual(["p1.png", "p2.png", "p2.png"]);
     await userEvent.click(within(list).getByRole("button", { name: "Dismiss doc.pdf" }));
     expect(within(list).queryByText(/doc.pdf/)).toBeNull();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Insert" }));
+    await waitFor(() => expect(images()).toEqual([idOf(1), idOf(2)]));
   });
 
   it("upload dropped and pasted files; pasted external images stay dropped", async () => {
     const server = fakeServer({ maxConcurrent: 4 });
-    const { images } = renderEditor();
+    const { images, busy } = renderEditor();
     const box = await screen.findByRole("textbox", { name: "Body" });
     await userEvent.click(box);
     await new Promise((r) => setTimeout(r, 50));
     fireEvent.drop(box, { dataTransfer: { files: [png("p1.png")], types: ["Files"], getData: () => "" }, clientX: 0, clientY: 0 });
+    // The form waits for the upload.
+    await waitFor(() => expect(busy()).toBe(true));
+    expect(screen.getByRole("list", { name: "Uploads" })).toHaveTextContent("p1.png");
     await server.release("p1.png");
     await waitFor(() => expect(images()).toEqual([idOf(1)]));
     const html = '<img src="https://evil.test/x.png">';
@@ -144,5 +158,6 @@ describe("image uploads in the editor", () => {
     expect(images()).toEqual([idOf(2), idOf(1)]);
     expect(box.querySelector('img[src^="https://evil"]')).toBeNull();
     expect(server.sent.map((s) => s.name)).toEqual(["p1.png", "p2.png"]);
+    await waitFor(() => expect(busy()).toBe(false));
   });
 });

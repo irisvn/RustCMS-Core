@@ -1,6 +1,6 @@
 // Media inputs: upload to the media library, keep ids in the form. Files are
 // shown only from the panel's own media URL (the CSP allows no `blob:`).
-import { ArrowLeft, ArrowRight, FileText, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, FileText, Library, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/api/client";
 import { usePanelConfig, useSession } from "@/api/context";
@@ -8,12 +8,10 @@ import type { InputSchema, MediaItem } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { mediaUrl } from "@/lib/rich-text";
 import { later, show, type Text, useT } from "@/i18n";
+import { MediaPicker, accepts, usePickerAccess } from "./media-picker";
 import { uploadMedia } from "./uploads";
 
 export { uploadMedia };
-
-const accepts = (accept: string[], mime: string) =>
-  accept.length === 0 || accept.some((a) => a === mime || (a.endsWith("/*") && mime.startsWith(a.slice(0, -1))));
 
 /** A stored media item: an image preview, or a file link. */
 export function MediaThumb({ id, item }: { id: string; item?: MediaItem }) {
@@ -52,6 +50,8 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
   const [error, setError] = useState<Text | null>(null);
   // An upload whose outcome is unknown: retried with the same file and key.
   const [retry, setRetry] = useState<{ file: File; key: string } | null>(null);
+  const access = usePickerAccess();
+  const [picking, setPicking] = useState(false);
   const set = (next: string[]) => onChange(rules.multiple ? next : (next[0] ?? ""));
   // The latest value: an upload finishing later appends to it, not to the
   // value it started from (items removed meanwhile stay removed).
@@ -135,6 +135,11 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
         <Button size="sm" variant="outline" disabled={disabled || busy || (full && rules.multiple)} onClick={() => picker.current?.click()}>
           <Upload /> {busy ? t("media.uploading") : ids.length && !rules.multiple ? t("media.replace") : t("media.upload")}
         </Button>
+        {access.library && (
+          <Button size="sm" variant="outline" disabled={disabled || busy || (full && rules.multiple)} onClick={() => setPicking(true)}>
+            <Library /> {t("picker.open")}
+          </Button>
+        )}
         {retry && (
           <Button size="sm" disabled={disabled || busy} onClick={() => void send(retry.file, retry.key)}>
             {t("media.retry")}
@@ -142,6 +147,19 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
         )}
       </div>
       {error && <p role="alert" className="text-xs text-destructive">{show(error)}</p>}
+      <MediaPicker
+        open={picking}
+        title={input.label}
+        action={t("picker.use")}
+        rules={{ multiple: rules.multiple, max: rules.multiple ? rules.maxItems - ids.length : 1, accept: rules.accept, maxSize: rules.maxSize, exclude: ids }}
+        onClose={() => setPicking(false)}
+        onPick={(picked) => {
+          setPicking(false);
+          setItems((all) => ({ ...all, ...Object.fromEntries(picked.map((item) => [item.id, item])) }));
+          const fresh = picked.map((item) => item.id).filter((pickedId) => !latest.current.includes(pickedId));
+          set(rules.multiple ? [...latest.current, ...fresh].slice(0, rules.maxItems) : [picked[0]!.id]);
+        }}
+      />
     </div>
   );
 }

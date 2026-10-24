@@ -22,9 +22,13 @@ import {
   type DocNode, EMBED_NAMES, type Embed, IMAGE_WIDTHS, type ImageWidth, LIMITS, type RichDocument, asDocument, embedUrl,
   isEmptyDocument, mediaUrl, parseEmbedUrl, safeHref, toDocument, toEditor, validEmbed,
 } from "@/lib/rich-text";
+import { MediaPicker, usePickerAccess } from "./media-picker";
 import { UploadList, useUploads } from "./uploads";
 import { RichCallout, RichEmbed, RichImage, RichTable, RichTableCell, RichTableHeader, RichTableRow } from "./rich-text-nodes";
 import { later, useT } from "@/i18n";
+
+/** Most images inserted from the library at once. */
+const PICK_MAX = 20;
 
 /** What the image dialog edits. */
 interface ImageDetails {
@@ -46,16 +50,17 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
 }) {
   const t = useT();
   const { apiPath } = usePanelConfig();
-  const picker = useRef<HTMLInputElement>(null);
+  const access = usePickerAccess();
+  const [picking, setPicking] = useState(false);
   // The link dialog: the address it starts from, and whether a link is being edited.
   const [linking, setLinking] = useState<{ href: string; editing: boolean } | null>(null);
   const [describing, setDescribing] = useState<ImageDetails | null>(null);
   const [embedding, setEmbedding] = useState(false);
-  // Images uploaded from the picker, dropped or pasted: inserted in the order
-  // they were added, after the selection (never replacing it).
-  const insertImage = useRef<(item: MediaItem) => void>(() => {});
+  // Images dropped or pasted: inserted in the order they were added, after
+  // the selection's block (never replacing it).
+  const insertImages = useRef<(items: MediaItem[], chained: boolean) => void>(() => {});
   const uploads = useUploads({
-    onUploaded: (item) => insertImage.current(item),
+    onUploaded: (item) => insertImages.current([item], true),
     check: (file) => (file.type.startsWith("image/") ? null : later("rich.imagesOnlyFile", { file: file.name })),
   });
   const addFiles = useRef(uploads.add);
@@ -127,14 +132,16 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   useEffect(() => {
     if (uploads.uploads.length === 0) anchor.current = null;
   }, [uploads.uploads.length]);
-  insertImage.current = (item) => {
-    if (!editor || editor.isDestroyed) return;
+  // `chained`: after the previous upload of the same batch.
+  insertImages.current = (items, chained) => {
+    if (!editor || editor.isDestroyed || items.length === 0) return;
     const { state, view } = editor;
-    const node = state.schema.nodes.image!.create({ src: mediaUrl(apiPath, item.id), alt: item.name });
-    const at = anchor.current !== null && anchor.current <= state.doc.content.size ? anchor.current : blockEnd(state);
+    const nodes = items.map((item) => state.schema.nodes.image!.create({ src: mediaUrl(apiPath, item.id), alt: item.name }));
+    const fresh = !chained || anchor.current === null || anchor.current > state.doc.content.size;
+    const at = fresh ? blockEnd(state) : anchor.current!;
     // The selection stays the user's: typing on never replaces an image that arrived meanwhile.
-    view.dispatch(state.tr.insert(at, node));
-    anchor.current = at + node.nodeSize;
+    view.dispatch(state.tr.insert(at, nodes));
+    if (chained) anchor.current = at + nodes.reduce((size, n) => size + n.nodeSize, 0);
   };
   // What the toolbar shows: follows the selection (TipTap does not re-render on transactions).
   const state = useEditorState({
@@ -217,14 +224,10 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         {tool(t("rich.calloutInfo"), <Info />, s?.callout === "info", () => chain().toggleCallout("info").run())}
         {tool(t("rich.calloutWarn"), <TriangleAlert />, s?.callout === "warn", () => chain().toggleCallout("warn").run())}
         {tool(t("rich.link"), <Link />, !!s?.marks.link, link)}
-        {tool(t("rich.image"), <ImagePlus />, false, () => picker.current?.click())}
+        {tool(t("rich.image"), <ImagePlus />, false, () => setPicking(true), !access.library && !access.upload)}
         {tool(t("rich.imageDetails"), <Settings2 />, false, describe, !s?.image)}
         {tool(t("rich.table"), <TableIcon />, false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), !!table)}
         {tool(t("rich.embed"), <Video />, false, () => setEmbedding(true))}
-        <input ref={picker} type="file" multiple hidden accept="image/png,image/jpeg,image/gif,image/webp" onChange={(e) => {
-          uploads.add([...(e.target.files ?? [])]);
-          e.target.value = "";
-        }} />
       </div>
       {table && (
         <div role="toolbar" aria-label={t("rich.tableTools")} className="flex flex-wrap items-center gap-1 border border-t-0 border-border bg-muted/20 p-1">
@@ -263,6 +266,21 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
       }} title={t("rich.imageDetails")}>
         {describing && <ImageFields initial={describing} onClose={() => setDescribing(null)} onApply={applyDetails} />}
       </Dialog>
+      <MediaPicker
+        open={picking}
+        title={t("rich.imageTitle")}
+        action={t("picker.insert")}
+        rules={{ multiple: true, max: PICK_MAX, accept: ["image/*"] }}
+        onClose={() => {
+          setPicking(false);
+          editor?.commands.focus();
+        }}
+        onPick={(items) => {
+          setPicking(false);
+          insertImages.current(items, false);
+          editor?.commands.focus();
+        }}
+      />
       <Dialog open={embedding} onClose={() => {
         setEmbedding(false);
         editor?.commands.focus();
