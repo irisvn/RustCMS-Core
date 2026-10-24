@@ -77,6 +77,8 @@ insta = { version = "1.49", features = ["json"] }
 rust-embed = { version = "8.13.0", features = ["mime-guess"] }
 ts-rs = { version = "12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }
 proptest = "1.12"
+# Heading ids fold diacritics (NFD).
+unicode-normalization = "0.1.25"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

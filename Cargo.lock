@@ -3432,6 +3432,7 @@ dependencies = [
  "tower",
  "tracing",
  "ts-rs",
+ "unicode-normalization",
  "uuid",
 ]
 

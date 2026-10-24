@@ -54,9 +54,9 @@ fn valid_documents_round_trip_to_escaped_html() {
     let html = to_html(&parsed, &|id| Some(format!("/media/{id}")));
     assert_eq!(
         html,
-        "<h2>Title &lt;script&gt;</h2><p><a href=\"https://x.test/?a=1&amp;b=&quot;2&quot;\" rel=\"noopener noreferrer nofollow\">\
+        "<h2 id=\"title-script\">Title &lt;script&gt;</h2><p><a href=\"https://x.test/?a=1&amp;b=&quot;2&quot;\" rel=\"noopener noreferrer nofollow\">\
          <strong>a &quot;b&quot; &amp; &#39;c&#39;</strong></a><br></p><ul><li><p>i</p></li></ul>\
-         <pre><code>&lt;b&gt;x&lt;/b&gt;</code></pre><img src=\"/media/0199d3a4-1b2c-7d3e-8f40-123456789abc\" alt=\"&quot; onerror=&quot;x\"><hr>"
+         <pre><code>&lt;b&gt;x&lt;/b&gt;</code></pre><figure><img src=\"/media/0199d3a4-1b2c-7d3e-8f40-123456789abc\" alt=\"&quot; onerror=&quot;x\"></figure><hr>"
     );
     assert!(!to_html(&parsed, &|_| None).contains("<img"));
 }
@@ -233,22 +233,83 @@ fn version_2_nodes_parse_and_render() {
             width: ImageWidth::Wide
         })
     );
-    let html = to_html(&parsed, &|id| Some(format!("/m/{id}")));
+    let html = to_html_with(&parsed, &|id| Some(ImageInfo::new(format!("/m/{id}")).size(800, 600)));
     assert_eq!(
         html,
-        "<h2>Bảng giá</h2>\
+        "<h2 id=\"bang-gia\">Bảng giá</h2>\
          <table><thead><tr><th><p>Gói</p></th><th><p>Giá &lt;b&gt;</p></th></tr></thead>\
          <tbody><tr><td><p><strong>Pro</strong></p><p>2</p></td><td><p>10 $</p></td></tr></tbody></table>\
          <table><tbody><tr><td><p>no header</p></td></tr></tbody></table>\
-         <img src=\"/m/0199d3a4-1b2c-7d3e-8f40-123456789abc\" alt=\"Cat\">\
-         <img src=\"/m/0199d3a4-1b2c-7d3e-8f40-123456789abc\" alt=\"\">\
+         <figure data-width=\"wide\"><img src=\"/m/0199d3a4-1b2c-7d3e-8f40-123456789abc\" width=\"800\" height=\"600\" alt=\"Cat\">\
+         <figcaption>A &lt;cat&gt;</figcaption></figure>\
+         <figure><img src=\"/m/0199d3a4-1b2c-7d3e-8f40-123456789abc\" width=\"800\" height=\"600\" alt=\"\"></figure>\
          <figure class=\"embed\" data-provider=\"youtube\" data-id=\"dQw4w9WgXcQ\"><a href=\"https://www.youtube.com/watch?v=dQw4w9WgXcQ\" rel=\"noopener noreferrer nofollow\">https://www.youtube.com/watch?v=dQw4w9WgXcQ</a></figure>\
          <figure class=\"embed\" data-provider=\"vimeo\" data-id=\"76979871\"><a href=\"https://vimeo.com/76979871\" rel=\"noopener noreferrer nofollow\">https://vimeo.com/76979871</a></figure>\
          <figure class=\"embed\" data-provider=\"x\" data-id=\"1460323737035677698\"><a href=\"https://x.com/i/status/1460323737035677698\" rel=\"noopener noreferrer nofollow\">https://x.com/i/status/1460323737035677698</a></figure>\
          <aside class=\"callout\" data-tone=\"warn\"><p>Careful</p></aside>\
-         <blockquote><h2>Bảng giá</h2></blockquote>"
+         <blockquote><h2 id=\"bang-gia-2\">Bảng giá</h2></blockquote>"
     );
+    // A size is written only when both dimensions are known.
+    let partial =
+        to_html_with(&parsed, &|id| Some(ImageInfo { url: format!("/m/{id}"), width: Some(1), height: None }));
+    assert!(!partial.contains("width=\"1\""));
+    // `to_html` keeps its signature: figures without sizes.
+    assert!(
+        to_html(&parsed, &|_| Some("/i".into())).contains("<figure data-width=\"wide\"><img src=\"/i\" alt=\"Cat\">")
+    );
+    // Images whose URL is unknown are left out with their caption.
+    assert!(!to_html_with(&parsed, &|_| None).contains("figcaption"));
     assert_eq!(media_ids(&parsed).len(), 1);
+}
+
+#[test]
+fn headings_get_stable_folded_unique_ids() {
+    assert_eq!(slug("Tiếng Việt có dấu"), "tieng-viet-co-dau");
+    assert_eq!(slug("Đà Nẵng — ĐƯỜNG Phố"), "da-nang-duong-pho");
+    assert_eq!(slug("  Hello,   World!! "), "hello-world");
+    assert_eq!(slug("Crème brûlée, Smørrebrød & Straße"), "creme-brulee-smorrebrod-strasse");
+    assert_eq!(slug("İstanbul"), "istanbul");
+    assert_eq!(slug("日本語 2"), "日本語-2");
+    assert_eq!(slug("🎉 !!"), "");
+    let long = slug(&"ab ".repeat(100));
+    assert!(long.chars().count() <= MAX_SLUG && !long.ends_with('-'), "{long}");
+    let h = |level: u64, t: &str| json!({"type": "heading", "attrs": {"level": level}, "content": [text(t)]});
+    let parsed = parse(&doc(json!([
+        h(2, "Giới thiệu"),
+        h(3, "Giới thiệu"),
+        h(2, "giới-thiệu-2"),
+        h(4, "Giới thiệu"),
+        h(2, "🎉"),
+        h(3, "🎉"),
+        {"type": "heading", "attrs": {"level": 2}, "content": [
+            {"type": "text", "text": "Bold", "marks": [{"type": "bold"}]}, {"type": "hardBreak"}, text("line")
+        ]},
+        {"type": "bulletList", "content": [{"type": "listItem", "content": [h(3, "Nested")]}]},
+    ])))
+    .unwrap();
+    let outline = outline(&parsed);
+    let ids: Vec<_> = outline.iter().map(|h| (h.level, h.id.as_str())).collect();
+    assert_eq!(
+        ids,
+        [
+            (2, "gioi-thieu"),
+            (3, "gioi-thieu-2"),
+            (2, "gioi-thieu-2-2"),
+            (4, "gioi-thieu-3"),
+            (2, "section"),
+            (3, "section-2"),
+            (2, "bold-line"),
+            (3, "nested")
+        ]
+    );
+    assert_eq!(outline[0].text, "Giới thiệu");
+    assert_eq!(outline[6].text, "Bold line");
+    // `to_html` uses the same ids, in the same order.
+    let html = to_html(&parsed, &|_| None);
+    let in_html: Vec<&str> = html.split("id=\"").skip(1).map(|s| &s[..s.find('"').unwrap()]).collect();
+    assert_eq!(in_html, outline.iter().map(|h| h.id.as_str()).collect::<Vec<_>>());
+    // Stable: the same document gives the same ids.
+    assert_eq!(super::outline(&parsed), outline);
 }
 
 #[test]

@@ -3,8 +3,9 @@
 //! The document is validated strictly on every write: unknown node types,
 //! marks or attributes are refused, links are limited to `http`, `https` and
 //! `mailto`, images reference media items by id, embeds name an allowed
-//! provider and an id (never a URL or HTML). [`to_html`] renders it with
-//! every text and attribute escaped, for headless consumers.
+//! provider and an id (never a URL or HTML). [`to_html`] and [`to_html_with`]
+//! render it with every text and attribute escaped, for headless consumers;
+//! [`outline`] lists its headings with the ids the HTML gives them.
 //!
 //! ```json
 //! {"type": "doc", "version": 2, "content": [
@@ -20,9 +21,11 @@
 //! document into the same document in version 2.
 
 mod html;
+mod outline;
 mod parse;
 
 pub use html::*;
+pub use outline::*;
 pub use parse::*;
 
 use serde::Deserialize;
