@@ -11,7 +11,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { Components, gridCols } from "@/renderers/form";
+import { Components, formWidthClass, gridCols } from "@/renderers/form";
 import { type SecretIntent, secretPayload } from "@/renderers/secret";
 import { type FormValues, defaultValues, inputsOf, payloadOf, relabel } from "@/schema/form";
 import { editResolver } from "@/schema/resolver";
@@ -139,7 +139,7 @@ function SettingsForm({ group, latest, refreshError, refetch }: {
   // The language changed: same form and values, labels of the latest answer.
   const shown = relabel(components, latest.form.components);
   return (
-    <Page className="max-w-4xl">
+    <Page className={formWidthClass(latest.form.width)}>
       <form className="flex min-w-0 flex-col gap-6" onSubmit={(e) => void submit(e)} noValidate>
         <PageHeader title={latest.label} eyebrow={t("nav.settings")} description={editable ? t("settings.description") : t("settings.readOnly")} />
         <VersionBanner schema={base} />

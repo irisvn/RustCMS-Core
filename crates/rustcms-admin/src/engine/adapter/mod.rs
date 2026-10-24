@@ -210,7 +210,13 @@ impl<R: Resource> ResourceAdapter<R> {
             secrets.insert(field.name.clone(), secrets::SecretField { kind, column });
         }
 
-        let form = Some(R::form()).filter(|f| !f.components.is_empty()).unwrap_or_else(|| auto_form(&fields, &columns));
+        // A form without components is generated from the fields, keeping its options (width).
+        let declared = R::form();
+        let form = if declared.components.is_empty() {
+            Form { width: declared.width, ..auto_form(&fields, &columns) }
+        } else {
+            declared
+        };
         for input in form.inputs() {
             let secret = fields.iter().find(|f| f.name == input.name).and_then(|f| f.secret);
             let expected = match secret {
@@ -263,7 +269,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 input.name
             );
         }
-        check_layouts(slug, &form.components, None);
+        check_form_layout(&format!("resource `{slug}`"), &form);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();
             assert!(crate::ui::valid_widget(widget), "resource `{slug}`: invalid widget name `{widget}`");
@@ -512,25 +518,51 @@ fn normalize_default(kind: FieldKind, value: serde_json::Value) -> Option<serde_
 }
 
 /// One input per field, by column type.
-/// Tabs hold only tabs, tabs sit only in tabs, and tab ids are unique per tabs.
-fn check_layouts(slug: &str, components: &[Component], parent: Option<LayoutType>) {
+/// The layout rules of a form ([`check_layouts`]), and prefixes and suffixes
+/// on text inputs only. `owner` names the form in messages (`resource `posts``).
+pub(crate) fn check_form_layout(owner: &str, form: &Form) {
+    check_layouts(owner, &form.components, None);
+    for input in form.inputs().into_iter().filter(|i| i.prefix.is_some() || i.suffix.is_some()) {
+        assert!(
+            input.kind == InputType::TextInput,
+            "{owner}: input `{}`: only text inputs have a prefix or a suffix",
+            input.name
+        );
+    }
+}
+
+/// Tabs hold only tabs, tabs sit only in tabs, and tab ids are unique per tabs;
+/// one split at most, at the form's top level, holding its two panes; only
+/// sections fold or are compact.
+fn check_layouts(owner: &str, components: &[Component], parent: Option<LayoutType>) {
     let mut ids = HashSet::new();
+    let mut splits = 0;
     for component in components {
-        let Component::Layout(Layout { kind, id, children, .. }) = component else {
-            assert!(parent != Some(LayoutType::Tabs), "resource `{slug}`: tabs may only contain `Tab`s");
+        let Component::Layout(Layout { kind, id, children, collapsed, compact, .. }) = component else {
+            assert!(parent != Some(LayoutType::Tabs), "{owner}: tabs may only contain `Tab`s");
+            assert!(parent != Some(LayoutType::Split), "{owner}: a split holds only its panes");
             continue;
         };
         assert!(
             (*kind == LayoutType::Tab) == (parent == Some(LayoutType::Tabs)),
-            "resource `{slug}`: a `Tab` belongs directly in `Tabs`, and `Tabs` hold only `Tab`s"
+            "{owner}: a `Tab` belongs directly in `Tabs`, and `Tabs` hold only `Tab`s"
+        );
+        assert!(
+            (*kind == LayoutType::Pane) == (parent == Some(LayoutType::Split)),
+            "{owner}: a split holds only its panes"
+        );
+        if *kind == LayoutType::Split {
+            splits += 1;
+            assert!(parent.is_none() && splits == 1, "{owner}: one `Split` at most, at the form's top level");
+        }
+        assert!(
+            *kind == LayoutType::Section || (collapsed.is_none() && !compact),
+            "{owner}: only sections are collapsible or compact"
         );
         if let Some(id) = id {
-            assert!(
-                !id.is_empty() && ids.insert(id.clone()),
-                "resource `{slug}`: tab `{id}` is empty or declared twice"
-            );
+            assert!(!id.is_empty() && ids.insert(id.clone()), "{owner}: tab `{id}` is empty or declared twice");
         }
-        check_layouts(slug, children, Some(*kind));
+        check_layouts(owner, children, Some(*kind));
     }
 }
 

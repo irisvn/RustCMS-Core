@@ -8,7 +8,7 @@ use rustcms_admin::schema::*;
 use rustcms_admin::system::{
     PermissionInfo, PermissionPresetInfo, RoleRef, SystemLinks, SystemRole, SystemUser, UserPage,
 };
-use rustcms_admin::ui::{Breakpoint, ColumnType, FilterType, InputType, LayoutType, SelectOption};
+use rustcms_admin::ui::{Breakpoint, ColumnType, FilterType, FormWidth, InputType, LayoutType, SelectOption};
 use rustcms_admin::{ActionOutcome, Envelope, Page, PageMeta};
 use ts_rs::{Config, TS};
 
@@ -21,6 +21,7 @@ fn bindings() -> String {
         LayoutType::decl(&cfg),
         ColumnType::decl(&cfg),
         Breakpoint::decl(&cfg),
+        FormWidth::decl(&cfg),
         FilterType::decl(&cfg),
         SelectOption::decl(&cfg),
         ResourceInfo::decl(&cfg),

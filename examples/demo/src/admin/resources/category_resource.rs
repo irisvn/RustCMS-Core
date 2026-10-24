@@ -29,16 +29,19 @@ impl Resource for CategoryResource {
     }
 
     fn form() -> Form {
-        Form::new().columns(2).schema(components![
-            TextInput::make("name"),
-            TextInput::make("slug"),
-            // Edited by the demo's extension widget (resources/admin/js/demo/color.js).
-            CustomInput::make("color", "demo/color").props(json!({"palette": [
-                {"value": "#dc2626", "label": "Red"},
-                {"value": "#16a34a", "label": "Green"},
-                {"value": "#2563eb", "label": "Blue"},
-                {"value": "#9333ea", "label": "Purple"},
-            ]})),
+        // An editor layout: the whole width, a main column and an aside.
+        Form::new().width(FormWidth::Full).schema(components![
+            Split::make()
+                .main(components![TextInput::make("name"), TextInput::make("slug").prefix("/categories/"),])
+                .aside(components![Section::make("Display").compact().collapsible(false).schema(components![
+                    // Edited by the demo's extension widget (resources/admin/js/demo/color.js).
+                    CustomInput::make("color", "demo/color").props(json!({"palette": [
+                        {"value": "#dc2626", "label": "Red"},
+                        {"value": "#16a34a", "label": "Green"},
+                        {"value": "#2563eb", "label": "Blue"},
+                        {"value": "#9333ea", "label": "Purple"},
+                    ]})),
+                ])])
         ])
     }
 

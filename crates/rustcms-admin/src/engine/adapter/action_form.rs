@@ -136,10 +136,12 @@ impl<R: Resource> ResourceAdapter<R> {
                     props: None,
                     media: None,
                     links: None,
+                    prefix: None,
+                    suffix: None,
                 })
             })
             .collect();
-        Some(FormSchema { columns: 1, components })
+        Some(FormSchema { columns: 1, components, width: Default::default() })
     }
 }
 

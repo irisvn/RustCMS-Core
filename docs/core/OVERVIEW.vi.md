@@ -1,6 +1,6 @@
-# rustcms — Tài liệu tổng quan (bản 0.10.1)
+# rustcms — Tài liệu tổng quan (bản 0.10.2)
 
-> Cập nhật: 24/10/2026 · tag `v0.10.1` (commit `ca75be1`)
+> Cập nhật: 24/10/2026 · tag `v0.10.2`
 
 rustcms là framework Rust dùng để dựng nhanh **CMS và Admin Dashboard**, lấy cảm
 hứng từ Laravel và FilamentPHP:
@@ -132,6 +132,7 @@ field và record, rồi ghi qua SeaORM trong transaction.
 | **0.9.0** | `BelongsToManySelect` trong form bản ghi, hook `after_trash`/`after_restore`/`after_relation_change`, `media.view_all` |
 | **0.10.0** | Rich text phiên bản 2 (bảng, embed, callout), picker thư viện media, upload nhiều ảnh |
 | **0.10.1** | Trang Media dạng lưới, alt cho media, settings chứa media, `visible_when`, action chính, `message`/`open` của action |
+| **0.10.2** | Bố cục editor: `Form::width`, `Split` (cột chính + sidebar dính), Section thu gọn/compact, prefix/suffix cho ô text; badge đủ 5 màu |
 
 ### Tạo một màn hình admin trong 3 lệnh
 

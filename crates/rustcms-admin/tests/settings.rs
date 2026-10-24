@@ -767,3 +767,37 @@ fn media_settings_have_no_default_file() {
     }
     let _ = rustcms_admin::AdminProvider::new().settings::<Defaulted>();
 }
+
+#[derive(Default, Serialize, Deserialize)]
+struct Nested {
+    title: String,
+}
+
+impl Settings for Nested {
+    const GROUP: &'static str = "nested";
+}
+
+#[async_trait::async_trait]
+impl SettingsPage for Nested {
+    fn meta() -> SettingsMeta {
+        SettingsMeta::new("Nested")
+    }
+
+    fn fields() -> Vec<SettingField> {
+        vec![SettingField::text("title")]
+    }
+
+    fn form() -> rustcms_admin::Form {
+        rustcms_admin::Form::new().schema(rustcms_admin::components![rustcms_admin::Section::make("Box").schema(
+            rustcms_admin::components![
+                rustcms_admin::Split::make().main(rustcms_admin::components![rustcms_admin::TextInput::make("title")])
+            ]
+        )])
+    }
+}
+
+#[test]
+#[should_panic(expected = "settings `nested`: one `Split` at most, at the form's top level")]
+fn settings_forms_follow_the_layout_rules() {
+    let _ = rustcms_admin::AdminProvider::new().settings::<Nested>();
+}

@@ -71,6 +71,8 @@ pub struct Input {
     pub(crate) mode: Option<&'static str>,
     pub(crate) widget: Option<String>,
     pub(crate) props: Option<serde_json::Value>,
+    pub(crate) prefix: Option<String>,
+    pub(crate) suffix: Option<String>,
 }
 
 impl Input {
@@ -90,12 +92,29 @@ impl Input {
             mode: None,
             widget: None,
             props: None,
+            prefix: None,
+            suffix: None,
         }
     }
 
     /// Displayed label (default: the field name, humanized).
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    /// Fixed text shown inside the input before the value (`/posts/` before a
+    /// slug): never part of the value, shown as written (not translated),
+    /// read by screen readers with the input. Text inputs only.
+    pub fn prefix(mut self, text: impl Into<String>) -> Self {
+        self.prefix = Some(text.into());
+        self
+    }
+
+    /// Fixed text shown inside the input after the value (`.html`, `km`).
+    /// Text inputs only.
+    pub fn suffix(mut self, text: impl Into<String>) -> Self {
+        self.suffix = Some(text.into());
         self
     }
 

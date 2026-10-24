@@ -16,7 +16,7 @@ import { Page, PageHeader } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { Components, ReadOnlyComponents, gridCols } from "@/renderers/form";
+import { Components, ReadOnlyComponents, formWidthClass, gridCols } from "@/renderers/form";
 import { MEDIA_SLUG, MediaPreview } from "@/renderers/media-library";
 import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/actions";
 import { type FormValues, defaultValues, inputsOf, payloadOf, protectLossyJson, relabel } from "@/schema/form";
@@ -266,7 +266,7 @@ function RecordForm({
   // The language changed: same form and values, labels of the latest schema.
   const shown = relabel(components, schema.form.components);
   return (
-    <Page className="max-w-4xl">
+    <Page className={formWidthClass(schema.form.width)}>
     <form className="flex min-w-0 flex-col gap-6" onSubmit={(e) => void submit(e)} noValidate>
       <PageHeader title={title} eyebrow={schema.resource.pluralLabel} description={editing ? t("record.editDescription") : t("record.createDescription")} />
       <VersionBanner schema={schema} />
@@ -361,7 +361,7 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
   };
 
   return (
-    <Page className="max-w-4xl">
+    <Page className={formWidthClass(s.form.width)}>
       <PageHeader
         title={record.data.title ?? `${s.resource.label} ${recordKey}`}
         eyebrow={s.resource.pluralLabel}

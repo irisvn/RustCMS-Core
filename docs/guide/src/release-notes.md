@@ -1,7 +1,17 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.10.1**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.10.2**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.10.2
+
+- **An editor layout**: `Form::width(FormWidth::Full)`, a main column with a
+  sticky aside (`Split`), sections that fold or are compact, and text inputs
+  with a fixed prefix or suffix (`/posts/` before a slug)
+  ([An editor layout](admin/forms.md#an-editor-layout)).
+- Badge columns show all five colors; the default theme's `success` and
+  `warning` are green and amber. The media picker keeps a page chosen right
+  after opening.
 
 ## 0.10.1
 

@@ -4,11 +4,13 @@ export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in
 
 export type InputType = "text_input" | "textarea" | "number_input" | "select" | "toggle" | "checkbox" | "checkbox_list" | "date_picker" | "date_time_picker" | "hidden" | "key_value" | "file_upload" | "rich_editor" | "custom" | "secret" | "secret_map" | "belongs_to_many";
 
-export type LayoutType = "section" | "grid" | "tabs" | "tab";
+export type LayoutType = "section" | "grid" | "tabs" | "tab" | "split" | "pane";
 
 export type ColumnType = "text" | "badge" | "boolean" | "date";
 
 export type Breakpoint = "sm" | "md" | "lg";
+
+export type FormWidth = "default" | "wide" | "full";
 
 export type FilterType = "select" | "ternary" | "date_range";
 
@@ -266,7 +268,15 @@ media?: MediaSchema,
 /**
  * What the user may change (`belongs_to_many` inputs, vocabulary 9).
  */
-links?: LinksSchema, };
+links?: LinksSchema, 
+/**
+ * Fixed text shown inside the input before the value (text inputs, vocabulary 11).
+ */
+prefix?: string, 
+/**
+ * Fixed text shown inside the input after the value (text inputs, vocabulary 11).
+ */
+suffix?: string, };
 
 export type LayoutSchema = { 
 /**
@@ -288,7 +298,19 @@ columns: number,
 /**
  * Children.
  */
-components: Array<ComponentSchema>, };
+components: Array<ComponentSchema>, 
+/**
+ * Sections the user may fold: whether it starts folded (vocabulary 11).
+ */
+collapsed?: boolean, 
+/**
+ * A tighter section (vocabulary 11).
+ */
+compact?: boolean, 
+/**
+ * Splits: the aside first on narrow screens (vocabulary 11).
+ */
+asideFirst?: boolean, };
 
 export type ComponentSchema = InputSchema | LayoutSchema;
 
@@ -300,7 +322,11 @@ columns: number,
 /**
  * Components the user may see for the operation.
  */
-components: Array<ComponentSchema>, };
+components: Array<ComponentSchema>, 
+/**
+ * How wide the record's page is (absent: the default; vocabulary 11).
+ */
+width?: FormWidth, };
 
 export type ColumnSchema = { 
 /**

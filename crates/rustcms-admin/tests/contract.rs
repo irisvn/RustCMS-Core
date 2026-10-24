@@ -96,38 +96,52 @@ impl Resource for GadgetResource {
     }
 
     fn form() -> Form {
-        Form::new().columns(2).schema(components![
-            Section::make("Basics").columns(2).schema(components![
-                TextInput::make("name").placeholder("Name").help("Shown in lists"),
-                Textarea::make("notes").column_span(2),
-            ]),
-            Grid::make(3).schema(components![
-                NumberInput::make("count"),
-                NumberInput::make("serial"),
-                NumberInput::make("ratio"),
-                NumberInput::make("price"),
-            ]),
-            Toggle::make("active"),
-            Checkbox::make("agreed").label("Terms agreed"),
-            CheckboxList::make("colors").options([("red", "Red"), ("green", "Green"), ("blue", "Blue")]),
-            SelectInput::make("status").options([("draft", "Draft"), ("live", "Live")]),
-            SelectInput::make("category_id"),
-            Tabs::make().schema(components![
-                Tab::make("Schedule").columns(2).schema(components![
-                    DatePicker::make("day"),
-                    DateTimePicker::make("local_at"),
-                    DateTimePicker::make("happened_at"),
-                ]),
-                Tab::make("Specs").schema(components![
-                    KeyValue::make("specs"),
-                    FileUpload::make("photo"),
-                    CustomInput::make("accent", "acme/color").props(json!({"palette": ["#ff0000", "#00ff00"]})),
-                ]),
-            ]),
-            Hidden::make("token"),
-            TextInput::make("secret").password(),
-            SecretInput::make("api_token"),
-            SecretMapInput::make("env"),
+        // A split (vocabulary 11): the main column, and an aside with a
+        // compact section that folds; a full-width page.
+        Form::new().columns(2).width(FormWidth::Full).schema(components![
+            Split::make()
+                .main(components![
+                    Section::make("Basics").columns(2).schema(components![
+                        TextInput::make("name")
+                            .placeholder("Name")
+                            .help("Shown in lists")
+                            .prefix("/gadgets/")
+                            .suffix(".html"),
+                        Textarea::make("notes").column_span(2),
+                    ]),
+                    Grid::make(3).schema(components![
+                        NumberInput::make("count"),
+                        NumberInput::make("serial"),
+                        NumberInput::make("ratio"),
+                        NumberInput::make("price"),
+                    ]),
+                    CheckboxList::make("colors").options([("red", "Red"), ("green", "Green"), ("blue", "Blue")]),
+                    SelectInput::make("status").options([("draft", "Draft"), ("live", "Live")]),
+                    SelectInput::make("category_id"),
+                    Tabs::make().schema(components![
+                        Tab::make("Schedule").columns(2).schema(components![
+                            DatePicker::make("day"),
+                            DateTimePicker::make("local_at"),
+                            DateTimePicker::make("happened_at"),
+                        ]),
+                        Tab::make("Specs").schema(components![
+                            KeyValue::make("specs"),
+                            FileUpload::make("photo"),
+                            CustomInput::make("accent", "acme/color").props(json!({"palette": ["#ff0000", "#00ff00"]})),
+                        ]),
+                    ]),
+                    Hidden::make("token"),
+                    TextInput::make("secret").password(),
+                    SecretInput::make("api_token"),
+                    SecretMapInput::make("env"),
+                ])
+                .aside(components![
+                    Section::make("Flags")
+                        .compact()
+                        .collapsible(false)
+                        .schema(components![Toggle::make("active"), Checkbox::make("agreed").label("Terms agreed"),])
+                ])
+                .aside_first_on_mobile()
         ])
     }
 
@@ -244,10 +258,17 @@ db_test!(kitchen_sink_contract, |db: TestDb| async move {
     // The deletion time varies: the contract keeps its shape.
     trash["data"][0]["data"]["deleted_at"] = json!("2026-10-12T09:30:00Z");
     // A write-only field's declared default is data the user may not read.
-    let secret = create.form.components.iter().find_map(|c| match c {
-        rustcms_admin::schema::ComponentSchema::Input(i) if i.name == "secret" => Some(i.clone()),
-        _ => None,
-    });
+    fn find(
+        components: &[rustcms_admin::schema::ComponentSchema],
+        name: &str,
+    ) -> Option<rustcms_admin::schema::InputSchema> {
+        components.iter().find_map(|c| match c {
+            rustcms_admin::schema::ComponentSchema::Input(i) if i.name == name => Some(i.clone()),
+            rustcms_admin::schema::ComponentSchema::Input(_) => None,
+            rustcms_admin::schema::ComponentSchema::Layout(l) => find(&l.components, name),
+        })
+    }
+    let secret = find(&create.form.components, "secret");
     let secret = secret.expect("secret input");
     assert!(secret.write_only && secret.default.is_none(), "{secret:?}");
     assert!(!serde_json::to_string(&create).unwrap().contains("factory-secret"));

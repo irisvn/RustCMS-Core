@@ -42,7 +42,7 @@ your version, offline.
   any distribution: the binary is static). On an Intel Mac, build it from
   source with Cargo (below).
 - Without the script, Cargo can build it from source:
-  `cargo install --git https://github.com/irisvn/RustCMS-Core --tag v0.10.1 rustcms-cli`.
+  `cargo install --git https://github.com/irisvn/RustCMS-Core --tag v0.10.2 rustcms-cli`.
 
 ## Creating an application
 
@@ -58,7 +58,7 @@ rustcms serve                      # http://localhost:8000/admin
 tag of the command's version, then resolves the dependencies (`Cargo.lock`):
 
 ```toml
-rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.10.1" }
+rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.10.2" }
 ```
 
 Commit `Cargo.lock`: it pins the exact commit and every dependency, so your

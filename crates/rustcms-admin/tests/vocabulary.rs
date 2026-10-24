@@ -3,8 +3,8 @@
 mod support;
 
 use rustcms_admin::{
-    Ctx, Data, Field, Form, KeyValue, Registry, Resource, ResourceMeta, SchemaOperation, Tab, Tabs, TextInput,
-    components,
+    Ctx, Data, Field, Form, FormWidth, Grid, KeyValue, NumberInput, Registry, Resource, ResourceMeta, SchemaOperation,
+    Section, Split, Tab, Tabs, TextInput, components,
 };
 use rustcms_core::AppError;
 use rustcms_testing::{TestDb, db_test};
@@ -119,7 +119,7 @@ db_test!(key_value_inputs_hold_bounded_text_pairs, |db: TestDb| async move {
 db_test!(tabs_and_key_values_in_the_schema, |db: TestDb| async move {
     let (ctx, items) = items(&db).await;
     let schema = serde_json::to_value(items.schema(&ctx, SchemaOperation::Create, None).await.unwrap()).unwrap();
-    assert_eq!(schema["vocabularyVersion"], json!(10));
+    assert_eq!(schema["vocabularyVersion"], json!(11));
     let tabs = &schema["form"]["components"][0];
     assert_eq!(tabs["type"], json!("tabs"));
     let ids: Vec<&Value> = tabs["components"].as_array().unwrap().iter().map(|t| &t["id"]).collect();
@@ -340,3 +340,93 @@ impl Resource for DefaultedRichText {
 fn rich_text_columns_have_no_default_of_any_kind() {
     let _ = Registry::new().register::<DefaultedRichText>();
 }
+
+/// A resource of `item`s with the given form (boot checks of layouts).
+macro_rules! form_resource {
+    ($name:ident, $slug:literal, $form:expr) => {
+        struct $name;
+
+        impl Resource for $name {
+            type Entity = item::Entity;
+            const SLUG: &'static str = $slug;
+
+            fn meta() -> ResourceMeta {
+                ResourceMeta::new("Item")
+            }
+
+            fn fields() -> Vec<Field> {
+                vec![Field::make("name")]
+            }
+
+            fn form() -> Form {
+                $form
+            }
+        }
+    };
+}
+
+form_resource!(NestedSplit, "nested_split", {
+    Form::new().schema(components![
+        Section::make("Box").schema(components![Split::make().main(components![TextInput::make("name")])])
+    ])
+});
+
+#[test]
+#[should_panic(expected = "at the form's top level")]
+fn a_split_sits_at_the_top_level() {
+    let _ = Registry::new().register::<NestedSplit>();
+}
+
+form_resource!(TwoSplits, "two_splits", {
+    Form::new().schema(components![Split::make().main(components![TextInput::make("name")]), Split::make()])
+});
+
+#[test]
+#[should_panic(expected = "one `Split` at most")]
+fn one_split_per_form() {
+    let _ = Registry::new().register::<TwoSplits>();
+}
+
+form_resource!(FoldingGrid, "folding_grid", {
+    Form::new().schema(components![Grid::make(2).collapsible(true).schema(components![TextInput::make("name")])])
+});
+
+#[test]
+#[should_panic(expected = "only sections are collapsible or compact")]
+fn only_sections_fold() {
+    let _ = Registry::new().register::<FoldingGrid>();
+}
+
+form_resource!(PrefixedNumber, "prefixed_number", {
+    Form::new().schema(components![NumberInput::make("name").prefix("$")])
+});
+
+#[test]
+#[should_panic(expected = "only text inputs have a prefix or a suffix")]
+fn only_text_inputs_have_a_prefix() {
+    let _ = Registry::new().register::<PrefixedNumber>();
+}
+
+form_resource!(EditorLayout, "editor_layout", {
+    Form::new().width(FormWidth::Full).schema(components![
+        Split::make()
+            .main(components![TextInput::make("name").prefix("/items/")])
+            .aside(components![Section::make("More").compact().collapsible(false)])
+    ])
+});
+
+#[test]
+fn an_editor_layout_registers() {
+    let _ = Registry::new().register::<EditorLayout>();
+}
+
+form_resource!(WideAuto, "wide_auto", Form::new().width(FormWidth::Full));
+
+db_test!(a_generated_form_keeps_its_width, |db: TestDb| async move {
+    let (ctx, _) = items(&db).await;
+    let registry = Registry::new().register::<WideAuto>().finish();
+    let wide = registry.get("wide_auto").unwrap();
+    let schema = serde_json::to_value(wide.schema(&ctx, SchemaOperation::Create, None).await.unwrap()).unwrap();
+    assert_eq!(schema["form"]["width"], json!("full"));
+    assert!(!schema["form"]["components"].as_array().unwrap().is_empty(), "generated from the fields");
+});

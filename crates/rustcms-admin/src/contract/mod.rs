@@ -6,12 +6,12 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::ui::{ColumnType, FilterType, InputType, LayoutType, SelectOption};
+use crate::ui::{ColumnType, FilterType, FormWidth, InputType, LayoutType, SelectOption};
 
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 10;
+pub const VOCABULARY_VERSION: u32 = 11;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -168,6 +168,14 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub links: Option<LinksSchema>,
+    /// Fixed text shown inside the input before the value (text inputs, vocabulary 11).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+    /// Fixed text shown inside the input after the value (text inputs, vocabulary 11).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suffix: Option<String>,
 }
 
 /// The changes a `belongs_to_many` input may send (checked again by the
@@ -219,6 +227,18 @@ pub struct LayoutSchema {
     pub columns: u8,
     /// Children.
     pub components: Vec<ComponentSchema>,
+    /// Sections the user may fold: whether it starts folded (vocabulary 11).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collapsed: Option<bool>,
+    /// A tighter section (vocabulary 11).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub compact: bool,
+    /// Splits: the aside first on narrow screens (vocabulary 11).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub aside_first: bool,
 }
 
 /// An element of a form: input or layout, told apart by `type`.
@@ -242,6 +262,10 @@ pub struct FormSchema {
     pub columns: u8,
     /// Components the user may see for the operation.
     pub components: Vec<ComponentSchema>,
+    /// How wide the record's page is (absent: the default; vocabulary 11).
+    #[cfg_attr(feature = "ts", ts(as = "Option<FormWidth>", optional))]
+    #[serde(skip_serializing_if = "FormWidth::is_default")]
+    pub width: FormWidth,
 }
 
 /// A table column.

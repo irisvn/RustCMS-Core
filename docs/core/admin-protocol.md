@@ -124,6 +124,15 @@ decides it again when the action runs (one record: 403; several: `denied`). Olde
 offered action as a button. Columns may carry `hideBelow` (`sm`, `md`,
 `lg`): hidden by CSS on narrower screens; older clients show them.
 
+Vocabulary 11 adds the editor layout: layouts `split` (children: `pane`s with
+`id` `main` and `aside`, either left out when the user sees nothing in it;
+`asideFirst` puts the aside first on narrow screens) and `pane`; sections
+may carry `collapsed` (foldable, starting folded or not) and `compact`;
+`text_input` inputs may carry `prefix` and `suffix` (fixed text, never part of
+the value); `FormSchema.width` is `wide` or `full` (absent: the default
+width). Older clients show splits and panes as plain groups, sections open,
+inputs without their prefix, at the default width.
+
 Vocabulary 9 adds `belongs_to_many` inputs (ADR 0035): `name` is a
 belongs-to-many relation, `relationship.resource` its target, `valueType`
 `links`, and `links: {attach, detach}` what the user may change. Records

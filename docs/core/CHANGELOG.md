@@ -6,7 +6,21 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
+## [0.10.2] — 2026-10-24
+
+### Added (0.10.2)
+- An editor layout (vocabulary 11): `Form::width(FormWidth::Default | Wide |
+  Full)` for the record's page (create, edit, view; settings pages too);
+  `Split::make().main(…).aside(…)` (from `lg` a 20rem sticky aside, one
+  column below it, `.aside_first_on_mobile()`; at the form's top level, one
+  at most; layouts `split` and `pane`); `Section::collapsible(collapsed)` (a
+  button with `aria-expanded`, inputs kept while folded, opened on an error)
+  and `Section::compact()`; `TextInput::prefix` / `suffix` (fixed text inside
+  the input, not part of the value, linked with `aria-describedby`, not
+  translated). Boot refuses misuse. Static classes only. Demo: the category
+  form uses it; E2E `editor-layout.spec.ts` at 1440 and 390px.
+
+### Fixed (0.10.2)
 - Badge columns draw every color `BadgeColumn::color` documents (`primary`,
   `success`, `warning`, `danger`, `gray`); only `danger` was colored before.
   The default theme's `success` and `warning` are green and amber (they were

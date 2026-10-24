@@ -180,6 +180,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             form: FormSchema {
                 columns: self.form.columns,
                 components: self.components(ctx, &self.form.components, op, &links),
+                width: self.form.width,
             },
             table: self.table_schema(ctx).await,
             relations: match (&viewed, op) {

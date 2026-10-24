@@ -480,6 +480,7 @@ impl<T: SettingsPage> SettingsAdapter<T> {
             }
         }
         let form = T::form();
+        crate::engine::adapter::check_form_layout(&format!("settings `{group}`"), &form);
         let mut used = BTreeSet::new();
         for input in form.inputs() {
             let field = fields

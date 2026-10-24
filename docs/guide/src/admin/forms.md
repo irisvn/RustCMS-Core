@@ -71,6 +71,55 @@ its label and must be unique among its siblings. Tabs the user cannot see
 anything in are left out. On a failed save the panel opens the first tab with
 an error and focuses its input.
 
+### An editor layout
+
+For long content (a post, a page), lay the form out like an editor: the
+whole width, a main column and a narrow aside with the details.
+
+```rust,ignore
+Form::new().width(FormWidth::Full).schema(components![Split::make()
+    .main(components![
+        TextInput::make("title"),
+        TextInput::make("slug").prefix("/posts/"),
+        RichEditor::make("body"),
+        Section::make("SEO").collapsible(true).schema(components![
+            TextInput::make("meta_title"),
+            Textarea::make("meta_description"),
+        ]),
+    ])
+    .aside(components![
+        Section::make("Publishing").compact().schema(components![
+            SelectInput::make("status"),
+            DateTimePicker::make("published_at"),
+        ]),
+        FileUpload::make("cover"),
+        BelongsToManySelect::make("tags"),
+    ])])
+```
+
+- `Form::width(FormWidth::Default | Wide | Full)`: how wide the record's
+  page is (create, edit and view; settings pages too): about 56rem (the
+  default), 72rem, or the whole page.
+- `Split::make().main(…).aside(…)`: from the `lg` breakpoint (1024px) the
+  aside is 20rem wide on the right and stays in view while the main column
+  scrolls; narrower screens show one column, the aside after the main one
+  (`.aside_first_on_mobile()` puts it first). One split at most, at the
+  form's top level; both columns hold inputs and layouts (sections, grids,
+  tabs). A column the user cannot see anything in is left out. The view
+  page lays the record out the same way.
+- `Section::make(…).collapsible(collapsed)`: the user folds and unfolds the
+  section with its title (a button with `aria-expanded`), starting folded
+  when `collapsed` is true. Its inputs stay in the form while folded, and it
+  opens by itself when one of them has an error. Nothing is remembered.
+- `Section::make(…).compact()`: less padding and spacing, for the aside.
+- `TextInput::make(…).prefix(text)` and `.suffix(text)`: fixed text inside
+  the input's border (`/posts/` before a slug, `.html` after it), shown as
+  written, never part of the value, and read by screen readers with the
+  input. Text inputs only.
+
+Misusing them (a split inside a section, two splits, a grid that folds, a
+prefix on a number input) panics when the application starts.
+
 Misconfiguration (an input for an unknown field, a filter on a field that is
 not `.filterable()`, a default sort on a field that is not `.sortable()`)
 panics when the application starts.

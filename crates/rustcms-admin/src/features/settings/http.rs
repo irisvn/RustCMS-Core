@@ -185,7 +185,7 @@ fn response(ctx: &Ctx, page: &dyn DynSettings, stored: &Stored) -> SettingsRespo
         vocabulary_version: VOCABULARY_VERSION,
         group: page.group().to_owned(),
         label: ctx.t(&page.meta().label),
-        form: FormSchema { columns: page.form().columns.max(1), components },
+        form: FormSchema { columns: page.form().columns.max(1), components, width: page.form().width },
         data,
         secrets,
         version: stored.version.to_string(),
@@ -205,13 +205,22 @@ fn components(ctx: &Ctx, page: &dyn DynSettings, items: &[Component], disabled: 
                 .iter()
                 .find(|f| f.name == input.name)
                 .map(|field| ComponentSchema::Input(input_schema(ctx, field, input, disabled))),
-            Component::Layout(layout) => Some(ComponentSchema::Layout(LayoutSchema {
-                kind: layout.kind,
-                id: layout.id.clone(),
-                label: layout.label.as_deref().map(|l| ctx.t(l)),
-                columns: layout.columns,
-                components: components(ctx, page, &layout.children, disabled),
-            })),
+            Component::Layout(layout) => {
+                // Layouts with nothing in them are left out (a split's empty pane), as on resources.
+                let children = components(ctx, page, &layout.children, disabled);
+                (!children.is_empty()).then(|| {
+                    ComponentSchema::Layout(LayoutSchema {
+                        kind: layout.kind,
+                        id: layout.id.clone(),
+                        label: layout.label.as_deref().map(|l| ctx.t(l)),
+                        columns: layout.columns,
+                        components: children,
+                        collapsed: layout.collapsed,
+                        compact: layout.compact,
+                        aside_first: layout.aside_first,
+                    })
+                })
+            }
         })
         .collect()
 }
@@ -253,6 +262,8 @@ fn input_schema(ctx: &Ctx, field: &SettingField, input: &crate::ui::Input, disab
             max_size: rule.max_size,
         }),
         links: None,
+        prefix: input.prefix.clone(),
+        suffix: input.suffix.clone(),
     }
 }
 

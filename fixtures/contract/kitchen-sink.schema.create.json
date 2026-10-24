@@ -10,335 +10,368 @@
     "columns": 2,
     "components": [
       {
-        "columns": 2,
-        "components": [
-          {
-            "columnSpan": 1,
-            "disabled": false,
-            "help": "Shown in lists",
-            "label": "Name",
-            "name": "name",
-            "nullable": false,
-            "placeholder": "Name",
-            "rules": [
-              {
-                "rule": "required"
-              },
-              {
-                "rule": "max_length",
-                "value": 60
-              }
-            ],
-            "type": "text_input",
-            "valueType": "string"
-          },
-          {
-            "columnSpan": 2,
-            "disabled": false,
-            "label": "Notes",
-            "name": "notes",
-            "nullable": true,
-            "rules": [],
-            "type": "textarea",
-            "valueType": "string"
-          }
-        ],
-        "label": "Basics",
-        "type": "section"
-      },
-      {
-        "columns": 3,
-        "components": [
-          {
-            "columnSpan": 1,
-            "disabled": false,
-            "label": "Count",
-            "name": "count",
-            "nullable": false,
-            "rules": [],
-            "type": "number_input",
-            "valueType": "i32"
-          },
-          {
-            "columnSpan": 1,
-            "disabled": false,
-            "label": "Serial",
-            "name": "serial",
-            "nullable": false,
-            "rules": [],
-            "type": "number_input",
-            "valueType": "i64"
-          },
-          {
-            "columnSpan": 1,
-            "disabled": false,
-            "label": "Ratio",
-            "name": "ratio",
-            "nullable": false,
-            "rules": [],
-            "type": "number_input",
-            "valueType": "f64"
-          },
-          {
-            "columnSpan": 1,
-            "disabled": false,
-            "label": "Price",
-            "name": "price",
-            "nullable": false,
-            "rules": [],
-            "type": "number_input",
-            "valueType": "decimal"
-          }
-        ],
-        "type": "grid"
-      },
-      {
-        "columnSpan": 1,
-        "default": true,
-        "disabled": false,
-        "label": "Active",
-        "name": "active",
-        "nullable": false,
-        "rules": [],
-        "type": "toggle",
-        "valueType": "bool"
-      },
-      {
-        "columnSpan": 1,
-        "disabled": false,
-        "label": "Terms agreed",
-        "name": "agreed",
-        "nullable": false,
-        "rules": [
-          {
-            "rule": "required"
-          }
-        ],
-        "type": "checkbox",
-        "valueType": "bool"
-      },
-      {
-        "columnSpan": 1,
-        "disabled": false,
-        "label": "Colors",
-        "name": "colors",
-        "nullable": false,
-        "options": [
-          {
-            "label": "Red",
-            "value": "red"
-          },
-          {
-            "label": "Green",
-            "value": "green"
-          },
-          {
-            "label": "Blue",
-            "value": "blue"
-          }
-        ],
-        "rules": [],
-        "type": "checkbox_list",
-        "valueType": "json"
-      },
-      {
-        "columnSpan": 1,
-        "disabled": false,
-        "label": "Status",
-        "name": "status",
-        "nullable": false,
-        "options": [
-          {
-            "label": "Draft",
-            "value": "draft"
-          },
-          {
-            "label": "Live",
-            "value": "live"
-          }
-        ],
-        "rules": [],
-        "type": "select",
-        "valueType": "string"
-      },
-      {
-        "columnSpan": 1,
-        "disabled": false,
-        "label": "Category",
-        "name": "category_id",
-        "nullable": true,
-        "relationship": {
-          "resource": "categories"
-        },
-        "rules": [],
-        "type": "select",
-        "valueType": "i32"
-      },
-      {
+        "asideFirst": true,
         "columns": 1,
         "components": [
-          {
-            "columns": 2,
-            "components": [
-              {
-                "columnSpan": 1,
-                "disabled": false,
-                "label": "Day",
-                "name": "day",
-                "nullable": false,
-                "rules": [],
-                "type": "date_picker",
-                "valueType": "date"
-              },
-              {
-                "columnSpan": 1,
-                "disabled": false,
-                "label": "Local at",
-                "name": "local_at",
-                "nullable": false,
-                "rules": [],
-                "type": "date_time_picker",
-                "valueType": "local_datetime"
-              },
-              {
-                "columnSpan": 1,
-                "disabled": false,
-                "label": "Happened at",
-                "name": "happened_at",
-                "nullable": false,
-                "rules": [],
-                "type": "date_time_picker",
-                "valueType": "instant"
-              }
-            ],
-            "id": "schedule",
-            "label": "Schedule",
-            "type": "tab"
-          },
           {
             "columns": 1,
             "components": [
               {
-                "columnSpan": 1,
-                "disabled": false,
-                "label": "Specs",
-                "name": "specs",
-                "nullable": true,
-                "rules": [
+                "columns": 2,
+                "components": [
                   {
-                    "rule": "max_items",
-                    "value": 5
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "help": "Shown in lists",
+                    "label": "Name",
+                    "name": "name",
+                    "nullable": false,
+                    "placeholder": "Name",
+                    "prefix": "/gadgets/",
+                    "rules": [
+                      {
+                        "rule": "required"
+                      },
+                      {
+                        "rule": "max_length",
+                        "value": 60
+                      }
+                    ],
+                    "suffix": ".html",
+                    "type": "text_input",
+                    "valueType": "string"
                   },
                   {
-                    "rule": "max_length",
-                    "value": 40
+                    "columnSpan": 2,
+                    "disabled": false,
+                    "label": "Notes",
+                    "name": "notes",
+                    "nullable": true,
+                    "rules": [],
+                    "type": "textarea",
+                    "valueType": "string"
                   }
                 ],
-                "type": "key_value",
+                "label": "Basics",
+                "type": "section"
+              },
+              {
+                "columns": 3,
+                "components": [
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Count",
+                    "name": "count",
+                    "nullable": false,
+                    "rules": [],
+                    "type": "number_input",
+                    "valueType": "i32"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Serial",
+                    "name": "serial",
+                    "nullable": false,
+                    "rules": [],
+                    "type": "number_input",
+                    "valueType": "i64"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Ratio",
+                    "name": "ratio",
+                    "nullable": false,
+                    "rules": [],
+                    "type": "number_input",
+                    "valueType": "f64"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Price",
+                    "name": "price",
+                    "nullable": false,
+                    "rules": [],
+                    "type": "number_input",
+                    "valueType": "decimal"
+                  }
+                ],
+                "type": "grid"
+              },
+              {
+                "columnSpan": 1,
+                "disabled": false,
+                "label": "Colors",
+                "name": "colors",
+                "nullable": false,
+                "options": [
+                  {
+                    "label": "Red",
+                    "value": "red"
+                  },
+                  {
+                    "label": "Green",
+                    "value": "green"
+                  },
+                  {
+                    "label": "Blue",
+                    "value": "blue"
+                  }
+                ],
+                "rules": [],
+                "type": "checkbox_list",
                 "valueType": "json"
               },
               {
                 "columnSpan": 1,
                 "disabled": false,
-                "label": "Photo",
-                "media": {
-                  "accept": [
-                    "image/*"
-                  ],
-                  "maxItems": 1,
-                  "maxSize": 1000000,
-                  "multiple": false
-                },
-                "name": "photo",
-                "nullable": true,
+                "label": "Status",
+                "name": "status",
+                "nullable": false,
+                "options": [
+                  {
+                    "label": "Draft",
+                    "value": "draft"
+                  },
+                  {
+                    "label": "Live",
+                    "value": "live"
+                  }
+                ],
                 "rules": [],
-                "type": "file_upload",
+                "type": "select",
+                "valueType": "string"
+              },
+              {
+                "columnSpan": 1,
+                "disabled": false,
+                "label": "Category",
+                "name": "category_id",
+                "nullable": true,
+                "relationship": {
+                  "resource": "categories"
+                },
+                "rules": [],
+                "type": "select",
+                "valueType": "i32"
+              },
+              {
+                "columns": 1,
+                "components": [
+                  {
+                    "columns": 2,
+                    "components": [
+                      {
+                        "columnSpan": 1,
+                        "disabled": false,
+                        "label": "Day",
+                        "name": "day",
+                        "nullable": false,
+                        "rules": [],
+                        "type": "date_picker",
+                        "valueType": "date"
+                      },
+                      {
+                        "columnSpan": 1,
+                        "disabled": false,
+                        "label": "Local at",
+                        "name": "local_at",
+                        "nullable": false,
+                        "rules": [],
+                        "type": "date_time_picker",
+                        "valueType": "local_datetime"
+                      },
+                      {
+                        "columnSpan": 1,
+                        "disabled": false,
+                        "label": "Happened at",
+                        "name": "happened_at",
+                        "nullable": false,
+                        "rules": [],
+                        "type": "date_time_picker",
+                        "valueType": "instant"
+                      }
+                    ],
+                    "id": "schedule",
+                    "label": "Schedule",
+                    "type": "tab"
+                  },
+                  {
+                    "columns": 1,
+                    "components": [
+                      {
+                        "columnSpan": 1,
+                        "disabled": false,
+                        "label": "Specs",
+                        "name": "specs",
+                        "nullable": true,
+                        "rules": [
+                          {
+                            "rule": "max_items",
+                            "value": 5
+                          },
+                          {
+                            "rule": "max_length",
+                            "value": 40
+                          }
+                        ],
+                        "type": "key_value",
+                        "valueType": "json"
+                      },
+                      {
+                        "columnSpan": 1,
+                        "disabled": false,
+                        "label": "Photo",
+                        "media": {
+                          "accept": [
+                            "image/*"
+                          ],
+                          "maxItems": 1,
+                          "maxSize": 1000000,
+                          "multiple": false
+                        },
+                        "name": "photo",
+                        "nullable": true,
+                        "rules": [],
+                        "type": "file_upload",
+                        "valueType": "uuid"
+                      },
+                      {
+                        "columnSpan": 1,
+                        "disabled": false,
+                        "label": "Accent",
+                        "name": "accent",
+                        "nullable": true,
+                        "props": {
+                          "palette": [
+                            "#ff0000",
+                            "#00ff00"
+                          ]
+                        },
+                        "rules": [
+                          {
+                            "rule": "max_length",
+                            "value": 7
+                          }
+                        ],
+                        "type": "custom",
+                        "valueType": "string",
+                        "widget": "acme/color"
+                      }
+                    ],
+                    "id": "specs",
+                    "label": "Specs",
+                    "type": "tab"
+                  }
+                ],
+                "type": "tabs"
+              },
+              {
+                "columnSpan": 1,
+                "disabled": false,
+                "label": "Token",
+                "name": "token",
+                "nullable": false,
+                "rules": [],
+                "type": "hidden",
                 "valueType": "uuid"
               },
               {
                 "columnSpan": 1,
                 "disabled": false,
-                "label": "Accent",
-                "name": "accent",
+                "label": "Secret",
+                "mode": "password",
+                "name": "secret",
+                "nullable": false,
+                "rules": [],
+                "type": "text_input",
+                "valueType": "string",
+                "writeOnly": true
+              },
+              {
+                "columnSpan": 1,
+                "disabled": false,
+                "label": "Api token",
+                "name": "api_token",
                 "nullable": true,
-                "props": {
-                  "palette": [
-                    "#ff0000",
-                    "#00ff00"
-                  ]
-                },
+                "rules": [],
+                "type": "secret",
+                "valueType": "secret",
+                "writeOnly": true
+              },
+              {
+                "columnSpan": 1,
+                "disabled": false,
+                "label": "Env",
+                "name": "env",
+                "nullable": true,
                 "rules": [
                   {
+                    "rule": "max_items",
+                    "value": 10
+                  },
+                  {
                     "rule": "max_length",
-                    "value": 7
+                    "value": 1000
                   }
                 ],
-                "type": "custom",
-                "valueType": "string",
-                "widget": "acme/color"
+                "type": "secret_map",
+                "valueType": "secret_map",
+                "writeOnly": true
               }
             ],
-            "id": "specs",
-            "label": "Specs",
-            "type": "tab"
-          }
-        ],
-        "type": "tabs"
-      },
-      {
-        "columnSpan": 1,
-        "disabled": false,
-        "label": "Token",
-        "name": "token",
-        "nullable": false,
-        "rules": [],
-        "type": "hidden",
-        "valueType": "uuid"
-      },
-      {
-        "columnSpan": 1,
-        "disabled": false,
-        "label": "Secret",
-        "mode": "password",
-        "name": "secret",
-        "nullable": false,
-        "rules": [],
-        "type": "text_input",
-        "valueType": "string",
-        "writeOnly": true
-      },
-      {
-        "columnSpan": 1,
-        "disabled": false,
-        "label": "Api token",
-        "name": "api_token",
-        "nullable": true,
-        "rules": [],
-        "type": "secret",
-        "valueType": "secret",
-        "writeOnly": true
-      },
-      {
-        "columnSpan": 1,
-        "disabled": false,
-        "label": "Env",
-        "name": "env",
-        "nullable": true,
-        "rules": [
-          {
-            "rule": "max_items",
-            "value": 10
+            "id": "main",
+            "type": "pane"
           },
           {
-            "rule": "max_length",
-            "value": 1000
+            "columns": 1,
+            "components": [
+              {
+                "collapsed": false,
+                "columns": 1,
+                "compact": true,
+                "components": [
+                  {
+                    "columnSpan": 1,
+                    "default": true,
+                    "disabled": false,
+                    "label": "Active",
+                    "name": "active",
+                    "nullable": false,
+                    "rules": [],
+                    "type": "toggle",
+                    "valueType": "bool"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Terms agreed",
+                    "name": "agreed",
+                    "nullable": false,
+                    "rules": [
+                      {
+                        "rule": "required"
+                      }
+                    ],
+                    "type": "checkbox",
+                    "valueType": "bool"
+                  }
+                ],
+                "label": "Flags",
+                "type": "section"
+              }
+            ],
+            "id": "aside",
+            "type": "pane"
           }
         ],
-        "type": "secret_map",
-        "valueType": "secret_map",
-        "writeOnly": true
+        "type": "split"
       }
-    ]
+    ],
+    "width": "full"
   },
   "operation": "create",
   "resource": {
@@ -534,5 +567,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 10
+  "vocabularyVersion": 11
 }

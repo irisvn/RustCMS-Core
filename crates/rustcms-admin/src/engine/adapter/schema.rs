@@ -53,7 +53,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     .collect()
             };
             let form = |components: Vec<ComponentSchema>| {
-                (!components.is_empty()).then_some(FormSchema { columns: 1, components })
+                (!components.is_empty()).then_some(FormSchema { columns: 1, components, width: Default::default() })
             };
             let readable = inputs(None)
                 .into_iter()
@@ -227,6 +227,9 @@ impl<R: Resource> ResourceAdapter<R> {
                 max_size: rule.max_size,
             }),
             links: None,
+            // Shown as written (`/posts/`, `.html`): not translated.
+            prefix: input.prefix.clone(),
+            suffix: input.suffix.clone(),
         })
     }
 
@@ -292,6 +295,8 @@ impl<R: Resource> ResourceAdapter<R> {
             props: None,
             media: None,
             links: Some(links),
+            prefix: None,
+            suffix: None,
         })
     }
 
@@ -319,6 +324,9 @@ impl<R: Resource> ResourceAdapter<R> {
                             label: layout.label.as_deref().map(|l| ctx.t_in(R::SLUG, l)),
                             columns: layout.columns,
                             components: children,
+                            collapsed: layout.collapsed,
+                            compact: layout.compact,
+                            aside_first: layout.aside_first,
                         })
                     })
                 }
@@ -458,5 +466,7 @@ fn pivot_input_schema(
         props: None,
         media: None,
         links: None,
+        prefix: None,
+        suffix: None,
     }
 }

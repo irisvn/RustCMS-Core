@@ -29,6 +29,18 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.10.1 to 0.10.2
+
+- Vocabulary 11: layouts `split` and `pane`, `collapsed` and `compact` on
+  sections, `prefix` and `suffix` on text inputs, `FormSchema.width`. An older
+  admin SPA shows the banner and lays such forms out as plain groups;
+  extensions that check the vocabulary version should accept 11. Exhaustive
+  matches on `LayoutType` and clients that build `LayoutSchema`,
+  `InputSchema` or `FormSchema` values by hand need the new members.
+- The default theme's `success` and `warning` colors are green and amber
+  (they were grays): set them with `Theme::color` to keep the old look.
+- No migration.
+
 ## From 0.10.0 to 0.10.1
 
 - **Run `rustcms migrate`** (`m20261201_000022_add_alt_to_media`, a nullable

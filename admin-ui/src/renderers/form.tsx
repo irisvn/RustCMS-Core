@@ -1,7 +1,7 @@
 // Renders a form schema: layouts and inputs from the vocabulary. Unknown types
 // fall back to a read-only rendering instead of breaking the page.
 import { Controller, type Control, type FieldErrors } from "react-hook-form";
-import { Plus, X } from "lucide-react";
+import { ChevronDown, Plus, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type * as React from "react";
 import type { ComponentSchema, Data, InputSchema, LayoutSchema, SecretStatus, SelectOption } from "@/api/types";
@@ -56,7 +56,7 @@ export interface FormContext {
 }
 
 export const KNOWN_INPUTS = KNOWN_INPUT_TYPES;
-export const KNOWN_LAYOUTS = new Set(["section", "grid", "tabs", "tab"]);
+export const KNOWN_LAYOUTS = new Set(["section", "grid", "tabs", "tab", "split", "pane"]);
 
 const SPAN: Record<number, string> = {
   1: "md:col-span-1",
@@ -71,6 +71,9 @@ const COLS: Record<number, string> = {
   4: "md:grid-cols-4",
 };
 export const gridCols = (n: number) => COLS[Math.min(Math.max(n, 1), 4)] ?? COLS[1];
+
+/** The page width of a record's form (`Form::width`): unknown (newer) widths are the default. */
+export const formWidthClass = (width?: string) => (width === "full" ? "max-w-none" : width === "wide" ? "max-w-6xl" : "max-w-4xl");
 const span = (n: number) => SPAN[Math.min(Math.max(n, 1), 4)] ?? SPAN[1];
 
 export function Components({ components, ctx }: { components: ComponentSchema[]; ctx: FormContext }) {
@@ -83,11 +86,19 @@ export function Components({ components, ctx }: { components: ComponentSchema[];
   );
 }
 
-function SchemaLayout({ layout, children }: { layout: LayoutSchema; children: React.ReactNode }) {
-  const grid = <div className={cn("grid grid-cols-1 gap-x-6 gap-y-6", gridCols(layout.columns))}>{children}</div>;
+function SchemaLayout({ layout, errors, attempt, children }: {
+  layout: LayoutSchema;
+  errors?: FieldErrors<FormValues>;
+  attempt?: number;
+  children: React.ReactNode;
+}) {
+  const grid = <div className={cn("grid grid-cols-1", layout.compact ? "gap-x-4 gap-y-4" : "gap-x-6 gap-y-6", gridCols(layout.columns))}>{children}</div>;
+  if (layout.type === "section" && layout.collapsed !== undefined) {
+    return <CollapsibleSection layout={layout} errors={errors} attempt={attempt}>{grid}</CollapsibleSection>;
+  }
   if (layout.type === "section" || !KNOWN_LAYOUTS.has(layout.type)) {
     return (
-      <fieldset className="col-span-full min-w-0 rounded-lg border border-border p-5 sm:p-6">
+      <fieldset className={cn("col-span-full min-w-0 rounded-lg border border-border", layout.compact ? "p-4" : "p-5 sm:p-6")}>
         {layout.label && <legend className="px-2 text-sm font-semibold tracking-tight">{layout.label}</legend>}
         {grid}
       </fieldset>
@@ -96,11 +107,73 @@ function SchemaLayout({ layout, children }: { layout: LayoutSchema; children: Re
   return <div className="col-span-full min-w-0">{grid}</div>;
 }
 
+/**
+ * A section the user folds and unfolds (a button with `aria-expanded`). Its
+ * inputs stay mounted while folded (drafts are kept); it opens by itself when
+ * one of them has an error (after each failed save). Nothing is remembered.
+ */
+function CollapsibleSection({ layout, errors, attempt, children }: {
+  layout: LayoutSchema;
+  errors?: FieldErrors<FormValues>;
+  attempt?: number;
+  children: React.ReactNode;
+}) {
+  const base = useId();
+  const [open, setOpen] = useState(!layout.collapsed);
+  const failing = inputsOf(layout.components).some((i) => errors?.[i.name]);
+  useEffect(() => {
+    if (failing) setOpen(true);
+  }, [failing, attempt]);
+  return (
+    <section aria-labelledby={`${base}-title`} className="col-span-full min-w-0 rounded-lg border border-border">
+      <h3 id={`${base}-title`} className="m-0 text-sm font-semibold tracking-tight">
+        <button type="button" aria-expanded={open} aria-controls={`${base}-body`} onClick={() => setOpen((o) => !o)}
+          className={cn("flex w-full items-center justify-between gap-2 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", layout.compact ? "p-4" : "p-5 sm:px-6")}>
+          {layout.label}
+          <ChevronDown aria-hidden="true" className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+        </button>
+      </h3>
+      <div id={`${base}-body`} hidden={!open} className={layout.compact ? "px-4 pb-4" : "px-5 pb-5 sm:px-6 sm:pb-6"}>{children}</div>
+    </section>
+  );
+}
+
+/**
+ * A main column and an aside (from `lg`: the aside 20rem wide and sticky
+ * under the page's top; narrower: one column, the aside after the main one or
+ * before it with `asideFirst`). Either pane may be missing (nothing in it the
+ * user may see).
+ */
+function SplitLayout({ layout, render }: { layout: LayoutSchema; render: (pane: LayoutSchema) => React.ReactNode }) {
+  const pane = (id: string) => layout.components.find((c): c is LayoutSchema => !isInput(c) && c.type === "pane" && c.id === id);
+  const main = pane("main");
+  const aside = pane("aside");
+  const column = (p: LayoutSchema) => <div className={cn("grid min-w-0 grid-cols-1 content-start gap-x-6 gap-y-6", gridCols(p.columns))}>{render(p)}</div>;
+  return (
+    <div className={cn("col-span-full grid min-w-0 grid-cols-1 gap-6", main && aside && "lg:grid-cols-[minmax(0,1fr)_20rem]")}>
+      {main && <div className="min-w-0">{column(main)}</div>}
+      {aside && (
+        // Sticky below the panel's header (4rem tall), with a gap.
+        <aside className={cn("min-w-0 lg:sticky lg:top-20 lg:self-start", layout.asideFirst && "order-first lg:order-none")}>
+          {column(aside)}
+        </aside>
+      )}
+    </div>
+  );
+}
+
 function Layout({ layout, ctx }: { layout: LayoutSchema; ctx: FormContext }) {
   if (layout.type === "tabs") {
     return <TabsLayout layout={layout} errors={ctx.errors} attempt={ctx.submitCount} render={(tab) => <Components components={tab.components} ctx={ctx} />} />;
   }
-  return <SchemaLayout layout={layout}><Components components={layout.components} ctx={ctx} /></SchemaLayout>;
+  if (layout.type === "split") {
+    return <SplitLayout layout={layout} render={(pane) => <Components components={pane.components} ctx={ctx} />} />;
+  }
+  return (
+    <SchemaLayout layout={layout} errors={ctx.errors} attempt={ctx.submitCount}>
+      <Components components={layout.components} ctx={ctx} />
+    </SchemaLayout>
+  );
 }
 
 /**
@@ -200,6 +273,10 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
     if (!isInput(component) && component.type === "tabs") {
       return <TabsLayout key={`layout-${index}`} layout={component} render={(tab) =>
         <ReadOnlyComponents components={tab.components} data={data} slug={slug} record={record} />} />;
+    }
+    if (!isInput(component) && component.type === "split") {
+      return <SplitLayout key={`layout-${index}`} layout={component} render={(pane) =>
+        <ReadOnlyComponents components={pane.components} data={data} slug={slug} record={record} />} />;
     }
     if (!isInput(component)) {
       return <SchemaLayout key={`layout-${index}`} layout={component}>
@@ -338,15 +415,34 @@ function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, de
   switch (input.type) {
     case "text_input": {
       const type = input.mode === "password" ? "password" : input.mode === "email" ? "email" : input.mode === "url" ? "url" : "text";
-      return (
+      const field = (className?: string, described?: string) => (
         <Input
           {...common}
+          aria-describedby={described}
+          className={className}
           type={type}
           value={text}
           onChange={onText}
           autoComplete={input.mode === "password" ? "new-password" : undefined}
           placeholder={input.writeOnly ? t("form.keepValue") : input.placeholder}
         />
+      );
+      if (!input.prefix && !input.suffix) return field(undefined, describedBy);
+      // Fixed text inside the input's border: not part of the value, read
+      // with the input (aria-describedby).
+      const affix = (text: string, which: "prefix" | "suffix") => (
+        <span id={`${id}-${which}`} className="flex shrink-0 items-center whitespace-nowrap px-3 text-sm text-muted-foreground">{text}</span>
+      );
+      const described = [input.prefix && `${id}-prefix`, input.suffix && `${id}-suffix`, describedBy].filter(Boolean).join(" ") || undefined;
+      return (
+        <div className={cn(
+          "flex h-10 min-w-0 w-full items-stretch overflow-hidden rounded-md border border-input bg-card shadow-xs focus-within:ring-2 focus-within:ring-ring",
+          invalid && "border-destructive", disabled && "opacity-60",
+        )}>
+          {input.prefix && affix(input.prefix, "prefix")}
+          {field(cn("h-auto rounded-none border-0 shadow-none focus-visible:ring-0 disabled:opacity-100", input.prefix && "pl-0", input.suffix && "pr-0"), described)}
+          {input.suffix && affix(input.suffix, "suffix")}
+        </div>
       );
     }
     case "textarea":
