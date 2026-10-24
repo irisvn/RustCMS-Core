@@ -13,7 +13,8 @@ export function PageHeader({ title, description, actions, eyebrow }: {
 }) {
   return (
     <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
-      <div className="min-w-0 flex-1 space-y-1.5">
+      {/* At least 16rem for the title: the actions wrap below it on narrow screens. */}
+      <div className="min-w-0 flex-[1_1_16rem] space-y-1.5">
         {eyebrow && <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{eyebrow}</p>}
         <h1 className="break-words text-2xl font-semibold tracking-tight">{title}</h1>
         {description && <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p>}

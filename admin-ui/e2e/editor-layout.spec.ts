@@ -49,3 +49,19 @@ test("an editor layout: full width and a sticky aside at 1440px, one column at 3
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   expect(await page.locator("[style]").count(), "no inline styles").toBe(0);
 });
+
+// A record page on a phone: the title keeps its width, the actions wrap below it.
+test("a record's title is not squeezed by its actions at 390px", async ({ page, watch: _ }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, "admin@example.test");
+  await page.goto("/admin/r/posts/records/3");
+  const title = page.getByRole("heading", { level: 1 });
+  await expect(title).toBeVisible();
+  const edit = page.getByRole("link", { name: "Edit" });
+  await expect(edit).toBeVisible();
+  const titleBox = (await title.boundingBox())!;
+  const editBox = (await edit.boundingBox())!;
+  expect(titleBox.width).toBeGreaterThanOrEqual(250);
+  expect(editBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});

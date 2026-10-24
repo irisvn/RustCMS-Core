@@ -6,6 +6,12 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Page headers keep at least 16rem for the title: on a phone a record page's
+  actions wrap below the title instead of squeezing it.
+- A viewed record shows a text input's prefix and suffix around its value
+  (`/posts/hello`), as the input does.
+
 ## [0.10.2] — 2026-10-24
 
 ### Added (0.10.2)

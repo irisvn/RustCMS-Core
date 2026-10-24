@@ -115,7 +115,7 @@ Form::new().width(FormWidth::Full).schema(components![Split::make()
 - `TextInput::make(…).prefix(text)` and `.suffix(text)`: fixed text inside
   the input's border (`/posts/` before a slug, `.html` after it), shown as
   written, never part of the value, and read by screen readers with the
-  input. Text inputs only.
+  input; the record's page shows the value with them. Text inputs only.
 
 Misusing them (a split inside a section, two splits, a grid that folds, a
 prefix on a number input) panics when the application starts.

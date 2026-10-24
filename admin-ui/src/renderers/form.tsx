@@ -318,6 +318,9 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
     else if (component.type === "text_input" && component.mode === "password") {
       // A readable password-mode field is still not shown in clear.
       content = <span aria-label={t("value.hidden")}>••••••••</span>;
+    } else if (component.type === "text_input" && typeof value === "string" && (component.prefix || component.suffix)) {
+      // The value with its fixed text, as the input shows it (`/posts/hello`).
+      content = <span className="break-words"><span className="text-muted-foreground">{component.prefix}</span>{value}<span className="text-muted-foreground">{component.suffix}</span></span>;
     } else if (component.type === "checkbox_list" && Array.isArray(value)) {
       content = value.length === 0 ? t("value.emptyList") : <ul className="space-y-1">{value.map((item, i) =>
         <li key={i}>{component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(item))?.label ?? readOnlyText(item)}</li>,

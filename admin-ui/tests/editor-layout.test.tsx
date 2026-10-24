@@ -93,10 +93,11 @@ it("shows a prefix and a suffix inside the input, never in the value, read with 
   expect(texts).toEqual(expect.arrayContaining(["/posts/", ".html"]));
 });
 
-it("lays a viewed record out the same way", () => {
+it("lays a viewed record out the same way, its prefix and suffix around the value", () => {
   const { container } = render(
-    <Providers><ReadOnlyComponents components={editor()} data={{ title: "Hi", status: "draft" }} slug="posts" record="1" /></Providers>,
+    <Providers><ReadOnlyComponents components={editor()} data={{ title: "Hi", slug: "hello", status: "draft" }} slug="posts" record="1" /></Providers>,
   );
+  expect(container.textContent).toContain("/posts/hello.html");
   expect(container.querySelector("aside")).toHaveClass("lg:sticky");
   expect(within(container.querySelector("aside")!).getByText("draft")).toBeInTheDocument();
 });
