@@ -107,3 +107,8 @@ it("refuses a relation the parent does not announce", async () => {
   expect(await screen.findByText(/not allowed|forbidden|permission/i)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Create" })).toBeNull();
 });
+
+it("gives relation search boxes a placeholder", async () => {
+  mount("/r/categories/records/1");
+  expect(await screen.findByRole("textbox", { name: "Search Posts" })).toHaveAttribute("placeholder", "Search posts…");
+});

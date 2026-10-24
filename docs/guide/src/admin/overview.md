@@ -53,8 +53,10 @@ generic icon.
 
 ### Order
 
-By default, resources come by slug, then [custom pages](customizing.md#custom-pages)
-in registration order, resources first in a group. `.sort(n)` on
+By default, resources come in registration order (`.media()` where it is
+called), then [custom pages](customizing.md#custom-pages) in registration
+order, resources first in a group. The dashboard's resource cards follow
+the same order. `.sort(n)` on
 `ResourceMeta` or `PanelPageMeta` (default 0) changes it:
 
 - entries are ordered by `sort`, then by that default order;

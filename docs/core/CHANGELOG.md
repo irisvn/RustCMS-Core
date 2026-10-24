@@ -77,6 +77,8 @@ All notable changes are documented here. The format follows
   now carries its `valueType`, its form input's `options` and its table
   `column`, and each record its wire `data`, so the panel shows option
   labels, custom cells, badges and formatted dates (the `values` text stays).
+- Generated text: a `null` value on a record's page reads "Not set" (no
+  "(null)"); relation search boxes have a placeholder.
 - The media input reported its pending upload again on every render of its
   form (a new `onBusy` callback each time), re-rendering the form without
   end while a file was being uploaded.
@@ -84,6 +86,15 @@ All notable changes are documented here. The format follows
 ### Changed (0.10.1)
 - `ActionOutcome` has two new fields, `message` and `open` (code building
   it with a struct literal adds `..Default::default()`).
+- The navigation (and the dashboard's resource cards) lists resources in
+  registration order instead of by slug; `ResourceMeta::sort` still
+  reorders them.
+- `Ctx` has a new public field `admin_path` (the panel's URL prefix, set
+  from the auth configuration; `/admin` for `Ctx::new`). Code that builds a
+  `Ctx` literal without `..` adds it.
+- `ActionOutcome` serializes in camelCase and has two new fields,
+  `message` and `open_url` (code building it with a struct literal adds
+  `..Default::default()`).
 - `media::entity::Model` has a new field `alt: Option<String>` (code that
   builds `media::ActiveModel` literals sets it).
 

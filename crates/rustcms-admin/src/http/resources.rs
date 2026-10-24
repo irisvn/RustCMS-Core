@@ -26,7 +26,8 @@ pub(super) async fn panel(
 ) -> AppResult<Json<PanelResponse>> {
     let panel = state.service::<AdminPanel>().ok_or_else(|| AppError::internal("AdminProvider not registered"))?;
     let mut navigation = Vec::new();
-    for resource in ctx.registry.all() {
+    // In registration order: the application's, not the alphabet's.
+    for resource in ctx.registry.in_registration_order() {
         if resource.allows(&ctx, ability::VIEW_ANY).await {
             navigation.push(resource.info().translated(&ctx));
         }

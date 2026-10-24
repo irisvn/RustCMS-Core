@@ -60,7 +60,7 @@ function HasManySection({ parent, record, relation }: SectionProps) {
         <CardTitle id={titleId}>{relation.label}</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           {schema.data?.table.searchable && (
-            <Input aria-label={t("relation.search", { relation: relation.label })} className="w-48" value={search} onChange={(e) => {
+            <Input aria-label={t("relation.search", { relation: relation.label })} placeholder={t("relation.searchIn", { relation: relation.label.toLocaleLowerCase() })} className="w-48" value={search} onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
             }} />
@@ -209,7 +209,7 @@ function ManySection({ parent, record, relation }: SectionProps) {
         <CardTitle id={titleId}>{relation.label}</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           {schema.data?.table.searchable && (
-            <Input aria-label={t("relation.search", { relation: relation.label })} className="w-48" value={search} onChange={(e) => {
+            <Input aria-label={t("relation.search", { relation: relation.label })} placeholder={t("relation.searchIn", { relation: relation.label.toLocaleLowerCase() })} className="w-48" value={search} onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
             }} />
@@ -321,7 +321,7 @@ function ManySection({ parent, record, relation }: SectionProps) {
       >
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 text-sm font-medium">{t("relation.choose")}</legend>
-          <Input aria-label={t("relation.search", { relation: relation.label })} value={optionSearch} onChange={(e) => setOptionSearch(e.target.value)} />
+          <Input aria-label={t("relation.search", { relation: relation.label })} placeholder={t("relation.searchIn", { relation: relation.label.toLocaleLowerCase() })} value={optionSearch} onChange={(e) => setOptionSearch(e.target.value)} />
           <div className="max-h-64 overflow-y-auto rounded-md border border-border">
             {options.isLoading ? (
               <Loading />

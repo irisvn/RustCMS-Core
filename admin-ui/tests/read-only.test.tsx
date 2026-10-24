@@ -36,7 +36,9 @@ it("shows only view-declared readable fields and distinguishes absent, null and 
     input("secret", { writeOnly: true }), input("hidden", { type: "hidden" }),
   ], { nullable: null, empty: "", secret: "private value", hidden: "hidden value", undeclared: "extra value" });
   expect(screen.getByText("Not provided")).toBeInTheDocument();
-  expect(screen.getByText("Not set (null)")).toBeInTheDocument();
+  // Null: said in words, without the wire term.
+  expect(screen.getByText("Not set")).toBeInTheDocument();
+  expect(screen.queryByText(/\(null\)/)).toBeNull();
   expect(screen.getByText("Empty string")).toBeInTheDocument();
   for (const text of ["Not a stored value", "secret", "private value", "hidden", "hidden value", "extra value"]) {
     expect(screen.queryByText(text)).toBeNull();

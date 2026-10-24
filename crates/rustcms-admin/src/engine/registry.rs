@@ -216,6 +216,8 @@ pub trait DynResource: Send + Sync {
 #[derive(Default)]
 pub struct Registry {
     resources: HashMap<&'static str, Arc<dyn DynResource>>,
+    /// Slugs in registration order (the navigation's).
+    order: Vec<&'static str>,
     /// Position of each resource in the lock order (ADR 0018, 0020): rows of
     /// a lower position are locked first. Set by [`Registry::finish`].
     lock_order: HashMap<&'static str, usize>,
@@ -236,14 +238,20 @@ impl Registry {
         let adapter = ResourceAdapter::<R>::new();
         let previous = self.resources.insert(R::SLUG, Arc::new(adapter));
         assert!(previous.is_none(), "resource `{}` registered twice", R::SLUG);
+        self.order.push(R::SLUG);
         self
     }
 
-    /// Every resource, in registration order of slugs.
+    /// Every resource, in the order of their slugs.
     pub fn all(&self) -> Vec<&Arc<dyn DynResource>> {
         let mut all: Vec<_> = self.resources.values().collect();
         all.sort_by_key(|r| r.slug());
         all
+    }
+
+    /// Every resource, in registration order (the panel's navigation).
+    pub fn in_registration_order(&self) -> Vec<&Arc<dyn DynResource>> {
+        self.order.iter().filter_map(|slug| self.resources.get(slug)).collect()
     }
 
     /// Looks up a resource by slug.
