@@ -35,6 +35,8 @@ export function Cell({ column, record }: { column: ColumnSchema; record: Envelop
   return <DefaultCell column={column} record={record} value={value} />;
 }
 
+const BADGE_COLORS = new Set(["primary", "success", "warning", "danger", "gray"]);
+
 function DefaultCell({ column, record, value }: { column: ColumnSchema; record: Envelope; value: JsonValue | undefined }) {
   if (column.relationship) {
     const label = record.labels?.[column.name];
@@ -44,7 +46,8 @@ function DefaultCell({ column, record, value }: { column: ColumnSchema; record: 
     case "badge": {
       if (value === null || value === undefined) return null;
       const color = column.colors?.find((c) => same(c.value, value))?.color ?? "gray";
-      return <Badge color={color === "danger" ? "danger" : "gray"}>{display(column.valueType, value)}</Badge>;
+      // The colors `BadgeColumn::color` documents; anything else (newer) is gray.
+      return <Badge color={BADGE_COLORS.has(color) ? color : "gray"}>{display(column.valueType, value)}</Badge>;
     }
     case "boolean":
       if (value === null || value === undefined) return null;

@@ -6,6 +6,12 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Badge columns draw every color `BadgeColumn::color` documents (`primary`,
+  `success`, `warning`, `danger`, `gray`); only `danger` was colored before.
+- Media picker: a page chosen right after opening is kept (the search box
+  reset it to the first page once on opening).
+
 ## [0.10.1] — 2026-10-24
 
 ### Added (0.10.1)

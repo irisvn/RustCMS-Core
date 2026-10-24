@@ -23,7 +23,7 @@ fn table() -> Table {
 | Columns | |
 |---|---|
 | `TextColumn` | text, numbers, relationship titles |
-| `BadgeColumn` | a badge, `.color(value, color)` per value (`primary`, `success`, `warning`, `danger`, `gray`; the panel's monochrome cell draws only `danger` in color, the others gray) |
+| `BadgeColumn` | a badge, `.color(value, color)` per value (`primary`, `success`, `warning`, `danger`, `gray`; any other name shows gray) |
 | `BooleanColumn` | a check mark |
 | `DateColumn` | dates and times |
 
