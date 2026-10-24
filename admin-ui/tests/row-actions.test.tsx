@@ -103,6 +103,31 @@ describe("action outcomes", () => {
     server.resetHandlers();
   });
 
+  it("open the page of a run recovered by a safe retry", async () => {
+    const opened: unknown[][] = [];
+    vi.stubGlobal("open", (...args: unknown[]) => {
+      opened.push(args);
+      return null;
+    });
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    let attempts = 0;
+    server.use(http.post("*/admin/api/resources/posts/actions/:action", () => {
+      attempts += 1;
+      return attempts === 1
+        ? new HttpResponse(null, { status: 504 })
+        : HttpResponse.json({ ...outcomeContract, processed: ["a"], message: "Report ready.", replayed: true });
+    }));
+    mount();
+    await screen.findByText("Post a");
+    await userEvent.click(within(rowOf("Post a")).getByRole("button", { name: "Touch" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Retry safely" }));
+    expect(await screen.findByText(/^Report ready\./)).toBeInTheDocument();
+    expect(opened).toEqual([[outcomeContract.open, "_blank", "noopener,noreferrer"]]);
+    server.resetHandlers();
+  });
+
   it("never open what the server should have refused", async () => {
     const opened: unknown[] = [];
     vi.stubGlobal("open", (...args: unknown[]) => opened.push(args));

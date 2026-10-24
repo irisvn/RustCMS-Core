@@ -97,6 +97,12 @@ too (bulk means *also* offered for selections, in the bar above the table),
 on the rows the server offers it. View, Edit, Delete and Restore keep their
 buttons.
 
+A record's page shows its actions the same way (the first primary one it
+offers labelled, the others under ⋯), and so do the rows of relation tables
+on a parent's page, with the related resource's actions: the server's
+abilities for each record decide, and running one is authorized as from the
+list.
+
 ```rust,ignore
 Action::<post::Entity>::new("publish", publish).visible_when(|p| !p.published).primary(),
 Action::<post::Entity>::new("unpublish", unpublish).visible_when(|p| p.published).primary(),

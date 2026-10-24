@@ -1,27 +1,25 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowDown, ArrowUp, Ellipsis, Eye, ListFilter, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, Eye, ListFilter, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useUncertain } from "@/api/context";
 import { useDeleteRecord, useForceDeleteRecord, useRecords, useRestoreRecord, useRunAction, useSchema } from "@/api/queries";
 import type { ActionOutcome, ActionSchema, Envelope } from "@/api/types";
 import { ErrorState, Loading, PausedBanner, VersionBanner, compatibility } from "@/components/states";
 import { Page, PageHeader } from "@/components/layout";
-import { Alert } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableHeader, TableRow } from "@/components/ui/misc";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/menu";
+import { type ActionNotice, ActionNoticeView, RecordActions, isOutcome, outcomeNotice, recoveredAction } from "@/components/actions";
 import { SchemaFormDialog } from "@/components/schema-form-dialog";
 import { ExportButton, ExportsPanel } from "@/components/exports";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Cell, FilterControl, KNOWN_FILTERS, columnClass, type FilterParams } from "@/renderers/table";
 import { cn } from "@/lib/utils";
-import { openInNewTab, openableUrl } from "@/lib/open-url";
 import { MEDIA_SLUG, MediaGrid, MediaUploader, MediaViewToggle, useMediaView } from "@/renderers/media-library";
-import { errorText, formatCount, later, show, t as translate, type Text, useT } from "@/i18n";
+import { errorText, formatCount, later, t as translate, useT } from "@/i18n";
 
 export type ListSearch = Record<string, string>;
 
@@ -49,12 +47,7 @@ function useDebounced(value: string, ms: number) {
 
 const recordCount = (n: number) => translate("list.records", { count: n, n: formatCount(n) });
 
-export function outcomeMessage(label: string, outcome: ActionOutcome): string {
-  const parts = [translate("action.outcomeDone", { action: label, records: recordCount(outcome.processed.length) })];
-  if (outcome.denied.length) parts.push(translate("action.outcomeDenied", { records: recordCount(outcome.denied.length) }));
-  if (outcome.missing.length) parts.push(translate("action.outcomeMissing", { records: recordCount(outcome.missing.length) }));
-  return translate("action.outcome", { parts: parts.join(translate("list.separator")) });
-}
+export { outcomeMessage } from "@/components/actions";
 
 export function ListPage({ slug, search }: { slug: string; search: ListSearch }) {
   const t = useT();
@@ -77,6 +70,13 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   const restore = useRestoreRecord(slug);
   const forceDelete = useForceDeleteRecord(slug);
   const run = useRunAction(slug);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirm, setConfirm] = useState<
     | { kind: "delete"; record: Envelope }
@@ -86,7 +86,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   >(null);
   // An action with a form, being filled in for these rows.
   const [formAction, setFormAction] = useState<{ action: ActionSchema; keys: string[] } | null>(null);
-  const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: Text; link?: string } | null>(null);
+  const [notice, setNotice] = useState<ActionNotice | null>(null);
   // A write with an unknown outcome (timeout, cut connection) must not be repeated blindly.
   const uncertain = useUncertain(slug);
   const [filtersOpen, setFiltersOpen] = useState(true);
@@ -153,13 +153,15 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   const activeFilters = filters.filter((filter) => Object.entries(search).some(([key, value]) => key.startsWith(`filter[${filter.name}][`) && value));
   const clearFilters = () => setSearch(Object.fromEntries(Object.keys(search).filter((key) => /^filter\[/.test(key)).map((key) => [key, undefined])));
 
-  /** The outcome's notice (the handler's message first); its page opens in a new tab. */
-  const outcomeNotice = (label: string, outcome: ActionOutcome) => {
-    // Answered after the commit: the page opens now.
-    const link = openableUrl(outcome.open) ? outcome.open : undefined;
-    if (link) openInNewTab(link);
-    const text = () => [outcome.message, outcomeMessage(label, outcome)].filter(Boolean).join(" ");
-    return { variant: outcome.processed.length ? "default" as const : "destructive" as const, text, link };
+  // A completion opens its page only while this list is shown.
+  const outcomeNoticeOf = (label: string, outcome: ActionOutcome) => (mounted.current ? outcomeNotice(label, outcome) : null);
+  /** "Retry safely" of an action: its outcome, as if it had answered the first time. */
+  const recovered = (result: unknown, pending: { path: string }) => {
+    const name = recoveredAction(pending.path);
+    if (!name || !isOutcome(result)) return false;
+    setNotice(outcomeNoticeOf(table.actions.find((a) => a.name === name)?.label ?? name, result));
+    // The banner still says the change was applied.
+    return false;
   };
   const runAction = async (action: ActionSchema, requested: string[]) => {
     setNotice(null);
@@ -169,7 +171,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     if (stale || keys.length === 0) return;
     try {
       const outcome = await run.mutateAsync({ action: action.name, keys });
-      setNotice(outcomeNotice(action.label, outcome));
+      setNotice(outcomeNoticeOf(action.label, outcome));
       setSelected(new Set());
     } catch (e) {
       setNotice({ variant: "destructive", text: errorText(e, "action.failed") });
@@ -229,38 +231,14 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     const keys = formAction.keys.filter((k) => shown.has(k));
     if (stale || keys.length === 0) throw new Error(translate("list.changedMeanwhile"));
     const outcome = await run.mutateAsync({ action: formAction.action.name, keys, data });
-    setNotice(outcomeNotice(formAction.action.label, outcome));
+    setNotice(outcomeNoticeOf(formAction.action.label, outcome));
     setSelected(new Set());
   };
 
   /** A record's actions (table rows and grid cards). */
-  const rowActionsOf = (record: Envelope) => {
-    // Actions the server offers on this row: the first primary one labelled,
-    // the others in a menu, destructive ones last after a separator.
-    const offered = rowActions.filter((a) => record.abilities[a.name] === true);
-    const primary = offered.find((a) => a.primary);
-    const rest = offered.filter((a) => a !== primary);
-    const safe = rest.filter((a) => a.color !== "danger");
-    const destructive = rest.filter((a) => a.color === "danger");
-    const busy = run.isPending || stale;
-    return (
+  const rowActionsOf = (record: Envelope) => (
     <div className="flex justify-end gap-1">
-      {primary && (
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => startAction(primary, [record.key])}>
-          {primary.label}
-        </Button>
-      )}
-      {rest.length > 0 && (
-        <DropdownMenu trigger={<Ellipsis />} variant="ghost" size="icon" align="end" aria-label={t("list.moreActions", { record: record.title ?? record.key })}>
-          {safe.map((a) => (
-            <DropdownMenuItem key={a.name} disabled={busy} onSelect={() => startAction(a, [record.key])}>{a.label}</DropdownMenuItem>
-          ))}
-          {safe.length > 0 && destructive.length > 0 && <DropdownMenuSeparator />}
-          {destructive.map((a) => (
-            <DropdownMenuItem key={a.name} destructive disabled={busy} onSelect={() => startAction(a, [record.key])}>{a.label}</DropdownMenuItem>
-          ))}
-        </DropdownMenu>
-      )}
+      <RecordActions actions={rowActions} record={record} disabled={run.isPending || stale} onStart={(a) => startAction(a, [record.key])} />
       {record.abilities.view && !record.trashed && (
         <Link
           to="/r/$slug/records/$key"
@@ -297,8 +275,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
         </Button>
       )}
     </div>
-    );
-  };
+  );
   const selectOf = (record: Envelope) => (
     <Checkbox
       aria-label={t("list.select", { record: record.title ?? record.key })}
@@ -333,18 +310,8 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
         </div>
       } />
       <VersionBanner schema={s} />
-      {notice && (
-        <Alert variant={notice.variant}>
-          {show(notice.text)}
-          {notice.link && (
-            <>
-              {" "}
-              <a href={notice.link} target="_blank" rel="noopener noreferrer" className="font-medium underline">{t("action.openLink")}</a>
-            </>
-          )}
-        </Alert>
-      )}
-      <PausedBanner scope={slug} />
+      {notice && <ActionNoticeView notice={notice} />}
+      <PausedBanner scope={slug} onRecovered={recovered} />
 
       <Card>
         <div className="space-y-4 border-b border-border p-4 sm:p-5">

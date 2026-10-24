@@ -18,6 +18,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { Components, ReadOnlyComponents, gridCols } from "@/renderers/form";
 import { MEDIA_SLUG, MediaPreview } from "@/renderers/media-library";
+import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/actions";
 import { type FormValues, defaultValues, inputsOf, payloadOf, protectLossyJson, relabel } from "@/schema/form";
 import { errorText, show, type Text, useLocale, useT } from "@/i18n";
 import { editResolver } from "@/schema/resolver";
@@ -342,6 +343,7 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<Text | null>(null);
   const uncertain = useUncertain(slug);
+  const actions = useActionRunner(slug, (action, key) => key === record.data?.key && record.data.abilities[action.name] === true);
 
   if (schema.isLoading || record.isLoading) return <Loading />;
   if (schema.error || !schema.data) return <ErrorState error={schema.error} />;
@@ -365,6 +367,10 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
         eyebrow={s.resource.pluralLabel}
         description={t("record.details")}
         actions={<>
+          {!readOnly && !record.data.trashed && (
+            <RecordActions actions={s.table.actions} record={record.data} size="default" disabled={actions.pending}
+              onStart={(action) => actions.start(action, [recordKey])} />
+          )}
           {record.data.abilities.update && !readOnly && (
             <Link to="/r/$slug/records/$key/edit" params={{ slug, key: recordKey }} className={linkClass}>
               <Pencil /> {t("action.edit")}
@@ -377,9 +383,11 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
           )}
         </>}
       />
-      <PausedBanner scope={slug} />
+      <PausedBanner scope={slug} onRecovered={actions.recovered(s.table.actions)} />
       <VersionBanner schema={s} />
       {error && <Alert variant="destructive">{show(error)}</Alert>}
+      {actions.notice && <ActionNoticeView notice={actions.notice} />}
+      {actions.dialogs}
       {slug === MEDIA_SLUG && <MediaPreview record={record.data} />}
       <Card>
         <CardContent className={cn("grid grid-cols-1 gap-x-6 gap-y-6 p-5 sm:p-6", gridCols(s.form.columns))}>

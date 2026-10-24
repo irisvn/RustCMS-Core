@@ -62,6 +62,9 @@ All notable changes are documented here. The format follows
 - Bulk actions were never offered on list rows, although `.bulk()` means
   "also offered for selections": every action is now a row action where the
   row's abilities allow it.
+- Record pages and relation tables showed no actions: a record's page shows
+  the actions it offers (primary labelled, the others under ⋯), and the rows
+  of relation tables those of the related resource.
 - The media input reported its pending upload again on every render of its
   form (a new `onBusy` callback each time), re-rendering the form without
   end while a file was being uploaded.

@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLinkOptions, useLinkWrite, useRelationRecords, useSchema } from "@/api/queries";
 import type { ComponentSchema, LinkOutcome, RelationSchema } from "@/api/types";
 import { SchemaFormDialog } from "@/components/schema-form-dialog";
-import { ErrorState, Loading } from "@/components/states";
+import { ErrorState, Loading, PausedBanner, compatibility } from "@/components/states";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -16,6 +16,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Cell, columnClass } from "@/renderers/table";
+import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/actions";
+import { useUncertain } from "@/api/context";
 import { cn } from "@/lib/utils";
 import { isInput } from "@/schema/form";
 import { useT } from "@/i18n";
@@ -45,6 +47,9 @@ function HasManySection({ parent, record, relation }: SectionProps) {
     return params;
   }, [page, search]);
   const records = useRelationRecords(relation.resource, via, query);
+  const actions = useActionRunner(relation.resource, (action, key) =>
+    !records.isPlaceholderData && (records.data?.data ?? []).some((r) => r.key === key && r.abilities[action.name] === true));
+  const paused = useUncertain(relation.resource);
   // The parent itself is not repeated in every row.
   const columns = (schema.data?.table.columns ?? []).filter((c) => c.name !== relation.field);
   const meta = records.data?.meta;
@@ -73,6 +78,9 @@ function HasManySection({ parent, record, relation }: SectionProps) {
         </div>
       </CardHeader>
       <CardContent className="p-0">
+        {relation.resource !== parent && <div className="px-3 empty:hidden"><PausedBanner scope={relation.resource} onRecovered={actions.recovered(schema.data?.table.actions ?? [])} /></div>}
+        {actions.notice && <div className="p-3"><ActionNoticeView notice={actions.notice} /></div>}
+        {actions.dialogs}
         {schema.isLoading || records.isLoading ? (
           <Loading />
         ) : schema.error || records.error ? (
@@ -94,11 +102,17 @@ function HasManySection({ parent, record, relation }: SectionProps) {
                   <tr key={row.key} className="border-b border-border last:border-0">
                     {columns.map((c) => <td key={c.name} className={cn("p-3", columnClass(c))}><Cell column={c} record={row} /></td>)}
                     <td className="p-3 text-right">
-                      {row.abilities.view && (
-                        <Link to="/r/$slug/records/$key" params={{ slug: relation.resource, key: row.key }} className="underline">
-                          {t("action.view")}
-                        </Link>
-                      )}
+                      <div className="flex items-center justify-end gap-1">
+                        {!paused && !row.trashed && schema.data && !compatibility(schema.data).readOnly && (
+                          <RecordActions actions={schema.data?.table.actions ?? []} record={row} disabled={actions.pending || records.isPlaceholderData}
+                            onStart={(action) => actions.start(action, [row.key])} />
+                        )}
+                        {row.abilities.view && (
+                          <Link to="/r/$slug/records/$key" params={{ slug: relation.resource, key: row.key }} className="underline">
+                            {t("action.view")}
+                          </Link>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -148,6 +162,9 @@ function ManySection({ parent, record, relation }: SectionProps) {
   const [detaching, setDetaching] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: string } | null>(null);
+  const actions = useActionRunner(relation.resource, (action, key) =>
+    !records.isPlaceholderData && (records.data?.data ?? []).some((r) => r.key === key && r.abilities[action.name] === true));
+  const paused = useUncertain(relation.resource);
   const columns = schema.data?.table.columns ?? [];
   const pivot = relation.pivot ?? [];
   const rows = records.data?.data ?? [];
@@ -215,6 +232,9 @@ function ManySection({ parent, record, relation }: SectionProps) {
       </CardHeader>
       <CardContent className="p-0">
         {notice && <Alert variant={notice.variant} className="m-3">{notice.text}</Alert>}
+        {relation.resource !== parent && <div className="mx-3 empty:hidden"><PausedBanner scope={relation.resource} onRecovered={actions.recovered(schema.data?.table.actions ?? [])} /></div>}
+        {actions.notice && <div className="m-3"><ActionNoticeView notice={actions.notice} /></div>}
+        {actions.dialogs}
         {schema.isLoading || records.isLoading ? (
           <Loading />
         ) : schema.error || records.error ? (
@@ -260,6 +280,10 @@ function ManySection({ parent, record, relation }: SectionProps) {
                         <Button size="sm" variant="ghost" aria-label={`${t("relation.editLink")}: ${row.title ?? row.key}`} onClick={() => setEditing(row.key)}>
                           <Pencil />
                         </Button>
+                      )}
+                      {!paused && !row.trashed && schema.data && !compatibility(schema.data).readOnly && (
+                        <RecordActions actions={schema.data?.table.actions ?? []} record={row} disabled={actions.pending || records.isPlaceholderData}
+                          onStart={(action) => actions.start(action, [row.key])} />
                       )}
                       {row.abilities.view && (
                         <Link to="/r/$slug/records/$key" params={{ slug: relation.resource, key: row.key }} className="underline">
