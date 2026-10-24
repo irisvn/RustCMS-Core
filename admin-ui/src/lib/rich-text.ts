@@ -92,28 +92,44 @@ export function embedUrl(embed: Embed): string {
 /** Provider names as shown. */
 export const EMBED_NAMES: Record<EmbedProvider, string> = { youtube: "YouTube", vimeo: "Vimeo" };
 
+/** Unicode `White_Space` (Rust's `char::is_whitespace`; unlike `\s`, not U+FEFF), trimmed as `str::trim` does. */
+const WHITE = "\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+/** `White_Space` or a control (`char::is_control`). */
+const SPACE_OR_CONTROL = new RegExp(`[${WHITE}\\u0000-\\u001f\\u007f-\\u009f]`);
+const EDGES = new RegExp(`^[${WHITE}]+|[${WHITE}]+$`, "g");
+
 /**
  * The embed a pasted address points to, from an allowlist of hosts and
  * paths (YouTube, Vimeo), or null. Only the provider and the id are kept.
- * The server applies the same rule (`rustcms_admin::rich_text::Embed::from_url`).
+ * A port of the server's rule (`rustcms_admin::rich_text::Embed::from_url`),
+ * part by part, so both accept the same addresses: the address is read as
+ * written, never normalized or decoded (`new URL` would drop a default port,
+ * decode escapes, turn a backslash into `/` and resolve `..`). An escape, a
+ * backslash or a dot segment is refused where it is read (the authority, the
+ * path parts, the id) by the host and id checks, and ignored elsewhere.
  */
 export function parseEmbedUrl(input: string): Embed | null {
-  let url: URL;
-  try {
-    url = new URL(input.trim());
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-  if (url.username || url.password || url.port) return null;
-  const host = url.hostname.toLowerCase().replace(/^(www|m|mobile)\./, "");
-  const parts = url.pathname.split("/").filter(Boolean);
+  const raw = input.replace(EDGES, "");
+  const scheme = /^https?:\/\//i.exec(raw);
+  if (!scheme || SPACE_OR_CONTROL.test(raw)) return null;
+  const rest = raw.slice(scheme[0].length);
+  const end = rest.search(/[/?#]/);
+  const authority = end === -1 ? rest : rest.slice(0, end);
+  // No user info, no port (not even the default one).
+  if (/[@:]/.test(authority)) return null;
+  const host = authority.replace(/[A-Z]/g, (c) => c.toLowerCase()).replace(/^(www|m|mobile)\./, "");
+  const target = rest.slice(authority.length).split("#")[0]!;
+  const at = target.indexOf("?");
+  const path = at === -1 ? target : target.slice(0, at);
+  const query = at === -1 ? "" : target.slice(at + 1);
+  const parts = path.split("/").filter(Boolean);
+  const v = query.split("&").find((pair) => pair.startsWith("v="))?.slice(2);
   const pick = (provider: EmbedProvider, id: string | null | undefined): Embed | null =>
     id && validEmbed(provider, id) ? { provider, id } : null;
   switch (host) {
     case "youtube.com":
     case "youtube-nocookie.com":
-      if (parts[0] === "watch" && parts.length === 1) return pick("youtube", url.searchParams.get("v"));
+      if (parts[0] === "watch" && parts.length === 1) return pick("youtube", v);
       if (["embed", "shorts", "live", "v"].includes(parts[0] ?? "") && parts.length === 2) return pick("youtube", parts[1]);
       return null;
     case "youtu.be":
@@ -304,7 +320,20 @@ export function toDocument(editor: DocNode, apiPath: string): RichDocument {
       .filter((c): c is DocNode => c !== null);
   const children = (n: DocNode, inline: boolean) =>
     (n.content ?? []).map((c) => node(c, inline)).filter((c): c is DocNode => c !== null);
-  return { type: "doc", version: 2, content: children(editor, false) };
+  const content = children(editor, false);
+  return { type: "doc", version: needsV2(content) ? 2 : 1, content };
+}
+
+/**
+ * Whether content uses what only version 2 has (tables, embeds, callouts,
+ * image captions and widths). Documents without it are written as version 1,
+ * which 0.9 still reads (a rollback, an older reader of the same database).
+ */
+function needsV2(content: DocNode[]): boolean {
+  return content.some((n) =>
+    ["table", "embed", "callout"].includes(n.type) ||
+    (n.type === "image" && (n.attrs?.caption !== undefined || n.attrs?.width !== undefined)) ||
+    needsV2(n.content ?? []));
 }
 
 /** Stored document → editor JSON (images shown from the panel's media URL). */

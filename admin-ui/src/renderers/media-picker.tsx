@@ -111,18 +111,27 @@ function PickerBody({ onClose, onPick, action, rules }: {
     setChosen((all) => (all.some((c) => c.id === item.id) ? all : rules.multiple ? [...all, item].slice(0, max) : [item]));
   // The queue lives as long as the dialog: switching tabs keeps it running.
   const client = useQueryClient();
+  const panel = usePanel();
+  // The field's limit and the server's: a file refused by either takes no room.
+  const maxBytes = Math.min(rules.maxSize ?? Infinity, panel.data?.uploads?.maxBytes ?? Infinity);
+  const check = (file: File): Text | null =>
+    !accepts(rules.accept, file.type)
+      ? later("media.notAccepted", { file: file.name })
+      : file.size > maxBytes
+        ? later("media.tooLarge", { file: file.name })
+        : null;
   const uploads = useUploads({
     onUploaded: (item) => {
       add(item);
       void client.invalidateQueries({ queryKey: keys.records("media") });
     },
-    check: (file) =>
-      !accepts(rules.accept, file.type)
-        ? later("media.notAccepted", { file: file.name })
-        : rules.maxSize !== undefined && file.size > rules.maxSize
-          ? later("media.tooLarge", { file: file.name })
-          : null,
+    check,
   });
+  // How many more files may be uploaded: what is still free, less every file the
+  // queue still holds (on its way, in but waiting for the ones before it, or a
+  // failure that may be retried). One replaces the other when a single item is chosen.
+  const coming = uploads.uploads.filter((u) => u.status !== "failed" || u.retryable).length;
+  const room = Math.max(0, (rules.multiple ? max - chosen.length : 1) - coming);
   return (
     <div className="flex flex-col gap-4">
       <Tabs value={tab} onValueChange={setTab}>
@@ -137,7 +146,7 @@ function PickerBody({ onClose, onPick, action, rules }: {
         )}
         {access.upload && (
           <TabsContent value="upload">
-            <UploadTab rules={rules} uploads={uploads} />
+            <UploadTab rules={rules} uploads={uploads} room={room} check={check} />
           </TabsContent>
         )}
         {!access.library && !access.upload && <p className="pt-4 text-sm text-muted-foreground">{t("picker.nothing")}</p>}
@@ -190,6 +199,8 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
             if (e.key === "Enter") e.preventDefault();
           }} />
       </div>
+      {/* The first page only: later ones keep the previous rows (marked busy) while they load. */}
+      {records.isLoading && <p role="status" className="text-sm text-muted-foreground">{t("picker.loading")}</p>}
       {records.isError && <p role="alert" className="text-sm text-destructive">{t("picker.failed")}</p>}
       {records.data && items.length === 0 && <p className="text-sm text-muted-foreground">{t("picker.empty")}</p>}
       {items.length > 0 && (
@@ -239,11 +250,26 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
   );
 }
 
-function UploadTab({ rules, uploads }: { rules: PickerRules; uploads: ReturnType<typeof useUploads> }) {
+function UploadTab({ rules, uploads, room, check }: {
+  rules: PickerRules;
+  uploads: ReturnType<typeof useUploads>;
+  /** How many more files may be chosen. */
+  room: number;
+  check: (file: File) => Text | null;
+}) {
   const t = useT();
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
+  // Files past what can still be chosen are not sent: how many could be, when some were left out.
+  const [refused, setRefused] = useState<number | null>(null);
+  const take = (files: File[]) => {
+    let left = room;
+    // Files refused anyway (type, size) are listed with their message; they take no place.
+    const taken = files.filter((file) => check(file) !== null || left-- > 0);
+    setRefused(taken.length < files.length ? room : null);
+    uploads.add(taken);
+  };
   return (
     <div className="flex flex-col gap-3">
       <div
@@ -255,8 +281,7 @@ function UploadTab({ rules, uploads }: { rules: PickerRules; uploads: ReturnType
         onDrop={(e) => {
           e.preventDefault();
           setOver(false);
-          const files = [...e.dataTransfer.files];
-          uploads.add(rules.multiple ? files : files.slice(0, 1));
+          take([...e.dataTransfer.files]);
         }}
         className={cn("flex flex-col items-center gap-2 rounded-md border-2 border-dashed p-6 text-center text-sm", over ? "border-ring bg-muted" : "border-border")}
       >
@@ -266,10 +291,13 @@ function UploadTab({ rules, uploads }: { rules: PickerRules; uploads: ReturnType
           {t("picker.choose")}
         </Button>
         <input ref={input} type="file" hidden multiple={rules.multiple} accept={rules.accept.join(",") || undefined} aria-label={t("picker.choose")} onChange={(e) => {
-          uploads.add([...(e.target.files ?? [])]);
+          take([...(e.target.files ?? [])]);
           e.target.value = "";
         }} />
       </div>
+      <p role="status" className="text-xs text-destructive">
+        {refused === null ? "" : refused === 0 ? t("picker.full") : t("picker.tooMany", { count: refused })}
+      </p>
       <UploadList uploads={uploads.uploads} onRetry={uploads.retry} onDismiss={uploads.dismiss} />
     </div>
   );

@@ -68,11 +68,20 @@ Following "format changes need a new version and a migration path":
 - **Version 1 is a subset of version 2**: no node or attribute changes
   meaning, so v1 documents are read as they are and nothing is migrated.
   `parse` accepts both and refuses v2 parts in a v1 document (a document
-  never claims less than it uses); `rich_text::upgrade(Document) -> Document`
-  (pure) and `upgrade_value` change only `version`. The editor saves v2, so a
-  v1 document becomes v2 the next time it is edited. The schema vocabulary
+  never claims less than it uses); `upgrade_value` changes only `version`.
+  The editor writes the lowest version the content needs (v1 unless it holds
+  a v2 part), so documents edited without v2 parts stay readable by 0.9
+  (rollbacks, older readers of the same database). The schema vocabulary
   (`VOCABULARY_VERSION`) is unchanged: no input, column or filter type
-  changed; the document format has its own version.
+  changed, and the document format has its own version, which older clients
+  already gate on: a 0.9 SPA shows a v2 document read-only and never
+  rewrites it (it requires `version: 1`), so a cached old panel cannot drop
+  nodes it does not know.
+- **Heading ids are bare slugs** (no prefix): frontends rendering several
+  documents on one page, or with their own ids (`comments`, `main`), must
+  prefix or scope them; ids may start with a digit (`CSS.escape` them in
+  selectors). Repeats are numbered in linear time (each base remembers its
+  last suffix).
 - **Embeds without third parties in the panel**: the panel shows a card (the
   provider and its page), never an iframe or a remote thumbnail, so the CSP
   is unchanged. `to_html` writes a plain link inside

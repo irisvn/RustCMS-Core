@@ -53,7 +53,8 @@ describe("documents", () => {
     };
     expect(toDocument(editor, API)).toEqual({
       type: "doc",
-      version: 2,
+      // Only version 1 nodes: written as version 1.
+      version: 1,
       content: [
         { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "T" }] },
         { type: "paragraph", content: [
@@ -185,7 +186,8 @@ describe("rich editor", () => {
     await userEvent.click(box);
     await userEvent.keyboard("Hello");
     await waitFor(() => expect(emitted).not.toBe(""));
-    expect(JSON.parse(emitted)).toEqual({ type: "doc", version: 2, content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }] });
+    // Nothing only version 2 has: written as version 1 (0.9 still reads it).
+    expect(JSON.parse(emitted)).toEqual({ type: "doc", version: 1, content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }] });
     expect(screen.getByRole("toolbar", { name: "Body formatting" })).toBeInTheDocument();
   });
 

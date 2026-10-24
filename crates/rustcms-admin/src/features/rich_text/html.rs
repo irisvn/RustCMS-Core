@@ -21,6 +21,7 @@ pub(super) fn escape(text: &str) -> String {
 /// known (the media row's `width` and `height`), so the browser reserves its
 /// space before it loads.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ImageInfo {
     /// The image's URL (escaped when written).
     pub url: String,

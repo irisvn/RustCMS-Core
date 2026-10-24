@@ -135,8 +135,11 @@ image details, tables and embeds.
   choose images or upload several at once. Image files dropped on the
   editor or pasted into it are uploaded too; pasted HTML images that are not
   this panel's media (another site's, `data:` URLs) are dropped. Each file
-  shows its status, its error and a retry (the same `Idempotency-Key`); at
-  most `max_concurrent_uploads` are sent at a time, files over
+  shows its status, its error and a retry (the same `Idempotency-Key`); each
+  upload list sends at most 2 at a time (never more than
+  `max_concurrent_uploads`, a limit shared by every user of the server), a
+  file refused because the server is busy (429) is sent again by itself
+  after `Retry-After`, up to 3 times, files over
   `max_upload_bytes` are refused before sending, and the record cannot be
   saved while an upload is pending. Images go after the block holding the
   cursor, in the order they were added. *Image details* (with an image
@@ -145,7 +148,7 @@ image details, tables and embeds.
   table, a second toolbar adds and removes rows and columns (within 50 × 20)
   and toggles the header row.
 - **Embeds**: paste a YouTube (`watch?v=`, `youtu.be/`, `embed/`, `shorts/`,
-  `live/`) or Vimeo (`vimeo.com/123`, `player.vimeo.com/video/123`)
+  `live/`, `v/`; `www.`, `m.`, `mobile.` and `youtube-nocookie.com` hosts) or Vimeo (`vimeo.com/123`, `player.vimeo.com/video/123`)
   address; only the provider and the id are kept (an unlisted Vimeo video's
   hash is not). The server parses addresses with the same allowlist
   (`rich_text::Embed::from_url`, e.g. for importers). The panel shows a text
@@ -210,9 +213,9 @@ let toc = rich_text::outline(&doc);                        // [Heading { level, 
   rule alone;
 - images: `<figure data-width="wide"><img src="…" width="800" height="600"
   alt="…"><figcaption>…</figcaption></figure>` (`data-width` only for `wide`
-  and `full`, `width`/`height` only when the callback returns both, no
-  `figcaption` without a caption); images whose callback returns `None` are
-  left out;
+  and `full`, `width`/`height` only when the `ImageInfo` has both, no
+  `figcaption` without a caption); images missing from the map (or whose
+  `to_html` callback returns `None`) are left out;
 - tables: `<table><thead><tr><th>…</th></tr></thead><tbody>…</tbody></table>`;
 - embeds, a plain link:
 
@@ -229,11 +232,13 @@ let toc = rich_text::outline(&doc);                        // [Heading { level, 
 
 No attribute outside this closed set is written. `to_html(&doc, &|id|
 Some(url))` keeps its 0.9 signature (figures without sizes).
-`rich_text::upgrade(doc) -> Document` is pure and changes only `version`
-(version 1 is a subset); `rich_text::upgrade_value(&value)` does the same on
-stored JSON, for applications that want to rewrite stored documents. Neither
-is needed to read them: the editor writes version 2 the next time a
-document is edited.
+`rich_text::upgrade_value(&value)` rewrites a stored version 1 document as
+version 2 (only `version` changes: version 1 is a subset), for applications
+that want to rewrite stored documents. It is never needed to read them. The
+editor writes the lowest version a document needs: version 1 unless it holds
+a table, an embed, a callout, or an image with a caption or a width, so
+documents edited without those stay readable by 0.9 (a rollback, an older
+reader of the same database).
 
 ## Limits and operations
 

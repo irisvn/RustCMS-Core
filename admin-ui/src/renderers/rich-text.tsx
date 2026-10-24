@@ -71,7 +71,11 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   // Files dropped or pasted: their images go after the block where they were added
   // (that position is kept, mapped through later changes, until they are in).
   const addFiles = useRef((files: File[]) => uploads.add(files));
+  // Without the right to upload, files dropped or pasted are ignored (with a message).
+  const [refused, setRefused] = useState(false);
   addFiles.current = (files) => {
+    if (!access.upload) return setRefused(true);
+    setRefused(false);
     // A new batch (nothing else on its way) starts where it is added; one added
     // while another is on its way follows it.
     if ((!pending.current || anchor.current === null) && editor && !editor.isDestroyed) anchor.current = blockEnd(editor.state);
@@ -121,6 +125,7 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
       },
     },
     onUpdate: ({ editor }) => {
+      setRefused(false);
       const doc = toDocument(editor.getJSON() as DocNode, apiPath);
       onChange(nullable && isEmptyDocument(doc) ? "" : JSON.stringify(doc));
     },
@@ -218,6 +223,8 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   };
   const s = state;
   const table = s?.table ?? null;
+  // Table cells and callouts hold paragraphs (and lists) only: no rule, table or embed there.
+  const contained = !!table || !!s?.callout;
   return (
     <div className="min-w-0">
       <div role="toolbar" aria-label={t("rich.toolbar", { field: label })} className="flex flex-wrap gap-1 rounded-t-md border border-border bg-muted/40 p-1">
@@ -231,15 +238,14 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         {tool(t("rich.numbers"), <ListOrdered />, !!s?.orderedList, () => chain().toggleOrderedList().run())}
         {tool(t("rich.quote"), <Quote />, !!s?.blockquote, () => chain().toggleBlockquote().run())}
         {tool(t("rich.code"), <Code />, !!s?.codeBlock, () => chain().toggleCodeBlock().run())}
-        {tool(t("rich.rule"), <Minus />, false, () => chain().setHorizontalRule().run())}
+        {tool(t("rich.rule"), <Minus />, false, () => chain().setHorizontalRule().run(), contained)}
         {tool(t("rich.calloutInfo"), <Info />, s?.callout === "info", () => chain().toggleCallout("info").run())}
         {tool(t("rich.calloutWarn"), <TriangleAlert />, s?.callout === "warn", () => chain().toggleCallout("warn").run())}
         {tool(t("rich.link"), <Link />, !!s?.marks.link, link)}
         {tool(t("rich.image"), <ImagePlus />, false, () => setPicking(true), !access.library && !access.upload)}
         {tool(t("rich.imageDetails"), <Settings2 />, false, describe, !s?.image)}
-        {/* No table in a table or a callout (documents refuse both). */}
-        {tool(t("rich.table"), <TableIcon />, false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), !!table || !!s?.callout)}
-        {tool(t("rich.embed"), <Video />, false, () => setEmbedding(true))}
+        {tool(t("rich.table"), <TableIcon />, false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), contained)}
+        {tool(t("rich.embed"), <Video />, false, () => setEmbedding(true), contained)}
       </div>
       {table && (
         <div role="toolbar" aria-label={t("rich.tableTools")} className="flex flex-wrap items-center gap-1 border border-t-0 border-border bg-muted/20 p-1">
@@ -260,6 +266,7 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         if (files.length === 0 || disabled || !editor) return;
         e.preventDefault();
         e.stopPropagation();
+        if (!access.upload) return setRefused(true);
         // The images go where the files were dropped.
         const at = editor.view.posAtCoords({ left: e.clientX, top: e.clientY });
         if (at) editor.view.dispatch(editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(at.pos))));
@@ -267,6 +274,7 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
       }}>
         <EditorContent editor={editor} />
       </div>
+      <p role="status" className="text-xs text-destructive">{refused ? t("rich.uploadRefused") : ""}</p>
       <UploadList uploads={uploads.uploads} onRetry={uploads.retry} onDismiss={uploads.dismiss} disabled={disabled} />
       <LinkDialog state={linking} onClose={() => {
         setLinking(null);

@@ -25,7 +25,7 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 
 | Method | Path | Response |
 |---|---|---|
-| GET | `/panel` | `PanelResponse` `{brand, user, navigation: [ResourceInfo], system, settings, pages, home?, permissions}`: resources with `view_any` (hidden ones too, `nav: false`; optional `sort`), settings pages with `view`, custom pages the user may open (optional `sort`), the home page's slug when the user may open it, the declared admin permissions the user holds |
+| GET | `/panel` | `PanelResponse` `{brand, user, navigation: [ResourceInfo], system, settings, pages, home?, permissions, uploads?}`: resources with `view_any` (hidden ones too, `nav: false`; optional `sort`), settings pages with `view`, custom pages the user may open (optional `sort`), the home page's slug when the user may open it, the declared admin permissions the user holds, and `uploads` (`{maxBytes, maxConcurrent}`) when the media library is enabled and the user has `media.create` |
 | GET | `/resources/{slug}/schema?operation=create\|edit\|view&key=` | `ResourceSchema` for this user |
 | GET | `/resources/{slug}/records?…` | `{data: [Envelope], meta}` |
 | POST | `/resources/{slug}/records` | 201 `{data: Envelope}` |

@@ -32,33 +32,37 @@ export const RichImage = Image.extend<{ apiPath: string; inline: boolean; allowB
   addOptions() {
     return { ...this.parent!(), apiPath: "", resize: false as const };
   },
+  // TipTap reads each attribute from the parsed element (its `parseHTML`, else
+  // the element's attribute of the same name) over what `getAttrs` returns: each
+  // one reads only its checked source, never a pasted figure's own `src` or `size`.
   addAttributes() {
+    const img = (el: HTMLElement) => (el.tagName === "IMG" ? el : el.querySelector("img"));
+    const figure = (el: HTMLElement) => (el.tagName === "FIGURE" ? el : null);
     return {
-      src: { default: null },
-      alt: { default: "" },
-      caption: { default: "" },
-      size: { default: "normal" },
+      src: {
+        default: null,
+        parseHTML: (el: HTMLElement) => {
+          const src = img(el)?.getAttribute("src") ?? null;
+          return mediaIdOf(this.options.apiPath, src) !== null ? src : null;
+        },
+      },
+      alt: { default: "", parseHTML: (el: HTMLElement) => img(el)?.getAttribute("alt") ?? "" },
+      caption: { default: "", parseHTML: (el: HTMLElement) => figure(el)?.querySelector("figcaption")?.textContent ?? "" },
+      size: {
+        default: "normal",
+        parseHTML: (el: HTMLElement) => {
+          const size = figure(el)?.getAttribute("data-width");
+          return IMAGE_WIDTHS.includes(size as ImageWidth) ? size : "normal";
+        },
+      },
     };
   },
   parseHTML() {
-    const ours = (src: string | null) => mediaIdOf(this.options.apiPath, src) !== null;
+    // Only images of this panel's media URLs (the attributes above read the rest).
+    const ours = (el: HTMLElement) => mediaIdOf(this.options.apiPath, (el.tagName === "IMG" ? el : el.querySelector("img"))?.getAttribute("src")) !== null;
     return [
-      {
-        tag: "figure[data-rich-image]",
-        getAttrs: (el) => {
-          const img = el.querySelector("img");
-          const src = img?.getAttribute("src") ?? null;
-          if (!ours(src)) return false;
-          const size = el.getAttribute("data-width");
-          return {
-            src,
-            alt: img?.getAttribute("alt") ?? "",
-            caption: el.querySelector("figcaption")?.textContent ?? "",
-            size: IMAGE_WIDTHS.includes(size as ImageWidth) ? size : "normal",
-          };
-        },
-      },
-      { tag: "img[src]", getAttrs: (el) => (ours(el.getAttribute("src")) ? { src: el.getAttribute("src"), alt: el.getAttribute("alt") ?? "" } : false) },
+      { tag: "figure[data-rich-image]", getAttrs: (el) => (ours(el) ? null : false) },
+      { tag: "img[src]", getAttrs: (el) => (ours(el) ? null : false) },
     ];
   },
   renderHTML({ node }) {

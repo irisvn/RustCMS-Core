@@ -17,8 +17,9 @@
 //!
 //! Versions: version 1 (0.2–0.9) is a subset of version 2 (0.10). Both are
 //! read as they are; tables, embeds, callouts, image captions and image
-//! widths are only valid in version 2. [`upgrade`] turns a version 1
-//! document into the same document in version 2 (only the version changes).
+//! widths are only valid in version 2. [`upgrade_value`] turns a stored
+//! version 1 document into the same document in version 2 (only the version
+//! changes).
 
 mod html;
 mod outline;
@@ -154,7 +155,8 @@ impl Embed {
     }
 
     /// The embed an address points to, from an allowlist of hosts and paths,
-    /// or `None` (the same rule as the panel's editor):
+    /// or `None` (the same allowlist as the panel's editor, which also refuses
+    /// what this refuses):
     /// `youtube.com/watch?v=ID` (also `www.`, `m.`, `youtube-nocookie.com`),
     /// `youtube.com/{embed,shorts,live,v}/ID`, `youtu.be/ID`,
     /// `vimeo.com/ID` (and `vimeo.com/ID/hash`, the hash not kept),
@@ -324,15 +326,10 @@ pub fn media_ids(doc: &Document) -> Vec<uuid::Uuid> {
     out
 }
 
-/// The same document in the current format [`VERSION`] (pure). Version 1 is
-/// a subset of version 2: no node or attribute changes shape, so only the
-/// version number changes.
-pub fn upgrade(doc: Document) -> Document {
-    Document { version: VERSION, ..doc }
-}
-
-/// [`upgrade`] on a stored value, for rewriting stored documents: a version 1
-/// document comes back as version 2 (only `version` changes); anything else
+/// A stored value in the current format [`VERSION`], for rewriting stored
+/// documents: version 1 is a subset of version 2 (no node or attribute
+/// changes shape), so a version 1 document comes back as version 2 with only
+/// `version` changed; anything else
 /// (a current document, a value that is not a document) as it is. It does not
 /// validate: [`parse`] the result.
 pub fn upgrade_value(value: &Value) -> Value {

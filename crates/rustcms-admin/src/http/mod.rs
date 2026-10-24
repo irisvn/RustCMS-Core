@@ -66,6 +66,7 @@ pub struct PanelResponse {
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct PanelUploads {
     /// Largest accepted file, in bytes (`max_upload_bytes`).
     #[cfg_attr(feature = "ts", ts(type = "number"))]

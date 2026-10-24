@@ -559,4 +559,16 @@ db_test!(rich_text_is_a_validated_document_with_visible_images, |db: TestDb| asy
         let err = notes.create(&writer, data(json!({"title": title, "body": value}))).await.unwrap_err();
         assert_eq!(field_errors(err), ["body"], "{title}");
     }
+    // Images deep in a callout (callout → list → item) follow the same rules.
+    let nested = |media: &str| {
+        let item = json!({"type": "listItem", "content": [{"type": "image", "attrs": {"media": media, "alt": "x"}}]});
+        json!({"type": "doc", "version": 2, "content": [
+            {"type": "callout", "attrs": {"tone": "warn"}, "content": [{"type": "bulletList", "content": [item]}]}
+        ]})
+    };
+    notes.create(&writer, data(json!({"title": "Nested", "body": nested(&image)}))).await.unwrap();
+    for (title, media) in [("nested theirs", &theirs), ("nested pdf", &pdf)] {
+        let err = notes.create(&writer, data(json!({"title": title, "body": nested(media)}))).await.unwrap_err();
+        assert_eq!(field_errors(err), ["body"], "{title}");
+    }
 });

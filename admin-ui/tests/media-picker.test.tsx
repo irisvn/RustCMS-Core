@@ -19,16 +19,33 @@ const idOf = (n: number) => `0199d3a4-1b2c-7d3e-8f40-${String(n).padStart(12, "0
 
 interface Row { n: number; name: string; mime: string; size: number }
 
-/** The library: `rows` in scope, 24 a page; records every list query. */
-function library(rows: Row[], { permissions = ["media.view_any", "media.view", "media.create"], uploads = true } = {}) {
+/**
+ * The library: `rows` in scope, 24 a page; records every list query (answered
+ * once `hold` resolves) and every upload (stored at once, or refused with
+ * 429 the first `busy[name]` times).
+ */
+function library(rows: Row[], { permissions = ["media.view_any", "media.view", "media.create"], uploads = true, hold = Promise.resolve(), busy = {} as Record<string, number> } = {}) {
   const queries: URLSearchParams[] = [];
-  vi.stubGlobal("fetch", async (url: string) => {
+  const sent: string[] = [];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     const u = new URL(url, "http://localhost");
     if (u.pathname.endsWith("/panel")) {
       return json({ brand: "x", user: { id: "1", name: "a", email: "a@b.c" }, navigation: [], system: {}, settings: [], pages: [], permissions, ...(uploads ? { uploads: { maxBytes: 1000, maxConcurrent: 2 } } : {}) });
     }
+    if (u.pathname.endsWith("/auth/csrf")) return json({ csrfToken: "t", userId: "1" });
+    if (u.pathname.endsWith("/media") && init?.method === "POST") {
+      const file = (init.body as FormData).get("file") as File;
+      sent.push(file.name);
+      // The server's upload limit is reached: try again in a second.
+      if ((busy[file.name] ?? 0) > 0) {
+        busy[file.name]! -= 1;
+        return new Response(null, { status: 429, headers: { "Retry-After": "1" } });
+      }
+      return json({ data: { id: idOf(100 + sent.length), name: file.name, mime: file.type, size: file.size, inline: true } }, 201);
+    }
     if (u.pathname.endsWith("/resources/media/records")) {
       queries.push(u.searchParams);
+      await hold;
       const search = u.searchParams.get("search") ?? "";
       const mimes = u.searchParams.get("filter[mime][in]")?.split(",");
       const page = Number(u.searchParams.get("page"));
@@ -42,7 +59,7 @@ function library(rows: Row[], { permissions = ["media.view_any", "media.view", "
     }
     throw new Error(`unexpected ${url}`);
   });
-  return { queries };
+  return { queries, sent };
 }
 
 const input = (media: InputSchema["media"]): InputSchema => ({
@@ -158,6 +175,87 @@ describe("media library picker", () => {
     expect(within(items).getByRole("button", { name: /b\.pdf/ })).toHaveAttribute("aria-pressed", "false");
     await userEvent.click(within(dialog).getByRole("button", { name: "Dùng" }));
     await waitFor(() => expect(value()).toBe(idOf(1)));
+  });
+
+  it("says the library is loading until its first page is in", async () => {
+    let release = () => {};
+    library([{ n: 1, name: "a.png", mime: "image/png", size: 100 }], { hold: new Promise<void>((r) => (release = r)) });
+    render(<Field media={{ multiple: true, maxItems: 3, accept: ["image/*"] }} initial={[]} />);
+    const open = await screen.findByRole("button", { name: "Media library" });
+    await waitFor(() => expect(open).toBeEnabled());
+    await userEvent.click(open);
+    const dialog = await screen.findByRole("dialog", { name: "Gallery" });
+    expect(await within(dialog).findByRole("status")).toHaveTextContent("Loading the media library…");
+    expect(within(dialog).queryByText("No files.")).toBeNull();
+    release();
+    await within(dialog).findByRole("list", { name: "Files" });
+    expect(within(dialog).queryByText("Loading the media library…")).toBeNull();
+  });
+
+  it("uploads no more files than can still be chosen, and says so", async () => {
+    const { sent } = library([]);
+    // Three at most, one used: two more.
+    render(<Field media={{ multiple: true, maxItems: 3, accept: ["image/*"] }} initial={[idOf(4)]} />);
+    const open = await screen.findByRole("button", { name: "Media library" });
+    await waitFor(() => expect(open).toBeEnabled());
+    await userEvent.click(open);
+    const dialog = await screen.findByRole("dialog", { name: "Gallery" });
+    await userEvent.click(within(dialog).getByRole("tab", { name: "Upload" }));
+    const picker = dialog.querySelector("input[type=file]") as HTMLInputElement;
+    const png = (name: string) => new File(["x"], name, { type: "image/png" });
+    const pdf = new File(["%PDF"], "doc.pdf", { type: "application/pdf" });
+    // The refused PDF takes no place; the third image is left out.
+    await userEvent.upload(picker, [png("p1.png"), pdf, png("p2.png"), png("p3.png")], { applyAccept: false });
+    expect(within(dialog).getByText("Only 2 more files can be chosen: the others were not added.")).toBeInTheDocument();
+    expect(within(dialog).getByText("doc.pdf: this kind of file is not accepted.")).toBeInTheDocument();
+    await within(dialog).findByText("2 of at most 2 chosen");
+    expect(sent).toEqual(["p1.png", "p2.png"]);
+    // Full: nothing more is sent.
+    await userEvent.upload(picker, [png("p4.png")]);
+    expect(within(dialog).getByText("No more files can be chosen: they were not added.")).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(sent).toEqual(["p1.png", "p2.png"]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Use" }));
+    await waitFor(() => expect(value()).toEqual([idOf(4), idOf(101), idOf(102)]));
+  });
+
+  it("keeps room for files in but held back for the ones before them", async () => {
+    const { sent } = library([], { busy: { "a.png": 1 } });
+    render(<Field media={{ multiple: true, maxItems: 2, accept: ["image/*"] }} initial={[]} />);
+    const open = await screen.findByRole("button", { name: "Media library" });
+    await waitFor(() => expect(open).toBeEnabled());
+    await userEvent.click(open);
+    const dialog = await screen.findByRole("dialog", { name: "Gallery" });
+    await userEvent.click(within(dialog).getByRole("tab", { name: "Upload" }));
+    const picker = dialog.querySelector("input[type=file]") as HTMLInputElement;
+    const png = (name: string) => new File(["x"], name, { type: "image/png" });
+    // a.png waits for its retry; b.png is in, held back until a.png is.
+    await userEvent.upload(picker, [png("a.png"), png("b.png")]);
+    await within(dialog).findByText("The server is busy: trying again in 1 s…");
+    await waitFor(() => expect(sent).toEqual(["a.png", "b.png"]));
+    await userEvent.upload(picker, [png("c.png")]);
+    expect(within(dialog).getByText("No more files can be chosen: they were not added.")).toBeInTheDocument();
+    await within(dialog).findByText("2 of at most 2 chosen");
+    expect(sent).toEqual(["a.png", "b.png", "a.png"]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Use" }));
+    await waitFor(() => expect(value()).toEqual([idOf(103), idOf(102)]));
+  });
+
+  it("gives no room to a file over the server's size limit", async () => {
+    const { sent } = library([]);
+    // One more at most; the server takes 1,000 bytes at most (the field sets no size).
+    render(<Field media={{ multiple: true, maxItems: 2, accept: ["image/*"] }} initial={[idOf(4)]} />);
+    const open = await screen.findByRole("button", { name: "Media library" });
+    await waitFor(() => expect(open).toBeEnabled());
+    await userEvent.click(open);
+    const dialog = await screen.findByRole("dialog", { name: "Gallery" });
+    await userEvent.click(within(dialog).getByRole("tab", { name: "Upload" }));
+    const picker = dialog.querySelector("input[type=file]") as HTMLInputElement;
+    await userEvent.upload(picker, [new File(["x".repeat(2000)], "big.png", { type: "image/png" }), new File(["x"], "small.png", { type: "image/png" })]);
+    expect(within(dialog).getByText("big.png is too large.")).toBeInTheDocument();
+    expect(within(dialog).queryByText(/can be chosen/)).toBeNull();
+    await within(dialog).findByText("1 of at most 1 chosen");
+    expect(sent).toEqual(["small.png"]);
   });
 
   it("offers what the user may: the library with media.view_any, uploads with media.create", async () => {

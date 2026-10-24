@@ -1,6 +1,6 @@
 //! Headings: stable ids and the document's outline (a table of contents).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use unicode_normalization::UnicodeNormalization;
 
@@ -11,6 +11,7 @@ pub const MAX_SLUG: usize = 80;
 
 /// A heading of the document, in document order.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Heading {
     /// 2 to 4.
     pub level: u8,
@@ -26,6 +27,9 @@ pub struct Heading {
 /// texts and order, so they stay the same across renders.
 pub fn outline(doc: &Document) -> Vec<Heading> {
     let mut used = HashSet::new();
+    // The last suffix tried for each base: every smaller one is taken (the
+    // set only grows), so repeats cost the same however many there are.
+    let mut next: HashMap<String, usize> = HashMap::new();
     let mut out = Vec::new();
     walk(&doc.content, &mut |node| {
         let Node::Heading(level, children) = node else { return };
@@ -37,10 +41,10 @@ pub fn outline(doc: &Document) -> Vec<Heading> {
         });
         let text = text.trim().to_owned();
         let base = Some(slug(&text)).filter(|s| !s.is_empty()).unwrap_or_else(|| "section".to_owned());
-        let mut id = base.clone();
-        let mut n = 1;
+        let n = next.entry(base.clone()).or_insert(1);
+        let mut id = if *n == 1 { base.clone() } else { format!("{base}-{n}") };
         while !used.insert(id.clone()) {
-            n += 1;
+            *n += 1;
             id = format!("{base}-{n}");
         }
         out.push(Heading { level: *level, text, id });

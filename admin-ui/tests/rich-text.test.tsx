@@ -171,6 +171,32 @@ describe("embed addresses", () => {
       "not a url",
     ]) expect(parseEmbedUrl(url), url).toBeNull();
   });
+
+  it("read the address as written, refusing what the server refuses (no normalization)", () => {
+    for (const url of [
+      // A default port, an escape that decodes to a valid id, a tab, a backslash, a dot segment, user info.
+      "https://youtu.be:443/dQw4w9WgXcQ",
+      "https://www.youtube.com/watch?v=dQw4w9WgXc%51",
+      "https://www.youtube.com/watch?v=dQw4w9\tWgXcQ",
+      "https://youtu.be\\dQw4w9WgXcQ",
+      "https://youtu.be/x/../dQw4w9WgXcQ",
+      "https://youtu.be/./dQw4w9WgXcQ",
+      "https://user@youtu.be/dQw4w9WgXcQ",
+      "https://youtu.be:/dQw4w9WgXcQ",
+    ]) expect(parseEmbedUrl(url), url).toBeNull();
+    // A leading U+FEFF is not trimmed (not Unicode White_Space, as for the server).
+    expect(parseEmbedUrl("\uFEFFhttps://youtu.be/dQw4w9WgXcQ")).toBeNull();
+    // Case-insensitive scheme and host, as the server reads them.
+    expect(parseEmbedUrl("HTTPS://YOUTU.BE/dQw4w9WgXcQ#t=1")).toEqual({ provider: "youtube", id: "dQw4w9WgXcQ" });
+    // What the server does not read is not checked: escapes elsewhere in the query, a Vimeo hash, a fragment.
+    for (const [url, embed] of [
+      ["https://youtu.be/dQw4w9WgXcQ?next=%2F", { provider: "youtube", id: "dQw4w9WgXcQ" }],
+      ["https://www.youtube.com/watch?x=%41&v=dQw4w9WgXcQ", { provider: "youtube", id: "dQw4w9WgXcQ" }],
+      ["https://vimeo.com/76979871/%41b", { provider: "vimeo", id: "76979871" }],
+      ["https://youtu.be/dQw4w9WgXcQ#a\\b%", { provider: "youtube", id: "dQw4w9WgXcQ" }],
+      ["\u00a0https://youtu.be/dQw4w9WgXcQ\n", { provider: "youtube", id: "dQw4w9WgXcQ" }],
+    ] as const) expect(parseEmbedUrl(url), url).toEqual(embed);
+  });
 });
 
 describe("rich editor (version 2)", () => {
@@ -194,6 +220,8 @@ describe("rich editor (version 2)", () => {
     expect(doc()!.version).toBe(2);
     await userEvent.click(within(tools).getByRole("button", { name: "Remove table" }));
     await waitFor(() => expect(doc()!.content.some((n) => n.type === "table")).toBe(false));
+    // Without the table, nothing needs version 2 any more.
+    expect(doc()!.version).toBe(1);
     expect(screen.queryByRole("toolbar", { name: "Table" })).toBeNull();
   });
 
@@ -297,6 +325,20 @@ describe("rich editor (version 2)", () => {
     expect(box.querySelector("img")!.getAttribute("src")).toBe(SRC);
   });
 
+  it("reads a pasted figure's image from its checked parts only, never the figure's own attributes", async () => {
+    const { box, doc } = await editorOn(null);
+    // The figure's `src`, `alt`, `caption` and `size` attributes are not ours to read.
+    const html = `<p>Hi</p><figure data-rich-image src="https://evil.test/x.png" alt="evil" caption="evil" size="full" data-width="huge"><img src="${SRC}"></figure>` +
+      `<figure data-rich-image src="${SRC}"><img src="https://evil.test/y.png"></figure>`;
+    fireEvent.paste(box, { clipboardData: { types: ["text/html", "text/plain"], getData: (type: string) => (type === "text/html" ? html : type === "text/plain" ? "Hi" : "") } });
+    await waitFor(() => expect(doc()?.content.some((n) => n.type === "image")).toBe(true));
+    // The second figure's image is not ours: it is dropped whatever the figure says.
+    expect(doc()!.content.filter((n) => n.type === "image")).toEqual([{ type: "image", attrs: { media: ID, alt: "" } }]);
+    expect(box.querySelectorAll("img")).toHaveLength(1);
+    expect(box.querySelector("img")!.getAttribute("src")).toBe(SRC);
+    expect(box.querySelector("figure")!.getAttribute("data-width")).toBe("normal");
+  });
+
   it("wraps paragraphs in callouts and changes their tone", async () => {
     const { doc } = await editorOn(null);
     await userEvent.keyboard("Note");
@@ -317,6 +359,25 @@ describe("rich editor (version 2)", () => {
     // Unwrapped as a whole: the list stays a list.
     await userEvent.click(screen.getByRole("button", { name: "Info callout" }));
     await waitFor(() => expect(doc()?.content[0]).toEqual({ type: "bulletList", content: [{ type: "listItem", content: [p("Note")] }] }));
+  });
+
+  it("offers no rule, table or embed inside a table cell or a callout", async () => {
+    const callout = { type: "callout", attrs: { tone: "info" }, content: [p("note")] };
+    const table = { type: "table", content: [{ type: "tableRow", content: [cell("tableCell", "x")] }] };
+    const { box } = await editorOn([p("top"), callout, table]);
+    const off = () => ["Horizontal rule", "Insert table", "Embed a video"].map((name) => screen.getByRole("button", { name }).hasAttribute("disabled"));
+    await waitFor(async () => {
+      await userEvent.click(box.querySelector("p")!);
+      expect(off()).toEqual([false, false, false]);
+    });
+    await waitFor(async () => {
+      await userEvent.click(box.querySelector("aside p")!);
+      expect(off()).toEqual([true, true, true]);
+    });
+    await waitFor(async () => {
+      await userEvent.click(box.querySelector("td p")!);
+      expect(off()).toEqual([true, true, true]);
+    });
   });
 
   it("unwraps a callout keeping the selection and the other callouts", async () => {

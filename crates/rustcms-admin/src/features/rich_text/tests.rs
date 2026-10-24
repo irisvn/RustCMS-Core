@@ -72,12 +72,9 @@ fn version_1_is_read_as_it_is_and_is_a_subset_of_version_2() {
     let new = parse(&doc(content.clone())).unwrap();
     assert_eq!((old.version, new.version), (1, 2));
     assert_eq!(old.content, new.content);
-    // `upgrade` changes the version only.
+    // `upgrade_value` changes the version only.
     assert_eq!(upgrade_value(&v1(content.clone())), doc(content.clone()));
     assert_eq!(parse(&upgrade_value(&v1(content.clone()))).unwrap(), new);
-    // `upgrade` on a parsed document: pure, only the version changes.
-    assert_eq!(upgrade(old.clone()), Document { version: 2, ..old.clone() });
-    assert_eq!(upgrade(new.clone()), new);
     for same in
         [doc(content), json!("<p>x</p>"), json!({"type": "doc", "version": 3}), json!({"type": "x", "version": 1})]
     {
@@ -331,6 +328,24 @@ fn headings_get_stable_folded_unique_ids() {
 }
 
 #[test]
+fn repeated_headings_cost_the_same_each() {
+    // Every repeat of a heading starts from its base's last suffix (not from
+    // `-2`), so thousands of identical headings render in linear time; a
+    // literal `a-2` taken before still pushes `a`'s repeat on.
+    let h = |level: u64, t: &str| json!({"type": "heading", "attrs": {"level": level}, "content": [text(t)]});
+    let mut content = vec![h(2, "A 2"), h(2, "A")];
+    content.extend((0..6_000).map(|_| json!({"type": "heading", "attrs": {"level": 2}})));
+    content.push(h(2, "A"));
+    let parsed = parse(&doc(Value::Array(content))).unwrap();
+    let started = std::time::Instant::now();
+    let ids: Vec<String> = outline(&parsed).into_iter().map(|h| h.id).collect();
+    assert!(started.elapsed() < std::time::Duration::from_secs(1), "{:?}", started.elapsed());
+    assert_eq!(&ids[..3], ["a-2", "a", "section"]);
+    assert_eq!(ids[6_001], "section-6000");
+    assert_eq!(ids[6_002], "a-3");
+}
+
+#[test]
 fn documents_are_bounded() {
     let many: Vec<Value> = (0..10_001).map(|_| json!({"type": "horizontalRule"})).collect();
     assert!(parse(&doc(Value::Array(many))).is_err());
@@ -371,11 +386,17 @@ fn documents_are_bounded() {
     }
     assert_eq!(parse(&doc(json!([nested]))).unwrap_err().0, "is nested too deeply");
 
-    // Embeds and images are counted.
+    // Embeds and images are counted: the bound is accepted, one more refused.
+    let embeds: Vec<Value> = (0..MAX_EMBEDS).map(|_| embed("vimeo", "1")).collect();
+    assert!(parse(&doc(Value::Array(embeds))).is_ok());
     let embeds: Vec<Value> = (0..=MAX_EMBEDS).map(|_| embed("vimeo", "1")).collect();
     assert_eq!(parse(&doc(Value::Array(embeds))).unwrap_err().0, format!("may not have more than {MAX_EMBEDS} embeds"));
+    let images: Vec<Value> = (0..MAX_IMAGES).map(|_| json!({"type": "image", "attrs": {"media": MEDIA}})).collect();
+    assert!(parse(&doc(Value::Array(images))).is_ok());
     let images: Vec<Value> = (0..=MAX_IMAGES).map(|_| json!({"type": "image", "attrs": {"media": MEDIA}})).collect();
     assert!(parse(&doc(Value::Array(images))).is_err());
+    let caption = json!([{"type": "image", "attrs": {"media": MEDIA, "caption": "ư".repeat(MAX_CAPTION)}}]);
+    assert!(parse(&doc(caption)).is_ok(), "the bound counts characters, not bytes");
 }
 
 #[test]
