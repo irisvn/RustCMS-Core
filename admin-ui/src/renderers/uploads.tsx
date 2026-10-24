@@ -43,6 +43,8 @@ export interface Upload {
   /** Its outcome is unknown: the form waits until it is retried or dismissed. */
   uncertain: boolean;
   item?: MediaItem;
+  /** The session epoch it was added in: never sent in another one. */
+  epoch: number;
 }
 
 /** Whether a failure may succeed when sent again (with the same key). */
@@ -77,11 +79,21 @@ export function useUploads({ onUploaded, check }: { onUploaded: (item: MediaItem
     if (mounted.current) setUploads((all) => all.map((u) => (u.id === id ? { ...u, ...change } : u)));
   }, []);
 
+  // A new session (sign-out, another account): files not sent yet are not sent.
+  useEffect(() => session.api.onEpochChange(() => {
+    if (!mounted.current) return;
+    setUploads((all) => all.map((u) => (u.status === "queued" ? { ...u, status: "failed", error: later("error.sessionChanged"), retryable: false } : u)));
+  }), [session.api]);
+
   // Start queued files while there is room.
   useEffect(() => {
     const running = uploads.filter((u) => u.status === "uploading").length;
     const next = uploads.filter((u) => u.status === "queued").slice(0, Math.max(0, concurrency - running));
     for (const upload of next) {
+      if (upload.epoch !== session.api.epoch) {
+        patch(upload.id, { status: "failed", error: later("error.sessionChanged"), retryable: false });
+        continue;
+      }
       patch(upload.id, { status: "uploading", error: undefined });
       uploadMedia(session.api, upload.file, upload.key).then(
         (item) => patch(upload.id, { status: "done", item, retryable: false, uncertain: false }),
@@ -113,13 +125,14 @@ export function useUploads({ onUploaded, check }: { onUploaded: (item: MediaItem
   const add = useCallback((files: Iterable<File>) => {
     const added: Upload[] = [];
     for (const file of files) {
-      const base = { id: crypto.randomUUID(), file, key: crypto.randomUUID(), retryable: false, uncertain: false };
+      const base = { id: crypto.randomUUID(), file, key: crypto.randomUUID(), retryable: false, uncertain: false, epoch: session.api.epoch };
       const refused = check?.(file) ?? (maxBytes !== undefined && file.size > maxBytes ? later("media.tooLarge", { file: file.name }) : null);
       added.push(refused ? { ...base, status: "failed", error: refused } : { ...base, status: "queued" });
     }
     if (added.length) setUploads((all) => [...all, ...added]);
-  }, [check, maxBytes]);
-  const retry = useCallback((id: string) => patch(id, { status: "queued", error: undefined }), [patch]);
+  }, [check, maxBytes, session.api]);
+  // A retry belongs to the current session (the same key: the server stores it once).
+  const retry = useCallback((id: string) => patch(id, { status: "queued", error: undefined, epoch: session.api.epoch }), [patch, session.api]);
   const dismiss = useCallback((id: string) => setUploads((all) => all.filter((u) => u.id !== id)), []);
   const busy = uploads.some((u) => u.status === "queued" || u.status === "uploading" || u.uncertain);
   return { uploads, add, retry, dismiss, busy };

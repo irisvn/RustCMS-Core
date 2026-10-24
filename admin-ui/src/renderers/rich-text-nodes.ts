@@ -2,10 +2,12 @@
 // (paragraphs in cells, no spans, no widths), embeds (a provider and an id,
 // shown as a card: no iframe, no third-party image) and callouts. Nothing
 // here renders a `style` attribute or inline script: the CSP allows neither.
-import { Node, mergeAttributes } from "@tiptap/core";
+import { Node, findParentNode, mergeAttributes } from "@tiptap/core";
+import type { EditorState } from "@tiptap/pm/state";
+import { TableMap } from "@tiptap/pm/tables";
 import Image from "@tiptap/extension-image";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
-import { CALLOUT_TONES, EMBED_NAMES, type CalloutTone, IMAGE_WIDTHS, type ImageWidth, embedUrl, mediaIdOf, validEmbed } from "@/lib/rich-text";
+import { CALLOUT_TONES, EMBED_NAMES, type CalloutTone, IMAGE_WIDTHS, type ImageWidth, LIMITS, embedUrl, mediaIdOf, validEmbed } from "@/lib/rich-text";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -72,10 +74,42 @@ export const RichImage = Image.extend<{ apiPath: string; inline: boolean; allowB
   },
 });
 
-/** Tables without inline styles: no column widths, no resizing, no alignment. */
+/** Whether the table at the selection may grow by `rows` and `columns` within the server's limits. */
+function roomFor(state: EditorState, rows: number, columns: number): boolean {
+  const table = findParentNode((n) => n.type.name === "table")(state.selection);
+  if (!table) return true;
+  const map = TableMap.get(table.node);
+  return map.height + rows <= LIMITS.tableRows && map.width + columns <= LIMITS.tableColumns;
+}
+
+/**
+ * Tables without inline styles: no column widths, no resizing, no alignment.
+ * Rows and columns are added within the server's limits on every path (the
+ * toolbar, Tab in the last cell), and the header is the whole first row.
+ */
 export const RichTable = Table.extend({
   addOptions() {
     return { ...this.parent!(), resizable: false, View: null, allowTableNodeSelection: false };
+  },
+  addCommands() {
+    const parent = this.parent!();
+    return {
+      ...parent,
+      addRowBefore: () => (props) => roomFor(props.state, 1, 0) && parent.addRowBefore!()(props),
+      addRowAfter: () => (props) => roomFor(props.state, 1, 0) && parent.addRowAfter!()(props),
+      addColumnBefore: () => (props) => roomFor(props.state, 0, 1) && parent.addColumnBefore!()(props),
+      addColumnAfter: () => (props) => roomFor(props.state, 0, 1) && parent.addColumnAfter!()(props),
+      // The whole first row becomes header cells, or ordinary cells (no header columns in documents).
+      toggleHeaderRow: () => ({ state, tr, dispatch }) => {
+        const table = findParentNode((n) => n.type.name === "table")(state.selection);
+        const first = table?.node.firstChild;
+        if (!table || !first) return false;
+        const header = first.childCount > 0 && [...Array(first.childCount).keys()].every((i) => first.child(i).type.name === "tableHeader");
+        const type = state.schema.nodes[header ? "tableCell" : "tableHeader"]!;
+        if (dispatch) first.forEach((cell, offset) => tr.setNodeMarkup(table.pos + 2 + offset, type, cell.attrs));
+        return true;
+      },
+    };
   },
   renderHTML({ HTMLAttributes }) {
     return ["table", mergeAttributes(HTMLAttributes, { class: "rich-table" }), ["tbody", 0]];

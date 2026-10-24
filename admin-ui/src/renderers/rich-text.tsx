@@ -58,13 +58,25 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   const [embedding, setEmbedding] = useState(false);
   // Images dropped or pasted: inserted in the order they were added, after
   // the selection's block (never replacing it).
+  const anchor = useRef<number | null>(null);
   const insertImages = useRef<(items: MediaItem[], chained: boolean) => void>(() => {});
   const uploads = useUploads({
     onUploaded: (item) => insertImages.current([item], true),
     check: (file) => (file.type.startsWith("image/") ? null : later("rich.imagesOnlyFile", { file: file.name })),
   });
-  const addFiles = useRef(uploads.add);
-  addFiles.current = uploads.add;
+  // Files still queued or uploading (failures left in the list do not count).
+  const sending = uploads.uploads.some((u) => u.status === "queued" || u.status === "uploading");
+  const pending = useRef(sending);
+  pending.current = sending;
+  // Files dropped or pasted: their images go after the block where they were added
+  // (that position is kept, mapped through later changes, until they are in).
+  const addFiles = useRef((files: File[]) => uploads.add(files));
+  addFiles.current = (files) => {
+    // A new batch (nothing else on its way) starts where it is added; one added
+    // while another is on its way follows it.
+    if ((!pending.current || anchor.current === null) && editor && !editor.isDestroyed) anchor.current = blockEnd(editor.state);
+    uploads.add(files);
+  };
   // The form may not save while an upload is pending or its outcome unknown.
   useEffect(() => {
     onBusy?.(uploads.busy);
@@ -116,9 +128,8 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   useEffect(() => {
     editor?.setEditable(!disabled);
   }, [editor, disabled]);
-  // Where the next uploaded image goes: after the previous one of the same
-  // uploads (mapped through every change), else after the selection's block.
-  const anchor = useRef<number | null>(null);
+  // Where the next uploaded image goes: after the block where the files were
+  // added, then after the previous image (mapped through every change).
   useEffect(() => {
     if (!editor) return;
     const follow = ({ transaction }: { transaction: Transaction }) => {
@@ -130,8 +141,8 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
     };
   }, [editor]);
   useEffect(() => {
-    if (uploads.uploads.length === 0) anchor.current = null;
-  }, [uploads.uploads.length]);
+    if (!sending) anchor.current = null;
+  }, [sending]);
   // `chained`: after the previous upload of the same batch.
   insertImages.current = (items, chained) => {
     if (!editor || editor.isDestroyed || items.length === 0) return;
@@ -251,7 +262,7 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         // The images go where the files were dropped.
         const at = editor.view.posAtCoords({ left: e.clientX, top: e.clientY });
         if (at) editor.view.dispatch(editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(at.pos))));
-        uploads.add(files);
+        addFiles.current(files);
       }}>
         <EditorContent editor={editor} />
       </div>

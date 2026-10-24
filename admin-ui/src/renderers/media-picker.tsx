@@ -109,6 +109,20 @@ function PickerBody({ onClose, onPick, action, rules }: {
     });
   const add = (item: MediaItem) =>
     setChosen((all) => (all.some((c) => c.id === item.id) ? all : rules.multiple ? [...all, item].slice(0, max) : [item]));
+  // The queue lives as long as the dialog: switching tabs keeps it running.
+  const client = useQueryClient();
+  const uploads = useUploads({
+    onUploaded: (item) => {
+      add(item);
+      void client.invalidateQueries({ queryKey: keys.records("media") });
+    },
+    check: (file) =>
+      !accepts(rules.accept, file.type)
+        ? later("media.notAccepted", { file: file.name })
+        : rules.maxSize !== undefined && file.size > rules.maxSize
+          ? later("media.tooLarge", { file: file.name })
+          : null,
+  });
   return (
     <div className="flex flex-col gap-4">
       <Tabs value={tab} onValueChange={setTab}>
@@ -123,7 +137,7 @@ function PickerBody({ onClose, onPick, action, rules }: {
         )}
         {access.upload && (
           <TabsContent value="upload">
-            <UploadTab rules={rules} onUploaded={add} />
+            <UploadTab rules={rules} uploads={uploads} />
           </TabsContent>
         )}
         {!access.library && !access.upload && <p className="pt-4 text-sm text-muted-foreground">{t("picker.nothing")}</p>}
@@ -133,7 +147,8 @@ function PickerBody({ onClose, onPick, action, rules }: {
           {rules.multiple ? t("picker.chosenMany", { n: chosen.length, max }) : chosen[0] ? t("picker.chosenOne", { file: chosen[0].name }) : ""}
         </p>
         <Button type="button" variant="outline" onClick={onClose}>{t("action.cancel")}</Button>
-        <Button type="button" disabled={chosen.length === 0} onClick={() => onPick(chosen)}>{action}</Button>
+        {/* Files still uploading would be lost: confirm once they are in (or dismissed). */}
+        <Button type="button" disabled={chosen.length === 0 || uploads.busy} onClick={() => onPick(chosen)}>{action}</Button>
       </div>
     </div>
   );
@@ -224,23 +239,10 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
   );
 }
 
-function UploadTab({ rules, onUploaded }: { rules: PickerRules; onUploaded: (item: MediaItem) => void }) {
+function UploadTab({ rules, uploads }: { rules: PickerRules; uploads: ReturnType<typeof useUploads> }) {
   const t = useT();
   const id = useId();
-  const client = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
-  const uploads = useUploads({
-    onUploaded: (item) => {
-      onUploaded(item);
-      void client.invalidateQueries({ queryKey: keys.records("media") });
-    },
-    check: (file) =>
-      !accepts(rules.accept, file.type)
-        ? later("media.notAccepted", { file: file.name })
-        : rules.maxSize !== undefined && file.size > rules.maxSize
-          ? later("media.tooLarge", { file: file.name })
-          : null,
-  });
   const [over, setOver] = useState(false);
   return (
     <div className="flex flex-col gap-3">

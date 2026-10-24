@@ -85,6 +85,17 @@ describe("version 2 documents", () => {
     expect(isEmptyDocument({ type: "doc", version: 2, content: [{ type: "embed", attrs: { provider: "vimeo", id: "1" } }] })).toBe(false);
   });
 
+  it("keep pasted spans in their columns", () => {
+    // A spans two rows, B spans two columns: the positions they cover become empty cells.
+    const editor: DocNode = { type: "doc", content: [{ type: "table", content: [
+      { type: "tableRow", content: [{ type: "tableCell", attrs: { rowspan: 2 }, content: [p("A")] }, { type: "tableCell", attrs: { colspan: 2 }, content: [p("B")] }] },
+      { type: "tableRow", content: [cell("tableCell", "C"), cell("tableCell", "D")] },
+      { type: "tableRow", content: [cell("tableCell", "E")] },
+    ] }] };
+    const rows = toDocument(editor, API).content[0]!.content!.map((r) => r.content!.map((c) => c.content![0]!.content![0]?.text ?? ""));
+    expect(rows).toEqual([["A", "B", ""], ["", "C", "D"], ["E", "", ""]]);
+  });
+
   it("are edited when the editor can hold them, version 1 as it is", () => {
     const table = { type: "table", content: [{ type: "tableRow", content: [cell("tableHeader", "a")] }, { type: "tableRow", content: [cell("tableCell", "b")] }] };
     const v2 = [table, { type: "embed", attrs: { provider: "x", id: "123" } }, { type: "callout", attrs: { tone: "warn" }, content: [p("w")] },
@@ -193,6 +204,35 @@ describe("rich editor (version 2)", () => {
     expect(within(bar).getByRole("button", { name: "Add column" })).toBeDisabled();
     expect(within(bar).getByRole("button", { name: "Add row" })).toBeEnabled();
     expect(within(bar).getByRole("button", { name: "Remove row" })).toBeDisabled();
+  });
+
+  it("never adds rows past the limit with Tab, and toggles the whole header row", async () => {
+    const row = (type: string, n: number) => ({ type: "tableRow", content: Array.from({ length: n }, () => cell(type, "x")) });
+    const { box, doc } = await editorOn([{ type: "table", content: Array.from({ length: 50 }, () => row("tableCell", 1)) }]);
+    const last = () => [...box.querySelectorAll("td p")].at(-1)!;
+    await waitFor(async () => {
+      await userEvent.click(last());
+      screen.getByRole("toolbar", { name: "Table" });
+    });
+    await userEvent.keyboard("{Tab}");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(box.querySelectorAll("tr")).toHaveLength(50);
+    expect(doc()?.content[0]?.content).toHaveLength(50);
+    cleanup();
+    // A header row of several cells: toggled as a whole.
+    const second = await editorOn([{ type: "table", content: [row("tableHeader", 3)] }]);
+    await waitFor(async () => {
+      await userEvent.click(second.box.querySelector("th p")!);
+      screen.getByRole("toolbar", { name: "Table" });
+    });
+    const header = within(screen.getByRole("toolbar", { name: "Table" })).getByRole("button", { name: "Header row" });
+    expect(header).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(header);
+    await waitFor(() => expect(second.doc()?.content[0]?.content?.[0]?.content?.map((c) => c.type)).toEqual(["tableCell", "tableCell", "tableCell"]));
+    expect(second.box.querySelector("th")).toBeNull();
+    expect(header).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(header);
+    await waitFor(() => expect(second.doc()?.content[0]?.content?.[0]?.content?.map((c) => c.type)).toEqual(["tableHeader", "tableHeader", "tableHeader"]));
   });
 
   it("embeds an allowed address as {provider, id}, shown as a card without iframe or image", async () => {

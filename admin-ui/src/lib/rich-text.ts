@@ -208,24 +208,38 @@ export function asDocument(value: unknown): RichDocument | null {
 const cut = (text: unknown, max: number) => (typeof text === "string" ? [...text].slice(0, max).join("") : "");
 
 /**
- * Editor rows → stored rows: rectangular (a spanned cell followed by empty
- * cells, short rows padded), header cells in the first row only, and only
- * when that row is all header cells.
+ * Editor rows → stored rows: rectangular (a spanned cell keeps its content
+ * in its first position, the other positions it covers, across columns and
+ * rows, become empty cells; short rows are padded), header cells in the first
+ * row only, and only when that row is all header cells.
  */
 function tableRows(rows: DocNode[], cell: (c: DocNode) => DocNode[]): DocNode[] {
   const first = rows[0]?.content ?? [];
   const header = first.length > 0 && first.every((c) => c.type === "tableHeader");
   const empty = (): DocNode[] => [{ type: "paragraph", content: [] }];
-  const grid = rows.map((row) =>
-    (row.content ?? []).flatMap((c) => {
-      const span = Math.max(1, Math.min(Number(c.attrs?.colspan) || 1, LIMITS.tableColumns + 1));
-      return [cell(c), ...Array.from({ length: span - 1 }, empty)];
-    }));
+  const span = (v: unknown) => Math.max(1, Math.min(Number(v) || 1, LIMITS.tableColumns + LIMITS.tableRows));
+  // Positions covered by a cell of an earlier row (rowspan).
+  const grid: (DocNode[] | null)[][] = rows.map(() => []);
+  rows.forEach((row, r) => {
+    let column = 0;
+    for (const c of row.content ?? []) {
+      while (grid[r]![column] !== undefined) column += 1;
+      const width = span(c.attrs?.colspan);
+      const height = Math.min(span(c.attrs?.rowspan), rows.length - r);
+      for (let dr = 0; dr < height; dr++) {
+        for (let dc = 0; dc < width; dc++) grid[r + dr]![column + dc] = dr === 0 && dc === 0 ? cell(c) : null;
+      }
+      column += width;
+    }
+  });
   const width = Math.max(1, ...grid.map((r) => r.length));
   return grid.map((cells, r) => {
     const type = header && r === 0 ? "tableHeader" : "tableCell";
-    const padded = [...cells, ...Array.from({ length: width - cells.length }, empty)];
-    return { type: "tableRow", content: padded.map((content) => ({ type, content: content.length ? content : empty() })) };
+    const content = Array.from({ length: width }, (_, i) => {
+      const at = cells[i];
+      return { type, content: at && at.length ? at : empty() };
+    });
+    return { type: "tableRow", content };
   });
 }
 
