@@ -42,6 +42,8 @@ async function expectContrast(page: Page) {
       destructiveTextOnCard: contrast("--destructive", "--card"),
       destructiveTextOnBackground: contrast("--destructive", "--background"),
       destructiveButton: contrast("--destructive-foreground", "--destructive"),
+      successTextOnCard: contrast("--success", "--card"),
+      warningTextOnCard: contrast("--warning", "--card"),
       focusRingOnCard: contrast("--ring", "--card"),
       focusRingOnBackground: contrast("--ring", "--background"),
     };

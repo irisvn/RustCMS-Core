@@ -44,8 +44,8 @@
   --secondary: #f4f4f5;
   --destructive: #b91c1c;
   --destructive-foreground: #ffffff;
-  --success: #3f3f46;
-  --warning: #52525b;
+  --success: #166534;
+  --warning: #92400e;
   --radius: 0.5rem;
 }
 
@@ -66,8 +66,8 @@
     --secondary: #27272a;
     --destructive: #f87171;
     --destructive-foreground: #18181b;
-    --success: #d4d4d8;
-    --warning: #d4d4d8;
+    --success: #4ade80;
+    --warning: #fbbf24;
   }
 }
 
@@ -85,8 +85,8 @@
   --secondary: #27272a;
   --destructive: #f87171;
   --destructive-foreground: #18181b;
-  --success: #d4d4d8;
-  --warning: #d4d4d8;
+  --success: #4ade80;
+  --warning: #fbbf24;
 }
 
 body {

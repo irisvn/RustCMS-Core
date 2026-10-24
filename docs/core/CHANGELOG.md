@@ -9,6 +9,9 @@ All notable changes are documented here. The format follows
 ### Fixed
 - Badge columns draw every color `BadgeColumn::color` documents (`primary`,
   `success`, `warning`, `danger`, `gray`); only `danger` was colored before.
+  The default theme's `success` and `warning` are green and amber (they were
+  grays), in light and dark mode, with WCAG AA contrast (checked by the
+  layout E2E); `Theme::color` still overrides them.
 - Media picker: a page chosen right after opening is kept (the search box
   reset it to the first page once on opening).
 
