@@ -35,7 +35,8 @@
   captions and widths). Stored version 1 documents stay valid and are read
   as they are; the panel saves version 2 the next time a document is edited.
   Nothing to migrate. To rewrite stored documents anyway, map each value
-  through `rustcms::admin::rich_text::upgrade` (only `version` changes).
+  through `rustcms::admin::rich_text::upgrade_value` (only `version`
+  changes; `upgrade(Document) -> Document` does it on a parsed document).
   A headless consumer that parses documents itself should accept
   `"version": 2` and the new nodes (see [Rich text](admin/media.md#rich-text)).
 - `rich_text::Node` is `#[non_exhaustive]` and has new variants (`Table`,
@@ -44,8 +45,8 @@
   patterns on `Node::Image { media, alt }` and struct literals need updating.
 - `rich_text::to_html` keeps its signature but writes images as
   `<figure><img …></figure>` and headings with an `id`. Use
-  `to_html_with` to write image sizes, and `outline` for a table of
-  contents.
+  `to_html_with(&doc, &HashMap<Uuid, ImageInfo>)` to write image sizes, and
+  `outline` for a table of contents.
 - `PanelResponse` has an optional `uploads` field (the upload limits);
   admin clients that build `PanelResponse` values by hand need it.
 

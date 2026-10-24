@@ -110,16 +110,18 @@ they are (version 1 is a subset of version 2: nothing to migrate).
 | `codeBlock` | 1 | plain text |
 | `horizontalRule` | 1 | |
 | `image` | 1 | `media` (a media id), `alt`; version 2 adds `caption` (plain text) and `width` (`normal`, `wide` or `full`) |
-| `table` | 2 | `tableRow`s of `tableHeader` or `tableCell`; every row as long as the first; header cells make up the first row (the header row) or nothing; cells hold paragraphs only; no spans, widths or styles |
-| `embed` | 2 | `provider` (`youtube`, `vimeo`, `x`) and `id` in that provider's format (YouTube: 11 characters `A-Z a-z 0-9 - _`; Vimeo: 1–15 digits; X: 1–20 digits); never a URL or HTML |
-| `callout` | 2 | `tone` (`info` or `warn`), paragraphs |
+| `table` | 2 | `tableRow`s of `tableHeader` or `tableCell`; every row as long as the first (rectangular); header cells make up the first row (the header row) or nothing; cells hold paragraphs of text with marks only; no `colspan`, `rowspan`, widths or styles; at most 50 rows × 20 columns (1,000 cells) |
+| `embed` | 2 | `provider` (`youtube` or `vimeo`) and `id` matching that provider (YouTube `[A-Za-z0-9_-]{11}`, Vimeo `[1-9][0-9]{0,14}`); never a URL or HTML |
+| `callout` | 2 | `tone` (`info` or `warn`), paragraphs and lists; never a table or a callout inside, at any depth |
 
 Marks: bold, italic, strike, code and link (`http`, `https`, `mailto`).
 Anything else is refused (422), and so are version 2 nodes and attributes in
 a version 1 document. Limits (`rustcms::admin::rich_text::MAX_*`): 256 KiB,
 10,000 elements (table rows and cells count), 16 levels, 100 images, 50
 embeds, tables of at most 50 rows (the header row included) of 20 cells,
-500 characters of image description and 1,000 of caption. Images follow
+500 characters of image description and 1,000 of caption (plain text,
+no marks). The server's validator (`rich_text::parse`) owns every bound;
+the editor only follows them. Images follow
 the media rules above (images only).
 
 ### In the panel
@@ -143,11 +145,13 @@ image details, tables and embeds.
   table, a second toolbar adds and removes rows and columns (within 50 × 20)
   and toggles the header row.
 - **Embeds**: paste a YouTube (`watch?v=`, `youtu.be/`, `embed/`, `shorts/`,
-  `live/`), Vimeo (`vimeo.com/123`, `player.vimeo.com/video/123`) or X
-  (`x.com/user/status/123`, `twitter.com/…`) address; only the provider and
-  the id are kept (an unlisted Vimeo video's hash is not). The panel shows a
-  card with the provider and its page, never an iframe or a third-party
-  image.
+  `live/`) or Vimeo (`vimeo.com/123`, `player.vimeo.com/video/123`)
+  address; only the provider and the id are kept (an unlisted Vimeo video's
+  hash is not). The server parses addresses with the same allowlist
+  (`rich_text::Embed::from_url`, e.g. for importers). The panel shows a text
+  card (provider, id, page), never an iframe or a remote thumbnail.
+- **Callouts** wrap the selected paragraphs, or a list as a whole; the
+  table button is off inside a callout.
 
 The read-only view renders the same nodes with React elements.
 
@@ -172,18 +176,25 @@ The server checks every chosen reference again on save (scope, trash,
 ### Headless rendering
 
 ```rust,ignore
+use std::collections::HashMap;
 use rustcms::admin::rich_text::{self, ImageInfo};
+use uuid::Uuid;
 
 let doc = rich_text::parse(&post.content)?;                 // version 1 or 2
 // Sizes from the media rows (`rustcms::admin::media::entity`), so browsers reserve the space.
-let html = rich_text::to_html_with(&doc, &|id| {
-    let row = rows.get(&id)?;                               // rows you loaded for rich_text::media_ids(&doc)
-    let info = ImageInfo::new(my_public_url(id));
-    Some(match (row.width, row.height) {
-        (Some(w), Some(h)) => info.size(w as u32, h as u32),
-        _ => info,
+// The media rows of rich_text::media_ids(&doc), loaded by your app (its own scope).
+let images: HashMap<Uuid, ImageInfo> = rows
+    .iter()
+    .map(|row| {
+        let info = ImageInfo::new(my_public_url(row.id));
+        let info = match (row.width, row.height) {
+            (Some(w), Some(h)) => info.size(w as u32, h as u32),
+            _ => info,
+        };
+        (row.id, info)
     })
-});
+    .collect();
+let html = rich_text::to_html_with(&doc, &images);
 let toc = rich_text::outline(&doc);                        // [Heading { level, text, id }]
 ```
 
@@ -191,8 +202,10 @@ let toc = rich_text::outline(&doc);                        // [Heading { level, 
 
 - headings carry stable ids, `<h2 id="gioi-thieu">`: the heading's text
   with diacritics folded (Vietnamese included: `Đà Nẵng` → `da-nang`), lower
-  case, other characters as `-`, at most 80 characters; repeats get `-2`,
-  `-3`, …; a heading without letters or digits is `section`. `outline`
+  case, ASCII letters and digits only (anything else is a `-`), at most 80
+  characters; repeats get `-2`, `-3`, …; a heading without letters or digits
+  is `section`. The fold uses Unicode decomposition (the
+  `unicode-normalization` crate, 0.1.25) plus `đ`, `ø`, `ł`, `ß`, `æ`, `œ`. `outline`
   returns the same ids for a table of contents, and `rich_text::slug` the
   rule alone;
 - images: `<figure data-width="wide"><img src="…" width="800" height="600"
@@ -201,16 +214,26 @@ let toc = rich_text::outline(&doc);                        // [Heading { level, 
   `figcaption` without a caption); images whose callback returns `None` are
   left out;
 - tables: `<table><thead><tr><th>…</th></tr></thead><tbody>…</tbody></table>`;
-- embeds: `<figure class="embed" data-provider="youtube" data-id="…"><a href="https://www.youtube.com/watch?v=…" rel="noopener noreferrer nofollow">…</a></figure>`,
-  a plain link. A public frontend may replace it with the provider's player
-  (an iframe built from `data-provider` and `data-id`, which are checked
-  formats), with its own CSP for that provider;
+- embeds, a plain link:
+
+  ```html
+  <figure data-embed="youtube" data-id="ID"><a href="https://www.youtube.com/watch?v=ID" rel="noopener noreferrer">https://www.youtube.com/watch?v=ID</a></figure>
+  <figure data-embed="vimeo" data-id="ID"><a href="https://vimeo.com/ID" rel="noopener noreferrer">https://vimeo.com/ID</a></figure>
+  ```
+
+  A public frontend may replace it with the provider's player (an iframe
+  built from `data-embed` and `data-id`, which are checked formats, e.g.
+  `https://www.youtube-nocookie.com/embed/ID` or
+  `https://player.vimeo.com/video/ID`), with its own CSP for that provider;
 - callouts: `<aside class="callout" data-tone="info">`.
 
-`to_html(&doc, &|id| Some(url))` keeps its 0.9 signature (figures without
-sizes). `rich_text::upgrade(&value)` returns a version 1 document as
-version 2 (only `version` changes), for applications that want to rewrite
-stored documents; it is never needed to read them.
+No attribute outside this closed set is written. `to_html(&doc, &|id|
+Some(url))` keeps its 0.9 signature (figures without sizes).
+`rich_text::upgrade(doc) -> Document` is pure and changes only `version`
+(version 1 is a subset); `rich_text::upgrade_value(&value)` does the same on
+stored JSON, for applications that want to rewrite stored documents. Neither
+is needed to read them: the editor writes version 2 the next time a
+document is edited.
 
 ## Limits and operations
 

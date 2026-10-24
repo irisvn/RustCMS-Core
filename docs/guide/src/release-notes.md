@@ -5,7 +5,7 @@ was the first published one.
 
 ## 0.10.0 (in development)
 
-- **Rich text version 2**: tables, YouTube/Vimeo/X embeds, callouts, image
+- **Rich text version 2**: tables, YouTube/Vimeo embeds, callouts, image
   captions and widths; version 1 documents are read as they are
   ([Rich text](admin/media.md#rich-text)).
 - **Editor**: several images uploaded at once (choose, drop, paste) with
