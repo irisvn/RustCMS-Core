@@ -177,12 +177,16 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
   const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState(1);
   useEffect(() => {
+    const next = search.trim();
+    // Back to the first page only when the search changes (not on opening:
+    // a page chosen meanwhile is kept).
+    if (next === debounced) return;
     const timer = setTimeout(() => {
-      setDebounced(search.trim());
+      setDebounced(next);
       setPage(1);
     }, 250);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [search, debounced]);
   const query = useMemo(() => {
     const q = new URLSearchParams({ page: String(page), per_page: String(PER_PAGE), sort: "-created_at" });
     if (debounced) q.set("search", debounced);

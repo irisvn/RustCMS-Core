@@ -111,7 +111,7 @@ describe("media library picker", () => {
     const first = queries[0]!;
     expect(first.get("filter[mime][in]")).toBe("image/png,image/jpeg,image/gif,image/webp");
     expect([first.get("page"), first.get("per_page"), first.get("sort")]).toEqual(["1", "24", "-created_at"]);
-    // Pages.
+    // Pages (a page chosen right after opening is kept: nothing resets it).
     expect(within(dialog).getByText("Page 1 of 2")).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
     await within(dialog).findByText("Page 2 of 2");
