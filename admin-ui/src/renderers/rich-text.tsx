@@ -4,7 +4,7 @@
 import Image from "@tiptap/extension-image";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { Bold, Code, Heading2, Heading3, ImagePlus, Italic, Link, List, ListOrdered, Quote, Strikethrough } from "lucide-react";
+import { Bold, Code, Heading2, Heading3, Heading4, ImagePlus, Italic, Link, List, ListOrdered, Minus, Quote, Strikethrough } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type * as React from "react";
 import { ApiError } from "@/api/client";
@@ -125,10 +125,12 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         {tool(t("rich.strike"), <Strikethrough />, on("strike"), () => chain().toggleStrike().run())}
         {tool(t("rich.h2"), <Heading2 />, on("heading", { level: 2 }), () => chain().toggleHeading({ level: 2 }).run())}
         {tool(t("rich.h3"), <Heading3 />, on("heading", { level: 3 }), () => chain().toggleHeading({ level: 3 }).run())}
+        {tool(t("rich.h4"), <Heading4 />, on("heading", { level: 4 }), () => chain().toggleHeading({ level: 4 }).run())}
         {tool(t("rich.bullets"), <List />, on("bulletList"), () => chain().toggleBulletList().run())}
         {tool(t("rich.numbers"), <ListOrdered />, on("orderedList"), () => chain().toggleOrderedList().run())}
         {tool(t("rich.quote"), <Quote />, on("blockquote"), () => chain().toggleBlockquote().run())}
         {tool(t("rich.code"), <Code />, on("codeBlock"), () => chain().toggleCodeBlock().run())}
+        {tool(t("rich.rule"), <Minus />, false, () => chain().setHorizontalRule().run())}
         {tool(t("rich.link"), <Link />, on("link"), link)}
         {tool(t("rich.image"), <ImagePlus />, false, () => picker.current?.click())}
         <input ref={picker} type="file" hidden accept="image/png,image/jpeg,image/gif,image/webp" onChange={(e) => {

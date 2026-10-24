@@ -188,6 +188,23 @@ describe("rich editor", () => {
     expect(screen.getByRole("toolbar", { name: "Body formatting" })).toBeInTheDocument();
   });
 
+  it("makes level 4 headings and horizontal rules from the toolbar", async () => {
+    let emitted = "";
+    render(
+      <Providers>
+        <RichEditorWidget id="field-body" label="Body" value="" onChange={(v) => (emitted = v)} invalid={false} nullable />
+      </Providers>,
+    );
+    const box = await screen.findByRole("textbox", { name: "Body" });
+    await userEvent.click(box);
+    await userEvent.keyboard("Part");
+    await userEvent.click(screen.getByRole("button", { name: "Heading 4" }));
+    await userEvent.click(screen.getByRole("button", { name: "Horizontal rule" }));
+    await waitFor(() => expect(JSON.parse(emitted).content.map((n: DocNode) => n.type)).toContain("horizontalRule"));
+    const content = JSON.parse(emitted).content as DocNode[];
+    expect(content[0]).toEqual({ type: "heading", attrs: { level: 4 }, content: [{ type: "text", text: "Part" }] });
+  });
+
   it("adds, checks, edits and removes links in the panel's dialog (no browser prompt)", async () => {
     const prompt = vi.spyOn(window, "prompt");
     let emitted = "";

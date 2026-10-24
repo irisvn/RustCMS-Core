@@ -665,6 +665,8 @@ export const en = {
   "rich.strike": "Strikethrough",
   "rich.h2": "Heading 2",
   "rich.h3": "Heading 3",
+  "rich.h4": "Heading 4",
+  "rich.rule": "Horizontal rule",
   "rich.bullets": "Bulleted list",
   "rich.numbers": "Numbered list",
   "rich.quote": "Quote",

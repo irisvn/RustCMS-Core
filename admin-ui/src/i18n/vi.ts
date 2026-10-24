@@ -664,6 +664,8 @@ export const vi: Record<keyof typeof en, string> = {
   "rich.strike": "Gạch ngang",
   "rich.h2": "Tiêu đề 2",
   "rich.h3": "Tiêu đề 3",
+  "rich.h4": "Tiêu đề 4",
+  "rich.rule": "Đường kẻ ngang",
   "rich.bullets": "Danh sách dấu chấm",
   "rich.numbers": "Danh sách đánh số",
   "rich.quote": "Trích dẫn",
