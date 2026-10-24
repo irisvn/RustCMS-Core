@@ -410,6 +410,41 @@ db_test!(a_partly_applied_invitation_migration_completes, |db: TestDb| async mov
     }
 });
 
+// 0.9 → 0.10: media files get an optional alternative text; existing files
+// keep theirs empty. A run that already added the column (MySQL commits DDL
+// before the migration is recorded) completes on the next; rollbacks are clean.
+db_test!(upgrade_adds_media_alt, |db: TestDb| async move {
+    let db = db.single_connection().await;
+    Migrator::up(db.conn(), Some(before("add_alt_to_media"))).await.unwrap();
+    let manager = SchemaManager::new(db.conn());
+    assert!(!manager.has_column("media", "alt").await.unwrap());
+    let id = match db.conn().get_database_backend() {
+        sea_orm::DbBackend::Postgres => "'0199d3a4-1b2c-7d3e-8f40-123456789abc'",
+        sea_orm::DbBackend::MySql => "UNHEX('0199d3a41b2c7d3e8f40123456789abc')",
+        _ => "'0199d3a4-1b2c-7d3e-8f40-123456789abc'",
+    };
+    let insert = format!(
+        "INSERT INTO media (id, disk, \"key\", name, mime, size, sha256, owner_id, created_at) \
+         VALUES ({id}, 'local', 'k.png', 'k.png', 'image/png', 1, 'x', 1, '2026-10-01 00:00:00')"
+    );
+    let insert =
+        if db.conn().get_database_backend() == sea_orm::DbBackend::MySql { insert.replace('"', "`") } else { insert };
+    db.conn().execute_unprepared(&insert).await.unwrap();
+    Migrator::up(db.conn(), None).await.unwrap();
+    assert!(manager.has_column("media", "alt").await.unwrap());
+    let select = sea_orm::Statement::from_string(db.conn().get_database_backend(), "SELECT alt FROM media");
+    let row = db.conn().query_one_raw(select).await.unwrap().unwrap();
+    assert!(row.try_get::<Option<String>>("", "alt").unwrap().is_none(), "existing files have no alt");
+    // Cut after the DDL: the record is gone but the column is there.
+    db.conn().execute_unprepared("DELETE FROM seaql_migrations WHERE version LIKE '%add_alt_to_media%'").await.unwrap();
+    Migrator::up(db.conn(), None).await.unwrap();
+    Migrator::down(db.conn(), Some(from("add_alt_to_media"))).await.unwrap();
+    assert!(!manager.has_column("media", "alt").await.unwrap());
+    assert!(has_table(&db, "media").await, "the table is kept");
+    Migrator::up(db.conn(), None).await.unwrap();
+    assert!(manager.has_column("media", "alt").await.unwrap());
+});
+
 /// The binary of the previous version: every framework migration but the last.
 struct Older;
 

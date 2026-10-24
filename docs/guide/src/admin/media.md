@@ -11,12 +11,12 @@ app.provider(AdminProvider::new().media().resource::<PostResource>());
 ```
 
 `media()` adds the **Media** resource (permissions `media.view_any`, `media.view`,
-`media.create`, `media.delete`, `media.restore`, `media.force_delete`,
+`media.create`, `media.update`, `media.delete`, `media.restore`, `media.force_delete`,
 `media.view_all`, `media.manage_all`), the upload route and `media:prune`.
 
 ## Whose files a user sees
 
-| Permission | Sees and references | Trashes, restores, deletes (with `media.delete`, `media.restore`, `media.force_delete`) |
+| Permission | Sees and references | Renames, edits the alt text (with `media.update`); trashes, restores, deletes (with `media.delete`, `media.restore`, `media.force_delete`) |
 |---|---|---|
 | neither | own uploads | own uploads |
 | `media.view_all` | every file | own uploads |
@@ -45,8 +45,8 @@ Files are kept on the configured [storage](../digging-deeper/storage.md)
 - The type is detected from the content (magic bytes), never from the name or
   the declared type. SVG, HTML, XML and scripts are never accepted.
 - Images must be readable (dimensions within `max_pixels`).
-- Answer: `201 {data: {id, name, mime, size, width?, height?, inline}}`. Storage
-  paths are never sent.
+- Answer: `201 {data: {id, name, mime, size, width?, height?, inline, alt?}}`.
+  Storage paths are never sent.
 - An upload is recorded before its file is stored and committed with its row; a
   crash in between is cleaned by `media:prune` (also run every minute by `serve`).
 
@@ -61,6 +61,22 @@ state (waiting, uploading, uploaded, failed), the server's error, and a
 retry that reuses the file's idempotency key, so a file is never stored
 twice. The media schema reports this as the `upload` ability (`create`
 stays refused: files enter the library only by upload).
+
+## Names and alternative text
+
+A file's record page shows the file and what was detected (type, size,
+dimensions). Its edit form changes exactly two fields, `name` (a rename:
+cleaned as uploaded names are, at most 255 characters, never empty) and
+`alt` (alternative text, at most 500 characters, `null` when empty). Every
+other column is set by the upload and refused on update. Editing needs
+`media.update` and, for another user's file, `media.manage_all`
+(`MediaPolicy`, as for trashing). Downloads use the new name.
+
+`alt` is part of the media record (`GET {admin}/api/resources/media/records/{id}`,
+field `alt`) and of upload answers (`alt`, when set), so an editor inserting
+an image can pre-fill its alternative text. The column comes with the
+framework migration `m20261201_000022_add_alt_to_media` (nullable; existing
+files have none).
 
 ## Downloads
 

@@ -23,6 +23,11 @@ pub(super) fn inline(mime: &str) -> bool {
 /// A file name safe to keep and to send back: no path, controls, bidi marks or
 /// quotes; at most 255 characters; never empty.
 pub fn clean_name(name: &str) -> String {
+    cleaned_name(name).unwrap_or_else(|| "file".to_owned())
+}
+
+/// `name` cleaned like [`clean_name`], or `None` when nothing is left of it.
+pub(crate) fn cleaned_name(name: &str) -> Option<String> {
     let base = name.rsplit(['/', '\\']).next().unwrap_or_default();
     let cleaned: String = base
         .chars()
@@ -33,7 +38,7 @@ pub fn clean_name(name: &str) -> String {
         .take(MAX_NAME)
         .collect();
     let trimmed = cleaned.trim().trim_start_matches('.');
-    if trimmed.is_empty() { "file".to_owned() } else { trimmed.to_owned() }
+    (!trimmed.is_empty()).then(|| trimmed.to_owned())
 }
 
 /// `Content-Disposition` for a stored file: inline for images, attachment otherwise,

@@ -24,6 +24,8 @@ pub struct Model {
     pub width: Option<i32>,
     /// Image height in pixels.
     pub height: Option<i32>,
+    /// Alternative text (images), edited on the media record.
+    pub alt: Option<String>,
     /// Uploader.
     pub owner_id: i64,
     /// Upload time.

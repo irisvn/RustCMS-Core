@@ -76,6 +76,10 @@ pub struct MediaItem {
     pub height: Option<i32>,
     /// Shown inline (an image) rather than downloaded.
     pub inline: bool,
+    /// Alternative text, when given (edited on the media record).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
 }
 
 impl From<&entity::Model> for MediaItem {
@@ -88,6 +92,7 @@ impl From<&entity::Model> for MediaItem {
             width: m.width,
             height: m.height,
             inline: inline(&m.mime),
+            alt: m.alt.clone(),
         }
     }
 }

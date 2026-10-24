@@ -693,6 +693,7 @@ export const vi: Record<keyof typeof en, string> = {
   "mediaLibrary.state.failed": "Thất bại",
   "mediaLibrary.retry": "Thử lại {file}",
   "mediaLibrary.progress": "Tiến trình tải lên {file}",
+  "mediaLibrary.bytes": "{n} byte",
   "rich.toolbar": "Định dạng {field}",
   "rich.retryImage": "Tải ảnh lên lại",
   "roles.description": "Tổ chức quyền truy cập bằng vai trò và quyền cụ thể.",

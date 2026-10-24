@@ -502,6 +502,36 @@ path = "/admin/api/resources/media/records"
 actor = "librarian"
 status = 200
 
+# Renaming and alt text: the owner with `media.update`, or `media.manage_all`
+# (behaviour in tests/media.rs); nothing else of a file is editable.
+[[case]]
+route = "PATCH /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/media/records/{media}"
+actor = "uploader"
+body = '{"alt": "A cat"}'
+status = 403
+
+[[case]]
+route = "PATCH /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/media/records/{media}"
+actor = "librarian"
+body = '{"alt": "A cat"}'
+status = 403
+
+[[case]]
+route = "PATCH /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/media/records/{media}"
+actor = "admin"
+body = '{"mime": "text/html"}'
+status = 422
+
+[[case]]
+route = "PATCH /admin/api/resources/{slug}/records/{key}"
+path = "/admin/api/resources/media/records/{media}"
+actor = "admin"
+body = '{"name": "renamed.png", "alt": "A cat"}'
+status = 200
+
 # Has-many relations (categories → notes; behaviour in tests/relations.rs).
 [[case]]
 route = "GET /admin/api/resources/{slug}/records/{key}/relations/{relation}"

@@ -694,6 +694,7 @@ export const en = {
   "mediaLibrary.state.failed": "Failed",
   "mediaLibrary.retry": "Retry {file}",
   "mediaLibrary.progress": "Upload of {file}",
+  "mediaLibrary.bytes": "{n} bytes",
   "rich.toolbar": "{field} formatting",
   "rich.retryImage": "Retry image upload",
   "roles.description": "Organize access with roles and explicit permissions.",

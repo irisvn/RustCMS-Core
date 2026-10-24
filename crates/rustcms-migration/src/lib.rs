@@ -36,6 +36,7 @@ mod m20261025_000018_add_invitations_to_users;
 mod m20261025_000019_create_user_tokens_table;
 mod m20261101_000020_create_schedule_tables;
 mod m20261120_000021_add_run_history;
+mod m20261201_000022_add_alt_to_media;
 pub mod schema;
 
 /// Framework migrations, in order.
@@ -62,6 +63,7 @@ pub fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         Box::new(m20261025_000019_create_user_tokens_table::Migration),
         Box::new(m20261101_000020_create_schedule_tables::Migration),
         Box::new(m20261120_000021_add_run_history::Migration),
+        Box::new(m20261201_000022_add_alt_to_media::Migration),
     ]
 }
 

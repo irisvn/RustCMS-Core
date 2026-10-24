@@ -42,6 +42,9 @@ const server = setupServer(
   http.get("*/admin/api/auth/csrf", () => HttpResponse.json({ csrfToken: "t", userId })),
   http.get("*/admin/api/panel", () => HttpResponse.json({ brand: "T", user: { id: userId, name: "A", email: "a@b.c" }, navigation: [schema().resource] })),
   http.get("*/admin/api/resources/media/schema", () => HttpResponse.json(schema())),
+  http.get("*/admin/api/resources/media/records/:key", () => HttpResponse.json({
+    data: { ...record(IMAGE, "cat.png", "image/png", "A cat"), data: { name: "cat.png", alt: "A cat", mime: "image/png", size: "2048", width: 4, height: 3 } },
+  })),
   http.get("*/admin/api/resources/media/records", () => HttpResponse.json({
     data: [record(IMAGE, "cat.png", "image/png", "A cat"), record(PDF, "doc.pdf", "application/pdf")],
     meta: { page: 1, perPage: 25, total: 2, lastPage: 1 },
@@ -57,10 +60,10 @@ beforeEach(() => {
   window.localStorage.clear();
 });
 
-async function mount() {
+async function mount(path = "/r/media", ready = "cat.png") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const session = createSession({ basePath: "", apiPath: API }, queryClient, () => {});
-  const router = createAppRouter({ queryClient, session }, createMemoryHistory({ initialEntries: ["/r/media"] }));
+  const router = createAppRouter({ queryClient, session }, createMemoryHistory({ initialEntries: [path] }));
   render(
     <SessionContext.Provider value={session}>
       <QueryClientProvider client={queryClient}>
@@ -68,7 +71,7 @@ async function mount() {
       </QueryClientProvider>
     </SessionContext.Provider>,
   );
-  await screen.findByText("cat.png");
+  await screen.findAllByText(ready);
 }
 
 it("shows files as thumbnails of their authorized URL, or as a table, remembered per user", async () => {
@@ -118,7 +121,9 @@ it("uploads several files one at a time, and retries a failed one with its key",
     const data = { id: crypto.randomUUID(), name: file.name, mime: "image/png", size: 1, inline: true };
     return new Response(JSON.stringify({ data }), { status: 201, headers: { "Content-Type": "application/json" } });
   });
-  onTestFinished(() => vi.unstubAllGlobals());
+  onTestFinished(() => {
+    vi.unstubAllGlobals();
+  });
   await mount();
   const files = [new File(["a"], "a.png", { type: "image/png" }), new File(["b"], "b.png", { type: "image/png" }), new File(["c"], "c.png", { type: "image/png" })];
   await userEvent.upload(screen.getByTestId("media-upload-input"), files);
@@ -142,4 +147,12 @@ it("offers uploads only to users who may upload", async () => {
   await mount();
   expect(screen.queryByRole("button", { name: "Upload files" })).toBeNull();
   expect(screen.getByRole("button", { name: "Grid" })).toBeInTheDocument();
+});
+
+it("shows the file, its alternative text and what was detected on its record page", async () => {
+  await mount(`/r/media/records/${IMAGE}`);
+  const image = await screen.findByRole("img", { name: "A cat" });
+  expect(image).toHaveAttribute("src", `${API}/media/${IMAGE}/file`);
+  expect(screen.getByText("image/png · 2,048 bytes · 4 × 3")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /Edit/ })).toBeInTheDocument();
 });

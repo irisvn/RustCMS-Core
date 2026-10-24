@@ -178,7 +178,11 @@ height?: number,
 /**
  * Shown inline (an image) rather than downloaded.
  */
-inline: boolean, };
+inline: boolean, 
+/**
+ * Alternative text, when given (edited on the media record).
+ */
+alt?: string, };
 
 export type InputSchema = { 
 /**

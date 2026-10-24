@@ -106,6 +106,7 @@ pub(crate) async fn upload(
         sha256: Set(sha256),
         width: Set(width),
         height: Set(height),
+        alt: Set(None),
         owner_id: Set(owner),
         created_at: Set(Utc::now()),
         deleted_at: Set(None),

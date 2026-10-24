@@ -248,6 +248,7 @@ async fn stored_media(db: &sea_orm::DatabaseConnection, owner: i64, name: &str) 
         sha256: Set("0".repeat(64)),
         width: Set(Some(1)),
         height: Set(Some(1)),
+        alt: Set(None),
         owner_id: Set(owner),
         created_at: Set(chrono::Utc::now()),
         deleted_at: Set(None),
@@ -330,4 +331,84 @@ db_test!(the_media_schema_says_who_may_upload, |db: TestDb| async move {
     // Other resources have no such ability.
     let notes = fx.resource("notes").schema(&fx.ctx(support::admin()), SchemaOperation::View, None).await.unwrap();
     assert!(!notes.abilities.contains_key("upload"));
+});
+
+db_test!(owners_rename_files_and_set_their_alt_others_need_manage_all, |db: TestDb| async move {
+    use rustcms_admin::Data;
+    use rustcms_core::{AppError, Principal};
+    use support::{Fixture, PrincipalExt};
+    let fx = Fixture::new(db).await;
+    let library = fx.resource("media");
+    let theirs = stored_media(fx.db.conn(), 1, "theirs.png").await;
+    let mine = stored_media(fx.db.conn(), 7, "mine.png").await;
+    let user = |extra: &[&str]| {
+        let principal = Principal { id: "7".into(), guard: "admin".into(), ..Default::default() };
+        fx.ctx(principal.with(&["media.view_any", "media.view"]).with(extra))
+    };
+    let input = |value: serde_json::Value| -> Data { value.as_object().unwrap().clone() };
+
+    // The owner, with `media.update`: renamed (cleaned like an upload) and described.
+    let owner = user(&["media.update"]);
+    let saved = library.update(&owner, &mine, input(json!({"name": "../x\"y.png", "alt": "A cat"}))).await.unwrap();
+    assert_eq!((&saved.data["name"], &saved.data["alt"]), (&json!("xy.png"), &json!("A cat")));
+    let found = library.find(&owner, &mine).await.unwrap();
+    assert!(found.abilities["update"]);
+    assert_eq!(found.data["alt"], json!("A cat"));
+    // Cleared to `null`; bounded; required name.
+    library.update(&owner, &mine, input(json!({"alt": null}))).await.unwrap();
+    let long = library.update(&owner, &mine, input(json!({"alt": "x".repeat(501)}))).await.unwrap_err();
+    assert!(matches!(long, AppError::Validation(ref v) if v.errors.contains_key("alt")), "{long:?}");
+    for name in ["", " ", "../"] {
+        let empty = library.update(&owner, &mine, input(json!({"name": name}))).await.unwrap_err();
+        assert!(matches!(empty, AppError::Validation(ref v) if v.errors.contains_key("name")), "{name}: {empty:?}");
+    }
+    // Nothing else is editable.
+    for field in ["mime", "size", "owner_id", "width"] {
+        let refused = library.update(&owner, &mine, input(json!({field: "1"}))).await.unwrap_err();
+        assert!(matches!(refused, AppError::Validation(ref v) if v.errors.contains_key(field)), "{field}: {refused:?}");
+    }
+    // Without `media.update`, not even one's own file.
+    let reader = user(&[]);
+    assert!(matches!(library.update(&reader, &mine, input(json!({"alt": "x"}))).await, Err(AppError::Forbidden)));
+    assert!(!library.find(&reader, &mine).await.unwrap().abilities["update"]);
+    // Another user's file: `media.view_all` shows it but may not edit it…
+    let viewer = user(&["media.update", "media.view_all"]);
+    assert!(!library.find(&viewer, &theirs).await.unwrap().abilities["update"]);
+    let refused = library.update(&viewer, &theirs, input(json!({"name": "mine-now.png"}))).await.unwrap_err();
+    assert!(matches!(refused, AppError::Forbidden), "{refused:?}");
+    // …and `media.update` alone does not even see it.
+    assert!(matches!(library.update(&owner, &theirs, input(json!({"alt": "x"}))).await, Err(AppError::NotFound)));
+    // `media.manage_all` edits it.
+    let manager = user(&["media.update", "media.manage_all"]);
+    let saved =
+        library.update(&manager, &theirs, input(json!({"name": "renamed.png", "alt": "Theirs"}))).await.unwrap();
+    assert_eq!((&saved.data["name"], &saved.data["alt"]), (&json!("renamed.png"), &json!("Theirs")));
+    // `media.manage_all` without `media.update`: no.
+    let refused = library.update(&user(&["media.manage_all"]), &theirs, input(json!({"alt": "y"}))).await;
+    assert!(matches!(refused, Err(AppError::Forbidden)));
+    // Still never created through the generic endpoint.
+    let created = library.create(&manager, input(json!({"name": "new.png"}))).await;
+    assert!(matches!(created, Err(AppError::Forbidden)));
+});
+
+db_test!(a_renamed_file_downloads_under_its_new_name, |db: TestDb| async move {
+    let (app, users) = admin_app(db).await;
+    let admin = app.acting_as(&users.admin).await;
+    let item = upload(&app, &admin, &[("file", "a.png", &png())], None).await.json()["data"].clone();
+    assert!(item.get("alt").is_none(), "no alt yet");
+    let id = item["id"].as_str().unwrap();
+    let record = app.admin_api(&format!("resources/media/records/{id}"));
+    admin
+        .send(Method::PATCH, &record, Some(&json!({"name": "renamed.png", "alt": "Hi"})))
+        .await
+        .assert_status(StatusCode::OK);
+    let served = admin.get(&app.admin_api(&format!("media/{id}/file"))).await;
+    assert!(served.headers["content-disposition"].to_str().unwrap().starts_with("inline; filename=\"renamed.png\""));
+    let record = admin.get(&record).await.json();
+    assert_eq!(
+        (&record["data"]["data"]["name"], &record["data"]["data"]["alt"]),
+        (&json!("renamed.png"), &json!("Hi"))
+    );
+    let row = media::Entity::find().one(app.state().db()).await.unwrap().unwrap();
+    assert_eq!(rustcms_admin::media::MediaItem::from(&row).alt.as_deref(), Some("Hi"));
 });

@@ -12,9 +12,10 @@
 "Dashboard" = "Bảng điều khiển"
 # The media library's own permissions on the Roles page.
 "See every file" = "Xem mọi tệp"
-"List, open and use every file of the media library in records, not only one's own uploads. Trashing, restoring or deleting another user's file needs \"Manage every file\"." = "Liệt kê, mở và dùng mọi tệp của thư viện media trong bản ghi, không chỉ tệp mình tải lên. Đưa vào thùng rác, khôi phục hoặc xoá tệp của người khác cần quyền \"Quản lý mọi tệp\"."
+"List, open and use every file of the media library in records, not only one's own uploads. Editing, trashing, restoring or deleting another user's file needs \"Manage every file\"." = "Liệt kê, mở và dùng mọi tệp của thư viện media trong bản ghi, không chỉ tệp mình tải lên. Sửa, đưa vào thùng rác, khôi phục hoặc xoá tệp của người khác cần quyền \"Quản lý mọi tệp\"."
 "Manage every file" = "Quản lý mọi tệp"
-"See every file, and trash, restore or delete other users' files (with the delete, restore and force delete permissions of the media library)." = "Xem mọi tệp, và đưa vào thùng rác, khôi phục hoặc xoá tệp của người khác (cùng các quyền xoá, khôi phục và xoá vĩnh viễn của thư viện media)."
+"See every file, and edit, trash, restore or delete other users' files (with the update, delete, restore and force delete permissions of the media library)." = "Xem mọi tệp, và sửa, đưa vào thùng rác, khôi phục hoặc xoá tệp của người khác (cùng các quyền cập nhật, xoá, khôi phục và xoá vĩnh viễn của thư viện media)."
+"Alternative text" = "Văn bản thay thế"
 
 # Common fields (labels formed from column names).
 "Name" = "Tên"

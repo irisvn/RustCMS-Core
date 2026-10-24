@@ -447,6 +447,7 @@ async fn media(fx: &Fixture, owner: i64, mime: &str, size: i64) -> String {
         sha256: Set("0".repeat(64)),
         width: Set(None),
         height: Set(None),
+        alt: Set(None),
         owner_id: Set(owner),
         created_at: Set(chrono::Utc::now()),
         deleted_at: Set(None),

@@ -17,6 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { Components, ReadOnlyComponents, gridCols } from "@/renderers/form";
+import { MEDIA_SLUG, MediaPreview } from "@/renderers/media-library";
 import { type FormValues, defaultValues, inputsOf, payloadOf, protectLossyJson, relabel } from "@/schema/form";
 import { errorText, show, type Text, useLocale, useT } from "@/i18n";
 import { editResolver } from "@/schema/resolver";
@@ -379,6 +380,7 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
       <PausedBanner scope={slug} />
       <VersionBanner schema={s} />
       {error && <Alert variant="destructive">{show(error)}</Alert>}
+      {slug === MEDIA_SLUG && <MediaPreview record={record.data} />}
       <Card>
         <CardContent className={cn("grid grid-cols-1 gap-x-6 gap-y-6 p-5 sm:p-6", gridCols(s.form.columns))}>
           <ReadOnlyComponents components={s.form.components} data={record.data.data} slug={slug} record={recordKey} />

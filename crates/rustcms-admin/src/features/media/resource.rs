@@ -4,8 +4,12 @@
 use super::*;
 
 /// The media library resource: listed, viewed, trashed and restored like any
-/// resource; created only by uploads and never edited.
+/// resource; created only by uploads. Only its `name` (a rename) and `alt`
+/// are edited, by the uploader or with `media.manage_all`.
 pub struct MediaResource;
+
+/// Longest alternative text, in characters.
+pub const MAX_ALT: usize = 500;
 
 #[async_trait]
 impl Resource for MediaResource {
@@ -19,7 +23,19 @@ impl Resource for MediaResource {
     fn fields() -> Vec<Field> {
         let shown = |column: entity::Column| Field::column(column).guarded().readable(|_| true);
         vec![
-            shown(entity::Column::Name).searchable().sortable(),
+            // Renamed on the record (cleaned like an uploaded name).
+            Field::column(entity::Column::Name)
+                .readable(|_| true)
+                .creatable(|_| false)
+                .required()
+                .max_length(MAX_NAME)
+                .searchable()
+                .sortable(),
+            Field::column(entity::Column::Alt)
+                .label("Alternative text")
+                .readable(|_| true)
+                .creatable(|_| false)
+                .max_length(MAX_ALT),
             shown(entity::Column::Mime).filterable(),
             shown(entity::Column::Size).sortable(),
             shown(entity::Column::Width),
@@ -31,7 +47,23 @@ impl Resource for MediaResource {
     }
 
     fn form() -> crate::Form {
-        crate::Form::new().schema(components![crate::TextInput::make("name")])
+        crate::Form::new().schema(components![crate::TextInput::make("name"), crate::Textarea::make("alt")])
+    }
+
+    /// A new name is cleaned as uploaded names are (no path, quotes or
+    /// control and direction characters).
+    async fn mutate_before_update(
+        _ctx: &Ctx,
+        _txn: &DatabaseTransaction,
+        _record: &entity::Model,
+        mut data: Data,
+    ) -> AppResult<Data> {
+        if let Some(serde_json::Value::String(name)) = data.get("name") {
+            // Nothing left of it: refused (uploads fall back to `file`).
+            let cleaned = cleaned_name(name).ok_or_else(|| ValidationErrors::field("name", "is required"))?;
+            data.insert("name".into(), serde_json::Value::String(cleaned));
+        }
+        Ok(data)
     }
 
     fn table() -> Table {
@@ -84,30 +116,30 @@ pub(crate) fn permission_meta(name: &str) -> Option<rustcms_auth::PermissionMeta
     match name {
         VIEW_ALL => Some(meta.label("See every file").description(
             "List, open and use every file of the media library in records, not only one's own uploads. \
-             Trashing, restoring or deleting another user's file needs \"Manage every file\".",
+             Editing, trashing, restoring or deleting another user's file needs \"Manage every file\".",
         )),
         MANAGE_ALL => Some(meta.label("Manage every file").description(
-            "See every file, and trash, restore or delete other users' files (with the delete, restore and \
-             force delete permissions of the media library).",
+            "See every file, and edit, trash, restore or delete other users' files (with the update, delete, \
+             restore and force delete permissions of the media library).",
         )),
         _ => None,
     }
 }
 
 /// `media.{ability}`; uploads need `media.create` (checked by the upload
-/// route); the generic create and update endpoints are always refused.
-/// Trashing, restoring and deleting another user's file also needs
-/// `media.manage_all` (`media.view_all` only shows it).
+/// route); the generic create endpoint is always refused. Updating (renaming,
+/// alternative text), trashing, restoring and deleting another user's file
+/// also needs `media.manage_all` (`media.view_all` only shows it).
 pub struct MediaPolicy;
 
 #[async_trait]
 impl Policy for MediaPolicy {
     async fn allows(&self, ctx: &Ctx, ability: &str, record: Option<&Data>) -> bool {
-        if matches!(ability, "create" | "update") || !ctx.can(&format!("{SLUG}.{ability}")) {
+        if ability == "create" || !ctx.can(&format!("{SLUG}.{ability}")) {
             return false;
         }
         match (ability, record) {
-            ("delete" | "restore" | "force_delete", Some(record)) if !ctx.can(MANAGE_ALL) => {
+            ("update" | "delete" | "restore" | "force_delete", Some(record)) if !ctx.can(MANAGE_ALL) => {
                 // `owner_id` is an i64: a string on the wire (ADR 0003).
                 record.get("owner_id").and_then(|v| v.as_str()) == Some(ctx.principal.id.as_str())
             }

@@ -16,6 +16,18 @@ All notable changes are documented here. The format follows
   through `POST {admin}/api/media` (an idempotency key per file, the same
   on a retry), each with its state, error and retry. The media schema has
   an `upload` ability (`media.create`); `create` stays refused.
+- Media names and alternative text: a nullable `media.alt` column
+  (framework migration `m20261201_000022_add_alt_to_media`, re-runnable on
+  MySQL), and the media record's edit form changes exactly `name` (a rename,
+  cleaned like uploaded names, never empty) and `alt` (at most 500
+  characters). `MediaPolicy` allows `update` with `media.update` on one's own
+  files, and on others' only with `media.manage_all` (like trashing); every
+  other column stays refused. `alt` is read with the record and returned in
+  `MediaItem` (`alt?`). The record page shows the file and what was detected.
+
+### Changed (0.10.1)
+- `media::entity::Model` has a new field `alt: Option<String>` (code that
+  builds `media::ActiveModel` literals sets it).
 
 ## [0.9.0] — 2026-10-24
 

@@ -11,7 +11,7 @@ import type { Envelope } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { mediaUrl } from "@/lib/rich-text";
 import { cn } from "@/lib/utils";
-import { errorText, show, type Text, useT } from "@/i18n";
+import { errorText, formatCount, show, type Text, useT } from "@/i18n";
 import { uploadMedia } from "./media";
 
 /** Slug of the media library resource (`rustcms_admin::media::SLUG`). */
@@ -229,5 +229,33 @@ export function MediaUploader({ disabled }: { disabled?: boolean }) {
         </section>
       )}
     </div>
+  );
+}
+
+/** The file on its record's page: the image (or a download link) and what was detected. */
+export function MediaPreview({ record }: { record: Envelope }) {
+  const t = useT();
+  const { apiPath } = usePanelConfig();
+  const [broken, setBroken] = useState(false);
+  const url = mediaUrl(apiPath, record.key);
+  const data = record.data;
+  const name = typeof data.name === "string" ? data.name : (record.title ?? record.key);
+  const details = [
+    typeof data.mime === "string" ? data.mime : null,
+    typeof data.size === "string" ? t("mediaLibrary.bytes", { n: formatCount(Number(data.size)) }) : null,
+    typeof data.width === "number" && typeof data.height === "number" ? `${data.width} × ${data.height}` : null,
+  ].filter((d): d is string => d !== null);
+  return (
+    <figure className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+      {isImage(data.mime) && !broken && !record.trashed ? (
+        <img src={url} alt={typeof data.alt === "string" ? data.alt : ""} onError={() => setBroken(true)}
+          className="max-h-96 w-full rounded-md bg-muted object-contain" />
+      ) : (
+        <a href={url} className="inline-flex items-center gap-2 self-start rounded-md border border-border px-3 py-2 text-sm hover:bg-muted">
+          <FileText className="size-4" aria-hidden="true" /> {name}
+        </a>
+      )}
+      {details.length > 0 && <figcaption className="text-xs text-muted-foreground">{details.join(" · ")}</figcaption>}
+    </figure>
   );
 }

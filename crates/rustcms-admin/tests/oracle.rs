@@ -138,6 +138,7 @@ db_test!(oracle_matches_the_admin_api, |db: TestDb| async move {
             sha256: Set("0".repeat(64)),
             width: Set(None),
             height: Set(None),
+            alt: Set(None),
             owner_id: Set(users.admin.id),
             created_at: Set(chrono::Utc::now()),
             deleted_at: Set(None),
