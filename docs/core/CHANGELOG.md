@@ -84,6 +84,12 @@ All notable changes are documented here. The format follows
   stays mounted (closed) in a busy form rendered until React gave up
   (error #185). Its ref is stable now.
 
+### Security (0.9.0)
+- `ctutils` 0.4.4 (RUSTSEC-2026-0385: non-constant-time mask generation and
+  `u128` comparisons) and `tokio` 1.53.3 (RUSTSEC-2026-0386: `AsyncFd::new`
+  violates I/O safety), the smallest fixed releases; younger than the usual
+  two weeks, by exception.
+
 ## [0.8.2] — 2026-10-21
 
 ### Fixed (0.8.2)

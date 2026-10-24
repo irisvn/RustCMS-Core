@@ -23,6 +23,9 @@ was the first published one.
   ([Relationships](admin/relationships.md#choosing-links-in-the-records-form)).
 - Rich text links are edited in a dialog; record forms ask before leaving
   with unsaved changes ([Forms](admin/forms.md#leaving-with-unsaved-changes)).
+- Security: `tokio` 1.53.3 and `ctutils` 0.4.4 (RUSTSEC-2026-0386, 0385).
+  Applications pinning their own `Cargo.lock` should run
+  `cargo update -p tokio -p ctutils`.
 
 ## 0.8.2
 
