@@ -60,9 +60,12 @@ test("the editor's v2 nodes, multi-image upload and the media library picker", a
   await embed.getByRole("button", { name: "Insert" }).click();
   await expect(editor.locator("figure[data-embed]")).toContainText("YouTube · dQw4w9WgXcQ");
 
-  // A callout.
-  await editor.locator("p").last().click();
+  // A callout, in the paragraph kept after the embed (the editor always ends
+  // with one): clicked, then checked, since a click that selects the card
+  // would have the typing replace it.
+  await editor.locator("figure[data-embed] + p").click();
   await page.keyboard.type("Careful");
+  await expect(editor.locator("figure[data-embed]")).toHaveCount(1);
   await page.getByRole("button", { name: "Warning callout" }).click();
   await expect(editor.locator("aside[data-tone=warn]")).toContainText("Careful");
 

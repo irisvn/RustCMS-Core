@@ -1,8 +1,12 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
 
 afterEach(() => cleanup());
+
+// CI runners are slower than a laptop: `findBy*` and `waitFor` wait up to 3 s
+// (1 s by default) before failing; passing tests are not slower.
+configure({ asyncUtilTimeout: 3000 });
 
 // jsdom has no scrolling (router scroll restoration).
 window.scrollTo = () => {};
