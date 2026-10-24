@@ -70,9 +70,9 @@ impl Resource for MediaResource {
         Table::new()
             .columns(vec![
                 TextColumn::make("name"),
-                TextColumn::make("mime"),
-                TextColumn::make("size"),
-                crate::DateColumn::make("created_at"),
+                TextColumn::make("mime").hide_below(crate::ui::Breakpoint::Sm),
+                TextColumn::make("size").hide_below(crate::ui::Breakpoint::Md),
+                crate::DateColumn::make("created_at").hide_below(crate::ui::Breakpoint::Md),
             ])
             .default_sort("-created_at")
     }

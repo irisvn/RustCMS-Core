@@ -9,6 +9,7 @@ import type { ResourceSchema } from "@/api/types";
 import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
 import { openableUrl } from "@/lib/open-url";
+import { columnClass } from "@/renderers/table";
 import posts from "../../fixtures/contract/posts.schema.json";
 import outcomeContract from "../../fixtures/contract/action-outcome.json";
 
@@ -129,4 +130,22 @@ describe("openable URLs", () => {
       expect(openableUrl(bad), bad).toBe(false);
     }
   });
+});
+
+it("hides columns below their breakpoint with CSS only", async () => {
+  mount();
+  await screen.findByText("Post a");
+  const header = (name: string) => screen.getByRole("columnheader", { name: new RegExp(`^${name}`) });
+  expect(header("Category").className).toMatch(/(^| )hidden sm:table-cell( |$)/);
+  expect(header("Published at").className).toMatch(/(^| )hidden md:table-cell( |$)/);
+  expect(header("Title").className).not.toMatch(/hidden/);
+  // Cells follow their header.
+  const cells = rowOf("Post a").querySelectorAll("td");
+  const index = [...screen.getAllByRole("columnheader")].findIndex((h) => h.textContent?.startsWith("Published at"));
+  expect(cells[index]!.className).toContain("md:table-cell");
+});
+
+it("maps every breakpoint to a static class", () => {
+  expect(["sm", "md", "lg"].map((b) => columnClass({ hideBelow: b as "sm" }))).toEqual(["hidden sm:table-cell", "hidden md:table-cell", "hidden lg:table-cell"]);
+  expect(columnClass({})).toBe("");
 });

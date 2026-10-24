@@ -62,7 +62,7 @@ impl Resource for PostResource {
         Table::new()
             .columns(vec![
                 TextColumn::make("title"),
-                TextColumn::make("category_id"),
+                TextColumn::make("category_id").hide_below(Breakpoint::Md),
                 BooleanColumn::make("published"),
                 DateColumn::make("published_at"),
             ])

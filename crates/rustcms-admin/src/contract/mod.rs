@@ -278,6 +278,11 @@ pub struct ColumnSchema {
     #[cfg_attr(feature = "ts", ts(optional, type = "JsonValue"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub props: Option<serde_json::Value>,
+    /// Hidden on screens narrower than this breakpoint (`sm`: 640 px, `md`:
+    /// 768 px, `lg`: 1024 px); presentation only (vocabulary 10).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hide_below: Option<crate::ui::Breakpoint>,
 }
 
 /// Badge color for one value.

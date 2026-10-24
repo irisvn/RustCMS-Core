@@ -17,6 +17,19 @@ pub enum ColumnType {
     Date,
 }
 
+/// A screen width under which a column is hidden ([`TableColumn::hide_below`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum Breakpoint {
+    /// 640 px.
+    Sm,
+    /// 768 px.
+    Md,
+    /// 1024 px.
+    Lg,
+}
+
 /// A table column bound to a field.
 #[derive(Debug, Clone)]
 pub struct TableColumn {
@@ -26,11 +39,12 @@ pub struct TableColumn {
     pub(crate) colors: Vec<(Json, String)>,
     pub(crate) cell: Option<String>,
     pub(crate) props: Option<Json>,
+    pub(crate) hide_below: Option<Breakpoint>,
 }
 
 impl TableColumn {
     fn new(name: impl Into<String>, kind: ColumnType) -> Self {
-        Self { name: name.into(), kind, label: None, colors: Vec::new(), cell: None, props: None }
+        Self { name: name.into(), kind, label: None, colors: Vec::new(), cell: None, props: None, hide_below: None }
     }
 
     /// Drawn by the cell an extension script registered as `vendor/name`
@@ -43,6 +57,14 @@ impl TableColumn {
     /// Settings passed to the custom cell (JSON, at most 4 KiB).
     pub fn props(mut self, props: Json) -> Self {
         self.props = Some(props);
+        self
+    }
+
+    /// Hidden on screens narrower than `breakpoint`, by static CSS classes
+    /// (no inline style). Presentation only: the value is still in each
+    /// record and on its page.
+    pub fn hide_below(mut self, breakpoint: Breakpoint) -> Self {
+        self.hide_below = Some(breakpoint);
         self
     }
 

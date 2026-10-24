@@ -8,6 +8,8 @@ export type LayoutType = "section" | "grid" | "tabs" | "tab";
 
 export type ColumnType = "text" | "badge" | "boolean" | "date";
 
+export type Breakpoint = "sm" | "md" | "lg";
+
 export type FilterType = "select" | "ternary" | "date_range";
 
 export type SelectOption = { 
@@ -340,7 +342,12 @@ cell?: string,
 /**
  * Settings of the custom cell.
  */
-props?: JsonValue, };
+props?: JsonValue, 
+/**
+ * Hidden on screens narrower than this breakpoint (`sm`: 640 px, `md`:
+ * 768 px, `lg`: 1024 px); presentation only (vocabulary 10).
+ */
+hideBelow?: Breakpoint, };
 
 export type BadgeColor = { 
 /**

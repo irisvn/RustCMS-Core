@@ -188,3 +188,30 @@ db_test!(outcomes_are_replayed_with_their_url, |db: TestDb| async move {
         .await;
     refused.assert_status(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
 });
+
+db_test!(columns_may_hide_on_narrow_screens_without_changing_data, |db: TestDb| async move {
+    let fx = Fixture::new(db).await;
+    let posts = fx.resource("posts");
+    let ctx = fx.ctx(admin());
+    let schema = serde_json::to_value(posts.schema(&ctx, SchemaOperation::View, None).await.unwrap()).unwrap();
+    let hidden: Vec<_> = schema["table"]["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["name"].clone(), c.get("hideBelow").cloned()))
+        .collect();
+    assert_eq!(
+        hidden,
+        [
+            (json!("title"), None),
+            (json!("category_id"), Some(json!("sm"))),
+            (json!("published"), None),
+            (json!("published_at"), Some(json!("md")))
+        ]
+    );
+    // The values are still sent.
+    let input = json!({"title": "t", "published_at": "2026-10-01T00:00:00Z"});
+    let key = posts.create(&ctx, input.as_object().unwrap().clone()).await.unwrap().key;
+    let page = posts.list(&ctx, &ListQuery::default()).await.unwrap();
+    assert!(page.data.iter().find(|e| e.key == key).unwrap().data.contains_key("published_at"));
+});

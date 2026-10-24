@@ -9,6 +9,14 @@ import { RelationSelect } from "./relation-select";
 import { ScriptView } from "@/components/custom";
 
 export const KNOWN_COLUMNS = new Set(["text", "badge", "boolean", "date"]);
+
+/** Classes of a column's header and cells: hidden below its breakpoint (static classes, CSS only). */
+const HIDE_BELOW: Record<string, string> = { sm: "hidden sm:table-cell", md: "hidden md:table-cell", lg: "hidden lg:table-cell" };
+
+export function columnClass(column: Pick<ColumnSchema, "hideBelow">): string {
+  return (column.hideBelow && HIDE_BELOW[column.hideBelow]) ?? "";
+}
+
 export const KNOWN_FILTERS = new Set(["select", "ternary", "date_range"]);
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);

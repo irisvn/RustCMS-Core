@@ -353,9 +353,9 @@ impl Resource for PostResource {
         Table::new()
             .columns(vec![
                 TextColumn::make("title"),
-                TextColumn::make("category_id"),
+                TextColumn::make("category_id").hide_below(rustcms_admin::Breakpoint::Sm),
                 BooleanColumn::make("published"),
-                DateColumn::make("published_at"),
+                DateColumn::make("published_at").hide_below(rustcms_admin::Breakpoint::Md),
             ])
             .filters(vec![TernaryFilter::make("published"), SelectFilter::make("category_id")])
             .default_sort("-title")

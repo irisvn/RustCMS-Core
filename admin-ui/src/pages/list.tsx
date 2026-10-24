@@ -17,7 +17,8 @@ import { SchemaFormDialog } from "@/components/schema-form-dialog";
 import { ExportButton, ExportsPanel } from "@/components/exports";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Cell, FilterControl, KNOWN_FILTERS, type FilterParams } from "@/renderers/table";
+import { Cell, FilterControl, KNOWN_FILTERS, columnClass, type FilterParams } from "@/renderers/table";
+import { cn } from "@/lib/utils";
 import { openInNewTab, openableUrl } from "@/lib/open-url";
 import { MEDIA_SLUG, MediaGrid, MediaUploader, MediaViewToggle, useMediaView } from "@/renderers/media-library";
 import { errorText, formatCount, later, show, t as translate, type Text, useT } from "@/i18n";
@@ -419,7 +420,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                     </th>
                   )}
                   {table.columns.map((c) => (
-                    <th key={c.name} scope="col" className="whitespace-nowrap p-3 font-medium" aria-sort={c.sortable ? sort === c.name ? "ascending" : sort === `-${c.name}` ? "descending" : "none" : undefined}>
+                    <th key={c.name} scope="col" className={cn("whitespace-nowrap p-3 font-medium", columnClass(c))} aria-sort={c.sortable ? sort === c.name ? "ascending" : sort === `-${c.name}` ? "descending" : "none" : undefined}>
                       {c.sortable ? (
                         <button type="button" className="inline-flex min-h-8 items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => toggleSort(c.name)}>
                           {c.label}
@@ -457,7 +458,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                       <td className="p-3">{selectOf(record)}</td>
                     )}
                     {table.columns.map((c, i) => (
-                      <td key={c.name} className="p-3">
+                      <td key={c.name} className={cn("p-3", columnClass(c))}>
                         <Cell column={c} record={record} />
                         {i === 0 && record.trashed && <Badge className="ml-2">{t("list.trashedBadge")}</Badge>}
                       </td>

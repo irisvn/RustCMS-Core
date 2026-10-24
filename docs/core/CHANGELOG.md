@@ -52,6 +52,13 @@ All notable changes are documented here. The format follows
   several records (422 `one_record_only`). The message is at most 500
   characters. The panel shows the message and, after the commit, opens the
   page in a new tab (`noopener,noreferrer`), with a link as fallback.
+- `TableColumn::hide_below(Breakpoint::Sm | Md | Lg)` (a closed enum,
+  `rustcms::admin::Breakpoint`; schema `ColumnSchema.hideBelow`,
+  vocabulary 10): the column is hidden on narrower screens (640, 768,
+  1024 px) by static CSS classes (lists and relation tables); records are
+  unchanged.
+
+### Fixed (0.10.1)
 - The media input reported its pending upload again on every render of its
   form (a new `onBusy` callback each time), re-rendering the form without
   end while a file was being uploaded.

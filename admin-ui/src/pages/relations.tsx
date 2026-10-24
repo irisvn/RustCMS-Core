@@ -15,7 +15,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Cell } from "@/renderers/table";
+import { Cell, columnClass } from "@/renderers/table";
+import { cn } from "@/lib/utils";
 import { isInput } from "@/schema/form";
 import { useT } from "@/i18n";
 
@@ -81,7 +82,7 @@ function HasManySection({ parent, record, relation }: SectionProps) {
             <table className="w-full text-sm" aria-labelledby={titleId}>
               <thead className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
                 <tr>
-                  {columns.map((c) => <th key={c.name} scope="col" className="p-3 font-medium">{c.label}</th>)}
+                  {columns.map((c) => <th key={c.name} scope="col" className={cn("p-3 font-medium", columnClass(c))}>{c.label}</th>)}
                   <th className="p-3"><span className="sr-only">{t("relation.open")}</span></th>
                 </tr>
               </thead>
@@ -91,7 +92,7 @@ function HasManySection({ parent, record, relation }: SectionProps) {
                 )}
                 {(records.data?.data ?? []).map((row) => (
                   <tr key={row.key} className="border-b border-border last:border-0">
-                    {columns.map((c) => <td key={c.name} className="p-3"><Cell column={c} record={row} /></td>)}
+                    {columns.map((c) => <td key={c.name} className={cn("p-3", columnClass(c))}><Cell column={c} record={row} /></td>)}
                     <td className="p-3 text-right">
                       {row.abilities.view && (
                         <Link to="/r/$slug/records/$key" params={{ slug: relation.resource, key: row.key }} className="underline">
@@ -232,7 +233,7 @@ function ManySection({ parent, record, relation }: SectionProps) {
                       />
                     </th>
                   )}
-                  {columns.map((c) => <th key={c.name} scope="col" className="p-3 font-medium">{c.label}</th>)}
+                  {columns.map((c) => <th key={c.name} scope="col" className={cn("p-3 font-medium", columnClass(c))}>{c.label}</th>)}
                   {pivot.map((p) => <th key={`pivot-${p.name}`} scope="col" className="p-3 font-medium">{p.label}</th>)}
                   <th className="p-3"><span className="sr-only">{t("relation.open")}</span></th>
                 </tr>
@@ -252,7 +253,7 @@ function ManySection({ parent, record, relation }: SectionProps) {
                         />
                       </td>
                     )}
-                    {columns.map((c) => <td key={c.name} className="p-3"><Cell column={c} record={row} /></td>)}
+                    {columns.map((c) => <td key={c.name} className={cn("p-3", columnClass(c))}><Cell column={c} record={row} /></td>)}
                     {pivot.map((p) => <td key={`pivot-${p.name}`} className="p-3">{pivotText(records.data?.pivot?.[row.key]?.[p.name])}</td>)}
                     <td className="p-3 text-right whitespace-nowrap">
                       {relation.pivotForm && (

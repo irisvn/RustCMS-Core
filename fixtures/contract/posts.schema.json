@@ -238,6 +238,7 @@
         "valueType": "string"
       },
       {
+        "hideBelow": "sm",
         "label": "Category",
         "name": "category_id",
         "relationship": {
@@ -257,6 +258,7 @@
         "valueType": "bool"
       },
       {
+        "hideBelow": "md",
         "label": "Published at",
         "name": "published_at",
         "searchable": false,

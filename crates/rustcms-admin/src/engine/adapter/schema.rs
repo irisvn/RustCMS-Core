@@ -349,6 +349,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     relationship: field.belongs_to.map(|resource| Relationship { resource }),
                     cell: c.cell.clone(),
                     props: c.props.clone(),
+                    hide_below: c.hide_below,
                 }
             })
             .collect();

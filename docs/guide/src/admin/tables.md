@@ -35,6 +35,22 @@ fn table() -> Table {
 
 Columns and filters for fields the user may not read are left out.
 
+## Narrow screens
+
+```rust,ignore
+use rustcms::admin::Breakpoint;
+
+TextColumn::make("category_id").hide_below(Breakpoint::Sm),   // hidden under 640 px
+DateColumn::make("published_at").hide_below(Breakpoint::Md),  // hidden under 768 px
+TextColumn::make("notes").hide_below(Breakpoint::Lg),         // hidden under 1024 px
+```
+
+`hide_below(Breakpoint::Sm | Md | Lg)` drops a column from tables (lists
+and relation tables) on narrower screens, with static CSS classes of the
+panel's build (no inline style): the records still carry the value, and it
+is shown on the record's page. The Media page hides its type, size and date
+columns this way.
+
 ## Search and sorting
 
 Search covers the `.searchable()` fields (case-insensitive; on SQLite only for

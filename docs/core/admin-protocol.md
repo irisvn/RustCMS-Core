@@ -121,7 +121,8 @@ menu, those with `color: "danger"` last after a separator. Whether an action
 is offered on a record is the envelope's `abilities[action]`, which also
 reflects the action's per-record predicate (`visible_when`); the server
 decides it again when the action runs (one record: 403; several: `denied`). Older clients show every
-offered action as a button.
+offered action as a button. Columns may carry `hideBelow` (`sm`, `md`,
+`lg`): hidden by CSS on narrower screens; older clients show them.
 
 Vocabulary 9 adds `belongs_to_many` inputs (ADR 0035): `name` is a
 belongs-to-many relation, `relationship.resource` its target, `valueType`
