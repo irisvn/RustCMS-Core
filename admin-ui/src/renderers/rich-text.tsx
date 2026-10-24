@@ -1,20 +1,36 @@
 // Rich text: edited with TipTap, stored as a document (no HTML), shown with
 // React elements (no HTML injection). The editor injects no stylesheet
-// (`injectCSS: false`): its styles are in index.css, as the CSP requires.
-import Image from "@tiptap/extension-image";
-import { EditorContent, useEditor } from "@tiptap/react";
+// (`injectCSS: false`) and its nodes render no `style` attribute: its styles
+// are in index.css, as the CSP requires.
+import { findParentNode } from "@tiptap/core";
+import { TableMap } from "@tiptap/pm/tables";
+import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { Bold, Code, Heading2, Heading3, Heading4, ImagePlus, Italic, Link, List, ListOrdered, Minus, Quote, Strikethrough } from "lucide-react";
+import {
+  BetweenHorizontalEnd, BetweenVerticalEnd, Bold, Code, Columns3, Heading2, Heading3, Heading4, ImagePlus, Info, Italic, Link, List,
+  ListOrdered, Minus, Quote, Rows3, Settings2, Strikethrough, Table as TableIcon, TableRowsSplit, TriangleAlert, Video, X,
+} from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type * as React from "react";
 import { ApiError } from "@/api/client";
 import { usePanelConfig, useSession } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Input, Label } from "@/components/ui/input";
-import { type DocNode, type RichDocument, asDocument, isEmptyDocument, mediaUrl, safeHref, toDocument, toEditor } from "@/lib/rich-text";
+import { Input, Label, Textarea } from "@/components/ui/input";
+import {
+  type DocNode, EMBED_NAMES, type Embed, IMAGE_WIDTHS, type ImageWidth, LIMITS, type RichDocument, asDocument, embedUrl,
+  isEmptyDocument, mediaUrl, parseEmbedUrl, safeHref, toDocument, toEditor, validEmbed,
+} from "@/lib/rich-text";
 import { uploadMedia } from "./media";
+import { RichCallout, RichEmbed, RichImage, RichTable, RichTableCell, RichTableHeader, RichTableRow } from "./rich-text-nodes";
 import { errorText, later, show, type Text, useT } from "@/i18n";
+
+/** What the image dialog edits. */
+interface ImageDetails {
+  alt: string;
+  caption: string;
+  size: ImageWidth;
+}
 
 export function RichEditorWidget({ id, label, value, onChange, disabled, invalid, describedBy, nullable, onBusy }: {
   id: string;
@@ -37,6 +53,8 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   const [retry, setRetry] = useState<{ file: File; key: string } | null>(null);
   // The link dialog: the address it starts from, and whether a link is being edited.
   const [linking, setLinking] = useState<{ href: string; editing: boolean } | null>(null);
+  const [describing, setDescribing] = useState<ImageDetails | null>(null);
+  const [embedding, setEmbedding] = useState(false);
   useEffect(() => {
     onBusy?.(uploading || retry !== null);
   }, [uploading, retry, onBusy]);
@@ -51,9 +69,15 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         underline: false,
         link: { openOnClick: false, autolink: false, linkOnPaste: false, protocols: [], HTMLAttributes: { rel: "noopener noreferrer nofollow", target: null } },
       }),
-      Image.configure({ inline: false, allowBase64: false }),
+      RichImage.configure({ inline: false, allowBase64: false, apiPath }),
+      RichTable,
+      RichTableRow,
+      RichTableHeader,
+      RichTableCell,
+      RichEmbed,
+      RichCallout,
     ],
-    content: toEditor(stored ?? { type: "doc", version: 1, content: [] }, apiPath),
+    content: toEditor(stored ?? { type: "doc", version: 2, content: [] }, apiPath),
     editorProps: {
       attributes: {
         id,
@@ -73,13 +97,34 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   useEffect(() => {
     editor?.setEditable(!disabled);
   }, [editor, disabled]);
+  // What the toolbar shows: follows the selection (TipTap does not re-render on transactions).
+  const state = useEditorState({
+    editor,
+    selector: ({ editor: e }) => {
+      if (!e) return null;
+      const table = findParentNode((n) => n.type.name === "table")(e.state.selection);
+      const map = table ? TableMap.get(table.node) : null;
+      const active = (name: string, attrs?: Record<string, unknown>) => e.isActive(name, attrs);
+      return {
+        marks: { bold: active("bold"), italic: active("italic"), strike: active("strike"), link: active("link") },
+        heading: [2, 3, 4].find((level) => active("heading", { level })) ?? null,
+        bulletList: active("bulletList"),
+        orderedList: active("orderedList"),
+        blockquote: active("blockquote"),
+        codeBlock: active("codeBlock"),
+        image: active("image"),
+        callout: active("callout") ? String(e.getAttributes("callout").tone) : null,
+        table: map ? { rows: map.height, columns: map.width, header: table!.node.firstChild?.firstChild?.type.name === "tableHeader" } : null,
+      };
+    },
+  });
 
   // A stored value that is not a document: shown as it is, never rewritten.
   if (value && !stored) return <pre id={id} tabIndex={-1} className="overflow-x-auto rounded-md bg-muted p-3 text-xs" data-fallback="true">{value}</pre>;
 
-  const tool = (name: string, icon: React.ReactNode, active: boolean, run: () => void) => (
+  const tool = (name: string, icon: React.ReactNode, active: boolean, run: () => void, off = false) => (
     // Keeps the editor's focus and selection while clicking the toolbar.
-    <Button key={name} size="icon" variant={active ? "secondary" : "ghost"} aria-label={name} aria-pressed={active} disabled={disabled || !editor} onMouseDown={(e) => e.preventDefault()} onClick={run}>
+    <Button key={name} size="icon" variant={active ? "secondary" : "ghost"} aria-label={name} aria-pressed={active} disabled={disabled || !editor || off} onMouseDown={(e) => e.preventDefault()} onClick={run}>
       {icon}
     </Button>
   );
@@ -100,6 +145,21 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
     }
     chain().extendMarkRange("link").setLink({ href }).run();
   };
+  const describe = () => {
+    if (!editor?.isActive("image")) return;
+    const a = editor.getAttributes("image");
+    setDescribing({ alt: String(a.alt ?? ""), caption: String(a.caption ?? ""), size: IMAGE_WIDTHS.includes(a.size) ? a.size : "normal" });
+  };
+  const applyDetails = (details: ImageDetails) => {
+    setDescribing(null);
+    if (!editor || editor.isDestroyed || !editor.isActive("image")) return;
+    chain().updateAttributes("image", { ...details }).run();
+  };
+  const applyEmbed = (embed: Embed) => {
+    setEmbedding(false);
+    if (!editor || editor.isDestroyed) return;
+    chain().setEmbed(embed).run();
+  };
   const image = async (file: File | undefined, key: string = crypto.randomUUID()) => {
     if (!file || !editor) return;
     if (!file.type.startsWith("image/")) return setError(() => later("rich.imagesOnly"));
@@ -116,28 +176,47 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
       setUploading(false);
     }
   };
-  const on = (name: string, attrs?: Record<string, unknown>) => editor?.isActive(name, attrs) ?? false;
+  const s = state;
+  const table = s?.table ?? null;
   return (
     <div className="min-w-0">
       <div role="toolbar" aria-label={t("rich.toolbar", { field: label })} className="flex flex-wrap gap-1 rounded-t-md border border-border bg-muted/40 p-1">
-        {tool(t("rich.bold"), <Bold />, on("bold"), () => chain().toggleBold().run())}
-        {tool(t("rich.italic"), <Italic />, on("italic"), () => chain().toggleItalic().run())}
-        {tool(t("rich.strike"), <Strikethrough />, on("strike"), () => chain().toggleStrike().run())}
-        {tool(t("rich.h2"), <Heading2 />, on("heading", { level: 2 }), () => chain().toggleHeading({ level: 2 }).run())}
-        {tool(t("rich.h3"), <Heading3 />, on("heading", { level: 3 }), () => chain().toggleHeading({ level: 3 }).run())}
-        {tool(t("rich.h4"), <Heading4 />, on("heading", { level: 4 }), () => chain().toggleHeading({ level: 4 }).run())}
-        {tool(t("rich.bullets"), <List />, on("bulletList"), () => chain().toggleBulletList().run())}
-        {tool(t("rich.numbers"), <ListOrdered />, on("orderedList"), () => chain().toggleOrderedList().run())}
-        {tool(t("rich.quote"), <Quote />, on("blockquote"), () => chain().toggleBlockquote().run())}
-        {tool(t("rich.code"), <Code />, on("codeBlock"), () => chain().toggleCodeBlock().run())}
+        {tool(t("rich.bold"), <Bold />, !!s?.marks.bold, () => chain().toggleBold().run())}
+        {tool(t("rich.italic"), <Italic />, !!s?.marks.italic, () => chain().toggleItalic().run())}
+        {tool(t("rich.strike"), <Strikethrough />, !!s?.marks.strike, () => chain().toggleStrike().run())}
+        {tool(t("rich.h2"), <Heading2 />, s?.heading === 2, () => chain().toggleHeading({ level: 2 }).run())}
+        {tool(t("rich.h3"), <Heading3 />, s?.heading === 3, () => chain().toggleHeading({ level: 3 }).run())}
+        {tool(t("rich.h4"), <Heading4 />, s?.heading === 4, () => chain().toggleHeading({ level: 4 }).run())}
+        {tool(t("rich.bullets"), <List />, !!s?.bulletList, () => chain().toggleBulletList().run())}
+        {tool(t("rich.numbers"), <ListOrdered />, !!s?.orderedList, () => chain().toggleOrderedList().run())}
+        {tool(t("rich.quote"), <Quote />, !!s?.blockquote, () => chain().toggleBlockquote().run())}
+        {tool(t("rich.code"), <Code />, !!s?.codeBlock, () => chain().toggleCodeBlock().run())}
         {tool(t("rich.rule"), <Minus />, false, () => chain().setHorizontalRule().run())}
-        {tool(t("rich.link"), <Link />, on("link"), link)}
+        {tool(t("rich.calloutInfo"), <Info />, s?.callout === "info", () => chain().toggleCallout("info").run())}
+        {tool(t("rich.calloutWarn"), <TriangleAlert />, s?.callout === "warn", () => chain().toggleCallout("warn").run())}
+        {tool(t("rich.link"), <Link />, !!s?.marks.link, link)}
         {tool(t("rich.image"), <ImagePlus />, false, () => picker.current?.click())}
+        {tool(t("rich.imageDetails"), <Settings2 />, false, describe, !s?.image)}
+        {tool(t("rich.table"), <TableIcon />, false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), !!table)}
+        {tool(t("rich.embed"), <Video />, false, () => setEmbedding(true))}
         <input ref={picker} type="file" hidden accept="image/png,image/jpeg,image/gif,image/webp" onChange={(e) => {
           void image(e.target.files?.[0]);
           e.target.value = "";
         }} />
       </div>
+      {table && (
+        <div role="toolbar" aria-label={t("rich.tableTools")} className="flex flex-wrap items-center gap-1 border border-t-0 border-border bg-muted/20 p-1">
+          {tool(t("rich.rowAdd"), <BetweenHorizontalEnd />, false, () => chain().addRowAfter().run(), table.rows >= LIMITS.tableRows)}
+          {tool(t("rich.columnAdd"), <BetweenVerticalEnd />, false, () => chain().addColumnAfter().run(), table.columns >= LIMITS.tableColumns)}
+          {tool(t("rich.rowRemove"), <TableRowsSplit />, false, () => chain().deleteRow().run(), table.rows <= 1)}
+          {tool(t("rich.columnRemove"), <Columns3 />, false, () => chain().deleteColumn().run(), table.columns <= 1)}
+          {tool(t("rich.headerRow"), <Rows3 />, table.header, () => chain().toggleHeaderRow().run())}
+          {tool(t("rich.tableRemove"), <X />, false, () => chain().deleteTable().run())}
+          <span className="px-2 text-xs text-muted-foreground">
+            {t("rich.tableSize", { rows: table.rows, columns: table.columns, maxRows: LIMITS.tableRows, maxColumns: LIMITS.tableColumns })}
+          </span>
+        </div>
+      )}
       <EditorContent editor={editor} />
       {retry && (
         <Button size="sm" className="mt-2" disabled={disabled || uploading} onClick={() => void image(retry.file, retry.key)}>
@@ -149,9 +228,30 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         setLinking(null);
         editor?.commands.focus();
       }} onApply={applyLink} />
+      <Dialog open={describing !== null} onClose={() => {
+        setDescribing(null);
+        editor?.commands.focus();
+      }} title={t("rich.imageDetails")}>
+        {describing && <ImageFields initial={describing} onClose={() => setDescribing(null)} onApply={applyDetails} />}
+      </Dialog>
+      <Dialog open={embedding} onClose={() => {
+        setEmbedding(false);
+        editor?.commands.focus();
+      }} title={t("rich.embed")}>
+        {embedding && <EmbedFields onClose={() => setEmbedding(false)} onApply={applyEmbed} />}
+      </Dialog>
     </div>
   );
 }
+
+/** Enter in a text field applies the dialog (never submits the record's form), except while composing. */
+const onEnter = (apply: () => void) => (e: React.KeyboardEvent) => {
+  if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+  if (e.key === "Enter") {
+    e.preventDefault();
+    apply();
+  }
+};
 
 /**
  * The address of a link: checked as the server checks it (`http`, `https`,
@@ -203,14 +303,7 @@ function LinkFields({ initial, editing, onClose, onApply }: {
             setHref(e.target.value);
             setInvalid(false);
           }}
-          onKeyDown={(e) => {
-            // Enter that confirms an IME composition belongs to the composition.
-            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
-            if (e.key === "Enter") {
-              e.preventDefault();
-              apply();
-            }
-          }}
+          onKeyDown={onEnter(apply)}
         />
         {invalid && <p id={`${id}-error`} role="alert" className="text-xs leading-5 text-destructive">{t("rich.linkInvalid")}</p>}
       </div>
@@ -224,6 +317,95 @@ function LinkFields({ initial, editing, onClose, onApply }: {
         <Button type="button" onClick={apply}>{t("rich.linkApply")}</Button>
       </div>
     </div>
+  );
+}
+
+/** An image's alternative text, caption and width (the server's limits, in code points). */
+function ImageFields({ initial, onClose, onApply }: { initial: ImageDetails; onClose: () => void; onApply: (d: ImageDetails) => void }) {
+  const t = useT();
+  const id = useId();
+  const [alt, setAlt] = useState(initial.alt);
+  const [caption, setCaption] = useState(initial.caption);
+  const [size, setSize] = useState<ImageWidth>(initial.size);
+  const apply = () => onApply({ alt: [...alt].slice(0, LIMITS.alt).join(""), caption: [...caption.trim()].slice(0, LIMITS.caption).join(""), size });
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={`${id}-alt`}>{t("rich.imageAlt")}</Label>
+        <Textarea id={`${id}-alt`} autoFocus rows={2} value={alt} aria-describedby={`${id}-alt-help`} onChange={(e) => setAlt(e.target.value)} />
+        <p id={`${id}-alt-help`} className="text-xs text-muted-foreground">{t("rich.imageAltHelp", { max: LIMITS.alt })}</p>
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={`${id}-caption`}>{t("rich.imageCaption")}</Label>
+        <Input id={`${id}-caption`} value={caption} onChange={(e) => setCaption(e.target.value)} onKeyDown={onEnter(apply)} />
+      </div>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-2 text-sm font-medium">{t("rich.imageWidth")}</legend>
+        <div className="flex flex-wrap gap-4">
+          {IMAGE_WIDTHS.map((w) => (
+            <label key={w} className="inline-flex items-center gap-2 text-sm">
+              <input type="radio" name={`${id}-size`} value={w} checked={size === w} onChange={() => setSize(w)} />
+              {t(`rich.width.${w}`)}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button type="button" variant="outline" onClick={onClose}>{t("action.cancel")}</Button>
+        <Button type="button" onClick={apply}>{t("rich.linkApply")}</Button>
+      </div>
+    </div>
+  );
+}
+
+/** A video or post address, kept as its provider and id (YouTube, Vimeo, X); previewed as a card. */
+function EmbedFields({ onClose, onApply }: { onClose: () => void; onApply: (embed: Embed) => void }) {
+  const t = useT();
+  const id = useId();
+  const [address, setAddress] = useState("");
+  const [invalid, setInvalid] = useState(false);
+  const embed = parseEmbedUrl(address);
+  const apply = () => (embed ? onApply(embed) : setInvalid(true));
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={id}>{t("rich.embedAddress")}</Label>
+        <Input
+          id={id}
+          type="url"
+          inputMode="url"
+          autoFocus
+          placeholder={t("rich.embedPlaceholder")}
+          value={address}
+          aria-invalid={invalid || undefined}
+          aria-describedby={`${id}-help`}
+          onChange={(e) => {
+            setAddress(e.target.value);
+            setInvalid(false);
+          }}
+          onKeyDown={onEnter(apply)}
+        />
+        <p id={`${id}-help`} className={invalid ? "text-xs text-destructive" : "text-xs text-muted-foreground"} role={invalid ? "alert" : undefined}>
+          {invalid ? t("rich.embedInvalid") : t("rich.embedHelp")}
+        </p>
+      </div>
+      {embed && <EmbedCard embed={embed} />}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button type="button" variant="outline" onClick={onClose}>{t("action.cancel")}</Button>
+        <Button type="button" onClick={apply}>{t("rich.embedInsert")}</Button>
+      </div>
+    </div>
+  );
+}
+
+/** An embed as the panel shows it: the provider and its page, no iframe and no third-party image. */
+function EmbedCard({ embed, link = false }: { embed: Embed; link?: boolean }) {
+  const url = embedUrl(embed);
+  return (
+    <figure className="rich-embed" data-provider={embed.provider}>
+      <span className="rich-embed-provider">{EMBED_NAMES[embed.provider]}</span>
+      {link ? <a href={url} rel="noopener noreferrer nofollow" className="rich-embed-url">{url}</a> : <span className="rich-embed-url">{url}</span>}
+    </figure>
   );
 }
 
@@ -257,8 +439,33 @@ function RichNode({ node, nodes, apiPath }: { node: DocNode; nodes: (list?: DocN
       return <hr />;
     case "hardBreak":
       return <br />;
-    case "image":
-      return <img src={mediaUrl(apiPath, String(node.attrs?.media))} alt={String(node.attrs?.alt ?? "")} className="max-w-full rounded-md" />;
+    case "image": {
+      const caption = String(node.attrs?.caption ?? "");
+      const width = IMAGE_WIDTHS.includes(node.attrs?.width as ImageWidth) ? String(node.attrs?.width) : "normal";
+      return (
+        <figure className="rich-figure" data-width={width}>
+          <img src={mediaUrl(apiPath, String(node.attrs?.media))} alt={String(node.attrs?.alt ?? "")} />
+          {caption && <figcaption>{caption}</figcaption>}
+        </figure>
+      );
+    }
+    case "table": {
+      const rows = node.content ?? [];
+      const header = rows[0]?.content?.[0]?.type === "tableHeader";
+      const row = (r: DocNode, i: number, Cell: "th" | "td") => <tr key={i}>{(r.content ?? []).map((c, j) => <Cell key={j}>{nodes(c.content)}</Cell>)}</tr>;
+      return (
+        <div className="rich-table-scroll">
+          <table className="rich-table">
+            {header && <thead>{row(rows[0]!, 0, "th")}</thead>}
+            <tbody>{rows.slice(header ? 1 : 0).map((r, i) => row(r, i, "td"))}</tbody>
+          </table>
+        </div>
+      );
+    }
+    case "embed":
+      return validEmbed(node.attrs?.provider, node.attrs?.id) ? <EmbedCard embed={{ provider: node.attrs.provider, id: String(node.attrs.id) }} link /> : null;
+    case "callout":
+      return <aside className="rich-callout" data-tone={node.attrs?.tone === "warn" ? "warn" : "info"}>{nodes(node.content)}</aside>;
     case "text": {
       let out: React.ReactNode = node.text ?? "";
       for (const mark of node.marks ?? []) {
