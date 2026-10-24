@@ -86,8 +86,18 @@ db_test!(widgets_count_what_the_list_shows, |db: TestDb| async move {
     let titles: Vec<&str> =
         recent["records"].as_array().unwrap().iter().map(|r| r["title"].as_str().unwrap()).collect();
     assert_eq!(titles, ["Mine draft", "Mine today", "Mine yesterday"]);
-    assert_eq!(recent["columns"], json!([{"name": "published_at", "label": "Published at"}]));
+    // Shown as the list shows them: the value's kind and the table's column.
+    let column = &recent["columns"][0];
+    assert_eq!(
+        (&column["name"], &column["label"], &column["valueType"]),
+        (&json!("published_at"), &json!("Published at"), &json!("instant"))
+    );
+    assert_eq!((&column["column"]["type"], &column["column"]["name"]), (&json!("date"), &json!("published_at")));
+    assert!(column.get("options").is_none(), "no static options");
     assert_eq!(recent["records"][0]["values"]["published_at"], json!("—"));
+    assert_eq!(recent["records"][0]["data"]["published_at"], json!(null));
+    let today = recent["records"][1]["data"]["published_at"].as_str().unwrap();
+    assert!(chrono::DateTime::parse_from_rfc3339(today).is_ok(), "the wire value: {today}");
 });
 
 db_test!(widgets_need_their_permission_and_the_list, |db: TestDb| async move {

@@ -38,7 +38,7 @@ AdminProvider::new().dashboard(
 |---|---|
 | `Widget::stat(name, resource)` | how many records the user may list; with `compare_last_days(days, date)`, those whose `date` is in the last `days`, against the `days` before |
 | `Widget::chart(name, resource, date)` | records per `Bucket::Day`, `Week` (ISO, from Monday) or `Month`, the `last(n)` buckets (1–60), UTC |
-| `Widget::recent(name, resource)` | the first `limit` (1–20) records of the list in `sort` order, with `columns` |
+| `Widget::recent(name, resource)` | the first `limit` (1–20) records of the list in `sort` order, with `columns`, shown as the resource shows them (option labels, the table column's custom cell or badge, dates in the user's language, related records by title) |
 
 Every widget may take `.label()` (translated like other labels; default: the
 name in words), `.span(1–4)` (grid columns), and `.filter(field, op, value)`

@@ -6,8 +6,9 @@ import { Link } from "@tanstack/react-router";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useApi } from "@/api/context";
-import type { ChartBucket, DashboardView, WidgetData, WidgetInfo } from "@/api/types";
-import { useLocale, useT } from "@/i18n";
+import type { ChartBucket, DashboardView, Envelope, RecentColumn, RecentRecord, WidgetData, WidgetInfo } from "@/api/types";
+import { formatWireDate, useLocale, useT } from "@/i18n";
+import { Cell } from "@/renderers/table";
 import { cn } from "@/lib/utils";
 
 const enc = encodeURIComponent;
@@ -130,8 +131,8 @@ export function BarChart({ buckets, label }: { buckets: ChartBucket[]; label: st
 
 function Recent({ resource, columns, records }: {
   resource: string;
-  columns: { name: string; label: string }[];
-  records: { key: string; title?: string; values: Record<string, string> }[];
+  columns: RecentColumn[];
+  records: RecentRecord[];
 }) {
   const t = useT();
   if (records.length === 0) return <p className="text-sm text-muted-foreground">{t("dashboard.noRecords")}</p>;
@@ -144,11 +145,38 @@ function Recent({ resource, columns, records }: {
           </Link>
           {columns.length > 0 && (
             <span className="truncate text-xs text-muted-foreground">
-              {columns.map((c) => `${c.label}: ${r.values[c.name] ?? "—"}`).join(" · ")}
+              {columns.map((c, i) => (
+                <span key={c.name}>
+                  {i > 0 && " · "}
+                  {c.label}: <RecentValue column={c} record={r} />
+                </span>
+              ))}
             </span>
           )}
         </li>
       ))}
     </ul>
   );
+}
+
+/**
+ * A value as the resource's list shows it: the option's label, the table
+ * column's cell (custom cells, badges, dates), a formatted date; otherwise
+ * the server's text (related records by title).
+ */
+function RecentValue({ column, record }: { column: RecentColumn; record: RecentRecord }) {
+  const data = record.data ?? {};
+  const value = data[column.name];
+  const text = record.values[column.name] ?? "—";
+  if (value === undefined || value === null) return <>{text}</>;
+  const option = column.options?.find((o) => JSON.stringify(o.value) === JSON.stringify(value));
+  if (option && !column.column?.cell) return <>{option.label}</>;
+  if (column.column && !column.column.relationship) {
+    const envelope = { key: record.key, title: record.title, abilities: {}, data, labels: {} } as Envelope;
+    return <span className="inline-flex align-middle [&_.line-clamp-2]:inline"><Cell column={column.column} record={envelope} /></span>;
+  }
+  if (typeof value === "string" && column.valueType && ["instant", "local_datetime", "date"].includes(column.valueType)) {
+    return <time dateTime={value}>{formatWireDate(column.valueType, value) ?? value}</time>;
+  }
+  return <>{text}</>;
 }

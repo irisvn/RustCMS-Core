@@ -73,6 +73,10 @@ All notable changes are documented here. The format follows
   (`2026-10-24T02:00:45.857073Z`): they are formatted in the user's
   language, instants in the browser's time zone with its name (the exact
   value stays in the `<time datetime>` attribute).
+- `Widget::recent` showed raw values (`draft`, ISO instants): each column
+  now carries its `valueType`, its form input's `options` and its table
+  `column`, and each record its wire `data`, so the panel shows option
+  labels, custom cells, badges and formatted dates (the `values` text stays).
 - The media input reported its pending upload again on every render of its
   form (a new `onBusy` callback each time), re-rendering the form without
   end while a file was being uploaded.

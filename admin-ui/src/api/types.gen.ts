@@ -1089,7 +1089,19 @@ name: string,
 /**
  * Label in the user's language.
  */
-label: string, };
+label: string, 
+/**
+ * Wire kind of the value (`instant`, `date`, …).
+ */
+valueType?: string, 
+/**
+ * Labels of the field's static options (its form input's), in the user's language.
+ */
+options?: Array<SelectOption>, 
+/**
+ * The resource table's column of the field (type, badge colors, custom cell), when it has one.
+ */
+column?: ColumnSchema, };
 
 export type RecentRecord = { 
 /**
@@ -1103,7 +1115,12 @@ title?: string,
 /**
  * Text of each column (readable fields only; related records by title).
  */
-values: { [key in string]: string }, };
+values: { [key in string]: string }, 
+/**
+ * The value of each column, in wire format (readable fields only), for
+ * option labels, custom cells and dates.
+ */
+data: Record<string, JsonValue>, };
 
 export type WidgetData = { "kind": "stat", 
 /**

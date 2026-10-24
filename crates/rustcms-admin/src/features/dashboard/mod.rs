@@ -364,11 +364,24 @@ pub struct ChartBucket {
 /// A column of a recent list.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct RecentColumn {
     /// Field.
     pub name: String,
     /// Label in the user's language.
     pub label: String,
+    /// Wire kind of the value (`instant`, `date`, …).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_type: Option<&'static str>,
+    /// Labels of the field's static options (its form input's), in the user's language.
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::ui::SelectOption>>", optional))]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<crate::ui::SelectOption>,
+    /// The resource table's column of the field (type, badge colors, custom cell), when it has one.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column: Option<crate::schema::ColumnSchema>,
 }
 
 /// A record of a recent list.
@@ -383,6 +396,10 @@ pub struct RecentRecord {
     pub title: Option<String>,
     /// Text of each column (readable fields only; related records by title).
     pub values: BTreeMap<String, String>,
+    /// The value of each column, in wire format (readable fields only), for
+    /// option labels, custom cells and dates.
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, JsonValue>"))]
+    pub data: BTreeMap<String, serde_json::Value>,
 }
 
 /// `GET dashboard/widgets/{name}`.
@@ -507,6 +524,39 @@ fn text(value: Option<&serde_json::Value>, label: Option<&String>) -> String {
     }
 }
 
+/// How the column `name` of a recent list is shown: its kind, the options of
+/// its form input and its table column (from the user's view schema).
+fn recent_column(
+    ctx: &Ctx,
+    resource: &dyn crate::registry::DynResource,
+    schema: Option<&crate::schema::ResourceSchema>,
+    name: &str,
+) -> RecentColumn {
+    fn input<'a>(
+        components: &'a [crate::schema::ComponentSchema],
+        name: &str,
+    ) -> Option<&'a crate::schema::InputSchema> {
+        components.iter().find_map(|c| match c {
+            crate::schema::ComponentSchema::Input(i) if i.name == name => Some(i),
+            crate::schema::ComponentSchema::Input(_) => None,
+            crate::schema::ComponentSchema::Layout(l) => input(&l.components, name),
+        })
+    }
+    let column = schema.and_then(|s| s.table.columns.iter().find(|c| c.name == name)).cloned();
+    let options = schema
+        .and_then(|s| input(&s.form.components, name))
+        .filter(|i| i.relationship.is_none())
+        .map(|i| i.options.clone())
+        .unwrap_or_default();
+    RecentColumn {
+        name: name.to_owned(),
+        label: resource.field_label(ctx, name),
+        value_type: resource.field_link(name).map(|(_, kind)| kind),
+        options,
+        column,
+    }
+}
+
 /// `GET dashboard/widgets/{name}`: its data, computed now.
 async fn data(
     State(app): State<AppState>,
@@ -557,24 +607,32 @@ async fn data(
             }
         }
         Kind::Recent { columns, limit } => match resource.list(&ctx, &widget.query(Some(*limit))).await {
-            Ok(page) => WidgetData::Recent {
-                columns: columns
-                    .iter()
-                    .map(|c| RecentColumn { name: c.clone(), label: resource.field_label(&ctx, c) })
-                    .collect(),
-                records: page
-                    .data
-                    .into_iter()
-                    .map(|envelope| RecentRecord {
-                        values: columns
-                            .iter()
-                            .map(|c| (c.clone(), text(envelope.data.get(c), envelope.labels.get(c))))
-                            .collect(),
-                        key: envelope.key,
-                        title: envelope.title,
-                    })
-                    .collect(),
-            },
+            Ok(page) => {
+                // Shown as the resource shows them: its table's columns and its form's options.
+                let schema = resource.schema(&ctx, crate::schema::SchemaOperation::View, None).await.ok();
+                WidgetData::Recent {
+                    columns: columns
+                        .iter()
+                        .map(|c| recent_column(&ctx, resource.as_ref(), schema.as_ref(), c))
+                        .collect(),
+                    records: page
+                        .data
+                        .into_iter()
+                        .map(|envelope| RecentRecord {
+                            values: columns
+                                .iter()
+                                .map(|c| (c.clone(), text(envelope.data.get(c), envelope.labels.get(c))))
+                                .collect(),
+                            data: columns
+                                .iter()
+                                .filter_map(|c| envelope.data.get(c).map(|v| (c.clone(), v.clone())))
+                                .collect(),
+                            key: envelope.key,
+                            title: envelope.title,
+                        })
+                        .collect(),
+                }
+            }
             // The list's scan limit (its stable code, not its text).
             Err(AppError::Validation(errors))
                 if errors.form_errors.iter().any(|m| rustcms_core::i18n::Issue::of(m).code == "too_many_matches") =>
