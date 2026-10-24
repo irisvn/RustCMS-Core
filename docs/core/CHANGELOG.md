@@ -57,6 +57,10 @@ All notable changes are documented here. The format follows
   vocabulary 10): the column is hidden on narrower screens (640, 768,
   1024 px) by static CSS classes (lists and relation tables); records are
   unchanged.
+- `Action::submit_label(label)` (schema `ActionSchema.submitLabel`): the
+  button of the action's form dialog; by default the action's label without
+  a trailing ellipsis (it was always "Run"). Action dialog titles drop a
+  trailing ellipsis too.
 
 ### Fixed (0.10.1)
 - Bulk actions were never offered on list rows, although `.bulk()` means

@@ -40,10 +40,11 @@ test("tags are attached, edited and detached; an action asks for a category", as
   await page.goto("/admin/r/posts?search=Tagged+post");
   await page.getByRole("row", { name: /Tagged post/ }).getByRole("checkbox").check();
   await page.getByRole("button", { name: "Move to category…" }).click();
-  const move = page.getByRole("dialog", { name: "Move to category…" });
+  // Titled without the label's ellipsis, run by a button with the action's own words.
+  const move = page.getByRole("dialog", { name: "Move to category" });
   await move.getByRole("combobox", { name: /Category/ }).click();
   await page.getByRole("option", { name: "Guides" }).click();
-  await move.getByRole("button", { name: "Run" }).click();
+  await move.getByRole("button", { name: "Move to category" }).click();
   await expect(move).toBeHidden();
   await expect(page.getByRole("row", { name: /Tagged post/ })).toContainText("Guides");
 

@@ -351,6 +351,11 @@ pub struct ActionSchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub primary: bool,
+    /// Label of the button that runs it from its form dialog (default: the
+    /// action's label without a trailing ellipsis).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub submit_label: Option<String>,
 }
 
 /// A table.

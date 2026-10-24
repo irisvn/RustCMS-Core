@@ -58,6 +58,7 @@ pub struct Action<E: EntityTrait> {
     pub(crate) form: Vec<ActionField>,
     pub(crate) visible: Option<Visibility<E>>,
     pub(crate) primary: bool,
+    pub(crate) submit_label: Option<String>,
 }
 
 impl<E: EntityTrait> Action<E> {
@@ -110,6 +111,7 @@ impl<E: EntityTrait> Action<E> {
             form: Vec::new(),
             visible: None,
             primary: false,
+            submit_label: None,
         }
     }
 
@@ -163,6 +165,13 @@ impl<E: EntityTrait> Action<E> {
     /// without `permission`. Per-record policy checks still apply to the others.
     pub fn requires_permission(mut self, permission: &'static str) -> Self {
         self.required_permission = Some(permission);
+        self
+    }
+
+    /// Label of the button that runs the action from its form dialog
+    /// ([`Self::form`]); default: the action's label without a trailing `…`.
+    pub fn submit_label(mut self, label: impl Into<String>) -> Self {
+        self.submit_label = Some(label.into());
         self
     }
 

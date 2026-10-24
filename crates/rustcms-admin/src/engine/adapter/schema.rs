@@ -122,6 +122,7 @@ impl<R: Resource> ResourceAdapter<R> {
         for action in &self.actions {
             out.push(action.label.clone().unwrap_or_else(|| humanize(action.name)));
             out.extend(action.confirm.clone());
+            out.extend(action.submit_label.clone());
             for field in &action.form {
                 out.push(field.display_label());
                 out.extend(field.input.placeholder.clone());
@@ -385,6 +386,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     icon: action.icon.clone(),
                     form: self.action_form(ctx, action),
                     primary: action.primary,
+                    submit_label: action.submit_label.as_deref().map(|l| ctx.t_in(R::SLUG, l)),
                 });
             }
         }

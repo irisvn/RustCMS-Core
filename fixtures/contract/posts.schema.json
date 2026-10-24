@@ -225,7 +225,8 @@
           ]
         },
         "label": "Schedule…",
-        "name": "schedule"
+        "name": "schedule",
+        "submitLabel": "Schedule"
       }
     ],
     "columns": [

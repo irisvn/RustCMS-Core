@@ -156,19 +156,19 @@ it("runs an action with a form and shows the server's field errors", async () =>
   const rowOf = async (title: string) => (await screen.findByText(title)).closest("tr")!;
   await userEvent.click(within(await rowOf("Mine")).getByRole("checkbox"));
   await userEvent.click(screen.getByRole("button", { name: "Move to category…" }));
-  const dialog = await screen.findByRole("dialog", { name: "Move to category…" });
+  const dialog = await screen.findByRole("dialog", { name: "Move to category" });
   // The relationship select reads the action's own options.
   within(dialog).getByRole("combobox", { name: /Category/ }).focus();
   await userEvent.keyboard("{ArrowDown}");
   await screen.findByRole("option", { name: "News" });
   await userEvent.keyboard("{Enter}");
   await userEvent.type(within(dialog).getByLabelText(/^Note/), "long note!");
-  await userEvent.click(within(dialog).getByRole("button", { name: "Run" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Move to category" }));
   expect(await within(dialog).findByText("may not be longer than 10 characters")).toBeInTheDocument();
-  await userEvent.click(within(dialog).getByRole("button", { name: "Run" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Move to category" }));
   await waitFor(() => expect(runs).toHaveLength(2));
   expect(runs[1]).toMatchObject({ keys: [POST], data: { category_id: "7", mode: "move", note: "long note!" } });
-  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Move to category…" })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Move to category" })).toBeNull());
 });
 
 it("edits an instant action field in UTC and sends it as RFC 3339", async () => {
@@ -186,13 +186,14 @@ it("edits an instant action field in UTC and sends it as RFC 3339", async () => 
   // Not primary: in the row's menu.
   await userEvent.click(await screen.findByRole("button", { name: "More actions for Mine" }));
   await userEvent.click(await screen.findByRole("menuitem", { name: "Schedule…" }));
-  const dialog = await screen.findByRole("dialog", { name: "Schedule…" });
+  const dialog = await screen.findByRole("dialog", { name: "Schedule" });
+  // The title drops the menu label's ellipsis; the button is the action's own submit label.
   const at = within(dialog).getByLabelText(/^Publish at/);
   expect(at).toHaveAttribute("type", "datetime-local");
   // Labelled UTC, like the form's picker of an instant column.
   expect(within(dialog).getByText("UTC")).toBeInTheDocument();
   fireEvent.change(at, { target: { value: "2026-10-12T09:30" } });
-  await userEvent.click(within(dialog).getByRole("button", { name: "Run" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Schedule" }));
   await waitFor(() => expect(runs).toHaveLength(1));
   expect(runs[0]).toEqual({ keys: [POST], data: { at: "2026-10-12T09:30:00Z" } });
 });

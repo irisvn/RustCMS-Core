@@ -11,7 +11,7 @@ import { Table, TableBody, TableHeader, TableRow } from "@/components/ui/misc";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
-import { type ActionNotice, ActionNoticeView, RecordActions, isOutcome, outcomeNotice, recoveredAction } from "@/components/actions";
+import { type ActionNotice, ActionNoticeView, RecordActions, actionTitle, isOutcome, outcomeNotice, recoveredAction, submitLabelOf } from "@/components/actions";
 import { SchemaFormDialog } from "@/components/schema-form-dialog";
 import { ExportButton, ExportsPanel } from "@/components/exports";
 import { Input, NativeSelect } from "@/components/ui/input";
@@ -474,17 +474,17 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
       <SchemaFormDialog
         open={formAction !== null}
         onClose={() => setFormAction(null)}
-        title={formAction?.action.label ?? ""}
+        title={formAction ? actionTitle(formAction.action.label) : ""}
         form={formAction?.action.form}
         slug={slug}
         optionsPath={(field) => `/resources/${encodeURIComponent(slug)}/actions/${encodeURIComponent(formAction?.action.name ?? "")}/fields/${encodeURIComponent(field)}/options`}
-        submitLabel={translate("action.run")}
+        submitLabel={formAction ? submitLabelOf(formAction.action) : ""}
         onSubmit={submitForm}
       >
         {formAction?.action.confirm && <p className="text-sm text-muted-foreground">{formAction.action.confirm}</p>}
       </SchemaFormDialog>
 
-      <Dialog open={confirm !== null} onClose={() => setConfirm(null)} title={confirm?.kind === "action" ? confirm.action.label : t("list.confirmDelete")}>
+      <Dialog open={confirm !== null} onClose={() => setConfirm(null)} title={confirm?.kind === "action" ? actionTitle(confirm.action.label) : t("list.confirmDelete")}>
         <p className="text-sm text-muted-foreground">
           {confirm?.kind === "delete"
             ? table.softDeletes

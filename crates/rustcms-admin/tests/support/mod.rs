@@ -475,6 +475,7 @@ impl Resource for PostResource {
                 })
             })
             .label("Schedule…")
+            .submit_label("Schedule")
             .ability("publish")
             .requires_permission("posts.publish")
             .form(vec![rustcms_admin::ActionField::datetime("at").label("Publish at").required()]),

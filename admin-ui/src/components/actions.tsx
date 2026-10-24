@@ -14,6 +14,12 @@ import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator } from "@/compone
 import { errorText, formatCount, later, show, t as translate, type Text, useT } from "@/i18n";
 import { openInNewTab, openableUrl } from "@/lib/open-url";
 
+/** An action's label as a dialog title or button: without a trailing ellipsis (`Schedule…`). */
+export const actionTitle = (label: string) => label.replace(/\s*(…|\.\.\.)\s*$/u, "") || label;
+
+/** The label of the button that runs `action` from its form. */
+export const submitLabelOf = (action: ActionSchema) => action.submitLabel ?? actionTitle(action.label);
+
 const recordCount = (n: number) => translate("list.records", { count: n, n: formatCount(n) });
 
 /** The summary of an action's outcome. */
@@ -149,11 +155,11 @@ export function useActionRunner(slug: string, offered?: (action: ActionSchema, k
       <SchemaFormDialog
         open={form !== null}
         onClose={() => setForm(null)}
-        title={form?.action.label ?? ""}
+        title={form ? actionTitle(form.action.label) : ""}
         form={form?.action.form}
         slug={slug}
         optionsPath={(field) => `/resources/${encodeURIComponent(slug)}/actions/${encodeURIComponent(form?.action.name ?? "")}/fields/${encodeURIComponent(field)}/options`}
-        submitLabel={translate("action.run")}
+        submitLabel={form ? submitLabelOf(form.action) : ""}
         onSubmit={async (data) => {
           if (!form) return;
           if (!current(form.action, form.keys)) throw new Error(translate("list.changedMeanwhile"));
@@ -164,7 +170,7 @@ export function useActionRunner(slug: string, offered?: (action: ActionSchema, k
       >
         {form?.action.confirm && <p className="text-sm text-muted-foreground">{form.action.confirm}</p>}
       </SchemaFormDialog>
-      <Dialog open={confirm !== null} onClose={() => setConfirm(null)} title={confirm?.action.label ?? ""}>
+      <Dialog open={confirm !== null} onClose={() => setConfirm(null)} title={confirm ? actionTitle(confirm.action.label) : ""}>
         <p className="text-sm text-muted-foreground">{confirm?.action.confirm}</p>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => setConfirm(null)}>{t("action.cancel")}</Button>

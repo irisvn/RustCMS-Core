@@ -158,6 +158,10 @@ Fields left empty are `null` (`.required()` refuses that), or their
    may view (422 otherwise). A replay of an action that already ran reports
    that run, even if the record has gone since.
 
+The dialog is titled with the action's label without a trailing ellipsis
+(`Move to category`), and its button runs the action with
+`.submit_label("Move")`, by default that same label.
+
 An action without a form refuses any `data` (422). A handler may return
 `ValidationErrors` (on a form field, or for the whole form): the action is
 rolled back and the dialog shows them. The dialog's relationship inputs read

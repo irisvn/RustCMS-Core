@@ -418,7 +418,12 @@ form?: FormSchema,
  * Shown with its label in list rows; other row actions go in the row's
  * menu, those with color `danger` last (vocabulary 10).
  */
-primary?: boolean, };
+primary?: boolean, 
+/**
+ * Label of the button that runs it from its form dialog (default: the
+ * action's label without a trailing ellipsis).
+ */
+submitLabel?: string, };
 
 export type TableSchema = { 
 /**
