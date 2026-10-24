@@ -51,13 +51,14 @@ pub fn outline(doc: &Document) -> Vec<Heading> {
 /// `text` as an id: diacritics folded (`Tiếng Việt` → `tieng-viet`,
 /// `Đà Nẵng` → `da-nang`), lower case, letters and digits kept, every other
 /// run of characters a single `-`, none at the ends; at most [`MAX_SLUG`]
-/// characters. Letters without a Latin form (`日本`) are kept as they are.
+/// characters. ASCII only (deterministic): letters without a Latin form
+/// (`日本`) are separators, like punctuation.
 pub fn slug(text: &str) -> String {
     let mut out = String::new();
     let mut dash = false;
     let mut len = 0;
     for c in text.to_lowercase().nfd().flat_map(fold) {
-        if c.is_alphanumeric() {
+        if c.is_ascii_alphanumeric() {
             let separate = dash && !out.is_empty();
             if len + usize::from(separate) >= MAX_SLUG {
                 break;

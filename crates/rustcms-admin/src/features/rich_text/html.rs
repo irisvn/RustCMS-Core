@@ -48,23 +48,27 @@ impl ImageInfo {
 /// image's media id to its URL (images whose URL is `None` are left out). See
 /// [`to_html_with`], which also writes images' sizes.
 pub fn to_html(doc: &Document, media_url: &dyn Fn(uuid::Uuid) -> Option<String>) -> String {
-    to_html_with(doc, &|id| media_url(id).map(ImageInfo::new))
+    render(doc, &|id| media_url(id).map(ImageInfo::new))
 }
 
-/// HTML for a document, every text and attribute escaped. `image` maps an
-/// image's media id to its URL and size (images it returns `None` for are
-/// left out).
+/// HTML for a document, every text and attribute escaped. `images` maps an
+/// image's media id to its URL and size (images missing from it are left
+/// out): load the media rows of [`media_ids`] and build it.
 ///
 /// - Headings get stable ids (see [`outline`]): `<h2 id="slug">`.
 /// - Images: `<figure><img src width height alt><figcaption>…</figcaption></figure>`;
 ///   `data-width="wide"` or `"full"` on the figure for those widths; `width`
 ///   and `height` only when both are known; no `figcaption` without a caption.
 /// - Tables: `<table>`, the header row in `<thead>` with `<th>` cells.
-/// - Embeds: `<figure class="embed" data-provider="youtube" data-id="…"><a href="…">…</a></figure>`,
+/// - Embeds: `<figure data-embed="youtube" data-id="…"><a href="…" rel="noopener noreferrer">…</a></figure>`,
 ///   a link to the provider's page (no iframe, no script): frontends may
 ///   replace it by the provider's player.
 /// - Callouts: `<aside class="callout" data-tone="info">`.
-pub fn to_html_with(doc: &Document, image: &dyn Fn(uuid::Uuid) -> Option<ImageInfo>) -> String {
+pub fn to_html_with(doc: &Document, images: &std::collections::HashMap<uuid::Uuid, ImageInfo>) -> String {
+    render(doc, &|id| images.get(&id).cloned())
+}
+
+fn render(doc: &Document, image: &dyn Fn(uuid::Uuid) -> Option<ImageInfo>) -> String {
     let mut ids = outline(doc).into_iter().map(|h| h.id);
     let mut out = String::new();
     blocks(&doc.content, image, &mut ids, &mut out);
@@ -145,8 +149,7 @@ fn blocks(nodes: &[Node], image: Images, ids: &mut dyn Iterator<Item = String>, 
                 // Provider names and ids are checked formats; escaped all the same.
                 let url = escape(&embed.url());
                 out.push_str(&format!(
-                    "<figure class=\"embed\" data-provider=\"{}\" data-id=\"{}\">\
-                     <a href=\"{url}\" rel=\"noopener noreferrer nofollow\">{url}</a></figure>",
+                    "<figure data-embed=\"{}\" data-id=\"{}\"><a href=\"{url}\" rel=\"noopener noreferrer\">{url}</a></figure>",
                     embed.provider.as_str(),
                     escape(&embed.id),
                 ));

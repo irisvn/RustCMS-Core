@@ -73,12 +73,15 @@ fn version_1_is_read_as_it_is_and_is_a_subset_of_version_2() {
     assert_eq!((old.version, new.version), (1, 2));
     assert_eq!(old.content, new.content);
     // `upgrade` changes the version only.
-    assert_eq!(upgrade(&v1(content.clone())), doc(content.clone()));
-    assert_eq!(parse(&upgrade(&v1(content.clone()))).unwrap(), new);
+    assert_eq!(upgrade_value(&v1(content.clone())), doc(content.clone()));
+    assert_eq!(parse(&upgrade_value(&v1(content.clone()))).unwrap(), new);
+    // `upgrade` on a parsed document: pure, only the version changes.
+    assert_eq!(upgrade(old.clone()), Document { version: 2, ..old.clone() });
+    assert_eq!(upgrade(new.clone()), new);
     for same in
         [doc(content), json!("<p>x</p>"), json!({"type": "doc", "version": 3}), json!({"type": "x", "version": 1})]
     {
-        assert_eq!(upgrade(&same), same);
+        assert_eq!(upgrade_value(&same), same);
     }
     // What only version 2 has is refused in version 1.
     for v2_only in [
@@ -140,7 +143,10 @@ fn anything_else_is_refused() {
         doc(json!([embed("youtube", "https://www.youtube.com/watch?v=dQw4w9WgXcQ")])),
         doc(json!([embed("vimeo", "76979871a")])),
         doc(json!([embed("vimeo", "")])),
-        doc(json!([embed("x", "1".repeat(21).as_str())])),
+        doc(json!([embed("x", "1460323737035677698")])),
+        doc(json!([embed("twitter", "1460323737035677698")])),
+        doc(json!([embed("vimeo", "0123")])),
+        doc(json!([embed("vimeo", "1".repeat(16).as_str())])),
         doc(json!([{"type": "embed", "attrs": {"provider": "youtube"}}])),
         doc(json!([{"type": "embed", "attrs": {"provider": "youtube", "id": "dQw4w9WgXcQ", "html": "<iframe>"}}])),
         doc(json!([{"type": "embed", "attrs": {"provider": "youtube", "id": "dQw4w9WgXcQ", "url": "https://x"}}])),
@@ -186,6 +192,16 @@ fn anything_else_is_refused() {
         doc(json!([cell("tableCell", "a")])),
         // Callouts.
         doc(json!([{"type": "callout", "attrs": {"tone": "danger"}, "content": [para(text("x"))]}])),
+        doc(json!([{"type": "callout", "attrs": {"tone": "info"}, "content": [table(1, 1)]}])),
+        doc(json!([{"type": "callout", "attrs": {"tone": "info"}, "content": [
+            {"type": "callout", "attrs": {"tone": "warn"}, "content": [para(text("x"))]}
+        ]}])),
+        doc(json!([{"type": "callout", "attrs": {"tone": "info"}, "content": [{"type": "bulletList", "content": [
+            {"type": "listItem", "content": [para(text("x")), table(1, 1)]}
+        ]}]}])),
+        doc(
+            json!([{"type": "callout", "attrs": {"tone": "info"}, "content": [{"type": "blockquote", "content": [para(text("x"))]}]}]),
+        ),
         doc(json!([{"type": "callout", "content": [para(text("x"))]}])),
         doc(json!([{"type": "callout", "attrs": {"tone": "info"}, "content": []}])),
         doc(json!([{"type": "callout", "attrs": {"tone": "info", "icon": "x"}, "content": [para(text("x"))]}])),
@@ -215,8 +231,9 @@ fn version_2_nodes_parse_and_render() {
         {"type": "image", "attrs": {"media": MEDIA, "alt": "", "caption": "", "width": "normal"}},
         embed("youtube", "dQw4w9WgXcQ"),
         embed("vimeo", "76979871"),
-        embed("x", "1460323737035677698"),
-        {"type": "callout", "attrs": {"tone": "warn"}, "content": [para(text("Careful"))]},
+        {"type": "callout", "attrs": {"tone": "warn"}, "content": [para(text("Careful")), {"type": "bulletList", "content": [
+            {"type": "listItem", "content": [para(text("one"))]}
+        ]}]},
         {"type": "blockquote", "content": [{"type": "heading", "attrs": {"level": 2}, "content": [text("Bảng giá")]}]}
     ]));
     let parsed = parse(&value).unwrap();
@@ -233,7 +250,8 @@ fn version_2_nodes_parse_and_render() {
             width: ImageWidth::Wide
         })
     );
-    let html = to_html_with(&parsed, &|id| Some(ImageInfo::new(format!("/m/{id}")).size(800, 600)));
+    let images = |info: ImageInfo| std::collections::HashMap::from([(uuid::Uuid::parse_str(MEDIA).unwrap(), info)]);
+    let html = to_html_with(&parsed, &images(ImageInfo::new(format!("/m/{MEDIA}")).size(800, 600)));
     assert_eq!(
         html,
         "<h2 id=\"bang-gia\">Bảng giá</h2>\
@@ -243,22 +261,21 @@ fn version_2_nodes_parse_and_render() {
          <figure data-width=\"wide\"><img src=\"/m/0199d3a4-1b2c-7d3e-8f40-123456789abc\" width=\"800\" height=\"600\" alt=\"Cat\">\
          <figcaption>A &lt;cat&gt;</figcaption></figure>\
          <figure><img src=\"/m/0199d3a4-1b2c-7d3e-8f40-123456789abc\" width=\"800\" height=\"600\" alt=\"\"></figure>\
-         <figure class=\"embed\" data-provider=\"youtube\" data-id=\"dQw4w9WgXcQ\"><a href=\"https://www.youtube.com/watch?v=dQw4w9WgXcQ\" rel=\"noopener noreferrer nofollow\">https://www.youtube.com/watch?v=dQw4w9WgXcQ</a></figure>\
-         <figure class=\"embed\" data-provider=\"vimeo\" data-id=\"76979871\"><a href=\"https://vimeo.com/76979871\" rel=\"noopener noreferrer nofollow\">https://vimeo.com/76979871</a></figure>\
-         <figure class=\"embed\" data-provider=\"x\" data-id=\"1460323737035677698\"><a href=\"https://x.com/i/status/1460323737035677698\" rel=\"noopener noreferrer nofollow\">https://x.com/i/status/1460323737035677698</a></figure>\
-         <aside class=\"callout\" data-tone=\"warn\"><p>Careful</p></aside>\
+         <figure data-embed=\"youtube\" data-id=\"dQw4w9WgXcQ\"><a href=\"https://www.youtube.com/watch?v=dQw4w9WgXcQ\" rel=\"noopener noreferrer\">https://www.youtube.com/watch?v=dQw4w9WgXcQ</a></figure>\
+         <figure data-embed=\"vimeo\" data-id=\"76979871\"><a href=\"https://vimeo.com/76979871\" rel=\"noopener noreferrer\">https://vimeo.com/76979871</a></figure>\
+         <aside class=\"callout\" data-tone=\"warn\"><p>Careful</p><ul><li><p>one</p></li></ul></aside>\
          <blockquote><h2 id=\"bang-gia-2\">Bảng giá</h2></blockquote>"
     );
     // A size is written only when both dimensions are known.
     let partial =
-        to_html_with(&parsed, &|id| Some(ImageInfo { url: format!("/m/{id}"), width: Some(1), height: None }));
+        to_html_with(&parsed, &images(ImageInfo { url: format!("/m/{MEDIA}"), width: Some(1), height: None }));
     assert!(!partial.contains("width=\"1\""));
     // `to_html` keeps its signature: figures without sizes.
     assert!(
         to_html(&parsed, &|_| Some("/i".into())).contains("<figure data-width=\"wide\"><img src=\"/i\" alt=\"Cat\">")
     );
     // Images whose URL is unknown are left out with their caption.
-    assert!(!to_html_with(&parsed, &|_| None).contains("figcaption"));
+    assert!(!to_html_with(&parsed, &Default::default()).contains("figcaption"));
     assert_eq!(media_ids(&parsed).len(), 1);
 }
 
@@ -269,7 +286,8 @@ fn headings_get_stable_folded_unique_ids() {
     assert_eq!(slug("  Hello,   World!! "), "hello-world");
     assert_eq!(slug("Crème brûlée, Smørrebrød & Straße"), "creme-brulee-smorrebrod-strasse");
     assert_eq!(slug("İstanbul"), "istanbul");
-    assert_eq!(slug("日本語 2"), "日本語-2");
+    assert_eq!(slug("日本語 2"), "2");
+    assert_eq!(slug("Ước mơ ở Huế — Ỷ Ợ"), "uoc-mo-o-hue-y-o");
     assert_eq!(slug("🎉 !!"), "");
     let long = slug(&"ab ".repeat(100));
     assert!(long.chars().count() <= MAX_SLUG && !long.ends_with('-'), "{long}");
@@ -358,4 +376,51 @@ fn documents_are_bounded() {
     assert_eq!(parse(&doc(Value::Array(embeds))).unwrap_err().0, format!("may not have more than {MAX_EMBEDS} embeds"));
     let images: Vec<Value> = (0..=MAX_IMAGES).map(|_| json!({"type": "image", "attrs": {"media": MEDIA}})).collect();
     assert!(parse(&doc(Value::Array(images))).is_err());
+}
+
+#[test]
+fn embed_addresses_parse_to_an_allowed_provider_and_id() {
+    let yt = Some(Embed { provider: EmbedProvider::YouTube, id: "dQw4w9WgXcQ".into() });
+    for url in [
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://youtube.com/watch?t=42&v=dQw4w9WgXcQ",
+        "HTTPS://M.YOUTUBE.COM/watch?v=dQw4w9WgXcQ",
+        "https://youtu.be/dQw4w9WgXcQ?si=abc",
+        "https://www.youtube.com/embed/dQw4w9WgXcQ",
+        "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+        "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ#x",
+        "  https://www.youtube.com/live/dQw4w9WgXcQ  ",
+    ] {
+        assert_eq!(Embed::from_url(url), yt, "{url}");
+    }
+    let vimeo = Some(Embed { provider: EmbedProvider::Vimeo, id: "76979871".into() });
+    assert_eq!(Embed::from_url("https://vimeo.com/76979871"), vimeo);
+    assert_eq!(Embed::from_url("https://vimeo.com/76979871/abcdef"), vimeo);
+    assert_eq!(Embed::from_url("https://player.vimeo.com/video/76979871?h=x"), vimeo);
+    for url in [
+        "javascript:alert(1)//youtube.com/watch?v=dQw4w9WgXcQ",
+        "data:text/html,https://youtu.be/dQw4w9WgXcQ",
+        "https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ",
+        "https://evil.test/youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://user:pw@youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://youtube.com:8443/watch?v=dQw4w9WgXcQ",
+        "https://www.youtube.com/watch?v=dQw4w9WgXc",
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ%22",
+        "https://www.youtube.com/watch?v=dQw4w9WgX\"Q",
+        "https://www.youtube.com/playlist?list=PL123",
+        "https://youtu.be/",
+        "https://vimeo.com/channels/staffpicks",
+        "https://vimeo.com/0123",
+        "https://x.com/rustlang/status/1460323737035677698",
+        "https://twitter.com/i/web/status/1460323737035677698",
+        "ftp://youtu.be/dQw4w9WgXcQ",
+        "https://you tu.be/dQw4w9WgXcQ",
+        "not a url",
+    ] {
+        assert_eq!(Embed::from_url(url), None, "{url}");
+    }
+    // What `from_url` returns, `parse` accepts.
+    let embed = Embed::from_url("https://youtu.be/dQw4w9WgXcQ").unwrap();
+    let value = doc(json!([{"type": "embed", "attrs": {"provider": embed.provider.as_str(), "id": embed.id}}]));
+    assert!(parse(&value).is_ok());
 }

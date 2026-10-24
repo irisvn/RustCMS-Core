@@ -99,14 +99,14 @@ A message that follows none of these templates has the code `custom` and
 | `document_version` | `is not a valid document (version 1 or 2)` |
 | `document_needs_version` | `has a table, which needs document version 2` (also an embed, a callout, an image caption, an image width) |
 | `document_depth` | `is nested too deeply` |
-| `document_structure` | `has a list item outside a list` / `has a list holding something else than list items` / `has a code block holding something else than plain text` / `has a heading without a level from 2 to 4` / has unexpected properties on `{node}` / has an unknown block `{node}` / has an unknown inline `{node}` / has an unknown mark `{node}` / `has a mark with attributes` / `has a text with the same mark twice` / `has a text with too many marks` / `has a text without text` / `has an empty text` / `has a table holding something else than rows` / `has a table whose rows have different lengths` / `has a table cell out of place (header cells make up the first row only)` / `has a table cell holding something else than paragraphs` / `has a callout holding something else than paragraphs` / `has a callout with unexpected attributes` / has a callout whose tone is not `info` or `warn` |
+| `document_structure` | `has a list item outside a list` / `has a list holding something else than list items` / `has a code block holding something else than plain text` / `has a heading without a level from 2 to 4` / has unexpected properties on `{node}` / has an unknown block `{node}` / has an unknown inline `{node}` / has an unknown mark `{node}` / `has a mark with attributes` / `has a text with the same mark twice` / `has a text with too many marks` / `has a text without text` / `has an empty text` / `has a table holding something else than rows` / `has a table whose rows have different lengths` / `has a table cell out of place (header cells make up the first row only)` / `has a table cell holding something else than paragraphs` / `has a callout holding something else than paragraphs and lists` / `has a callout holding a table or a callout` / `has a callout with unexpected attributes` / has a callout whose tone is not `info` or `warn` |
 | `document_link` | `has a link that is not http, https or mailto` / `has a link with unexpected attributes` |
 | `document_image` | `has an image that is not a media item` / `has an image with unexpected attributes` / has an image width other than `normal`, `wide` or `full` |
 | `document_alt` | `has an image description longer than {max} characters` |
 | `document_caption` | `has an image caption longer than {max} characters` |
 | `document_table_rows` | `has a table with no rows or more than {max} rows` |
 | `document_table_columns` | `has a table row with no cells or more than {max} cells` |
-| `document_embed` | `has an embed whose provider is not youtube, vimeo or x` / `has an embed with an invalid id` / `has an embed with unexpected attributes` |
+| `document_embed` | `has an embed whose provider is not youtube or vimeo` / `has an embed with an invalid id` / `has an embed with unexpected attributes` |
 | `bad_credentials` | `These credentials do not match our records.` |
 | `wrong_password` | `The password is incorrect.` |
 | `password_for_email` | `is required to change your email` |

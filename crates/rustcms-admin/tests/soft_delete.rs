@@ -548,6 +548,7 @@ db_test!(rich_text_is_a_validated_document_with_visible_images, |db: TestDb| asy
         ("v2 theirs", v2(&theirs, "youtube", "dQw4w9WgXcQ")),
         ("v2 pdf", v2(&pdf, "vimeo", "1")),
         ("v2 provider", v2(&image, "evil", "dQw4w9WgXcQ")),
+        ("v2 x", v2(&image, "x", "1460323737035677698")),
         ("v2 id", v2(&image, "youtube", "javascript:x")),
         ("v1 table", {
             let mut doc = v2(&image, "youtube", "dQw4w9WgXcQ");

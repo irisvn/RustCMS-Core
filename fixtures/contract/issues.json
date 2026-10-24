@@ -45,7 +45,7 @@
     "is nested too deeply"
   ],
   "document_embed": [
-    "has an embed whose provider is not youtube, vimeo or x",
+    "has an embed whose provider is not youtube or vimeo",
     "has an embed with an invalid id",
     "has an embed with unexpected attributes"
   ],
@@ -86,7 +86,8 @@
     "has a table whose rows have different lengths",
     "has a table cell out of place (header cells make up the first row only)",
     "has a table cell holding something else than paragraphs",
-    "has a callout holding something else than paragraphs",
+    "has a callout holding something else than paragraphs and lists",
+    "has a callout holding a table or a callout",
     "has a callout with unexpected attributes",
     "has a callout whose tone is not `info` or `warn`"
   ],

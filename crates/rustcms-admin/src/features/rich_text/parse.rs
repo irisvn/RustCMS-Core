@@ -57,6 +57,8 @@ pub(super) struct RawMark {
 
 pub(super) struct Budget {
     version: u64,
+    /// Inside a callout: no table or callout.
+    in_callout: bool,
     nodes: usize,
     images: usize,
     embeds: usize,
@@ -87,7 +89,7 @@ pub fn parse(value: &Value) -> Result<Document, DocumentError> {
     else {
         return Err(err("is not a valid document (version 1 or 2)"));
     };
-    let mut budget = Budget { version, nodes: 0, images: 0, embeds: 0 };
+    let mut budget = Budget { version, in_callout: false, nodes: 0, images: 0, embeds: 0 };
     let content = raw.content.unwrap_or_default();
     // List items only inside lists (as the editor's schema requires).
     if content.iter().any(|n| n.kind == "listItem") {
@@ -145,7 +147,7 @@ pub(super) fn blocks(raw: Vec<RawNode>, budget: &mut Budget, level: usize) -> Re
     raw.into_iter().map(|node| block(node, budget, level)).collect()
 }
 
-/// At least one paragraph, nothing else (table cells and callouts; else `message`).
+/// At least one paragraph, nothing else (table cells; else `message`).
 fn paragraphs(
     raw: Option<Vec<RawNode>>,
     budget: &mut Budget,
@@ -161,6 +163,9 @@ fn paragraphs(
 
 pub(super) fn block(raw: RawNode, budget: &mut Budget, level: usize) -> Result<Node, DocumentError> {
     count(budget, level)?;
+    if budget.in_callout && (raw.kind == "table" || raw.kind == "callout") {
+        return Err(err("has a callout holding a table or a callout"));
+    }
     Ok(match raw.kind.as_str() {
         "paragraph" => {
             no_extras(&raw, false, false, false, true)?;
@@ -228,10 +233,16 @@ pub(super) fn block(raw: RawNode, budget: &mut Budget, level: usize) -> Result<N
                 Some("warn") => CalloutTone::Warn,
                 _ => return Err(err("has a callout whose tone is not `info` or `warn`")),
             };
-            Node::Callout(
-                tone,
-                paragraphs(raw.content, budget, level + 1, "has a callout holding something else than paragraphs")?,
-            )
+            let items = raw.content.unwrap_or_default();
+            if items.is_empty()
+                || items.iter().any(|n| !matches!(n.kind.as_str(), "paragraph" | "bulletList" | "orderedList"))
+            {
+                return Err(err("has a callout holding something else than paragraphs and lists"));
+            }
+            budget.in_callout = true;
+            let items = blocks(items, budget, level + 1);
+            budget.in_callout = false;
+            Node::Callout(tone, items?)
         }
         other => return Err(err(format!("has an unknown block `{}`", other.escape_debug()))),
     })
@@ -327,7 +338,7 @@ pub(super) fn embed(raw: RawNode, budget: &mut Budget) -> Result<Node, DocumentE
         .get("provider")
         .and_then(Value::as_str)
         .and_then(EmbedProvider::from_name)
-        .ok_or_else(|| err("has an embed whose provider is not youtube, vimeo or x"))?;
+        .ok_or_else(|| err("has an embed whose provider is not youtube or vimeo"))?;
     let id = attrs.get("id").and_then(Value::as_str).unwrap_or_default();
     if !provider.valid_id(id) {
         return Err(err("has an embed with an invalid id"));

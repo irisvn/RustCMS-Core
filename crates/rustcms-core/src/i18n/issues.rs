@@ -167,10 +167,11 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     ("document_structure", "has a table whose rows have different lengths"),
     ("document_structure", "has a table cell out of place (header cells make up the first row only)"),
     ("document_structure", "has a table cell holding something else than paragraphs"),
-    ("document_structure", "has a callout holding something else than paragraphs"),
+    ("document_structure", "has a callout holding something else than paragraphs and lists"),
+    ("document_structure", "has a callout holding a table or a callout"),
     ("document_structure", "has a callout with unexpected attributes"),
     ("document_structure", "has a callout whose tone is not `info` or `warn`"),
-    ("document_embed", "has an embed whose provider is not youtube, vimeo or x"),
+    ("document_embed", "has an embed whose provider is not youtube or vimeo"),
     ("document_embed", "has an embed with an invalid id"),
     ("document_embed", "has an embed with unexpected attributes"),
     // Accounts.

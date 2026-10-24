@@ -18,7 +18,7 @@
 //! Versions: version 1 (0.2–0.9) is a subset of version 2 (0.10). Both are
 //! read as they are; tables, embeds, callouts, image captions and image
 //! widths are only valid in version 2. [`upgrade`] turns a version 1
-//! document into the same document in version 2.
+//! document into the same document in version 2 (only the version changes).
 
 mod html;
 mod outline;
@@ -73,9 +73,9 @@ pub enum Node {
     Image(Image),
     /// Table (version 2).
     Table(Table),
-    /// Video or post of an allowed provider (version 2).
+    /// Video of an allowed provider (version 2).
     Embed(Embed),
-    /// Highlighted paragraphs (version 2).
+    /// Highlighted paragraphs and lists, no table or callout inside (version 2).
     Callout(CalloutTone, Vec<Node>),
     /// Text with marks.
     Text(String, Vec<Mark>),
@@ -135,7 +135,7 @@ pub struct Cell {
     pub content: Vec<Node>,
 }
 
-/// An embedded video or post: a provider and its id, never a URL or HTML.
+/// An embedded video: a provider and its id, never a URL or HTML.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Embed {
     /// Provider.
@@ -150,7 +150,53 @@ impl Embed {
         match self.provider {
             EmbedProvider::YouTube => format!("https://www.youtube.com/watch?v={}", self.id),
             EmbedProvider::Vimeo => format!("https://vimeo.com/{}", self.id),
-            EmbedProvider::X => format!("https://x.com/i/status/{}", self.id),
+        }
+    }
+
+    /// The embed an address points to, from an allowlist of hosts and paths,
+    /// or `None` (the same rule as the panel's editor):
+    /// `youtube.com/watch?v=ID` (also `www.`, `m.`, `youtube-nocookie.com`),
+    /// `youtube.com/{embed,shorts,live,v}/ID`, `youtu.be/ID`,
+    /// `vimeo.com/ID` (and `vimeo.com/ID/hash`, the hash not kept),
+    /// `player.vimeo.com/video/ID`. `http` or `https`, no user, password or
+    /// port; the id must have the provider's format.
+    pub fn from_url(url: &str) -> Option<Embed> {
+        let url = url.trim();
+        let lower = url.to_ascii_lowercase();
+        let rest = if lower.starts_with("https://") {
+            &url[8..]
+        } else if lower.starts_with("http://") {
+            &url[7..]
+        } else {
+            return None;
+        };
+        if url.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return None;
+        }
+        let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        let (authority, rest) = rest.split_at(end);
+        if authority.contains(['@', ':']) {
+            return None;
+        }
+        let host = authority.to_ascii_lowercase();
+        let host = ["www.", "m.", "mobile."].iter().find_map(|p| host.strip_prefix(p)).unwrap_or(&host).to_owned();
+        let rest = rest.split('#').next().unwrap_or_default();
+        let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
+        let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+        let pick = |provider: EmbedProvider, id: Option<&str>| {
+            id.filter(|id| provider.valid_id(id)).map(|id| Embed { provider, id: id.to_owned() })
+        };
+        match (host.as_str(), parts.as_slice()) {
+            ("youtube.com" | "youtube-nocookie.com", ["watch"]) => {
+                pick(EmbedProvider::YouTube, query.split('&').find_map(|pair| pair.strip_prefix("v=")))
+            }
+            ("youtube.com" | "youtube-nocookie.com", ["embed" | "shorts" | "live" | "v", id]) => {
+                pick(EmbedProvider::YouTube, Some(id))
+            }
+            ("youtu.be", [id]) => pick(EmbedProvider::YouTube, Some(id)),
+            ("vimeo.com", [id] | [id, _]) => pick(EmbedProvider::Vimeo, Some(id)),
+            ("player.vimeo.com", ["video", id]) => pick(EmbedProvider::Vimeo, Some(id)),
+            _ => None,
         }
     }
 }
@@ -159,21 +205,18 @@ impl Embed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum EmbedProvider {
-    /// `youtube`: 11-character video ids (`A-Z a-z 0-9 - _`).
+    /// `youtube`: 11-character video ids (`[A-Za-z0-9_-]{11}`).
     YouTube,
-    /// `vimeo`: numeric video ids (1 to 15 digits).
+    /// `vimeo`: numeric video ids (`[1-9][0-9]{0,14}`).
     Vimeo,
-    /// `x`: numeric post ids (1 to 20 digits).
-    X,
 }
 
 impl EmbedProvider {
-    /// Its name in documents (`youtube`, `vimeo`, `x`).
+    /// Its name in documents (`youtube`, `vimeo`).
     pub fn as_str(self) -> &'static str {
         match self {
             Self::YouTube => "youtube",
             Self::Vimeo => "vimeo",
-            Self::X => "x",
         }
     }
 
@@ -182,18 +225,17 @@ impl EmbedProvider {
         match name {
             "youtube" => Some(Self::YouTube),
             "vimeo" => Some(Self::Vimeo),
-            "x" => Some(Self::X),
             _ => None,
         }
     }
 
     /// Whether `id` has the provider's id format.
     pub fn valid_id(self, id: &str) -> bool {
-        let digits = |max: usize| (1..=max).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit());
         match self {
             Self::YouTube => id.len() == 11 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'),
-            Self::Vimeo => digits(15),
-            Self::X => digits(20),
+            Self::Vimeo => {
+                (1..=15).contains(&id.len()) && !id.starts_with('0') && id.bytes().all(|b| b.is_ascii_digit())
+            }
         }
     }
 }
@@ -282,11 +324,18 @@ pub fn media_ids(doc: &Document) -> Vec<uuid::Uuid> {
     out
 }
 
-/// The same document in the current format [`VERSION`]. Version 1 is a
-/// subset of version 2, so only the version number changes; anything else (a
-/// current document, a value that is not a document) is returned as it is.
-/// It does not validate: [`parse`] the result.
-pub fn upgrade(value: &Value) -> Value {
+/// The same document in the current format [`VERSION`] (pure). Version 1 is
+/// a subset of version 2: no node or attribute changes shape, so only the
+/// version number changes.
+pub fn upgrade(doc: Document) -> Document {
+    Document { version: VERSION, ..doc }
+}
+
+/// [`upgrade`] on a stored value, for rewriting stored documents: a version 1
+/// document comes back as version 2 (only `version` changes); anything else
+/// (a current document, a value that is not a document) as it is. It does not
+/// validate: [`parse`] the result.
+pub fn upgrade_value(value: &Value) -> Value {
     let mut out = value.clone();
     if let Value::Object(map) = &mut out
         && map.get("type").and_then(Value::as_str) == Some("doc")
