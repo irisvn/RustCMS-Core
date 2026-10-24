@@ -61,7 +61,7 @@ export function mediaIdOf(apiPath: string, src: unknown): string | null {
 
 // --- Embeds ---------------------------------------------------------------
 
-export type EmbedProvider = "youtube" | "vimeo" | "x";
+export type EmbedProvider = "youtube" | "vimeo";
 
 export interface Embed {
   provider: EmbedProvider;
@@ -70,8 +70,7 @@ export interface Embed {
 
 const EMBED_IDS: Record<EmbedProvider, RegExp> = {
   youtube: /^[A-Za-z0-9_-]{11}$/,
-  vimeo: /^[0-9]{1,15}$/,
-  x: /^[0-9]{1,20}$/,
+  vimeo: /^[1-9][0-9]{0,14}$/,
 };
 
 /** Whether `provider` and `id` are an allowed embed (the server's rule). */
@@ -87,17 +86,16 @@ export function embedUrl(embed: Embed): string {
       return `https://www.youtube.com/watch?v=${embed.id}`;
     case "vimeo":
       return `https://vimeo.com/${embed.id}`;
-    case "x":
-      return `https://x.com/i/status/${embed.id}`;
   }
 }
 
 /** Provider names as shown. */
-export const EMBED_NAMES: Record<EmbedProvider, string> = { youtube: "YouTube", vimeo: "Vimeo", x: "X" };
+export const EMBED_NAMES: Record<EmbedProvider, string> = { youtube: "YouTube", vimeo: "Vimeo" };
 
 /**
  * The embed a pasted address points to, from an allowlist of hosts and
- * paths (YouTube, Vimeo, X), or null. Only the provider and the id are kept.
+ * paths (YouTube, Vimeo), or null. Only the provider and the id are kept.
+ * The server applies the same rule (`rustcms_admin::rich_text::Embed::from_url`).
  */
 export function parseEmbedUrl(input: string): Embed | null {
   let url: URL;
@@ -125,14 +123,6 @@ export function parseEmbedUrl(input: string): Embed | null {
       return parts.length >= 1 && parts.length <= 2 ? pick("vimeo", parts[0]) : null;
     case "player.vimeo.com":
       return parts[0] === "video" && parts.length === 2 ? pick("vimeo", parts[1]) : null;
-    case "x.com":
-    case "twitter.com": {
-      // `/{user}/status/{id}`, `/i/status/{id}`, `/i/web/status/{id}` (anything after the id is ignored).
-      const at = parts.indexOf("status");
-      const before = parts.slice(0, at);
-      const shape = before.length === 1 || (before.length === 2 && before[0] === "i" && before[1] === "web");
-      return at > 0 && shape ? pick("x", parts[at + 1]) : null;
-    }
     default:
       return null;
   }
@@ -144,6 +134,11 @@ export function parseEmbedUrl(input: string): Embed | null {
 function paragraphs(nodes: unknown): boolean {
   return Array.isArray(nodes) && nodes.length > 0 &&
     nodes.every((p: DocNode) => !!p && p.type === "paragraph" && !p.attrs && editable(p.content, "inline"));
+}
+
+/** Whether any node at any depth is of one of `types`. */
+function holds(nodes: unknown, types: string[]): boolean {
+  return Array.isArray(nodes) && nodes.some((n: DocNode) => !!n && (types.includes(n.type) || holds(n.content, types)));
 }
 
 /** A table the editor can hold as it is: rectangular rows of cells, header cells in the first row only. */
@@ -180,7 +175,9 @@ function editable(nodes: unknown, kind: "blocks" | "inline" | "items" | "text", 
     if (n.type === "table") return version >= 2 && editableTable(n);
     if (n.type === "embed") return version >= 2 && n.content === undefined && validEmbed(n.attrs?.provider, n.attrs?.id);
     if (n.type === "callout") {
-      return version >= 2 && CALLOUT_TONES.includes(n.attrs?.tone as CalloutTone) && paragraphs(n.content);
+      return version >= 2 && CALLOUT_TONES.includes(n.attrs?.tone as CalloutTone) && Array.isArray(n.content) && n.content.length > 0 &&
+        n.content.every((c) => ["paragraph", "bulletList", "orderedList"].includes(c?.type)) && !holds(n.content, ["table", "callout"]) &&
+        editable(n.content, "blocks", version);
     }
     if (!(n.type in CONTAINERS)) return false;
     if (n.type === "image") {
@@ -287,7 +284,10 @@ export function toDocument(editor: DocNode, apiPath: string): RichDocument {
       }
       case "callout": {
         const tone = n.attrs?.tone === "warn" ? "warn" : "info";
-        const content = paras(n.content ?? []);
+        // Paragraphs and lists; another block keeps its text as a paragraph. A table or callout
+        // inside a list is kept (never dropped silently): the server refuses it with a message.
+        const content = (n.content ?? []).map((c) => (["paragraph", "bulletList", "orderedList"].includes(c.type) ? node(c, false) : node({ type: "paragraph", content: c.content }, false)))
+          .filter((c): c is DocNode => c !== null);
         return { type: "callout", attrs: { tone }, content: content.length ? content : [{ type: "paragraph", content: [] }] };
       }
       case "table": {
@@ -298,7 +298,7 @@ export function toDocument(editor: DocNode, apiPath: string): RichDocument {
         return { type: n.type, content: children(n, false) };
     }
   };
-  // Paragraphs only (cells, callouts): another block keeps its text as a paragraph.
+  // Paragraphs only (cells): another block keeps its text as a paragraph.
   const paras = (list: DocNode[]): DocNode[] =>
     list.map((c) => (c.type === "paragraph" ? node(c, false) : { type: "paragraph", content: children(c, true) }))
       .filter((c): c is DocNode => c !== null);

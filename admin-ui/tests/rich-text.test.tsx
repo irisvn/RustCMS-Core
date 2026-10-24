@@ -61,6 +61,12 @@ describe("version 2 documents", () => {
         { type: "embed", attrs: { provider: "evil", id: "x" } },
         { type: "embed", attrs: { provider: "youtube", id: "<script>" } },
         { type: "callout", attrs: { tone: "danger" }, content: [p("c")] },
+        // Lists stay; a heading keeps its text as a paragraph.
+        { type: "callout", attrs: { tone: "warn" }, content: [
+          { type: "bulletList", content: [{ type: "listItem", content: [p("i")] }] },
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "h" }] },
+        ] },
+        { type: "embed", attrs: { provider: "x", id: "1460323737035677698" } },
       ],
     };
     const doc = toDocument(editor, API);
@@ -77,6 +83,10 @@ describe("version 2 documents", () => {
       { type: "table", content: [{ type: "tableRow", content: [cell("tableCell", "a"), cell("tableCell", "b")] }] },
       { type: "embed", attrs: { provider: "youtube", id: "dQw4w9WgXcQ" } },
       { type: "callout", attrs: { tone: "info" }, content: [p("c")] },
+      { type: "callout", attrs: { tone: "warn" }, content: [
+        { type: "bulletList", content: [{ type: "listItem", content: [p("i")] }] },
+        p("h"),
+      ] },
     ]);
     // Read back: the editor gets the same attributes.
     const back = toEditor(doc, API);
@@ -98,7 +108,7 @@ describe("version 2 documents", () => {
 
   it("are edited when the editor can hold them, version 1 as it is", () => {
     const table = { type: "table", content: [{ type: "tableRow", content: [cell("tableHeader", "a")] }, { type: "tableRow", content: [cell("tableCell", "b")] }] };
-    const v2 = [table, { type: "embed", attrs: { provider: "x", id: "123" } }, { type: "callout", attrs: { tone: "warn" }, content: [p("w")] },
+    const v2 = [table, { type: "embed", attrs: { provider: "vimeo", id: "123" } }, { type: "callout", attrs: { tone: "warn" }, content: [p("w"), { type: "orderedList", content: [{ type: "listItem", content: [p("o")] }] }] },
       { type: "image", attrs: { media: ID, alt: "", caption: "c", width: "wide" } }];
     expect(asDocument({ type: "doc", version: 2, content: v2 })).not.toBeNull();
     expect(asDocument({ type: "doc", version: 1, content: [{ type: "image", attrs: { media: ID, alt: "x" } }] })).not.toBeNull();
@@ -113,6 +123,10 @@ describe("version 2 documents", () => {
       { type: "embed", attrs: { provider: "dailymotion", id: "x7tgad0" } },
       { type: "callout", attrs: { tone: "danger" }, content: [p("x")] },
       { type: "callout", attrs: { tone: "info" }, content: [] },
+      { type: "callout", attrs: { tone: "info" }, content: [{ type: "bulletList", content: [{ type: "listItem", content: [p("x"), { type: "table", content: [{ type: "tableRow", content: [cell("tableCell", "a")] }] }] }] }] },
+      { type: "callout", attrs: { tone: "info" }, content: [{ type: "callout", attrs: { tone: "warn" }, content: [p("x")] }] },
+      { type: "embed", attrs: { provider: "x", id: "123" } },
+      { type: "embed", attrs: { provider: "vimeo", id: "0123" } },
       { type: "image", attrs: { media: ID, width: "huge" } },
       { type: "doc", version: 3, content: [] },
     ]) {
@@ -137,8 +151,6 @@ describe("embed addresses", () => {
     ]) expect(parseEmbedUrl(url), url).toEqual(yt);
     expect(parseEmbedUrl("https://vimeo.com/76979871")).toEqual({ provider: "vimeo", id: "76979871" });
     expect(parseEmbedUrl("https://player.vimeo.com/video/76979871?h=x")).toEqual({ provider: "vimeo", id: "76979871" });
-    expect(parseEmbedUrl("https://x.com/rustlang/status/1460323737035677698")).toEqual({ provider: "x", id: "1460323737035677698" });
-    expect(parseEmbedUrl("https://twitter.com/i/web/status/1460323737035677698/photo/1")).toEqual({ provider: "x", id: "1460323737035677698" });
     for (const url of [
       "javascript:alert(1)//youtube.com/watch?v=dQw4w9WgXcQ",
       "data:text/html,https://youtu.be/dQw4w9WgXcQ",
@@ -152,9 +164,9 @@ describe("embed addresses", () => {
       "https://youtu.be/",
       "https://vimeo.com/channels/staffpicks",
       "https://vimeo.com/76979871a",
-      "https://x.com/status/1",
-      "https://x.com/a/b/status/1",
-      "https://x.com/rustlang",
+      "https://x.com/rustlang/status/1460323737035677698",
+      "https://twitter.com/i/web/status/1460323737035677698",
+      "https://vimeo.com/0123",
       "ftp://youtu.be/dQw4w9WgXcQ",
       "not a url",
     ]) expect(parseEmbedUrl(url), url).toBeNull();
@@ -237,18 +249,18 @@ describe("rich editor (version 2)", () => {
 
   it("embeds an allowed address as {provider, id}, shown as a card without iframe or image", async () => {
     const { box, doc } = await editorOn(null);
-    await userEvent.click(screen.getByRole("button", { name: "Embed a video or post" }));
-    const dialog = await screen.findByRole("dialog", { name: "Embed a video or post" });
+    await userEvent.click(screen.getByRole("button", { name: "Embed a video" }));
+    const dialog = await screen.findByRole("dialog", { name: "Embed a video" });
     const address = within(dialog).getByLabelText("Address");
     await userEvent.type(address, "https://evil.test/watch?v=dQw4w9WgXcQ{Enter}");
-    expect(within(dialog).getByRole("alert")).toHaveTextContent("Only YouTube, Vimeo and X");
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Only YouTube and Vimeo");
     await userEvent.clear(address);
     await userEvent.type(address, "https://youtu.be/dQw4w9WgXcQ?t=1");
     expect(within(dialog).getByText("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Insert" }));
     await waitFor(() => expect(doc()?.content.find((n) => n.type === "embed")).toEqual({ type: "embed", attrs: { provider: "youtube", id: "dQw4w9WgXcQ" } }));
     expect(box.querySelector("iframe, img, script")).toBeNull();
-    expect(box.querySelector("figure[data-embed]")).toHaveTextContent("YouTube");
+    expect(box.querySelector("figure[data-embed]")).toHaveTextContent("YouTube · dQw4w9WgXcQ");
   });
 
   it("edits an image's alternative text, caption and width", async () => {
@@ -295,6 +307,48 @@ describe("rich editor (version 2)", () => {
     await waitFor(() => expect(doc()?.content[0]?.attrs).toEqual({ tone: "warn" }));
     await userEvent.click(screen.getByRole("button", { name: "Warning callout" }));
     await waitFor(() => expect(doc()?.content[0]).toEqual(p("Note")));
+    // A list goes into a callout too; no table can be inserted there.
+    await userEvent.click(screen.getByRole("button", { name: "Bulleted list" }));
+    await userEvent.click(screen.getByRole("button", { name: "Info callout" }));
+    await waitFor(() => expect(doc()?.content[0]).toEqual({ type: "callout", attrs: { tone: "info" }, content: [
+      { type: "bulletList", content: [{ type: "listItem", content: [p("Note")] }] },
+    ] }));
+    expect(screen.getByRole("button", { name: "Insert table" })).toBeDisabled();
+    // Unwrapped as a whole: the list stays a list.
+    await userEvent.click(screen.getByRole("button", { name: "Info callout" }));
+    await waitFor(() => expect(doc()?.content[0]).toEqual({ type: "bulletList", content: [{ type: "listItem", content: [p("Note")] }] }));
+  });
+
+  it("unwraps a callout keeping the selection and the other callouts", async () => {
+    const callout = (text: string) => ({ type: "callout", attrs: { tone: "info" }, content: [p(text)] });
+    const { box, doc } = await editorOn([callout("abc"), callout("def")]);
+    await waitFor(async () => {
+      await userEvent.click(box.querySelector("aside p")!);
+      expect(screen.getByRole("button", { name: "Info callout" })).toHaveAttribute("aria-pressed", "true");
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Info callout" }));
+    await waitFor(() => expect(doc()?.content.slice(0, 2)).toEqual([p("abc"), callout("def")]));
+    // The cursor is still in "abc": typing goes there.
+    await userEvent.keyboard("!");
+    await waitFor(() => expect(JSON.stringify(doc()?.content[0])).toContain("!"));
+    expect(doc()?.content[1]).toEqual(callout("def"));
+  });
+
+  it("never wraps a list holding a table in a callout, and never drops content", async () => {
+    const list = { type: "bulletList", content: [{ type: "listItem", content: [p("item"), { type: "table", content: [{ type: "tableRow", content: [cell("tableCell", "kept")] }] }] }] };
+    const { box, doc } = await editorOn([list]);
+    await waitFor(async () => {
+      await userEvent.click(box.querySelector("li > p")!);
+      expect(box.querySelector("li > p")).toBeTruthy();
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Info callout" }));
+    await userEvent.keyboard("!");
+    await waitFor(() => expect(doc()).not.toBeNull());
+    expect(doc()!.content.some((n) => n.type === "callout")).toBe(false);
+    expect(JSON.stringify(doc())).toContain("kept");
+    // A pasted callout holding a table keeps it: the server refuses it with a message instead.
+    const pasted = toDocument({ type: "doc", content: [{ type: "callout", attrs: { tone: "info" }, content: [list] }] }, API);
+    expect(JSON.stringify(pasted)).toContain("kept");
   });
 });
 

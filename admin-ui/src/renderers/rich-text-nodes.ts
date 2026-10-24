@@ -4,6 +4,7 @@
 // here renders a `style` attribute or inline script: the CSP allows neither.
 import { Node, findParentNode, mergeAttributes } from "@tiptap/core";
 import type { EditorState } from "@tiptap/pm/state";
+import { findWrapping, liftTarget } from "@tiptap/pm/transform";
 import { TableMap } from "@tiptap/pm/tables";
 import Image from "@tiptap/extension-image";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
@@ -138,7 +139,7 @@ export const RichTableHeader = TableHeader.extend({
 
 export const RichTableRow = TableRow;
 
-/** A video or post: a provider and an id, shown as a card linking to the provider's page. */
+/** A video: a provider and an id, shown as a text card (provider, id, page): no iframe, no thumbnail. */
 export const RichEmbed = Node.create({
   name: "embed",
   group: "block",
@@ -165,7 +166,7 @@ export const RichEmbed = Node.create({
     return [
       "figure",
       { "data-embed": "", "data-provider": provider, "data-id": id, class: "rich-embed" },
-      ["span", { class: "rich-embed-provider" }, EMBED_NAMES[provider]],
+      ["span", { class: "rich-embed-provider" }, `${EMBED_NAMES[provider]} · ${id}`],
       ["span", { class: "rich-embed-url" }, url],
     ];
   },
@@ -177,11 +178,11 @@ export const RichEmbed = Node.create({
   },
 });
 
-/** Highlighted paragraphs, `info` or `warn`. */
+/** Highlighted paragraphs and lists, `info` or `warn` (no table or callout inside). */
 export const RichCallout = Node.create({
   name: "callout",
   group: "block",
-  content: "paragraph+",
+  content: "(paragraph | bulletList | orderedList)+",
   defining: true,
   addAttributes() {
     return {
@@ -201,8 +202,38 @@ export const RichCallout = Node.create({
   addCommands() {
     return {
       toggleCallout: (tone) => ({ editor, commands }) => {
-        if (!editor.isActive(this.name)) return commands.wrapIn(this.name, { tone });
-        if (editor.isActive(this.name, { tone })) return commands.lift(this.name);
+        if (!editor.isActive(this.name)) {
+          // The selected blocks, a list as a whole (never a part of a list item).
+          return commands.command(({ state, tr, dispatch }) => {
+            const { $from, $to } = state.selection;
+            const range = $from.blockRange($to, (n) => !["bulletList", "orderedList", "listItem"].includes(n.type.name));
+            const wrapping = range && findWrapping(range, state.schema.nodes[this.name]!, { tone });
+            if (!range || !wrapping) return false;
+            // Documents refuse a table or a callout inside a callout: never wrap one.
+            let nested = false;
+            state.doc.nodesBetween(range.start, range.end, (n) => {
+              if (n.type.name === "table" || n.type.name === "callout") nested = true;
+              return !nested;
+            });
+            if (nested) return false;
+            if (dispatch) tr.wrap(range, wrapping);
+            return true;
+          });
+        }
+        if (editor.isActive(this.name, { tone })) {
+          // Unwrapped as a whole: its paragraphs and lists stay as they are.
+          return commands.command(({ state, tr, dispatch }) => {
+            const callout = findParentNode((n) => n.type.name === this.name)(state.selection);
+            if (!callout) return false;
+            // All of its content lifted out (a gap-preserving step: the selection and
+            // every position inside map as they should).
+            const range = state.doc.resolve(callout.pos + 1).blockRange(state.doc.resolve(callout.pos + callout.node.nodeSize - 1));
+            const target = range && liftTarget(range);
+            if (!range || target === null || target === undefined) return false;
+            if (dispatch) tr.lift(range, target);
+            return true;
+          });
+        }
         return commands.updateAttributes(this.name, { tone });
       },
     };

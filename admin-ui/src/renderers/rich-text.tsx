@@ -237,7 +237,8 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         {tool(t("rich.link"), <Link />, !!s?.marks.link, link)}
         {tool(t("rich.image"), <ImagePlus />, false, () => setPicking(true), !access.library && !access.upload)}
         {tool(t("rich.imageDetails"), <Settings2 />, false, describe, !s?.image)}
-        {tool(t("rich.table"), <TableIcon />, false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), !!table)}
+        {/* No table in a table or a callout (documents refuse both). */}
+        {tool(t("rich.table"), <TableIcon />, false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), !!table || !!s?.callout)}
         {tool(t("rich.embed"), <Video />, false, () => setEmbedding(true))}
       </div>
       {table && (
@@ -427,7 +428,7 @@ function ImageFields({ initial, onClose, onApply }: { initial: ImageDetails; onC
   );
 }
 
-/** A video or post address, kept as its provider and id (YouTube, Vimeo, X); previewed as a card. */
+/** A video address, kept as its provider and id (YouTube, Vimeo); previewed as a text card. */
 function EmbedFields({ onClose, onApply }: { onClose: () => void; onApply: (embed: Embed) => void }) {
   const t = useT();
   const id = useId();
@@ -467,12 +468,12 @@ function EmbedFields({ onClose, onApply }: { onClose: () => void; onApply: (embe
   );
 }
 
-/** An embed as the panel shows it: the provider and its page, no iframe and no third-party image. */
+/** An embed as the panel shows it: the provider, the id and its page as text; no iframe, no third-party image. */
 function EmbedCard({ embed, link = false }: { embed: Embed; link?: boolean }) {
   const url = embedUrl(embed);
   return (
     <figure className="rich-embed" data-provider={embed.provider}>
-      <span className="rich-embed-provider">{EMBED_NAMES[embed.provider]}</span>
+      <span className="rich-embed-provider">{EMBED_NAMES[embed.provider]} · {embed.id}</span>
       {link ? <a href={url} rel="noopener noreferrer nofollow" className="rich-embed-url">{url}</a> : <span className="rich-embed-url">{url}</span>}
     </figure>
   );
