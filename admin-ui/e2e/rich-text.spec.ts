@@ -52,21 +52,21 @@ test("the editor's v2 nodes, multi-image upload and the media library picker", a
   await tools.getByRole("button", { name: "Add row" }).click();
   await expect(editor.locator("table tr")).toHaveCount(4);
 
-  // An embed: a text card, no iframe.
-  await editor.locator("p").last().click();
+  // A callout, in the paragraph after the table.
+  await editor.locator("table + p").click();
+  await page.keyboard.type("Careful");
+  await page.getByRole("button", { name: "Warning callout" }).click();
+  await expect(editor.locator("aside[data-tone=warn]")).toContainText("Careful");
+
+  // An embed, last: a text card, no iframe, inserted in the empty paragraph
+  // the editor keeps at the end (reached with the keyboard from the callout:
+  // a click on an empty paragraph next to a block can land on the block).
+  await page.keyboard.press("ArrowDown");
   await page.getByRole("button", { name: "Embed a video" }).click();
   const embed = page.getByRole("dialog", { name: "Embed a video" });
   await embed.getByLabel("Address").fill("https://youtu.be/dQw4w9WgXcQ");
   await embed.getByRole("button", { name: "Insert" }).click();
   await expect(editor.locator("figure[data-embed]")).toContainText("YouTube · dQw4w9WgXcQ");
-
-  // A callout, in the paragraph kept after the embed (the editor always ends
-  // with one): clicked, then checked, since a click that selects the card
-  // would have the typing replace it.
-  await editor.locator("figure[data-embed] + p").click();
-  await page.keyboard.type("Careful");
-  await expect(editor.locator("figure[data-embed]")).toHaveCount(1);
-  await page.getByRole("button", { name: "Warning callout" }).click();
   await expect(editor.locator("aside[data-tone=warn]")).toContainText("Careful");
 
   // The cover from the library: one of the images just uploaded.
