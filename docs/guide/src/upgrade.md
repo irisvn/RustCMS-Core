@@ -121,7 +121,8 @@ refuses). Run migrations once per deployment, not in every replica
 ## From 0.7.1 to 0.8.0
 
 Run `rustcms migrate`: it adds `jobs.started_at`, `jobs.description` and the
-`job_runs` and `schedule_runs` tables. Then nothing else needs to change.
+`job_runs` and `schedule_runs` tables. Then:
+
 - Grant `schedules.view` (and `schedules.manage` for Run now) to the roles
   that should see System → Schedules (`rustcms permission:sync` declares them).
 - `.run` schedules keep working; switch to `.task` to show a summary.

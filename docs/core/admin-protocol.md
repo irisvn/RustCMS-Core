@@ -25,7 +25,7 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 
 | Method | Path | Response |
 |---|---|---|
-| GET | `/panel` | `PanelResponse` `{brand, user, navigation: [ResourceInfo], system, settings, pages, home?, permissions, uploads?}`: resources with `view_any` (hidden ones too, `nav: false`; optional `sort`), settings pages with `view`, custom pages the user may open (optional `sort`), the home page's slug when the user may open it, the declared admin permissions the user holds, and `uploads` (`{maxBytes, maxConcurrent}`) when the media library is enabled and the user has `media.create` |
+| GET | `/panel` | `PanelResponse` `{brand, user, navigation: [ResourceInfo], system, settings, pages, home?, permissions, uploads?}`: resources with `view_any`, in registration order (the SPA reorders by `sort`) (hidden ones too, `nav: false`; optional `sort`), settings pages with `view`, custom pages the user may open (optional `sort`), the home page's slug when the user may open it, the declared admin permissions the user holds, and `uploads` (`{maxBytes, maxConcurrent}`) when the media library is enabled and the user has `media.create` |
 | GET | `/resources/{slug}/schema?operation=create\|edit\|view&key=` | `ResourceSchema` for this user |
 | GET | `/resources/{slug}/records?…` | `{data: [Envelope], meta}` |
 | POST | `/resources/{slug}/records` | 201 `{data: Envelope}` |
@@ -38,8 +38,8 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | POST | `…/relations/{relation}/detach` `{keys}` | `LinkOutcome`; `detach_{relation}`; links to targets not visible are kept and listed in `missing` |
 | PATCH | `…/relations/{relation}/links/{target}` `{…pivot}` | `LinkOutcome`; `update_pivot_{relation}`; 404 when not linked or not visible |
 | GET | `…/relations/{relation}/options?search=&keys=` | `{data: [LinkOption {value, label, attached}]}`; `attach_{relation}` admitted, then on the parent record |
-| POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing, replayed?, message?, open?}`; admitted before the body; `data` checked against the action's form (none: refused); one record hidden by the action's predicate: 403; `message` and `open` (`https://…` or a path of the site, one record only, checked before the commit) come from the handler |
-| GET | `/resources/{slug}/export?{list query}` | `text/csv` file (≤ 1 000 rows, else 422 `too_many_to_export`); `export` + `view_any` admitted first; 404 when not exportable |
+| POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing, replayed?, message?, open?}`; admitted before the body; `data` checked against the action's form (none: refused; `ActionSchema.submitLabel` names its button); one record hidden by the action's predicate: 403; `message` and `open` come from the handler and are checked before the commit: `open` on a run over several records is a 422 form issue `one_record_only`; an `open` that is not `https://…` or a path of the site, or a `message` over 500 characters, is a handler bug: 500, rolled back |
+| GET | `/resources/{slug}/export?{list query}` | `text/csv` file (≤ 1 000 rows, else 422 `too_many_to_export`; ≤ 10 MiB, else 422 `too_large_to_export`); `export` + `view_any` admitted first; 404 when not exportable |
 | POST | `/resources/{slug}/exports?{list query}` | 201 `ExportView`; background job (needs storage), ≤ 3 waiting per user (429) |
 | GET | `/exports` | `[ExportView]` of the user (not expired, newest first) |
 | POST | `/resources/{slug}/imports` (CSV body) | 201 `ImportView`; `import` + `create` (or `update` with an import key) admitted before the body; 422 `file`; ≤ 3 waiting (429) |
@@ -48,7 +48,7 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | POST | `/imports/{id}/run` `{mapping}` | `ImportView` (running); once, then 409 `import_started` |
 | GET | `/exports/{id}/file` | `text/csv`; owner only (else 404), 409 `export_not_ready` / `export_stale` (credentials, permission, fields or any record no longer visible) |
 | GET | `/resources/{slug}/actions/{action}/fields/{field}/options?search=&keys=` | `{data: [SelectOption]}` of a form's `belongs_to` field (keys as text) |
-| POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (with `alt`, its alternative text; media library enabled; the media schema's `upload` ability says whether the user may) |
+| POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (with `alt`, its alternative text; media library enabled; the media schema's `upload` ability says whether the user may); 429 with `Retry-After` when every upload slot of the process is busy (before the body is read) or beyond 60 uploads a minute per user |
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../guide/src/admin/users-roles.md) |
@@ -98,7 +98,7 @@ the policy allows `view` and `restore` or `force_delete` on it.
 
 `ResourceSchema` = `{schemaVersion, vocabularyVersion, resource, operation,
 abilities, form, table, relations?}` (`schemaVersion` 2: actions may carry a
-`form`; vocabulary 7: relations carry `kind`, `attach`, `detach`, `pivot`,
+`form`; vocabulary 6: columns may name a custom cell, `ColumnSchema.cell` + `props`, ADR 0019; vocabulary 7: relations carry `kind`, `attach`, `detach`, `pivot`,
 `attachForm`, `pivotForm`; vocabulary 8: encrypted fields are
 `secret` and `secret_map` inputs, with masked views and explicit write
 operations; vocabulary 9: `belongs_to_many` inputs, ADR 0035; vocabulary
@@ -224,8 +224,10 @@ Record keys are strings in URLs and envelopes (`"42"`, a UUID, or a natural key)
 `issues` and `formIssues` give the stable code and parameters (text) of each
 message, in the same order, for clients that translate them (codes:
 [Languages](../guide/src/admin/i18n.md#validation-messages)); messages stay English. A 409
-`write_conflict` carries a `reason` (`busy`, `upload_expired`,
-`receipt_expired`).
+carries a stable `code` (`write_conflict`, or one named by its endpoint:
+`import_started`, `export_not_ready`, `mail_disabled`, …) and a `reason`;
+`write_conflict` reasons include `busy`, `upload_expired`,
+`receipt_expired`.
 
 | Status | `code`              |
 |--------|---------------------|
@@ -233,14 +235,18 @@ message, in the same order, for clients that translate them (codes:
 | 403    | `forbidden`         |
 | 403    | `csrf_mismatch` (missing or stale `X-CSRF-Token`: fetch `/auth/csrf` again; do not replay blindly) |
 | 404    | `not_found` (also for records outside the user's scope; a user without the ability gets 403 for any key) |
+| 405    | `method_not_allowed` (e.g. creating through a belongs-to-many relation) |
+| 409    | `write_conflict` or an endpoint's own code, with `reason` |
 | 413    | `payload_too_large` |
 | 422    | `validation_failed` |
+| 429    | `too_many_requests`, with `Retry-After` (seconds) |
 | 500    | `internal_error` (details are logged, never returned) |
 
 ## Idempotency keys
 
-`POST …/records` (create) and `POST …/actions/{action}` accept an
-`Idempotency-Key` header (1–128 of `A-Z a-z 0-9 _ -`, otherwise 422 on
+`POST …/records` (create), `POST …/relations/{relation}` (has-many create),
+`POST …/actions/{action}`, `POST /media`, `POST …/exports` and
+`POST …/imports` accept an `Idempotency-Key` header (1–128 of `A-Z a-z 0-9 _ -`, otherwise 422 on
 `idempotency_key`). The key is claimed in the write's transaction, so the write
 and its receipt commit together or not at all. Repeating the request with the
 same key, by the same user, within 24 hours:

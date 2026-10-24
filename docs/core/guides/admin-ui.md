@@ -13,7 +13,12 @@ just dev             # Rust on :8000, Vite on :5173 → open http://localhost:51
 just test-ui         # Vitest
 just e2e             # Playwright against the demo app (npx playwright install chromium once)
 just admin-build     # rebuild crates/rustcms-admin/assets — commit the result
+just generated       # CLI reference, TS types, assets, SDK copies and the demo's build are up to date
 ```
+
+`admin-ui/sdk` is canonical: its copies in `crates/rustcms-cli/templates/sdk`
+and `examples/demo/resources/admin/sdk` must match it, and the demo's built
+`resources/admin/{js,css}` are committed; `just generated` fails otherwise.
 
 In development, Vite copies the runtime config (including the application's
 extensions) from the Rust server's `/admin/` page, and proxies `/admin/api` and

@@ -21,10 +21,10 @@ It is served under `auth.admin_path` (default `/admin`):
 
 | Path | Serves |
 |---|---|
-| `/admin`, `/admin/…` | the panel (`/admin/login`, `/admin/r/<slug>`, `…/create`, `…/records/<key>`, `…/edit`) |
+| `/admin`, `/admin/…` | the panel (`/admin/login`, `/admin/r/<slug>`, `…/create`, `…/import`, `…/records/<key>`, `…/edit`; `/admin/p/<slug>`, `/admin/settings/<group>`, `/admin/system/{users,roles,audit,queue,schedules}`, `/admin/account`) |
 | `/admin/assets/…` | the panel's JS and CSS |
 | `/admin/assets/ext/…` | your [extension](custom-fields.md) scripts and styles |
-| `/admin/assets/brand/{theme.css,logo,logo-dark,favicon}?v=…` | the theme's stylesheet and images, static or [runtime branding](customizing.md#runtime-branding) |
+| `/admin/assets/brand/{theme.css,logo,favicon}?v=…` | the [theme](customizing.md#theme)'s stylesheet and images; also `logo-dark` with [runtime branding](customizing.md#runtime-branding) |
 | `/admin/api/…` | the panel's JSON API (used by the panel itself) |
 
 Each resource declares its permissions (`posts.view_any`, `posts.create`, …)
@@ -93,7 +93,8 @@ unknown slug stops the boot.
   messages appear under each input. A write whose outcome is unknown (a
   timeout, a cut connection) pauses further writes on that resource, and
   creates and actions can be retried safely.
-- **Record pages** with their [relations](relationships.md).
+- **Record pages** with their [actions](actions.md#placement-in-lists),
+  [relations](relationships.md) and [slots](customizing.md#slots-beside-records).
 - **Languages**: English and Vietnamese, chosen per user ([i18n](i18n.md)).
 - **Roles** (System → Roles): permissions by area with a search box, the
   labels and presets the application declares
@@ -101,8 +102,10 @@ unknown slug stops the boot.
 - Someone who may update a record but not view it gets an empty edit form;
   records outside a user's scope show "Not found", forbidden pages "Access denied".
 
-The theme follows the operating system (light or dark). The layout works from
-phones to wide screens and from the keyboard.
+The color scheme is the app's `ColorScheme` (default `System`: follows the
+operating system) until a user chooses Light, Dark or System for themselves
+([theme](customizing.md#theme)). The layout works from phones to wide screens
+and from the keyboard.
 
 ## Security
 

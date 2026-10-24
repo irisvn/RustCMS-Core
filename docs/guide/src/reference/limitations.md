@@ -9,15 +9,16 @@ What RustCMS does not do yet, and behaviours to know before relying on it.
   and a `BelongsToManySelect` for relations with required pivot fields or
   records with more than 100 links; belongs-to-many to the same resource, two
   relations over one pivot table, or to a resource declaring `lock_parent`.
-- Excel files; dashboard widgets other than counts (no sums or averages), charts in time zones other than UTC.
+- Excel files; dashboard widgets with sums or averages (widgets count or list records); charts in time zones other than UTC.
 - Email verification flows (invitations mark the address verified).
 - Mail rate limits shared between instances (`max_per_minute` counts per process); DKIM signing; attachments.
-- Settings of kinds other than text, integer (`i32`), boolean, select, key/value,
-  date and secret (store larger numbers or decimals as text).
+- Settings of kinds other than text, textarea, integer (`i32`), boolean, select,
+  key/value, date, secret and media (one file, or a list) (store larger numbers
+  or decimals as text).
 - Translations of content (only the interface is translated: English, Vietnamese).
 - Composite primary keys; sorting by related columns.
-- Image resizing and thumbnails, range requests, public media URLs (add your
-  own route).
+- Server-side image resizing (the Media grid scales the originals in the
+  browser), range requests, public media URLs (add your own route).
 - MariaDB; Redis Cluster.
 - Idempotency keys outside resource creates (relation creates included), actions, media uploads,
   CSV import uploads and background export requests.

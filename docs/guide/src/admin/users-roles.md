@@ -41,8 +41,9 @@ or delete the user.
 a super-admin role in *any* guard are disabled, renamed, re-addressed or deleted
 only by super admins of every guard.
 
-The **Account** page changes your password (current password required; other
-sessions end) and signs out your other sessions (also revoking API tokens).
+The **Account** page sets your [language](i18n.md), changes your password
+(current password required; other sessions end) and signs out your other
+sessions (also revoking API tokens).
 
 ## API
 
@@ -53,6 +54,8 @@ the rest of the admin API):
 |---|---|---|---|
 | GET | `/users?search=&page=&per_page=` | | `UserPage` |
 | POST | `/users` | `{name, email, password, roleIds?}` | 201 `SystemUser`* |
+| POST | `/users/invitations` | `{name, email, roleIds?}` (`users.create` + `users.invite`, mail on; 20 per minute) | 201 `SystemUser`* |
+| POST | `/users/{id}/invitation` | (`users.invite` + `users.view`; 5 per minute) | `SystemUser`* |
 | GET / PATCH / DELETE | `/users/{id}` | PATCH: `{name, email, expected: {name, email}, currentPassword?}` | `SystemUser` / `SystemUser`* / 204 |
 | PUT | `/users/{id}/roles` | `{roleIds, expectedRoleIds}` | `SystemUser`* |
 | PUT | `/users/{id}/active` | `{active, expected}` | `SystemUser`* |

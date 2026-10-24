@@ -1,6 +1,6 @@
 # 0020 — Belongs-to-many links and action forms
 
-- Status: accepted
+- Status: accepted; amended in 0.9.0 (`after_relation_change`, ADR 0035) and 0.10.1 (below)
 - Date: 2026-10-22
 
 ## Context

@@ -59,6 +59,7 @@ or written** by the panel or its API. Each field sets what the column allows:
 | `.media()`, `.media_list(n)`, `.accept(…)`, `.max_size(…)` | [media](media.md) fields |
 | `.rich_text()` | a [rich text](media.md#rich-text) document |
 | `.key_value()`, `.max_items(n)` | a [key/value](forms.md#key-value) object |
+| `.encrypted()`, `.encrypted_map()` | a secret, or named secrets, sealed at rest and never shown ([encrypted fields](forms.md#encrypted-fields)) |
 | `.audit_redact()` | its values never reach the [audit log](../digging-deeper/audit-log.md) (only that it changed) |
 
 `form()` and `table()` only describe presentation ([Forms](forms.md),
@@ -78,6 +79,8 @@ fields as columns.
 | `.unique(constraint, &[columns], message)` | maps a unique constraint to a field error |
 | `.soft_deletes()`, `.soft_deletes_column("removed_at")` | [soft deletes](#soft-deletes) |
 | `.lock_parent("course_id", "courses")` | writes lock the parent record first ([parent locks](#parent-locks)) |
+| `.exportable()`, `.importable()` | CSV [export and import](import-export.md) (abilities `export`, `import`) |
+| `.import_key(field)` | imported rows matching a record by `field` update it ([import](import-export.md#importing)) |
 | `.audit(false)` | writes are not recorded in the [audit log](../digging-deeper/audit-log.md) (on by default) |
 
 ## Hooks
@@ -86,13 +89,22 @@ Hooks are async methods of the resource (`use rustcms::async_trait;` and put
 `#[async_trait]` on the `impl`; an attribute path cannot start with `rustc…`). Every write runs in one transaction:
 
 1. reject undeclared or non-writable keys (422),
-2. type-check values against the [wire format](../reference/wire-format.md),
-3. check relationship keys against the target scope,
+2. type-check values against the [wire format](../reference/wire-format.md)
+   and check `.required()`,
+3. lock the parent record ([parent locks](#parent-locks)),
 4. `mutate_before_create` / `mutate_before_update` hooks,
-5. re-check limits (`max_length`) on the final values, so hooks cannot bypass them,
+5. check the final values, hooks' changes included: `belongs_to` keys must be
+   records the user can see, and media (rich text images included) files the
+   user can see (422); limits (`max_length`, …) are re-checked as the values
+   are written, so hooks cannot bypass them,
 6. write (database constraints are mapped to field errors with `ResourceMeta::unique`),
-7. `after_save` hook — an error rolls everything back.
+7. write the links of [belongs-to-many selects](relationships.md#choosing-links-in-the-records-form),
+   then `after_relation_change` for each relation whose links changed,
+8. `after_save` hook — an error rolls everything back.
 
+Hooks see foreign keys **before** they are checked: do not trust a
+`belongs_to` value read in `mutate_before_*` (look the record up under your
+own rules, or wait for `after_save`).
 
 ```rust,ignore
 async fn mutate_before_create(ctx: &Ctx, _txn: &DatabaseTransaction, mut data: Data) -> AppResult<Data> {
@@ -124,8 +136,8 @@ publish and unpublish it. Trashing does not call `after_delete`. The default
 `after_restore` calls `after_save`, so applications written before it existed
 behave as before; overriding `after_restore` replaces that call (call
 `Self::after_save(ctx, txn, record).await` from it to keep both).
-Bulk [actions](actions.md) write through their handler: they call none of
-these hooks. A message a hook returns is
+[Actions](actions.md) (row or bulk) write through their handler: they call
+none of these hooks. A message a hook returns is
 shown as written: translate it with `ctx.t("…")` ([i18n](i18n.md)).
 
 ## Parent locks

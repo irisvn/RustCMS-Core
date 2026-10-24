@@ -31,7 +31,7 @@ type NavEntry = { kind: "resource"; item: ResourceInfo } | { kind: "page"; item:
 const sortOf = (entry: NavEntry) => entry.item.sort ?? 0;
 
 /**
- * Resources (by slug) and custom pages (in registration order) by group,
+ * Resources and custom pages (in registration order, as the server sends them) by group,
  * resources first in a group; then entries by `sort` and groups by their
  * smallest `sort` (stable: the same order when nothing is set). Hidden
  * resources and the home page are left out and rank nothing.

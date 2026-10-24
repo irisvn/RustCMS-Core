@@ -110,7 +110,9 @@ The table keeps a safe message only. Return a `queue::Failure` to choose it:
 return Err(Failure::new("smtp_rejected", "the mail server refused the message").into());
 ```
 
-Any other error is kept as "failed (see the logs for job …)", and its full
+It is kept as `code: message` (`smtp_rejected: the mail server refused the
+message`, at most 500 characters). Any other error is kept as "failed (see the
+logs)", and its full
 text goes to the application log only, so a secret in an error message never
 reaches the table. Do not put secrets in errors anyway: logs are kept too.
 A `Failure` is logged by its code only.

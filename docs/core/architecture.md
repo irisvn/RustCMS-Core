@@ -12,7 +12,7 @@ rustcms             the crate applications depend on: re-exports, prelude
  ├─ rustcms-auth    guards, sessions, tokens, roles and permissions      (uses core)
  ├─ rustcms-admin   the admin engine (resources → JSON schema) + the SPA  (uses core, auth)
  └─ rustcms-migration  the framework's migrations and schema helpers
-rustcms-testing     TestApp, TestDb, db_test!, factories
+rustcms-testing     TestApp, TestDb, db_test!, factories, clients
 rustcms-cli         `rustcms new`, `make:*`
 admin-ui/           the React SPA, built into rustcms-admin/assets
 examples/demo       a blog, laid out as `rustcms new` generates (ADR 0017)
@@ -42,14 +42,14 @@ on the admin engine, so it can change without touching them.
 
 | Module | Role |
 |---|---|
-| `resources/` | what applications declare: `Resource`, `Field`, `Action`, `Policy`, list `query` types |
+| `resources/` | what applications declare: `Resource`, `Field`, `Action`, `Policy`, list `query` types, `links` (belongs-to-many writes: `LinkOp`, `LinkRequest`, `LinkOutcome`, `RelationChange`) |
 | `forms/`, `tables/` | builders (`TextInput::make`, `Table::new`, …); `ui` re-exports both |
 | `panel/` | `AdminProvider` and the SPA shell (assets, extensions) |
 | `engine/` | the generic engine: `Registry`/`DynResource`, `Ctx`, wire format, idempotency, `validate` (value checks shared by resources and settings) |
 | `engine/adapter/` | `ResourceAdapter<R>`: `input` (acceptance), `references` (checks after hooks), `read`, `write` (transactions, row and parent locks, ADR 0018), `schema`, `operations` (the `DynResource` impl), `audit` (snapshots, redaction, entries), `pivot` + `many` (belongs-to-many: `PivotAdapter`, lists through the pivot, attach/detach/update, ADR 0020; links of `BelongsToManySelect` inputs written with the record, ADR 0035), `action_form` (action forms: admission, canonical data, references), `export` (keys in list order, rows of readable fields, canonical queries), `import` (import fields and key, cell values, static row checks, key matches), `secrets` (encrypted field operations and stale-map checks, ADR 0030) |
 | `http/` | routes and handlers: `resources`, `relations`, `actions`, `extract` (`AdminCtx`) |
 | `contract/` | the DTOs the SPA receives (`ResourceSchema`, …); also reachable as `schema` |
-| `features/` | built-in features: `audit` (log viewer, record history), `queue` (System → Queue page, M15d; history 0.8.0), `schedules` (System → Schedules, 0.8.0), `custom/` (theme, `branding` (runtime branding, `AdminBranding` cache, ADR 0033), custom pages and slots: templates + sanitizer, ADR 0019; `subpath` validates raw sub-page paths, ADR 0032), `dashboard/` (widgets, ADR 0024; counts in `engine/adapter/aggregate.rs`), `media/`, `rich_text/`, `settings/` (settings pages; ADR 0015), `system/` (users and roles) |
+| `features/` | built-in features: `audit` (log viewer, record history), `queue` (System → Queue page, M15d; history 0.8.0), `schedules` (System → Schedules, 0.8.0), `custom/` (theme, `branding` (runtime branding, `AdminBranding` cache, ADR 0033), custom pages and slots: templates + sanitizer, ADR 0019; `subpath` validates raw sub-page paths, ADR 0032), `dashboard/` (widgets, ADR 0024; counts in `engine/adapter/aggregate.rs`), `exports/` and `imports/` (CSV, ADR 0021: `csv` output, `exports`/`export_objects` and `imports`/`import_rows` receipt tables), `media/` (ADR 0008: `upload` (`POST media`, admission, idempotent), `detect` (type from content, allowlist), `download`, `references` (checks on media written by resources and settings), `deletions` + `uploads` (queued deletions, upload intents), `prune` (`media:prune`), `resource` (`MediaResource`, `MediaPolicy`)), `rich_text/` (`parse`: v1/v2 grammar and limits, `outline`: headings and `slug`, `html`: `to_html`/`to_html_with`), `settings/` (settings pages, ADR 0015; `mail` is the Mail page, ADR 0022), `system/` (users and roles) |
 
 ### rustcms-auth
 
@@ -58,7 +58,9 @@ on the admin engine, so it can change without touching them.
 | `guards/` | `guard` (`Auth`, `MaybeAuth`), `session`, `tokens`, `jwt` (access tokens), `jwt_session` (refresh families), `credentials` (revocation) |
 | `catalog` | how the Roles page shows permissions: areas, labels, presets (`PermissionCatalog`, ADR 0034) |
 | `rbac/` | `service` (`RbacService`, every change; `begin_as` for writes outside RBAC under its lock), `rules` (no escalation), `resolver` (grants cache keyed by the database generation), `queries` |
-| `http/` | the auth routes, `admin_routes` (`AdminRoutes`, ADR 0026) |
+| `http/` | the auth routes, `api` (`ApiRoutes`, `Access`, `Throttle`: application JSON routes), `admin_routes` (`AdminRoutes`, ADR 0026) |
+| `recovery/` | password resets and invitations: tokens and the jobs that mail them (ADR 0023) |
+| `provider`, `state`, `config` | `AuthProvider` (guards, routes, commands, built-in permissions), `AuthState` (shared services), the `[auth]` section |
 | `realtime/` | admission and rechecks shared by streams and sockets (`Live`), SSE (`LiveSession`, ADR 0027), `socket` (`LiveSocket`, `AdminSocket`, ADR 0029) |
 | `console/` | `make:user`, `role:assign`, … |
 | `support/` | password hashing, secret comparison, rate limits, `audit` (sign-in events) |
@@ -66,10 +68,20 @@ on the admin engine, so it can change without touching them.
 
 ### rustcms-core
 
-Small modules stay at the top (`app`, `config`, `console`, `error`, `http`,
-`key`, `principal`, `telemetry`, `models`, `i18n` (locale, catalogs, issue codes), `audit` (entries, diff, bounds, prune; ADR 0014), `settings` (groups, `Secret`, encrypted storage; ADR 0015), `schedule/` (schedules, slot claims, the scheduler run by `serve`, `runs` (history, Run now, the internal at-most-once job), `schedule:*`; ADR 0031), `crypto/` (the keyring, `Encrypted<T>`, registered columns and `key:reencrypt`; ADR 0030), `queue/` (jobs, workers, commands, `manage`: statuses and single-job actions, `history`: `job_runs` written with terminal transitions; ADR 0016), `mail/` (feature `mail`: config and policy, templates, drivers; ADR 0022; in `rustcms-auth`, `recovery/`: reset and invitation tokens and their jobs, ADR 0023), `template` (the bounded minijinja environment shared by mail and the panel's custom pages), `jobs` (best-effort Redis leases for
-periodic work; runs can overlap), `redis` with feature `redis`). Other directories include:
+Small modules stay at the top: `app`, `config`, `console`, `error`, `key`,
+`principal`, `telemetry`, `models`, `i18n` (locale, catalogs, issue codes),
+`audit` (entries, diff, bounds, prune; ADR 0014), `settings` (groups, `Secret`,
+encrypted storage; ADR 0015), `database` (`Seeder`, `Factory`), `realtime`
+(shutdown of streams, server-sent events, the process-local `Hub`; ADR
+0027/0028), `template` (the bounded minijinja environment shared by mail and
+the panel's custom pages), `jobs` (best-effort Redis leases for periodic work;
+runs can overlap) and `redis` (feature `redis`). Directories:
 
+- `http/`: the HTTP stack; `api` (`Pagination`, `Validated`, `ApiPage`) for application JSON APIs.
+- `queue/`: jobs, workers, commands, `manage` (statuses and single-job actions), `history` (`job_runs` written with terminal transitions); ADR 0016.
+- `schedule/`: schedules, slot claims, the scheduler run by `serve`, `runs` (history, Run now, the internal at-most-once job), `schedule:*`; ADR 0031.
+- `crypto/`: the keyring, `Encrypted<T>`, registered columns and `key:reencrypt`; ADR 0030.
+- `mail/` (feature `mail`): config and policy, templates, transports; ADR 0022.
 - `db/`: `connect`, `check` (MySQL setup), `transactions`, `locks` (named locks), `migrations` (`migrate --allow-newer`: migrations of a newer binary after a rollback).
 - `storage/`: the `Storage` trait, `local`, `s3`.
 
@@ -79,7 +91,16 @@ periodic work; runs can overlap), `redis` with feature `redis`). Other directori
   `widgets` (v1/v2 registration, script loading and `ui` levels), `facade`
   (`props.api` and `props.resources`), `paths` (extension, sub-page and
   resource path validation), `realtime`, `toast` (the toast store), `theme` (favicon, the browser's
-  color-scheme choice and cross-tab sync), `config` (index config: brand, theme paths allowlist), `title` (`props.title`).
+  color-scheme choice and cross-tab sync), `config` (index config: brand, theme paths allowlist), `title` (`props.title`),
+  `wire` (ADR 0003 values kept as strings), `epoch` (session epoch), `leave`
+  (deliberate navigation skips the unsaved-changes guard), `open-url`
+  (`ActionOutcome.open` checked again), `refresh` (Queue and Schedules auto
+  refresh), `rich-text` (stored document ↔ TipTap JSON), `utils`.
+- `src/renderers/`: `form`, `table`, `rich-text` + `rich-text-nodes` (TipTap
+  editor, no `style` attributes), `media` (media inputs), `media-picker`,
+  `media-library` (the Media page), `uploads` (`useUploads`: the shared upload
+  queue), `links` (belongs-to-many in record forms, ADR 0035),
+  `relation-select`, `secret`, `custom` (extension widgets).
 - `src/components/`: `brand` (logo, dark logo and name from the index config), `react-view` (v2 views: epoch, boundary, props), `toast`
   (the region), `ui/` (the kit; `portal`, `tabs`, `menu`, `misc` are `ui` 2).
 - `sdk/`: `@rustcms/admin-sdk`, canonical; copied to the CLI template and the
@@ -87,13 +108,26 @@ periodic work; runs can overlap), `redis` with feature `redis`). Other directori
 
 ### rustcms-cli
 
-`main` (commands), `make` (generators), `react` (the SDK and the
-`resources/admin` setup, older-`ui` hints), `upgrade`, `scaffold`, `release`.
+`main` (commands, forwarding runtime commands to the application), `scaffold`
+(`rustcms new`), `layout` (application paths, module plumbing), `project`,
+`naming`, `generate` (`make:model|migration|test|widget`), `make`
+(`make:service|job|seeder|factory|settings|command`), `resource`
+(`make:resource`, `make:policy`), `api` (`make:api`), `react` (the SDK and the
+`resources/admin` setup: `make:page --react`, `make:sdk`), `upgrade`,
+`release` (releases on irisvn/RustCMS, ADR 0025), `self_update`, `doctor`,
+`guide` (`rustcms docs`), `docs` (`docs:cli`).
+
+### rustcms-testing
+
+`app` (`TestApp`), `db` (`TestDb`, `db_test!`, `create_table`), `factory`,
+`client` (`TestClient`: cookies, CSRF, `Origin` or a bearer token through the
+real guards), `socket` (`TestSocket` against a real listener), `admin_routes`
+(an access table for `AdminRoutes`), `TestS3`.
 
 Grouping modules does not move public items: the paths that existed before
 (`rustcms_admin::media`, `rustcms_admin::schema`, `rustcms_auth::session`,
 `rustcms_core::db::begin_write`, …) are re-exports, checked by `tests/paths.rs`
-in each crate.
+in core, auth and admin.
 
 ## Patterns
 

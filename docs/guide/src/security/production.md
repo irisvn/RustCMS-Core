@@ -20,8 +20,13 @@
 - [ ] Password-hashing and upload concurrency limits are per instance (each bounds its own CPU and disk).
 - [ ] Queue workers: decide where they run (`serve`, or `queue:work` processes with `queue.enabled = false` on
       web instances); clocks synchronized (NTP); `queue:failed` watched; job payloads and error messages carry
-      no secrets ([Queues](../digging-deeper/queues.md)); `queue.manage` (retry, forget, cancel jobs) only for
-      operators.
+      no secrets ([Queues](../digging-deeper/queues.md)); `queue.manage` (retry, forget, cancel jobs) and
+      `schedules.manage` (run a schedule now) only for operators.
+- [ ] `settings.mail.update` (SMTP settings, test mails) only for administrators.
+- [ ] `storage.max_upload_bytes` at or below the proxy's request body limit.
+- [ ] Migrations run once per deploy (`migrate`, then `permission:sync`), with a backup taken first; you know how
+      to go back: `migrate:rollback` with the new binary for your migrations, or the old binary with
+      `migrate --allow-newer` ([Upgrading](../getting-started/deployment.md#upgrading)).
 - [ ] First super admin created with `make:user --super-admin`; `permission:sync` run after each deploy.
 - [ ] TLS terminates before the app; HTTP redirects to HTTPS at the proxy.
 - [ ] Rotating `APP_KEY` with [encrypted columns](../digging-deeper/encryption.md): old key in `APP_PREVIOUS_KEYS`,

@@ -326,8 +326,9 @@ impl Registry {
 
     /// The order in which a write that locks rows of several resources (the
     /// targets of a record form's links, ADR 0035) locks them: parents before
-    /// their targets and `lock_parent` children, as every other writer does;
-    /// resources the lock graph does not order, by slug.
+    /// their targets and `lock_parent` children, as every other writer does
+    /// (a topological order of the lock graph, the same on every instance);
+    /// resources outside the graph last, by slug.
     #[doc(hidden)]
     pub fn lock_rank(&self, slug: &str) -> (usize, String) {
         (self.lock_order.get(slug).copied().unwrap_or(usize::MAX), slug.to_owned())

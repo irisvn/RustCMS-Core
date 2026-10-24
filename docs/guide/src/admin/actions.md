@@ -65,7 +65,8 @@ Action::<invoice::Entity>::with_outcome("pdf", |_ctx, _txn, invoices, _data| {
 ```
 
 - `ActionOutcome::message(text)` / `.with_message(text)`: shown to the user
-  with the action's summary (plain text, at most 500 characters).
+  with the action's summary (plain text, at most 500 characters), as
+  written: translate it with `ctx.t("…")` ([i18n](i18n.md)).
 - `ActionOutcome::open(url)` / `.with_open(url)`: once the action has
   committed, the panel opens the page in a new tab with `noopener` and
   `noreferrer`, and shows a link to it as well (a browser may block a tab
@@ -105,6 +106,10 @@ drafts, `unpublish` on published posts). A `.bulk()` action is a row action
 too (bulk means *also* offered for selections, in the bar above the table),
 on the rows the server offers it. View, Edit, Delete and Restore keep their
 buttons.
+
+`.color(…)` only has an effect as `"danger"` (what `.destructive()` sets):
+the action goes last in the **⋯** menu and its bulk button is the
+destructive variant. `.icon(…)` is accepted but not shown yet.
 
 A record's page shows its actions the same way (the first primary one it
 offers labelled, the others under ⋯), and so do the rows of relation tables

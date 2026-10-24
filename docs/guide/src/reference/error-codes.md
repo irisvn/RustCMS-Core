@@ -123,7 +123,7 @@ A message that follows none of these templates has the code `custom` and
 | `not_found` | 404 | |
 | `method_not_allowed` | 405 | |
 | `invitation_accepted`, `user_inactive`, `mail_disabled` | 409 | `accepted`, `inactive`, `disabled` (invitations) |
-| `write_conflict` | 409 | `busy` (another change in progress), `upload_expired`, `receipt_expired`; queue actions: `not_failed`, `not_waiting`, `running` |
+| `write_conflict` | 409 | `busy` (another change in progress), `upload_expired`, `receipt_expired`; queue actions: `not_failed`, `not_waiting`, `running`; a schedule's Run now: `running` (a run is in progress) |
 | `export_not_ready` | 409 | `pending` (the background export has not finished) |
 | `export_stale` | 409 | `stale` (access changed since the export was made: export again) |
 | `secret_stale` | 409 | `stale` (an encrypted map changed meanwhile: reload before retrying) |

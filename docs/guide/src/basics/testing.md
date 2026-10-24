@@ -53,6 +53,10 @@ db_test!(lists_posts, migrate = Migrator, |db: TestDb| async move {
   (`http://host:port/bucket`, e.g. S3Mock: `docker run -p 59000:9090 -e
   COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS=test adobe/s3mock:5.2.3`)
   and `TestS3::configure(config)` points `[storage]` at it.
+- **Redis:** RustCMS's own tests of several instances (shared rate limits,
+  periodic jobs) read `RUSTCMS_TEST_REDIS` (e.g. `redis://localhost:56379`)
+  and need `--features rustcms/redis`; without it they print a skip notice
+  and pass, unless `RUSTCMS_TEST_REQUIRE` lists `redis`.
 
 Without `RUSTCMS_TEST_PG` / `RUSTCMS_TEST_MYSQL`, those variants print a skip
 notice and pass, unless `RUSTCMS_TEST_REQUIRE` lists them (`postgres,mysql`):

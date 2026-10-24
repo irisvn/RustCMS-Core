@@ -25,6 +25,7 @@ strip target/release/blog      # tuỳ chọn: khoảng 29 MB → 23 MB
   | `sqlite`, `postgres`, `mysql` | bật | driver database |
   | `redis` | tắt | chạy nhiều instance (mục 7) |
   | `s3` | tắt | lưu upload trên S3 / MinIO (`storage.disk = "s3"`) |
+  | `mail` | bật | gửi mail qua SMTP, template mail, trang Mail settings (cần cho quên mật khẩu và lời mời) |
 
   ```toml
   rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.10.1", features = ["redis", "s3"] }  # giữ tag app đang dùng

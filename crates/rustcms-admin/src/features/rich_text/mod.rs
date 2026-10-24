@@ -32,7 +32,8 @@ pub use parse::*;
 use serde::Deserialize;
 use serde_json::Value;
 
-/// Current document format version (what the panel's editor saves).
+/// Current document format version (the panel's editor saves the lowest
+/// version a document needs: version 1 without version 2 parts).
 pub const VERSION: u64 = 2;
 /// Oldest document format version still read (as it is).
 pub const OLDEST_VERSION: u64 = 1;

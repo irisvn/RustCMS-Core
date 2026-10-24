@@ -5,6 +5,9 @@ was the first published one.
 
 ## 0.10.1
 
+Run `rustcms migrate`; `media.update` now grants renaming and alt text (see
+the [upgrade guide](upgrade.md#from-0100-to-0101)).
+
 - **Media page**: a grid of thumbnails or the table (remembered per user)
   and an upload button for several files ([The Media page](admin/media.md#the-media-page));
   files can be renamed and given an alternative text, which the editor and
@@ -221,6 +224,27 @@ was the first published one.
 - **Tooling**: the test servers run in memory (the matrix is about twice as
   fast), and `just test-fast` runs every test on SQLite only.
 
+## 0.3.2
+
+- The command checks and updates itself and applications: `rustcms doctor`,
+  `rustcms upgrade [--dry-run]` (Core tag, SeaORM pins; comments and
+  features kept), `rustcms self-update`, and `rustcms docs` (the guide,
+  offline in release builds) ([Upgrading](upgrade.md#upgrading-the-command-and-an-application)).
+- `make:command` refuses the names of the command's own commands.
+
+## 0.3.1
+
+- **Distribution**: each tag publishes the `rustcms` command (macOS on Apple
+  silicon, Linux x86_64 and arm64), the guide and `install.sh`
+  ([Installation](getting-started/installation.md)).
+- `rustcms new` depends on the RustCMS-Core Git tag of its version, writes a
+  CI workflow (`.github/workflows/ci.yml`) and resolves dependencies
+  (`--no-fetch` to skip).
+- Fixes: local storage on Linux (every upload, import and export failed with
+  `Bad file descriptor`); migrations run on one connection; a refused TLS
+  handshake is reported as `smtp_tls`; security updates of ammonia and
+  rustls.
+
 ## 0.3.0
 
 - **Admin panel**: soft deletes with a trash; tabs and key/value inputs;
@@ -283,22 +307,21 @@ was the first published one.
 - **Dashboard widgets**: counts (compared with the period before), charts per
   day, week or month, and the latest records of a resource, each with its own
   permission and computed as the list shows records ([Dashboard](admin/dashboard.md)).
-- **Example**: `examples/lms` grows news (categories, tags, scheduled
+- **Example**: `examples/lms`, a small LMS back office: seats under a lock,
+  instructor scopes, a job per enrollment, news (categories, tags, scheduled
   articles), editor and viewer roles, lessons moved up and down, a dashboard,
   welcome mails and instructor invitations ([An LMS back office](examples/lms.md)).
 - **Operations**: running the queue, retention, backup and restore,
-  rotating `APP_KEY`, running mail ([Operations](operations/queue.md)).
+  rotating `APP_KEY`, running mail ([Operations](operations/queue.md));
+  several instances with Redis (shared rate limits, periodic jobs mostly on
+  one instance); S3-compatible storage tested against a real server,
+  Cloudflare R2 setup, bounded bucket timeouts
+  ([File storage](digging-deeper/storage.md)).
 - **Permission matrix**: the role page lays resource permissions out as
   resource × ability ([Users and roles](admin/users-roles.md)).
-- **Example**: `examples/lms`, a small LMS back office (seats under a lock,
-  instructor scopes, a job per enrollment) ([Example](examples/lms.md)).
 - **Databases**: MySQL 8.4 alongside SQLite and PostgreSQL.
 - **APIs**: `ApiRoutes` with declared access, `Validated<T>`, `Pagination`,
   `Throttle<N>`, `make:api`; JWT access tokens with rotating refresh tokens.
-- **Operations**: several instances with Redis (shared rate limits, periodic
-  jobs mostly on one instance); S3-compatible storage tested against a real
-  server, Cloudflare R2 setup, bounded bucket timeouts
-  ([File storage](digging-deeper/storage.md)).
 
 ## 0.1.0-alpha.0
 

@@ -10,12 +10,15 @@ auditors, and each record's history to those who may view the record
 | Source | Events | Subject |
 |---|---|---|
 | Resources (admin panel) | `created`, `updated`, `trashed`, `deleted`, `restored`, `force_deleted`, `action:<name>` | the resource slug and record key |
-| Media library | `uploaded` (meta `{mime, size}`) | `media`, the media id |
+| Belongs-to-many relations | `attached`, `detached`, `pivot_updated` (meta `{relation, targets, pivot?}`) | the parent's resource slug and key |
+| Import and export | `imported` (meta `{import, rows, created, updated, failed}`), `exported` (meta `{rows, query}`: the query's shape, never its values) | the resource slug |
+| Media library | `uploaded` (meta `{mime, size}`); a rename or new alt text is `updated` | `media`, the media id |
 | Roles | `role.created`, `role.permissions_changed`, `role.deleted` | `role`, its id |
-| Users | `user.created`, `user.updated`, `user.deleted`, `user.activated`, `user.deactivated`, `user.roles_changed`, `user.permissions_changed`, `user.password_reset` | `user`, its id |
+| Users | `user.created`, `user.invited`, `user.invitation_resent`, `user.updated`, `user.deleted`, `user.activated`, `user.deactivated`, `user.roles_changed`, `user.permissions_changed`, `user.password_reset` | `user`, its id |
 | Permissions | `permission.synced` (meta `{created, orphaned, restored, regrouped}`) | `permission` |
-| Settings | `settings.updated` (secrets as `"[redacted]"`) | `settings`, the group |
-| Account | `auth.password_changed`, `auth.signed_out_everywhere`, `token.created`, `token.revoked` | `user`, its id |
+| Settings | `settings.updated` (secrets as `"[redacted]"`); `mail.test_sent` (meta `{to, ok, code}`, the address masked) | `settings`, the group (none for `mail.test_sent`) |
+| Queue and schedules | `queue.retried`, `queue.forgotten`, `queue.cancelled` (meta `{kind, queue}`); `schedule.run` (meta `{run}`) | `job`, its id; `schedule`, its name |
+| Account | `auth.password_changed`, `auth.password_reset`, `auth.invitation_accepted`, `auth.signed_out_everywhere`, `token.created`, `token.revoked` | `user`, its id |
 | Sign-ins | `auth.signed_in`, `auth.signed_out`, `auth.sign_in_failed`, `auth.sign_in_failed_burst`, `jwt.signed_in`, `jwt.signed_out`, `jwt.reuse_detected` | `user` (`session` for failures) |
 
 A change that changes nothing (saving an unchanged form, assigning a role the
@@ -169,7 +172,7 @@ secrets in them.
 
 A record's history lists what the engine recorded about that record
 (`created`, `updated`, `trashed`, `deleted`, `restored`, `force_deleted`,
-`action:<name>`), with only the fields the user may read now; entries your
+`attached`, `detached`, `pivot_updated`, `action:<name>`), with only the fields the user may read now; entries your
 code wrote with `ctx.audit` are not in it (they are in the full log).
 Actors appear by name to users who may list users (`users.view_any`),
 otherwise by id; credentials appear by kind only (`session`, `token`, `jwt`,

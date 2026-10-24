@@ -1,6 +1,6 @@
 # 0006 — Admin SPA delivery: committed assets, runtime meta, strict CSP
 
-- Status: accepted
+- Status: accepted; amended (below)
 - Date: 2026-10-12
 
 ## Context
@@ -45,3 +45,9 @@ with CSRF protection.
   fails on any `securitypolicyviolation`.
 - The dev setup differs from production (Vite HTML without injection); the
   bundle falls back to `/admin` when the meta tag is absent.
+
+## Amendment
+
+The `<meta name="rustcms-admin">` tag now carries a JSON configuration (base
+path, locales, brand, theme, extensions), rendered once at startup with static
+branding and per request with runtime branding (ADR 0013, ADR 0033).

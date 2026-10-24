@@ -4,7 +4,7 @@ A Rust framework for admin panels and headless CMS backends, inspired by
 Laravel and FilamentPHP: declare resources in Rust, get an authorized CRUD API
 and an admin panel (React, embedded in your binary — no Node needed to use it).
 
-> **Status: 0.7.** See the [limitations](docs/guide/src/reference/limitations.md). Not on
+> **Status: 0.10.** See the [limitations](docs/guide/src/reference/limitations.md). Not on
 > crates.io: applications depend on a Git tag of this repository.
 
 ```rust,ignore
@@ -58,6 +58,9 @@ cargo run -- migrate && cargo run -- db:seed && cargo run -- serve
   abilities; immediate revocation; rate limits.
 - **Roles & permissions** per guard, escalation-safe (`RbacService`), with Users,
   Roles (areas, search, presets) and Account pages in the panel.
+- **Panel features**: media library and rich text, settings pages, audit log,
+  queue and schedules, CSV import/export, mail, dashboard widgets, and React
+  pages through the extension SDK.
 - **Branding**: a static theme, or a brand, logos and colors chosen while the
   app runs (`AdminProvider::branding`).
 - **CLI**: `new`, `make:model|migration|resource|policy|test`, `route:list`,

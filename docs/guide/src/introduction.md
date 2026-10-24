@@ -32,9 +32,14 @@ one binary: no Node, PHP or separate frontend to deploy.
 
 ## What you get
 
-- **Admin panel**: lists with search, filters, sorting and bulk actions; forms
-  with sections, tabs, relationships, file uploads, rich text and key/value
-  inputs; soft deletes; has-many relation managers; custom field widgets;
+- **Admin panel**: lists with search, filters, sorting, and
+  [row and bulk actions](admin/actions.md); forms with sections, tabs,
+  relationships, file uploads, rich text and key/value inputs; soft deletes;
+  has-many and belongs-to-many relations; custom field widgets;
+  [dashboard widgets](admin/dashboard.md);
+  [CSV import and export](admin/import-export.md);
+  [React pages](admin/react-pages.md) and [realtime](admin/realtime.md)
+  events and sockets; [settings](admin/settings.md) edited in the panel;
   users, roles and account pages; English and Vietnamese.
 - **Security by default**: deny-by-default permissions per resource, record and
   field; scopes (tenancy, ownership) applied on every path; admin sessions with
@@ -44,6 +49,10 @@ one binary: no Node, PHP or separate frontend to deploy.
   container, an HTTP stack with sane limits, JSON APIs with declared access,
   validation and pagination, SQLite, PostgreSQL and MySQL, file storage (local
   or S3-compatible), several instances with Redis.
+- **Background work and records**: [queues and jobs](digging-deeper/queues.md),
+  [schedules](digging-deeper/scheduling.md), [mail](digging-deeper/mail.md),
+  an [audit log](digging-deeper/audit-log.md) of every change, and
+  [encrypted columns](digging-deeper/encryption.md) for your secrets.
 - **Tooling**: `rustcms new`, generators (`make:model`, `make:resource`,
   `make:api`, …), migrations, and a testing kit that runs every database test
   on all three databases.
@@ -60,7 +69,7 @@ one binary: no Node, PHP or separate frontend to deploy.
 | Eloquent models, migrations | SeaORM entities, migrations (`make:model`, `make:migration`) |
 | Gates, policies, Spatie permissions | `Gate`, `Policy`, roles and permissions per guard |
 | Filament resources, forms, tables, actions | `Resource`, `Form`, `Table`, `Action` |
-| Filament relation managers | `Relation::has_many` |
+| Filament relation managers | `Relation::has_many`, `Relation::belongs_to_many` (and `BelongsToManySelect`) |
 | `Illuminate\Testing` | `rustcms-testing` (`TestApp`, `db_test!`, factories) |
 
 ## Status

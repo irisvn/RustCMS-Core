@@ -1,6 +1,6 @@
 # 0015 — Settings
 
-- Status: accepted
+- Status: accepted; amended in 0.4.1 (ADR 0030), 0.9.0 (hook) and 0.10.1 (below)
 - Date: 2026-10-18
 
 ## Context

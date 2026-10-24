@@ -53,9 +53,10 @@ authorizes differently. Three risks shaped the decision:
   `lock_visible` (scope and view policy,
   re-checked under the lock, key order; the targets of every relation sent
   that share a target resource are locked together, resources in the
-  registry's lock order (`Registry::lock_rank`: parents before their
-  belongs-to-many targets and `lock_parent` children, resources the lock
-  graph does not order by slug), so two relations to one resource never lock
+  registry's lock order (`Registry::lock_rank`: a topological order of the
+  lock graph (parents before belongs-to-many targets and `lock_parent`
+  children), the same on every instance; resources outside the graph last,
+  by slug), so two relations to one resource never lock
   its rows in different orders). When the row's own `belongs_to` keys
   reference rows of a target resource, those rows are locked in the same
   pass (`DynResource::lock_visible_with`: one key-order pass, references

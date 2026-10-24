@@ -8,6 +8,7 @@ application: the same folder names, inside `src/` (Rust modules live there).
 blog/
 ├── Cargo.toml / Cargo.lock      # dependencies (≈ composer.json / composer.lock)
 ├── .env, .env.example           # secrets and per-machine values (.env is git-ignored)
+├── .github/workflows/ci.yml     # CI: formatting, lints and the tests on SQLite
 ├── config/                      # app.toml, auth.toml, http.toml, log.toml
 ├── lang/vi.toml                 # translations of your admin labels and messages
 ├── resources/                   # views/admin (page templates), admin/{js,css} (extensions), logo
@@ -23,15 +24,12 @@ blog/
 │   │   └── app_service_provider.rs    # jobs, seeders, console commands
 │   ├── routes/api.rs            # every API route and its access (≈ routes/api.php)
 │   ├── http/                    # (≈ app/Http)
-│   │   ├── controllers/         #   handlers                       (make:api)
-│   │   ├── requests/            #   validated input (≈ form requests)
-│   │   └── resources/           #   records as JSON (≈ API resources) (make:api)
+│   │   └── controllers/         #   handlers                       (make:api)
 │   ├── models/                  # SeaORM entities and query scopes (make:model)
 │   ├── policies/                # who may do what                  (make:policy)
 │   ├── admin/                   # the admin panel (≈ app/Filament)
 │   │   ├── resources/           #   one resource per model         (make:resource)
-│   │   ├── pages/               #   custom and settings pages      (make:page, make:settings)
-│   │   └── slots/               #   content beside records
+│   │   └── pages/               #   custom and settings pages      (make:page, make:settings)
 │   └── database/
 │       ├── migrations/          # your migrations, after the framework's (make:migration)
 │       └── seeders/             # DatabaseSeeder and the others     (make:seeder)
@@ -40,7 +38,7 @@ blog/
     └── feature/                 # tests through HTTP, one binary    (make:test)
 ```
 
-More folders appear when a generator first needs them:
+More folders appear when a generator first needs them, or when you add them:
 
 | Folder | Holds | Generator |
 |---|---|---|
@@ -48,6 +46,9 @@ More folders appear when a generator first needs them:
 | `src/jobs/` | background jobs ([Queues](../digging-deeper/queues.md)) | `make:job` |
 | `src/settings/` | settings stored in the database ([Settings](../admin/settings.md)) | `make:settings` |
 | `src/console/` | console commands | `make:command` |
+| `src/http/resources/` | records as JSON (≈ API resources) | `make:api` |
+| `src/http/requests/` | validated input (≈ form requests) | by hand |
+| `src/admin/slots/` | content beside records ([Customizing](../admin/customizing.md)) | by hand |
 | `src/database/factories/` | model factories for seeders and tests | `make:factory` |
 | `resources/views/admin/` | templates of custom pages and slots ([Customizing](../admin/customizing.md)) | `make:page` |
 | `resources/admin/` | extension scripts (`js/`), stylesheets (`css/`), logo and favicon | `make:widget`, `make:page --script` |

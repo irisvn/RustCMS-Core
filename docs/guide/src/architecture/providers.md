@@ -77,4 +77,9 @@ A missing binding in a handler is a 500 (logged), never a panic.
 | `app.describe_routes(group, routes)` | lists routes for `route:list` |
 | `app.body_limit(method, path, bytes)` | a larger body limit for one route |
 | `app.command(cmd)` | a console command ([Console](../basics/console.md)) |
+| `app.job::<J>()` | a job the queue's workers run ([Queues](../digging-deeper/queues.md)) |
+| `app.schedule(schedule)` | periodic work, run only by `serve` ([Scheduling](../digging-deeper/scheduling.md)) |
+| `app.seeder(seeder)` | a seeder for `db:seed` ([Seeding](../basics/database.md#seeding)) |
+| `app.encrypted_column::<E>(column, binding)` | an encrypted column for `key:reencrypt` ([Encrypted columns](../digging-deeper/encryption.md)) |
+| `app.mail_template(template)` | a mail template, `mail` feature ([Mail](../digging-deeper/mail.md#templates)) |
 | `app.config()` | the configuration |

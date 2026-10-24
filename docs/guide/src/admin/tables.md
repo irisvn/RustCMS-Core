@@ -23,15 +23,20 @@ fn table() -> Table {
 | Columns | |
 |---|---|
 | `TextColumn` | text, numbers, relationship titles |
-| `BadgeColumn` | a badge, `.color(value, color)` per value |
+| `BadgeColumn` | a badge, `.color(value, color)` per value (`primary`, `success`, `warning`, `danger`, `gray`; the panel's monochrome cell draws only `danger` in color, the others gray) |
 | `BooleanColumn` | a check mark |
 | `DateColumn` | dates and times |
 
 | Filters | Field must be `.filterable()` |
 |---|---|
-| `SelectFilter` | one of the options (static or the `belongs_to` records) |
+| `SelectFilter` | one of the options: `.options([(value, "Label"), …])`, or the `belongs_to` records |
 | `TernaryFilter` | yes / no / any |
 | `DateRangeFilter` | from / until |
+
+Columns and filters take `.label("…")` (default: the field's label, or its
+name in words). A column can be drawn by a script of the application with
+`.cell("vendor/name")` and `.props(json!(…))`
+([custom cells](customizing.md#custom-cells)).
 
 Columns and filters for fields the user may not read are left out.
 
@@ -58,5 +63,6 @@ ASCII). Columns of `.sortable()` fields can be sorted; `default_sort("-field")`
 sorts descending. Search, sort, filters and the page are kept in the URL.
 
 Lists only show records the user may view: `scope()` and the policy apply
-([Authorization](authorization.md)). Bulk [actions](actions.md) appear when
-rows are selected.
+([Authorization](authorization.md)). Rows offer the resource's
+[actions](actions.md#placement-in-lists); bulk ones also appear when rows are
+selected.

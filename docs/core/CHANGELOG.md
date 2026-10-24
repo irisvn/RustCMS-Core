@@ -30,9 +30,10 @@ All notable changes are documented here. The format follows
 - `SettingField::media(name)` and `SettingField::media_list(name, max)`
   (with `.accept(…)`, `.max_size(…)`): settings holding media ids
   (`Option<Uuid>`, `Vec<Uuid>`), edited with the media input. A save checks
-  each changed reference as resource media fields are checked (exists, not
+  only the files it adds, as resource media fields are checked (exists, not
   trashed, visible to the saver now, accepted type and size; rows locked
-  in the save's transaction). Boot refuses them without
+  in the save's transaction); files the setting already held are kept
+  unchecked, whatever the order or removals. Boot refuses them without
   `AdminProvider::media()` or with a non-empty default. Contract fixture
   `settings.brand.json`.
 - `Action::visible_when(|ctx, record| …)`: whether an action is offered on
@@ -445,13 +446,13 @@ All notable changes are documented here. The format follows
 - Demo: Integrations (an API token and environment variables); E2E on
   Chrome.
 
-### Changed
+### Changed (0.4.1)
 - `rustcms::settings::{read, load, write}` take the `Keyring`
   (`state.keyring()`) instead of the `AppKey`.
 
 ## [0.4.0] — 2026-10-18
 
-### Changed (tooling)
+### Changed (0.4.0 — tooling)
 - Test servers (docker compose PostgreSQL and MySQL) keep their data in
   memory and never fsync: the test matrix runs in 158 s instead of 360 s
   (MySQL variants about 3x faster).
@@ -462,12 +463,12 @@ All notable changes are documented here. The format follows
   run in memory without fsync. The nextest `ci` profile retries a failure
   once and reports it as flaky.
 
-### Security
+### Security (0.4.0)
 - ammonia 4.2.4 (RUSTSEC-2026-0373: case-insensitive CSS `url(` in style
   attributes). Not reachable here: the HTML allowlist drops `style`.
 - inout 0.2.2 (aes-gcm's dependency): 0.2.3 was yanked.
 
-### Added (0.4 — W2b, W6)
+### Added (0.4.0 — W2b, W6)
 - WebSocket on admin routes (ADR 0029): `AdminRoutes::socket`, `LiveSocket`,
   `SocketResponse::target`, `AdminSocket` (`recv`, `send`, `authorize`).
   - Admission: a mandatory exact `Origin` and the session's CSRF token as
@@ -488,7 +489,7 @@ All notable changes are documented here. The format follows
 - Demo: an echo socket on the Live page, with a `whoami` command authorized
   when it runs; E2E on Chrome.
 
-### Added (0.4 — W2a, W3)
+### Added (0.4.0 — W2a, W3)
 - `Event::resync()`: a producer asks pages to reload (as the hub does for a
   subscriber that fell behind); `rustcms::auth::TargetFuture` for reusable
   target checks. From rust-panel's integration feedback.
@@ -507,7 +508,7 @@ All notable changes are documented here. The format follows
   unmount and on session change); `ApiClient.onEpochChange`.
 - Demo: a Live page (hub counter, reset POST); E2E on Chrome.
 
-### Added (0.4 — W1)
+### Added (0.4.0 — W1)
 - `AdminRoutes` / `AdminAccess` (ADR 0026): JSON routes for the panel's own
   pages under `{admin_path}/api/x`, on the admin session (Origin and CSRF on
   writes), each with `authenticated()` or `can(permission)` checked before
@@ -517,31 +518,31 @@ All notable changes are documented here. The format follows
 - `rustcms_testing::admin_routes::assert_access`: an access table per route
   and actor that also fails on a route without a case.
 
-### Added (0.4 — W9)
+### Added (0.4.0 — W9)
 - `TestApp::new` / `with_config` take any `FnOnce(Config) -> AppBuilder`
   (closures binding test doubles; function items still work).
 - `RUSTCMS_TEST_BACKENDS=mysql` (any of `sqlite,postgres,mysql`): `db_test!`
   runs only those, each then required; empty or unknown names, or a required
   backend left out, fail.
 
-### Added (0.4 — W7)
+### Added (0.4.0 — W7)
 - Configuration from files: every well-known variable and every
   `RUSTCMS_<PATH>` also reads `<VAR>_FILE` (Docker/Kubernetes secrets), in its
   variable's place; both set, a missing, empty, non-UTF-8 or over-64-KiB file
   fail boot without quoting the content; one trailing line break removed.
 
-### Added
+### Added (0.4.0)
 - Guide: *Database schema* reference (users, roles, permissions and their
   assignments, sessions, tokens, JWT, one-time links, every other framework
   table), linked from *Roles & permissions*.
 
-### Fixed
+### Fixed (0.4.0)
 - `rustcms self-update --version v0.3.1` (going back to a release that prints
   no target in `--version`) was refused; such a command is checked by version.
 
 ## [0.3.2] — 2026-10-16
 
-### Added
+### Added (0.3.2)
 - `rustcms doctor`: Rust and Cargo against the minimum version, a C compiler
   that really builds, git and the RustCMS-Core tag, curl, the latest release,
   the application's version; what to do for each problem.
@@ -555,7 +556,7 @@ All notable changes are documented here. The format follows
   the user cache directory); other builds open the published copy of their
   version. `rustcms --version` shows the target.
 
-### Changed
+### Changed (0.3.2)
 - The application is found by parsing `Cargo.toml` (`[package.metadata.rustcms]`),
   not by searching its text.
 - `make:command` refuses the names of the command's own commands; `rustcms --
@@ -565,7 +566,7 @@ All notable changes are documented here. The format follows
 
 ## [0.3.1] — 2026-10-16
 
-### Added
+### Added (0.3.1)
 - Distribution (ADR 0025): a tag publishes the `rustcms` command for macOS
   on Apple silicon and Linux (x86_64, arm64; Windows: WSL; Intel Macs: `cargo install`), the guide and the install script (`install.sh`)
   to irisvn/RustCMS (`.github/workflows/release.yml`), after
@@ -577,7 +578,7 @@ All notable changes are documented here. The format follows
   test CA from `just test-tls-cert`): delivery with the trusted root, refusal
   of another name and of an untrusted certificate, no password in the audit.
 
-### Changed
+### Changed (0.3.1)
 - `rustcms new` depends on the Git tag of RustCMS-Core matching the command's
   version (`rustcms = { git = …, tag = "vX.Y.Z" }`); a local checkout only with
   `--rustcms-path`. Paths are written as proper TOML strings.
@@ -585,7 +586,7 @@ All notable changes are documented here. The format follows
 - `.gitattributes`: LF in every checkout (generators insert code at
   `\n`-terminated markers in the embedded templates).
 
-### Fixed
+### Fixed (0.3.1)
 - Codex verify of M23: the restore procedure also ends JWT sign-ins; LMS
   viewers and editors see the news' images (`media.manage_all`, viewing
   only); a slug cleared while editing is made again from the title;
@@ -609,7 +610,7 @@ All notable changes are documented here. The format follows
 - CI: Mailpit for the E2E suite and the SMTP test; test binaries built
   without debug info (the linker ran out of disk).
 
-## [0.3.0] — 2026-10-26
+## [0.3.0] — 2026-10-16
 
 ### Added (0.3 — M23)
 - `examples/lms`: news (categories, tags, articles with rich text, a cover,
@@ -624,7 +625,7 @@ All notable changes are documented here. The format follows
 ### Changed (0.3 — M23)
 - Version 0.3.0 (workspace, examples, admin SPA).
 
-### Changed (docs)
+### Changed (0.3 — docs)
 - Documentation split: `docs/guide/` is the public developer guide (English,
   mdBook; getting started, basics, security, admin panel, APIs, digging deeper,
   reference, release notes, upgrade guide), `docs/core/` holds private material
@@ -1031,6 +1032,10 @@ All notable changes are documented here. The format follows
   a `reason`. Struct literals of these types need the new field.
 - The panel no longer infers an uncertain write from the text of an error.
 
+## 0.1 and 0.2 (never tagged)
+
+Developed on `main` before tags existed; first released in the 0.3.0 tag.
+
 ### Added (0.2 — M11)
 - **JWT sign-ins** on the API guard: `POST /api/v1/auth/jwt` (access + refresh
   token), `POST /api/v1/auth/refresh` (rotating, single-use refresh tokens; a
@@ -1047,7 +1052,7 @@ All notable changes are documented here. The format follows
   `FOR UPDATE SKIP LOCKED` (ADR 0012).
 - `TestDb::reopen()` for tests with two instances on one database.
 
-### Changed (demo)
+### Changed (0.2 — demo)
 - The demo's post form uses tabs (Content, Publishing, Attributes) and a
   key/value `attributes` column (new migration; seeded).
 
@@ -1200,8 +1205,6 @@ All notable changes are documented here. The format follows
 - `rustcms_core::db::migrate_fresh` backs `migrate:fresh` (one connection, so
   SQLite foreign keys stay off for every drop).
 - Docs: revocation semantics, `just ci` scope, review report in `docs/reports/`.
-
-### Changed
 - Admin UI redesigned with a monochrome, shadcn-block-inspired layout: collapsible
   desktop sidebar, native mobile navigation drawer, breadcrumbs, authorized
   overview shortcuts, consistent CRUD/System/Account layouts and OS light/dark

@@ -24,15 +24,22 @@ values follow the [wire format](wire-format.md).
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
 | GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable belongs-to-many pivot columns by target key) |
 | POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key set by the server |
+| POST | `/resources/{slug}/records/{key}/relations/{relation}/attach` `{keys, pivot?}`, `…/detach` `{keys}` | `{processed, missing}`: belongs-to-many links, see [Relationships](../admin/relationships.md#belongs-to-many-pivot-tables) |
+| PATCH | `/resources/{slug}/records/{key}/relations/{relation}/links/{target}` `{…pivot columns}` | `{processed, missing}`: one link's pivot values (`update_pivot_{relation}`) |
 | POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing, replayed?, message?, open?}`: a run on one record hidden by `visible_when` is 403 (nothing runs), hidden records of a run on several are `denied`; `open` only on a run on one record (422 `one_record_only` otherwise) |
-| POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (with `alt`, its alternative text; media library enabled; the media schema's `upload` ability says whether the user may) |
+| POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (with `alt`, its alternative text; media library enabled; the media schema's `upload` ability says whether the user may). A media record's `name` and `alt` are changed with `PATCH /resources/media/records/{id}` (`media.update`) |
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
+| GET | `/resources/{slug}/actions/{action}/fields/{field}/options?search=&keys=` | the same, for a field of an action's form, see [Actions](../admin/actions.md#actions-with-a-form) |
+| GET | `/resources/{slug}/export?…`, `/exports`, `/exports/{id}/file`; POST `/resources/{slug}/exports?…` | CSV exports at once or in the background, see [Import and export](../admin/import-export.md#exporting) |
+| POST | `/resources/{slug}/imports`, `/imports/{id}/preview`, `/imports/{id}/run`; GET `/imports/{id}` | CSV imports, see [Import and export](../admin/import-export.md#importing) |
+| GET | `/dashboard`, `/dashboard/widgets/{name}` | the user's widgets and their values, see [Dashboard](../admin/dashboard.md#api) |
 | GET | `/resources/{slug}/records/{key}/relations/{relation}/options?search=&keys=` | `{data: [{value, label, attached}]}`: records to attach to a record (`attach_{relation}` on it) |
 | GET | `/resources/{slug}/relations/{relation}/options?search=&keys=` | `{data: [{value, label, attached: false}]}`: records to attach in a create form's [`BelongsToManySelect`](../admin/relationships.md#choosing-links-in-the-records-form) (`create` and `attach_{relation}`) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../admin/users-roles.md) |
 | GET | `/system/permission-presets` | `[{id, label, description?, permissions}]` (`roles.view_any` or `permissions.view_any`); `/system/permissions` items carry `area`, `areaLabel`, `areaSort`, and `label`/`description` when declared |
 | GET / PUT | `/settings/{group}` | settings pages, see [Settings](../admin/settings.md#api) |
+| POST | `/settings/mail/test` `{to}` | sends a test mail with the saved settings (`mail` feature; whoever may update the mail settings), see [Settings](../admin/settings.md#mail) |
 | GET | `/audit`, `/resources/{slug}/records/{key}/history` | the audit log and record histories, see [Audit log](../digging-deeper/audit-log.md#viewing-the-log) |
 | GET | `/queue` | counts per queue and status, worker settings, `canManage` (`queue.view`) |
 | GET | `/queue/jobs?status=&queue=&kind=&since=&until=&cursor=&per_page=` | `{data: [QueueJob], meta: {nextCursor?}}`, newest first (`queue.view`); `since`/`until` RFC 3339 on dispatch time |
@@ -94,7 +101,9 @@ the policy allows `view` and `restore` or `force_delete` on it.
 
 ## Retrying writes safely
 
-`POST …/records` (create) and `POST …/actions/{action}` accept an
+Creates (`POST …/records`, and `POST …/relations/{relation}` on a record),
+`POST …/actions/{action}`, media uploads (`POST /media`), import uploads
+(`POST …/imports`) and background exports (`POST …/exports`) accept an
 `Idempotency-Key` header (1–128 of `A-Z a-z 0-9 _ -`, otherwise 422 on
 `idempotency_key`). The key is claimed in the write's transaction, so the write
 and its receipt commit together or not at all. Repeating the request with the
@@ -103,7 +112,8 @@ same key, by the same user, within 24 hours:
 - same request (body compared canonically: key order does not matter) → the
   first result, not applied again: a create answers its record as the user may
   see it **now** (key only when no longer visible); an action answers the first
-  run's outcome with `"replayed": true`. Admission is checked again (403 if the
+  run's outcome with `"replayed": true`; an upload, import or background
+  export answers the same media item, import or export. Admission is checked again (403 if the
   user lost the ability). Action outcomes, first or replayed, list processed
   and denied keys only for records the user may view now, and drop `message`
   and `open` unless the user may still view every processed record;

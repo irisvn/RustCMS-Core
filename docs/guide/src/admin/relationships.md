@@ -34,8 +34,11 @@ the fix.
 
 On the parent's view page, each relation is a section with a compact table of
 the children: the target's table columns (without the foreign key), search and
-paging, and a **View** link per row. Edits and deletes happen on the child's
-own pages. **New** opens the child's create form for this parent: the foreign
+paging, and a **View** link per row. Rows also offer the child resource's
+[actions](actions.md#placement-in-lists) (the first primary one labelled, the
+others under **⋯**): the server's abilities for each record decide, and running
+one is authorized as from the child's list. Edits and deletes happen on the
+child's own pages. **New** opens the child's create form for this parent: the foreign
 key input is not shown, the server sets it, and the form returns to the parent
 when saved.
 
@@ -116,6 +119,10 @@ allowed:
 - **Detach**: the selected links. Links to records the user cannot see are
   never touched.
 - **Edit link**: the pivot columns the user may update.
+
+Rows also offer the target resource's [actions](actions.md#placement-in-lists),
+as in has-many tables: the server's abilities for each record decide, and
+running one is authorized as from the target's list.
 
 ### Permissions
 
@@ -236,9 +243,6 @@ record's transaction, and the history lists `attached` / `detached` after
   relation manager is there). The create form searches
   `GET {admin}/api/resources/{slug}/relations/{relation}/options`, which
   serves only relations the form links.
-- The current links are read with the target's page size: give the target
-  a `per_page` limit of at least 100, or a record with more links than one
-  page holds is changed on its page only.
 - Not for the media library (link files with a
   [`Field::media_list`](media.md#media-fields) field instead).
 - New links take the pivot columns' database defaults: a relation with a

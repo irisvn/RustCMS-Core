@@ -1,6 +1,6 @@
-# rustcms — Tài liệu tổng quan (bản 0.7.0)
+# rustcms — Tài liệu tổng quan (bản 0.10.1)
 
-> Cập nhật: 13/10/2026 · nhánh `main` (commit `ce2db1e`)
+> Cập nhật: 24/10/2026 · tag `v0.10.1` (commit `ca75be1`)
 
 rustcms là framework Rust dùng để dựng nhanh **CMS và Admin Dashboard**, lấy cảm
 hứng từ Laravel và FilamentPHP:
@@ -76,7 +76,7 @@ just test-ui                  # test SPA (Vitest)
 just e2e                      # test trình duyệt (Playwright) — máy anh: PLAYWRIGHT_CHANNEL=chrome
 just dev                      # Rust :8000 + Vite :5173 (mở http://localhost:5173/admin/)
 just ci                       # phần lớn CI; thêm `just test-cli`, `just e2e`, `just msrv`
-just publish-check            # đóng gói + verify các crate cho crates.io
+just publish-check            # thử đóng gói các crate (không upload; phân phối qua tag Git, ADR 0025)
 ```
 
 ---
@@ -86,14 +86,18 @@ just publish-check            # đóng gói + verify các crate cho crates.io
 ```
 crates/
 ├── rustcms            facade + prelude (app chỉ cần phụ thuộc crate này)
-├── rustcms-core       AppBuilder, ServiceProvider, config, lỗi, HTTP stack, Console (`artisan`)
-├── rustcms-auth       guard session/token, CSRF, rate limit, RBAC (RbacService), lệnh console
-├── rustcms-admin      engine Resource → JSON schema → CRUD; API admin; trang System; phục vụ SPA
-├── rustcms-migration  bảng users, sessions, tokens, roles/permissions
+├── rustcms-core       AppBuilder, ServiceProvider, config, lỗi, HTTP stack, Console (`artisan`),
+│                      queue, scheduler, mail, mã hoá cột (crypto), realtime (SSE, Hub), storage
+├── rustcms-auth       guard session/token/JWT, CSRF, rate limit, RBAC (RbacService), quên mật khẩu/lời mời
+├── rustcms-admin      engine Resource → JSON schema → CRUD; API admin; System, media, rich text,
+│                      settings, audit, import/export, dashboard; phục vụ SPA
+├── rustcms-migration  các bảng của framework: users, sessions, tokens, RBAC, idempotency, media,
+│                      audit, settings, jobs, exports/imports, schedules…
 ├── rustcms-testing    TestApp, acting_as / login_as / with_token, factory, DB riêng mỗi test
 └── rustcms-cli        `rustcms new`, make:*, chuyển tiếp lệnh runtime
 admin-ui/              React 19 + Vite + Tailwind + TanStack (build vào crates/rustcms-admin/assets)
 examples/demo/         app blog mẫu
+examples/lms/          back office LMS nhỏ (khoá học, ghi danh, tin tức)
 docs/guide/            mdBook public (tiếng Anh)
 docs/core/             tài liệu nội bộ: kiến trúc, ADR, báo cáo, CHANGELOG
 fixtures/              hợp đồng JSON server↔SPA, oracle phân quyền viết tay
@@ -105,7 +109,7 @@ field và record, rồi ghi qua SeaORM trong transaction.
 
 ---
 
-## 3. Tính năng theo milestone
+## 3. Tính năng theo milestone và bản phát hành
 
 | Milestone | Nội dung chính |
 |---|---|
@@ -115,7 +119,19 @@ field và record, rồi ghi qua SeaORM trong transaction.
 | **M3** | Engine Resource: builder form/bảng/bộ lọc/action, schema có version, quyền theo field và record (cả relationship và options), giới hạn truy vấn, map lỗi constraint, khoá dòng khi ghi |
 | **M4** | **Admin SPA** nhúng trong binary: đăng nhập, menu, danh sách (search/sort/filter/phân trang/bulk action), form create/edit/view đủ vocabulary 0.1, CSP chặt, chống mất bản nháp và ghi trùng |
 | **M5** | Trang **System**: Users, Roles (ma trận permission), **Account** (đổi mật khẩu, đăng xuất nơi khác); mọi thao tác qua `RbacService` |
-| **M6** | `make:resource --generate`, `make:policy`, `route:list`, `role:assign`, ví dụ API token `/api/v1/posts`, docs đầy đủ, license, sẵn sàng publish |
+| **M6** | `make:resource --generate`, `make:policy`, `route:list`, `role:assign`, ví dụ API token `/api/v1/posts`, docs đầy đủ, license |
+| **0.2** (M7–M11) | Soft delete, idempotency key, media + rich text, quan hệ has-many, MySQL, tầng API, JWT, Redis |
+| **0.3.0** (M12–M23) | i18n, audit log, settings, queue, tuỳ biến panel, nhiều-nhiều, import/export CSV, mail, quên mật khẩu/lời mời, dashboard, `examples/lms` |
+| **0.3.1–0.3.2** | Phát hành lệnh `rustcms` qua tag (ADR 0025), `doctor`, `upgrade`, `self-update`, `docs` |
+| **0.4.0** | `AdminRoutes`, SSE, `Hub`, WebSocket, cấu hình từ file |
+| **0.4.1** | Scheduler, cột mã hoá `Encrypted<T>`, `key:reencrypt` |
+| **0.5.0–0.5.1** | Trang React v2 + SDK, trang chủ tuỳ chọn, thứ tự menu |
+| **0.6.0–0.6.1** | Kit `ui` 2, chọn giao diện sáng/tối |
+| **0.7.0–0.7.1** | Trang Roles theo khu vực + preset, branding lúc chạy, `Dialog` |
+| **0.8.0–0.8.2** | Lịch sử job, trang Schedules, `after_delete`, `migrate --allow-newer` |
+| **0.9.0** | `BelongsToManySelect` trong form bản ghi, hook `after_trash`/`after_restore`/`after_relation_change`, `media.view_all` |
+| **0.10.0** | Rich text phiên bản 2 (bảng, embed, callout), picker thư viện media, upload nhiều ảnh |
+| **0.10.1** | Trang Media dạng lưới, alt cho media, settings chứa media, `visible_when`, action chính, `message`/`open` của action |
 
 ### Tạo một màn hình admin trong 3 lệnh
 
@@ -157,14 +173,17 @@ cảm (password, token…) và kiểu chưa hỗ trợ bị bỏ qua kèm cảnh
 
 ## 5. Chất lượng và quy trình
 
-| Hạng mục | Kết quả cuối |
+Số liệu dưới đây là của 0.1 (M6), chỉ để tham khảo lịch sử; số hiện tại xem kết quả CI.
+
+| Hạng mục | Kết quả (0.1) |
 |---|---|
-| Test Rust | **309 pass** trên PostgreSQL và SQLite |
-| Test SPA (Vitest) | **85 pass** |
-| E2E trình duyệt (Playwright) | **10 pass**, không vi phạm CSP |
+| Test Rust | 309 pass trên PostgreSQL và SQLite (nay chạy cả MySQL) |
+| Test SPA (Vitest) | 85 pass |
+| E2E trình duyệt (Playwright) | 10 pass, không vi phạm CSP |
 | Test scaffold (`rustcms new` + generator → app compile và test pass) | pass |
 | Lint | clippy `-D warnings`, eslint, tsc; rustdoc `-D warnings`; mdBook |
-| Publish | `cargo publish --workspace --dry-run`: cả 7 crate đóng gói và verify thành công |
+
+Không phát hành lên crates.io: app phụ thuộc tag Git của RustCMS-Core (ADR 0025).
 
 **Review:**
 - Codex adversarial-review theo từng milestone, kèm stop-gate review.
@@ -175,11 +194,15 @@ cảm (password, token…) và kiểu chưa hỗ trợ bị bỏ qua kèm cảnh
 
 ---
 
-## 6. Giới hạn đã biết của 0.3
+## 6. Giới hạn đã biết của 0.10
 
-- Chưa có: import/export Excel (M18 tạm bỏ), Range request/thumbnail cho media (M21 tạm bỏ),
-  xác minh email riêng (lời mời đánh dấu email đã xác minh), widget dashboard ngoài đếm
-  (chưa có tổng/trung bình), biểu đồ theo múi giờ khác UTC, DKIM/đính kèm cho mail.
+- Chưa có: import/export Excel (M18 tạm hoãn), Range request và resize ảnh phía server
+  (lưới Media thu nhỏ ảnh gốc trong trình duyệt; M21 tạm hoãn), xác minh email riêng (lời mời
+  đánh dấu email đã xác minh), widget dashboard ngoài đếm (chưa có tổng/trung bình), biểu đồ
+  theo múi giờ khác UTC, DKIM/đính kèm cho mail.
+- `BelongsToManySelect` chưa sửa được cột pivot (dùng relation manager) và chỉ đọc khi bản ghi
+  có hơn 100 liên kết.
+- Danh sách đầy đủ: `docs/guide/src/reference/limitations.md`.
 - Rate limit gửi mail tính theo từng process; giới hạn chung nhiều instance để sau.
 - Biểu đồ dashboard trên SQLite hoặc với policy theo từng bản ghi dừng ở 10.000 bản ghi ứng viên.
 - Đăng xuất một session hoặc thu hồi một token không huỷ được thao tác ghi đang chạy dở bằng
@@ -199,7 +222,14 @@ cảm (password, token…) và kiểu chưa hỗ trợ bị bỏ qua kèm cảnh
 - **0.4–0.7 (xong):** nền tảng panel (trang React v2, SDK, realtime, scheduler, mã hoá cột),
   điều hướng và kit UI 2 (0.5–0.6), chọn giao diện sáng/tối; 0.7: trang Roles theo khu vực
   (tìm kiếm, nhãn, preset) và branding lúc chạy (tên, logo, màu; cache theo instance).
-- **Sau 0.3:** Excel (M18), media Range/thumbnail (M21), xác minh email, widget tổng/trung bình,
+- **0.8 (xong):** lịch sử job, trang Schedules (Run now), `after_delete`; 0.8.1–0.8.2:
+  `migrate --allow-newer`, sửa lỗi trang React.
+- **0.9 (xong):** chọn liên kết nhiều-nhiều ngay trong form bản ghi (ADR 0035), các hook
+  `after_trash`/`after_restore`/`after_relation_change`, `media.view_all`.
+- **0.10 (xong):** rich text phiên bản 2 (bảng, embed, callout, chú thích ảnh), picker thư viện media.
+- **0.10.1 (xong):** trang Media dạng lưới và hàng đợi upload, alt cho media, settings chứa media,
+  `visible_when`, action chính, `message`/`open` của action.
+- **Đang hoãn / sau 0.10:** Excel (M18), media Range/thumbnail (M21), xác minh email, widget tổng/trung bình,
   múi giờ, Pages/Menus kèm headless API, Plugins.
 
 ---

@@ -17,7 +17,13 @@ What a release publishes and why: [ADR 0025](../adr/0025-distribution.md).
    workspace, the examples' metadata and `Cargo.lock`.
 2. `docs/core/CHANGELOG.md`: a `## [X.Y.Z] — date` section (a release
    candidate may stay under `[Unreleased]`; its notes are taken from there).
-   `docs/guide/src/upgrade.md`: the steps from the previous version.
+   `docs/guide/src/upgrade.md`: the steps from the previous version;
+   `docs/guide/src/release-notes.md`: what the release brings. Not bumped by
+   the script: the SDK's `VERSION` (`admin-ui/sdk/VERSION`, copied to
+   `crates/rustcms-cli/templates/sdk` and `examples/demo/resources/admin/sdk`;
+   `just generated` checks the copies) and the `tag = "vX.Y.Z"` pins in the
+   guide's installation and deployment pages and in
+   `docs/core/guides/deployment.vi.md`.
 3. Gate, commit, push `main`, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
 4. Watch the Release workflow: `verify`, `token`, `ci` (waits for the CI run
    of the tagged commit on `main`; nothing is tested twice), `docs`, one

@@ -20,6 +20,7 @@ Optional features are enabled on the `rustcms` dependency:
 | `sqlite`, `postgres`, `mysql` | on | database drivers |
 | `redis` | off | [several instances](../digging-deeper/instances.md) |
 | `s3` | off | uploads on S3-compatible storage (`storage.disk = "s3"`) |
+| `mail` | on | [mail](../digging-deeper/mail.md): SMTP, templates, the Mail settings page |
 
 ```toml
 rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.10.1", features = ["redis", "s3"] }
@@ -94,7 +95,13 @@ Check `curl http://127.0.0.1:8000/health` → `{"status":"ok","database":"ok"}`
 
 To go back, roll back with the **new** binary first (only it knows its
 migrations): `./blog.new migrate:rollback --step N`, then start the old one.
-Migrations that drop data cannot restore it: use the backup.
+`migrate:rollback` undoes migrations in the migrator's order, last first, not
+in the order they were applied: the application's migrations come after the
+framework's, so `--step N` undoes the application's newest ones first. When
+an upgrade only added framework migrations (a new rustcms version, no new
+migrations of yours), do not roll back: keep them and start the old binary
+with `migrate --allow-newer` (below). Migrations that drop data cannot
+restore it: use the backup.
 
 **Automatic rollbacks** (a Docker Swarm or Kubernetes rollout that returns to
 the previous image, whose start runs `migrate`): the older binary finds

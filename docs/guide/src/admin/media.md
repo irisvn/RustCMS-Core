@@ -25,8 +25,9 @@ app.provider(AdminProvider::new().media().resource::<PostResource>());
 `media.view_all` suits editors who put other people's images in their
 records (covers, galleries, images in rich text) and readers of those
 records, without the right to remove them. The scope decides what is listed,
-downloaded and accepted as a reference; the policy refuses the trash,
-restore and delete of another user's file (403) unless `media.manage_all`,
+downloaded and accepted as a reference; the policy refuses editing (name,
+alternative text), trashing, restoring and deleting another user's file
+(403) unless `media.manage_all`,
 and the trash lists only the files the user may restore or delete.
 `media.manage_all` includes everything `media.view_all` grants. The Roles
 page shows them as *See every file* and *Manage every file* (under
@@ -43,7 +44,9 @@ Files are kept on the configured [storage](../digging-deeper/storage.md)
 `Idempotency-Key`.
 
 - The type is detected from the content (magic bytes), never from the name or
-  the declared type. SVG, HTML, XML and scripts are never accepted.
+  the declared type. Only PNG, JPEG, GIF, WebP and PDF are accepted (narrowed
+  by `allowed_types`, see [storage](../digging-deeper/storage.md)); SVG, HTML,
+  XML and scripts never are.
 - Images must be readable (dimensions within `max_pixels`).
 - Answer: `201 {data: {id, name, mime, size, width?, height?, inline, alt?}}`.
   Storage paths are never sent.
@@ -302,10 +305,14 @@ its id in the records (media fields, rich text) and settings
 - a write that **sets** a reference to it is refused (422 "refers to a file
   that is not available"), for resource fields and settings alike;
 - a reference **kept as it was** is not checked again: a resource write
-  checks the media values it sends (the panel sends only the fields that
-  changed), a settings save the media values that differ from the stored
-  ones. So an unrelated edit still saves; to drop the reference, clear or
-  replace the file.
+  checks every id of the media and rich text fields it sends (the panel sends
+  only the fields that changed), so reordering a `media_list` that holds a
+  trashed file is refused; a settings save checks only the ids it adds. So an
+  unrelated edit still saves; to drop the reference, clear or replace the
+  file;
+- restoring a record from the trash checks its media and rich text
+  references again: a record that points to a trashed file cannot be
+  restored (422) until the file is.
 
 Applications that render references themselves (`rich_text::to_html`, their
 own pages) should treat an id they cannot resolve the same way.

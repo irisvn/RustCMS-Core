@@ -93,8 +93,9 @@ yours (one file per change, `rustcms make:migration <name>`):
 | Command                              | Does                                        |
 |--------------------------------------|---------------------------------------------|
 | `rustcms migrate`                    | apply pending migrations                    |
-| `rustcms migrate:status`             | list applied / pending                      |
-| `rustcms migrate:rollback --step N`  | undo the last N                             |
+| `rustcms migrate --allow-newer`      | also accept migrations applied by a newer binary |
+| `rustcms migrate:status`             | list applied / pending / `Newer` (unknown to this binary) |
+| `rustcms migrate:rollback --step N`  | undo the last N, in the migrator's order    |
 | `rustcms migrate:refresh`            | undo all, apply all (`--force` in production) |
 | `rustcms migrate:fresh`              | drop all tables, apply all (`--force` in production) |
 
@@ -108,6 +109,13 @@ migrations unless a statement cannot run in a transaction.
 
 Never edit a migration that has run in production; add a new one. A migration
 that cannot be reversed must say so in its `down` and in its doc comment.
+
+`migrate:rollback` undoes applied migrations last first in the migrator's
+order (the framework's, then yours), not in the order they were applied: after
+a rustcms upgrade that added framework migrations, `--step 1` undoes your
+newest migration, not the framework's. To run an older binary on a newer
+schema, keep the migrations and use `migrate --allow-newer`: see
+[Upgrading](../getting-started/deployment.md#upgrading).
 
 ## Seeding
 

@@ -1,6 +1,6 @@
 # 0016 — Job queue in the database
 
-- Status: accepted
+- Status: accepted; amended in M19 and 0.8.0 (below)
 - Date: 2026-10-19
 
 ## Context

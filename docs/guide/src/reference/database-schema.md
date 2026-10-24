@@ -157,9 +157,9 @@ WHERE p.name = 'posts.update' OR r.name = 'super_admin';
 | Table | For | Page |
 |---|---|---|
 | `seaql_migrations` | applied migrations | [Database & migrations](../basics/database.md) |
-| `rustcms_locks` | one row per lock name: a transaction locks it first to run after the others holding it (the same on SQLite, PostgreSQL and MySQL) | [Database & migrations](../basics/database.md) |
+| `rustcms_locks` | one row per lock name, locked first by a transaction to run after the others holding it; used on MySQL only (PostgreSQL takes an advisory lock, SQLite already holds its write lock), created on every database | [Database & migrations](../basics/database.md) |
 | `idempotency_keys` | stored results of writes sent with `Idempotency-Key` (`owner`, `request_hash`, `result`, `expires_at`, kept 24 hours) | [Actions](../admin/actions.md), [Retention](../operations/retention.md) |
-| `media`, `media_uploads`, `media_deletions` | the media library (`disk`, `key`, `mime`, `size`, `sha256`, `owner_id`, `deleted_at`); uploads not yet attached; files to delete from storage, with retries | [Media](../admin/media.md), [Retention](../operations/retention.md) |
+| `media`, `media_uploads`, `media_deletions` | the media library (`disk`, `key`, `name`, `mime`, `size`, `sha256`, `width`, `height`, `alt`, `owner_id`, `deleted_at`); uploads not yet attached; files to delete from storage, with retries | [Media](../admin/media.md), [Retention](../operations/retention.md) |
 | `audit_logs` | who changed what (`event`, `subject_type`/`subject_key`, actor, `credential`, `ip`, `request_id`, `changes`) | [Audit log](../digging-deeper/audit-log.md) |
 | `settings` | settings groups (`name`, `value`, `secrets` encrypted under a key derived from `APP_KEY`, `version`, `updated_by`) | [Settings](../admin/settings.md#secrets) |
 | `schedule_states`, `schedule_slots` | one state row per schedule (never pruned); each claimed slot, kept 7 days and pruned hourly while the scheduler runs | [Scheduling](../digging-deeper/scheduling.md) |

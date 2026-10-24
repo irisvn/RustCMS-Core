@@ -1,6 +1,6 @@
 # 0008 — Media storage and rich text documents
 
-- Status: accepted
+- Status: accepted; amended in 0.9.0, 0.10.0 and 0.10.1 (below)
 - Date: 2026-10-14
 
 ## Context

@@ -14,6 +14,8 @@ instance runs the pass. Each deletion is safe to repeat. The commands do the sam
 | Idempotency receipts | 24 hours | `serve`, `idempotency:prune` |
 | Schedule claims (`schedule_slots`) | 7 days (`schedule_states` are kept) | `serve` hourly, while schedules are registered and `[schedule] enabled` |
 | Failed jobs, `once` receipts | `queue.failed_retention_days` (30) | the workers |
+| Job history (`job_runs`) | `queue.history_retention_days` (7; 0 keeps no history) | the workers |
+| Schedule runs (`schedule_runs`) | `schedule.history_retention_days` (7) | `serve` hourly, and the workers |
 | Background exports (file and row) | 24 hours, removed an hour later | `serve` |
 | Imports (file, row, report, receipts) | 24 hours from upload, or from the start of the run | `serve` |
 | Media files of deleted media records, interrupted uploads | removed within minutes (queued deletions), an hour (abandoned uploads) | `serve` every minute, `media:prune` |
