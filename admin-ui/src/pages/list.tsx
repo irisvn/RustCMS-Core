@@ -18,6 +18,7 @@ import { ExportButton, ExportsPanel } from "@/components/exports";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Cell, FilterControl, KNOWN_FILTERS, type FilterParams } from "@/renderers/table";
+import { openInNewTab, openableUrl } from "@/lib/open-url";
 import { MEDIA_SLUG, MediaGrid, MediaUploader, MediaViewToggle, useMediaView } from "@/renderers/media-library";
 import { errorText, formatCount, later, show, t as translate, type Text, useT } from "@/i18n";
 
@@ -84,7 +85,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   >(null);
   // An action with a form, being filled in for these rows.
   const [formAction, setFormAction] = useState<{ action: ActionSchema; keys: string[] } | null>(null);
-  const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: Text } | null>(null);
+  const [notice, setNotice] = useState<{ variant: "default" | "destructive"; text: Text; link?: string } | null>(null);
   // A write with an unknown outcome (timeout, cut connection) must not be repeated blindly.
   const uncertain = useUncertain(slug);
   const [filtersOpen, setFiltersOpen] = useState(true);
@@ -149,6 +150,14 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   const activeFilters = filters.filter((filter) => Object.entries(search).some(([key, value]) => key.startsWith(`filter[${filter.name}][`) && value));
   const clearFilters = () => setSearch(Object.fromEntries(Object.keys(search).filter((key) => /^filter\[/.test(key)).map((key) => [key, undefined])));
 
+  /** The outcome's notice (the handler's message first); its page opens in a new tab. */
+  const outcomeNotice = (label: string, outcome: ActionOutcome) => {
+    // Answered after the commit: the page opens now.
+    const link = openableUrl(outcome.open) ? outcome.open : undefined;
+    if (link) openInNewTab(link);
+    const text = () => [outcome.message, outcomeMessage(label, outcome)].filter(Boolean).join(" ");
+    return { variant: outcome.processed.length ? "default" as const : "destructive" as const, text, link };
+  };
   const runAction = async (action: ActionSchema, requested: string[]) => {
     setNotice(null);
     // Only keys of the records currently displayed.
@@ -157,7 +166,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     if (stale || keys.length === 0) return;
     try {
       const outcome = await run.mutateAsync({ action: action.name, keys });
-      setNotice({ variant: outcome.processed.length ? "default" : "destructive", text: () => outcomeMessage(action.label, outcome) });
+      setNotice(outcomeNotice(action.label, outcome));
       setSelected(new Set());
     } catch (e) {
       setNotice({ variant: "destructive", text: errorText(e, "action.failed") });
@@ -217,8 +226,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
     const keys = formAction.keys.filter((k) => shown.has(k));
     if (stale || keys.length === 0) throw new Error(translate("list.changedMeanwhile"));
     const outcome = await run.mutateAsync({ action: formAction.action.name, keys, data });
-    const label = formAction.action.label;
-    setNotice({ variant: outcome.processed.length ? "default" : "destructive", text: () => outcomeMessage(label, outcome) });
+    setNotice(outcomeNotice(formAction.action.label, outcome));
     setSelected(new Set());
   };
 
@@ -322,7 +330,17 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
         </div>
       } />
       <VersionBanner schema={s} />
-      {notice && <Alert variant={notice.variant}>{show(notice.text)}</Alert>}
+      {notice && (
+        <Alert variant={notice.variant}>
+          {show(notice.text)}
+          {notice.link && (
+            <>
+              {" "}
+              <a href={notice.link} target="_blank" rel="noopener noreferrer" className="font-medium underline">{t("action.openLink")}</a>
+            </>
+          )}
+        </Alert>
+      )}
       <PausedBanner scope={slug} />
 
       <Card>

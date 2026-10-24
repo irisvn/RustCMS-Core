@@ -479,6 +479,29 @@ actor = "editor"
 body = '{"keys": ["{own}"]}'
 status = 403
 
+# A page to open from an action's outcome: https or a path of the site, one
+# record only (behaviour in tests/action_rows.rs).
+[[case]]
+route = "POST /admin/api/resources/{slug}/actions/{action}"
+path = "/admin/api/resources/notes/actions/open"
+actor = "admin"
+body = '{"keys": ["{note}"], "data": {"url": "https://example.com/report"}}'
+status = 200
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/actions/{action}"
+path = "/admin/api/resources/notes/actions/open"
+actor = "admin"
+body = '{"keys": ["{note}"], "data": {"url": "javascript:alert(1)"}}'
+status = 500
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/actions/{action}"
+path = "/admin/api/resources/notes/actions/open"
+actor = "admin"
+body = '{"keys": ["{note}", "{trashed}"], "data": {"url": "https://example.com/report"}}'
+status = 422
+
 # Media scope: own files only; `media.view_all` shows every file but never
 # lets its holder trash another user's (behaviour in tests/media.rs).
 [[case]]

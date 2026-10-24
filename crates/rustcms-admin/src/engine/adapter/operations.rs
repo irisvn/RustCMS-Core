@@ -674,7 +674,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             let before: Vec<_> =
                 allowed.iter().map(|m| (self.key_of(m), self.audit_snapshot(m), self.trashed(m))).collect();
             let processed: Vec<String> = allowed.iter().map(|m| self.key_of(m)).collect();
-            (action.handler)(&wctx, txn.as_ref(), allowed, data).await?;
+            let returned = (action.handler)(&wctx, txn.as_ref(), allowed, data).await?;
+            // What the panel does next, checked before anything commits
+            // (a page to open only for a run on one record).
+            (outcome.message, outcome.open) = returned.effects(!single)?;
             // Handlers write freely: none may move a record to a parent not held.
             if self.meta.parent_lock.is_some() {
                 for model in self.models_by_keys(txn.as_ref(), &processed).await? {

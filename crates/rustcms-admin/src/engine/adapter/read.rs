@@ -285,8 +285,15 @@ impl<R: Resource> ResourceAdapter<R> {
                 }
             }
         }
+        let processed = outcome.processed.len();
         outcome.processed.retain(|k| visible.contains(k));
         outcome.denied.retain(|k| visible.contains(k));
+        // The handler's message and page speak of the records it processed:
+        // only for a user who may still view all of them (also on a replay).
+        if outcome.processed.len() != processed {
+            outcome.message = None;
+            outcome.open = None;
+        }
         Ok(outcome)
     }
 

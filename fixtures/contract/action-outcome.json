@@ -1,0 +1,9 @@
+{
+  "denied": [],
+  "message": "Opening the page",
+  "missing": [],
+  "open": "https://example.com/report?id=1#top",
+  "processed": [
+    "1"
+  ]
+}

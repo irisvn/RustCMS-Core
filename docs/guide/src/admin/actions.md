@@ -49,6 +49,42 @@ the action's transaction:
   hidden on: they are reported in `denied`, like policy refusals, and never
   reach the handler, which runs on the others.
 
+## Outcomes: a message, a page to open
+
+`Action::new` handlers return `()`. Declare the action with
+`Action::with_outcome` when its handler should tell the panel what to do
+next; it returns an `ActionOutcome`:
+
+```rust,ignore
+Action::<invoice::Entity>::with_outcome("pdf", |_ctx, _txn, invoices, _data| {
+    Box::pin(async move {
+        let url = format!("https://files.example.com/invoices/{}.pdf", invoices[0].id);
+        Ok(ActionOutcome::open(url).with_message("The PDF opens in a new tab."))
+    })
+})
+```
+
+- `ActionOutcome::message(text)` / `.with_message(text)`: shown to the user
+  with the action's summary (plain text, at most 500 characters).
+- `ActionOutcome::open(url)` / `.with_open(url)`: once the action has
+  committed, the panel opens the page in a new tab with `noopener` and
+  `noreferrer`, and shows a link to it as well (a browser may block a tab
+  opened after the request). Accepted: `https://` URLs without credentials
+  (a DNS name, an IPv4 or a bracketed IPv6 address; a port of 1–65535),
+  and absolute paths of this site (`/admin/…`, `/blog/…`; never `//…`, `..`,
+  backslashes or whitespace), at most 2,048 bytes. Anything else
+  (`http:`, `javascript:`, `data:`) fails the action with a server error and
+  rolls it back. A page is opened only for a run on **one** record: a run
+  on several records whose handler returns one is refused (422, rolled
+  back). The panel checks the URL again before opening it.
+
+The keys (`processed`, `denied`, `missing`) are the framework's: whatever
+the handler sets there is ignored. The outcome is part of the idempotency
+receipt, so a retried request answers with the same message and page, but
+only to a user who may still view every record it processed: otherwise (the
+action or someone else hid a record meanwhile) the message and page are
+left out of the answer, first or replayed.
+
 ## Placement in lists
 
 A list row shows at most one row action with its label: the first action

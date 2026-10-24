@@ -20,10 +20,18 @@ type Handler<E> = Arc<
             &'a DatabaseTransaction,
             Vec<<E as EntityTrait>::Model>,
             Data,
-        ) -> BoxFuture<'a, AppResult<()>>
+        ) -> BoxFuture<'a, AppResult<ActionOutcome>>
         + Send
         + Sync,
 >;
+
+/// Gives a handler closure its higher-ranked signature.
+fn handler<E: EntityTrait, F>(f: F) -> F
+where
+    F: for<'a> Fn(&'a Ctx, &'a DatabaseTransaction, Vec<E::Model>, Data) -> BoxFuture<'a, AppResult<ActionOutcome>>,
+{
+    f
+}
 
 type Visibility<E> = Arc<dyn Fn(&Ctx, &<E as EntityTrait>::Model) -> bool + Send + Sync>;
 
@@ -54,9 +62,37 @@ pub struct Action<E: EntityTrait> {
 
 impl<E: EntityTrait> Action<E> {
     /// Declares an action. The handler receives the authorized records.
-    pub fn new<F>(name: &'static str, handler: F) -> Self
+    pub fn new<F>(name: &'static str, run: F) -> Self
     where
         F: for<'a> Fn(&'a Ctx, &'a DatabaseTransaction, Vec<E::Model>, Data) -> BoxFuture<'a, AppResult<()>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self::with_outcome(
+            name,
+            handler::<E, _>(move |ctx, txn, models, data| {
+                let ran = run(ctx, txn, models, data);
+                Box::pin(async move { ran.await.map(|()| ActionOutcome::default()) })
+            }),
+        )
+    }
+
+    /// Declares an action whose handler also tells the panel what to do
+    /// next: show a message ([`ActionOutcome::message`]) and, on a run on
+    /// one record, open a page in a new tab ([`ActionOutcome::open`]).
+    ///
+    /// ```rust,ignore
+    /// Action::<invoice::Entity>::with_outcome("pdf", |_ctx, _txn, invoices, _data| {
+    ///     Box::pin(async move {
+    ///         let url = format!("https://files.example.com/invoices/{}.pdf", invoices[0].id);
+    ///         Ok(ActionOutcome::open(url).with_message("The PDF opens in a new tab."))
+    ///     })
+    /// })
+    /// ```
+    pub fn with_outcome<F>(name: &'static str, run: F) -> Self
+    where
+        F: for<'a> Fn(&'a Ctx, &'a DatabaseTransaction, Vec<E::Model>, Data) -> BoxFuture<'a, AppResult<ActionOutcome>>
             + Send
             + Sync
             + 'static,
@@ -64,7 +100,7 @@ impl<E: EntityTrait> Action<E> {
         Self {
             name,
             ability: name,
-            handler: Arc::new(handler),
+            handler: Arc::new(run),
             label: None,
             bulk: false,
             confirm: None,
@@ -167,13 +203,18 @@ impl<E: EntityTrait> Action<E> {
     }
 }
 
-/// Per-record result of an action.
+/// Per-record result of an action, and what the panel does next.
+///
+/// A handler declared with [`Action::with_outcome`] returns one to show a
+/// message or open a page; the framework fills in the keys (`processed`,
+/// `denied`, `missing`, `replayed`) and keeps only the handler's `message`
+/// and `open`.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActionOutcome {
     /// Keys the handler processed.
     pub processed: Vec<String>,
-    /// Keys the policy denied.
+    /// Keys the policy denied, or the action is hidden on (several records).
     pub denied: Vec<String>,
     /// Keys not found in the user's scope.
     pub missing: Vec<String>,
@@ -182,6 +223,139 @@ pub struct ActionOutcome {
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub replayed: bool,
+    /// A message for the user, shown by the panel (plain text, at most
+    /// [`MAX_OUTCOME_MESSAGE`] characters).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// A page the panel opens in a new tab (`noopener`, `noreferrer`) once
+    /// the action committed: an `https://` URL, or a path of this site
+    /// (`/admin/…`, `/blog/…`). Only for a run on one record; any other
+    /// value fails the action (rolled back).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open: Option<String>,
+}
+
+/// Longest [`ActionOutcome::message`], in characters.
+pub const MAX_OUTCOME_MESSAGE: usize = 500;
+
+/// Longest [`ActionOutcome::open`], in bytes.
+pub const MAX_OUTCOME_URL: usize = 2048;
+
+impl ActionOutcome {
+    /// Opens `url` in a new tab: `https://…`, or a path of this site
+    /// (`/admin/r/posts`). Checked when the action runs.
+    pub fn open(url: impl Into<String>) -> Self {
+        Self::default().with_open(url)
+    }
+
+    /// Shows `text` to the user.
+    pub fn message(text: impl Into<String>) -> Self {
+        Self::default().with_message(text)
+    }
+
+    /// The same outcome, also opening `url` ([`Self::open`]).
+    pub fn with_open(mut self, url: impl Into<String>) -> Self {
+        self.open = Some(url.into());
+        self
+    }
+
+    /// The same outcome, also showing `text`.
+    pub fn with_message(mut self, text: impl Into<String>) -> Self {
+        self.message = Some(text.into());
+        self
+    }
+
+    /// What the handler returned for the panel, checked: the message's
+    /// length; a URL that is `https://` or a path of this site, and never
+    /// for a run on several records (`bulk`).
+    pub(crate) fn effects(self, bulk: bool) -> AppResult<(Option<String>, Option<String>)> {
+        if let Some(message) = &self.message
+            && message.chars().count() > MAX_OUTCOME_MESSAGE
+        {
+            return Err(rustcms_core::AppError::internal(format!(
+                "action outcome: the message is longer than {MAX_OUTCOME_MESSAGE} characters"
+            )));
+        }
+        if let Some(url) = &self.open {
+            if !openable(url) {
+                return Err(rustcms_core::AppError::internal(
+                    "action outcome: `open` must be an https URL or a path of this site",
+                ));
+            }
+            if bulk {
+                let mut errors = rustcms_core::ValidationErrors::new();
+                errors.add_form("Run this action on one record at a time.");
+                return Err(errors.into());
+            }
+        }
+        Ok((self.message, self.open))
+    }
+}
+
+/// `host` or `host:port` of an https URL: a DNS name (labels of letters,
+/// digits and `-`), an IPv4 address or a bracketed IPv6 address; a port of
+/// 1–65535. No credentials.
+fn valid_authority(authority: &str) -> bool {
+    let (host, port) = match authority.strip_prefix('[') {
+        Some(rest) => match rest.split_once(']') {
+            Some((ip, after)) => {
+                if ip.parse::<std::net::Ipv6Addr>().is_err() {
+                    return false;
+                }
+                match after {
+                    "" => (ip, None),
+                    _ => match after.strip_prefix(':') {
+                        Some(port) => (ip, Some(port)),
+                        None => return false,
+                    },
+                }
+            }
+            None => return false,
+        },
+        None => match authority.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
+        },
+    };
+    let port_ok = port.is_none_or(|p| {
+        !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()) && p.parse::<u16>().is_ok_and(|n| n > 0)
+    });
+    let bracketed = authority.starts_with('[');
+    let host_ok = bracketed
+        || (!host.is_empty()
+            && host.len() <= 253
+            && host.split('.').all(|label| {
+                !label.is_empty()
+                    && label.len() <= 63
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            }));
+    port_ok && host_ok
+}
+
+/// `https://host…` without credentials, or an absolute path of this site
+/// (`/…`, never `//…`); never whitespace, controls, backslashes or dot
+/// segments (also percent-encoded); at most [`MAX_OUTCOME_URL`] bytes.
+pub(crate) fn openable(url: &str) -> bool {
+    if url.is_empty()
+        || url.len() > MAX_OUTCOME_URL
+        || url.chars().any(|c| c.is_control() || c.is_whitespace() || c == '\\')
+    {
+        return false;
+    }
+    if url.get(..8).is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://")) {
+        let authority = url[8..].split(['/', '?', '#']).next().unwrap_or_default();
+        return valid_authority(authority);
+    }
+    let path = url.split(['?', '#']).next().unwrap_or_default();
+    let dotted = path.split('/').any(|segment| {
+        let lower = segment.to_ascii_lowercase().replace("%2e", ".");
+        lower == "." || lower == ".."
+    });
+    url.starts_with('/') && !url.starts_with("//") && !dotted
 }
 
 /// A value asked for by an action's form ([`Action::form`]).

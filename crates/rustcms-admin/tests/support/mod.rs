@@ -201,7 +201,26 @@ impl Resource for NoteResource {
     }
 
     fn actions() -> Vec<Action<note::Entity>> {
-        vec![Action::<note::Entity>::new("touch", |_, _, _, _| Box::pin(async { Ok(()) })).bulk().ability("update")]
+        vec![
+            Action::<note::Entity>::new("touch", |_, _, _, _| Box::pin(async { Ok(()) })).bulk().ability("update"),
+            // Renames the notes, then asks the panel to open `url` (checked before the commit).
+            // Also a bulk action: `open` is refused on runs on several records.
+            Action::<note::Entity>::with_outcome("open", |_ctx, txn, notes, data| {
+                Box::pin(async move {
+                    for note in notes {
+                        let title = format!("opened {}", note.title);
+                        let mut active = note.into_active_model();
+                        active.title = Set(title);
+                        active.update(txn).await?;
+                    }
+                    let url = data["url"].as_str().unwrap_or_default().to_owned();
+                    Ok(rustcms_admin::ActionOutcome::open(url).with_message("Opening the page"))
+                })
+            })
+            .ability("update")
+            .bulk()
+            .form(vec![rustcms_admin::ActionField::text("url").required().max_length(3000)]),
+        ]
     }
 
     async fn after_save(_ctx: &Ctx, _txn: &DatabaseTransaction, record: &note::Model) -> AppResult<()> {

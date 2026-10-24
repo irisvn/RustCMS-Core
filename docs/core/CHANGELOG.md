@@ -42,13 +42,23 @@ All notable changes are documented here. The format follows
   `Action::destructive()` (color `danger`): a list row shows at most one
   labelled action (the first primary one it offers) and a ⋯ menu with the
   others, destructive ones last after a separator. Vocabulary 10.
-
-### Fixed (0.10.1)
+- Action outcomes: `Action::with_outcome(name, handler)` (a new
+  constructor; `Action::new` is unchanged) takes a handler returning
+  `AppResult<ActionOutcome>`; `ActionOutcome` gains `message` and `open`
+  (`ActionOutcome::message`, `ActionOutcome::open`, `with_message`,
+  `with_open`). `open` must be `https://` (no credentials) or an absolute
+  path of this site (no `//`, dot segments, backslashes; at most 2,048
+  bytes), or the action fails (500) and rolls back; it is refused on runs on
+  several records (422 `one_record_only`). The message is at most 500
+  characters. The panel shows the message and, after the commit, opens the
+  page in a new tab (`noopener,noreferrer`), with a link as fallback.
 - The media input reported its pending upload again on every render of its
   form (a new `onBusy` callback each time), re-rendering the form without
   end while a file was being uploaded.
 
 ### Changed (0.10.1)
+- `ActionOutcome` has two new fields, `message` and `open` (code building
+  it with a struct literal adds `..Default::default()`).
 - `media::entity::Model` has a new field `alt: Option<String>` (code that
   builds `media::ActiveModel` literals sets it).
 

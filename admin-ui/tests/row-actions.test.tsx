@@ -8,7 +8,9 @@ import { SessionContext } from "@/api/context";
 import type { ResourceSchema } from "@/api/types";
 import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
+import { openableUrl } from "@/lib/open-url";
 import posts from "../../fixtures/contract/posts.schema.json";
+import outcomeContract from "../../fixtures/contract/action-outcome.json";
 
 const schema = posts as unknown as ResourceSchema;
 const runs: { action: string; body: unknown }[] = [];
@@ -74,4 +76,57 @@ it("shows one labelled action per row and the others in a menu, destructive ones
   expect(within(c).queryByRole("button", { name: "Touch" })).toBeNull();
   await userEvent.click(within(c).getByRole("button", { name: "More actions for Post c" }));
   expect(within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Archive"]);
+});
+
+describe("action outcomes", () => {
+  it("open their page in a new tab without access back, and show the handler's message", async () => {
+    const opened: unknown[][] = [];
+    vi.stubGlobal("open", (...args: unknown[]) => {
+      opened.push(args);
+      return null;
+    });
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    server.use(http.post("*/admin/api/resources/posts/actions/:action", () =>
+      HttpResponse.json({ ...outcomeContract, processed: ["a"], message: "Report ready." })));
+    mount();
+    await screen.findByText("Post a");
+    await userEvent.click(within(rowOf("Post a")).getByRole("button", { name: "Touch" }));
+    expect(await screen.findByText(/^Report ready\./)).toBeInTheDocument();
+    expect(opened).toEqual([[outcomeContract.open, "_blank", "noopener,noreferrer"]]);
+    const link = screen.getByRole("link", { name: "Open the page" });
+    expect(link).toHaveAttribute("href", outcomeContract.open);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    server.resetHandlers();
+  });
+
+  it("never open what the server should have refused", async () => {
+    const opened: unknown[] = [];
+    vi.stubGlobal("open", (...args: unknown[]) => opened.push(args));
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    server.use(http.post("*/admin/api/resources/posts/actions/:action", () =>
+      HttpResponse.json({ processed: ["a"], denied: [], missing: [], open: "javascript:alert(1)" })));
+    mount();
+    await screen.findByText("Post a");
+    await userEvent.click(within(rowOf("Post a")).getByRole("button", { name: "Touch" }));
+    expect(await screen.findByText(/Touch: 1 record done/)).toBeInTheDocument();
+    expect(opened).toEqual([]);
+    expect(screen.queryByRole("link", { name: "Open the page" })).toBeNull();
+    server.resetHandlers();
+  });
+});
+
+describe("openable URLs", () => {
+  it("follow the server's rules", () => {
+    for (const ok of ["https://example.com/x?y#z", "HTTPS://example.com", "/admin", "/admin/r/posts?page=2", "/blog/a", "https://example.com:8443/x", "https://[::1]:8443/x", "https://127.0.0.1/x"]) {
+      expect(openableUrl(ok), ok).toBe(true);
+    }
+    for (const bad of ["http://example.com", "javascript:alert(1)", "//evil", "https://u:p@evil", "https://", "/admin/../x", "/admin/%2e%2e/x", "relative", "https://a b", "https://a\\b", "", "data:text/html,x", `https://a.b/${"x".repeat(2048)}`, "https://example.com:abc/", "https://example.com:99999/", "https://[]/", "https://[/", "https://:", "https://a..b/", "https://-a.example/"]) {
+      expect(openableUrl(bad), bad).toBe(false);
+    }
+  });
 });

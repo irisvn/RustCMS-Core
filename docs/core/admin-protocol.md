@@ -38,7 +38,7 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | POST | `…/relations/{relation}/detach` `{keys}` | `LinkOutcome`; `detach_{relation}`; links to targets not visible are kept and listed in `missing` |
 | PATCH | `…/relations/{relation}/links/{target}` `{…pivot}` | `LinkOutcome`; `update_pivot_{relation}`; 404 when not linked or not visible |
 | GET | `…/relations/{relation}/options?search=&keys=` | `{data: [LinkOption {value, label, attached}]}`; `attach_{relation}` admitted, then on the parent record |
-| POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing}`; admitted before the body; `data` checked against the action's form (none: refused) |
+| POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing, replayed?, message?, open?}`; admitted before the body; `data` checked against the action's form (none: refused); one record hidden by the action's predicate: 403; `message` and `open` (`https://…` or a path of the site, one record only, checked before the commit) come from the handler |
 | GET | `/resources/{slug}/export?{list query}` | `text/csv` file (≤ 1 000 rows, else 422 `too_many_to_export`); `export` + `view_any` admitted first; 404 when not exportable |
 | POST | `/resources/{slug}/exports?{list query}` | 201 `ExportView`; background job (needs storage), ≤ 3 waiting per user (429) |
 | GET | `/exports` | `[ExportView]` of the user (not expired, newest first) |

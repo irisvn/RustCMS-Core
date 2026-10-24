@@ -72,6 +72,7 @@ A message that follows none of these templates has the code `custom` and
 | `unknown_operator` | unknown operator `{op}` |
 | `search_too_broad` | `matches too many records to check; refine the search` |
 | `too_many_matches` | `Too many matching records to check individually; narrow the search or filters.` |
+| `one_record_only` | `Run this action on one record at a time.` |
 | `too_many_to_export` | `More than {max} records to export; narrow the search or filters.` |
 | `too_large_to_export` | `Too large to export at once; export in the background.` |
 | `invalid_parent` | `invalid parent key` |

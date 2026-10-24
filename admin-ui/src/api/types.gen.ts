@@ -538,7 +538,7 @@ export type ActionOutcome = {
  */
 processed: Array<string>, 
 /**
- * Keys the policy denied.
+ * Keys the policy denied, or the action is hidden on (several records).
  */
 denied: Array<string>, 
 /**
@@ -549,7 +549,19 @@ missing: Array<string>,
  * This is the outcome of an earlier request with the same `Idempotency-Key`:
  * the action did not run again.
  */
-replayed?: boolean, };
+replayed?: boolean, 
+/**
+ * A message for the user, shown by the panel (plain text, at most
+ * [`MAX_OUTCOME_MESSAGE`] characters).
+ */
+message?: string, 
+/**
+ * A page the panel opens in a new tab (`noopener`, `noreferrer`) once
+ * the action committed: an `https://` URL, or a path of this site
+ * (`/admin/…`, `/blog/…`). Only for a run on one record; any other
+ * value fails the action (rolled back).
+ */
+open?: string, };
 
 export type LinkOutcome = { 
 /**

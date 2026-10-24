@@ -136,6 +136,16 @@ impl Resource for PostResource {
             .visible_when(|_ctx, post| post.published)
             .primary()
             .destructive(),
+            // Tells the panel what to do next: a message and a page to open in a new tab.
+            Action::<post::Entity>::with_outcome("preview", |_ctx, _txn, posts, _data| {
+                Box::pin(async move {
+                    let id = posts.first().map(|post| post.id).unwrap_or_default();
+                    Ok(ActionOutcome::open(format!("/admin/r/posts/records/{id}"))
+                        .with_message("The preview opens in a new tab."))
+                })
+            })
+            .label("Preview")
+            .ability("view"),
         ]
     }
 

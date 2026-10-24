@@ -205,6 +205,9 @@
   "number_range": [
     "must be a number from 1 to {max}"
   ],
+  "one_record_only": [
+    "Run this action on one record at a time."
+  ],
   "out_of_range": [
     "is out of range"
   ],
