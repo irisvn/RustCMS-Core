@@ -11,7 +11,7 @@ use crate::ui::{ColumnType, FilterType, InputType, LayoutType, SelectOption};
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 9;
+pub const VOCABULARY_VERSION: u32 = 10;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -341,6 +341,11 @@ pub struct ActionSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub form: Option<FormSchema>,
+    /// Shown with its label in list rows; other row actions go in the row's
+    /// menu, those with color `danger` last (vocabulary 10).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub primary: bool,
 }
 
 /// A table.

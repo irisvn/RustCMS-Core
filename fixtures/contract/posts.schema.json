@@ -116,7 +116,14 @@
       {
         "bulk": false,
         "label": "Touch",
-        "name": "touch"
+        "name": "touch",
+        "primary": true
+      },
+      {
+        "bulk": false,
+        "color": "danger",
+        "label": "Unpublish",
+        "name": "unpublish"
       },
       {
         "bulk": false,
@@ -284,5 +291,5 @@
     ],
     "searchable": true
   },
-  "vocabularyVersion": 9
+  "vocabularyVersion": 10
 }

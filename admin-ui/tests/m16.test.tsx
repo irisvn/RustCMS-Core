@@ -183,7 +183,9 @@ it("edits an instant action field in UTC and sends it as RFC 3339", async () => 
     }),
   );
   mount("/r/posts");
-  await userEvent.click(await screen.findByRole("button", { name: "Schedule…" }));
+  // Not primary: in the row's menu.
+  await userEvent.click(await screen.findByRole("button", { name: "More actions for Mine" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "Schedule…" }));
   const dialog = await screen.findByRole("dialog", { name: "Schedule…" });
   const at = within(dialog).getByLabelText(/^Publish at/);
   expect(at).toHaveAttribute("type", "datetime-local");

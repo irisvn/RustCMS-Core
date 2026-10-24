@@ -397,7 +397,23 @@ impl Resource for PostResource {
                     Ok(())
                 })
             })
-            .ability("update"),
+            .ability("update")
+            .primary(),
+            // Only on published posts (decided per record by the server).
+            Action::<post::Entity>::new("unpublish", |_ctx, txn, posts, _data| {
+                Box::pin(async move {
+                    for post in posts {
+                        assert!(post.published, "never handed a record it is hidden on");
+                        let mut active = post.into_active_model();
+                        active.published = Set(false);
+                        active.update(txn).await?;
+                    }
+                    Ok(())
+                })
+            })
+            .ability("update")
+            .visible_when(|_ctx, post| post.published)
+            .destructive(),
             Action::<post::Entity>::new("archive", |_ctx, _txn, _posts, _data| Box::pin(async move { Ok(()) }))
                 .ability("update")
                 .requires_permission("posts.archive"),

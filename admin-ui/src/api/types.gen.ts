@@ -406,7 +406,12 @@ icon?: string,
 /**
  * Values asked for before running (in a dialog).
  */
-form?: FormSchema, };
+form?: FormSchema, 
+/**
+ * Shown with its label in list rows; other row actions go in the row's
+ * menu, those with color `danger` last (vocabulary 10).
+ */
+primary?: boolean, };
 
 export type TableSchema = { 
 /**

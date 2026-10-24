@@ -25,6 +25,8 @@ type Handler<E> = Arc<
         + Sync,
 >;
 
+type Visibility<E> = Arc<dyn Fn(&Ctx, &<E as EntityTrait>::Model) -> bool + Send + Sync>;
+
 /// A named operation run on selected records inside a transaction.
 ///
 /// Each record is authorized individually with the policy ability `ability`
@@ -46,6 +48,8 @@ pub struct Action<E: EntityTrait> {
     pub(crate) icon: Option<String>,
     pub(crate) required_permission: Option<&'static str>,
     pub(crate) form: Vec<ActionField>,
+    pub(crate) visible: Option<Visibility<E>>,
+    pub(crate) primary: bool,
 }
 
 impl<E: EntityTrait> Action<E> {
@@ -68,7 +72,45 @@ impl<E: EntityTrait> Action<E> {
             icon: None,
             required_permission: None,
             form: Vec::new(),
+            visible: None,
+            primary: false,
         }
+    }
+
+    /// Offers the action only on records for which `predicate` holds,
+    /// decided by the server for each record as stored, for the user of
+    /// `ctx`. The list and record answers say so per record (`abilities`).
+    /// Running the action decides again, on each record locked in the
+    /// action's transaction: a run on one record it is hidden on is refused
+    /// (403, nothing runs); a run on several records skips those records and
+    /// reports them in `denied` (the handler never gets them).
+    ///
+    /// ```rust,ignore
+    /// Action::<post::Entity>::new("unpublish", handler).visible_when(|_ctx, post| post.published)
+    /// ```
+    pub fn visible_when(mut self, predicate: impl Fn(&Ctx, &E::Model) -> bool + Send + Sync + 'static) -> Self {
+        self.visible = Some(Arc::new(predicate));
+        self
+    }
+
+    /// The single row action shown with its label in lists and on record
+    /// pages; the others go in the row's ⋯ menu. When several are primary
+    /// (made exclusive by [`Self::visible_when`]), a row shows the first one
+    /// it offers.
+    pub fn primary(mut self) -> Self {
+        self.primary = true;
+        self
+    }
+
+    /// Marks the action as destructive (color `danger`): shown last in a
+    /// row's menu, after a separator.
+    pub fn destructive(self) -> Self {
+        self.color("danger")
+    }
+
+    /// Whether the action is offered on `model` to the user of `ctx` ([`Self::visible_when`]).
+    pub(crate) fn shows_for(&self, ctx: &Ctx, model: &E::Model) -> bool {
+        self.visible.as_ref().is_none_or(|visible| visible(ctx, model))
     }
 
     /// Asks for `fields` in a dialog before running. The values are checked

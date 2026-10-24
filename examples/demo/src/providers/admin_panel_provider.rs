@@ -30,6 +30,13 @@ pub fn provider() -> AdminProvider {
                         .per(rustcms::admin::dashboard::Bucket::Week)
                         .last(8)
                         .span(2),
+                )
+                // The latest posts, shown as their list shows them (dates formatted).
+                .widget(
+                    rustcms::admin::dashboard::Widget::recent("latest_posts", "posts")
+                        .label("Latest posts")
+                        .columns(&["published_at"])
+                        .sort("-published_at"),
                 ),
         )
         .page::<crate::admin::pages::post_stats_page::PostStatsPage>()

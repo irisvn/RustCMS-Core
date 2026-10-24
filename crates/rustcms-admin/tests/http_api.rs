@@ -123,7 +123,11 @@ db_test!(schema_follows_field_permissions, |db: TestDb| async move {
         ]
     );
     let actions: Vec<_> = create["table"]["actions"].as_array().unwrap().iter().map(|a| a["name"].clone()).collect();
-    assert_eq!(actions, [json!("touch")], "publish needs posts.publish; touch is decided per record");
+    assert_eq!(
+        actions,
+        [json!("touch"), json!("unpublish")],
+        "publish needs posts.publish; touch and unpublish are decided per record"
+    );
 
     // Edit: readable fields, `published` shown but disabled.
     let post = editor.post_json(&api(&app, "resources/posts/records"), &json!({"title": "A"})).await.json();
@@ -264,7 +268,11 @@ db_test!(record_policies_decide_options_for_the_edited_record, |db: TestDb| asyn
     // Owner-only action: offered, runs on the owner's post, not on others'.
     let schema = member.get(&format!("{}?operation=edit&key={own}", api(&app, "resources/posts/schema"))).await.json();
     let actions: Vec<_> = schema["table"]["actions"].as_array().unwrap().iter().map(|a| a["name"].clone()).collect();
-    assert_eq!(actions, [json!("touch")], "publish needs posts.publish; touch is decided per record");
+    assert_eq!(
+        actions,
+        [json!("touch"), json!("unpublish")],
+        "publish needs posts.publish; touch and unpublish are decided per record"
+    );
     let record = member.get(&format!("{}/{own}", api(&app, "resources/posts/records"))).await.json();
     assert_eq!(record["data"]["abilities"]["touch"], json!(true));
     let run = member.post_json(&api(&app, "resources/posts/actions/touch"), &json!({"keys": [own, theirs]})).await;

@@ -118,6 +118,24 @@ impl Resource for PostResource {
             .label("Move to category…")
             .bulk()
             .form(vec![ActionField::belongs_to("category_id", "categories").label("Category").required()]),
+            // Offered on published posts only (decided by the server per post); the
+            // row's labelled action there, the others are under ⋯.
+            Action::<post::Entity>::new("unpublish", |_ctx, txn, posts, _data| {
+                Box::pin(async move {
+                    for post in posts {
+                        let mut active = post.into_active_model();
+                        active.published = Set(false);
+                        active.published_at = Set(None);
+                        active.update(txn).await?;
+                    }
+                    Ok(())
+                })
+            })
+            .label("Unpublish")
+            .ability("update")
+            .visible_when(|_ctx, post| post.published)
+            .primary()
+            .destructive(),
         ]
     }
 

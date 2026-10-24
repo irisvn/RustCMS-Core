@@ -618,14 +618,22 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let mut outcome = ActionOutcome::default();
         let mut candidates = Vec::new();
         let mut seen = HashSet::new();
+        // A run on one record the action is hidden on (`visible_when`) is
+        // refused (403); a run on several skips those records (`denied`).
+        let single = keys.iter().collect::<HashSet<_>>().len() == 1;
         let first_pass = self.models_in_scope(&wctx, txn.as_ref(), keys).await?;
         for (model, record) in &first_pass {
             let key = self.key_of(model);
             seen.insert(key.clone());
-            if self.policy.allows(&wctx, action.ability, Some(record)).await {
-                candidates.push(key);
-            } else {
+            if !self.policy.allows(&wctx, action.ability, Some(record)).await {
                 outcome.denied.push(key);
+            } else if !action.shows_for(&wctx, model) {
+                if single {
+                    return Err(AppError::Forbidden);
+                }
+                outcome.denied.push(key);
+            } else {
+                candidates.push(key);
             }
         }
         // Candidates are re-counted below; any not locked (deleted meanwhile)
@@ -647,11 +655,17 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 return Err(super::write::parent_moved());
             }
             seen.insert(key.clone());
-            if self.policy.allows(&wctx, action.ability, Some(&record)).await {
+            // Decided again on the locked row: it may have changed meanwhile.
+            if !self.policy.allows(&wctx, action.ability, Some(&record)).await {
+                outcome.denied.push(key);
+            } else if !action.shows_for(&wctx, &model) {
+                if single {
+                    return Err(AppError::Forbidden);
+                }
+                outcome.denied.push(key);
+            } else {
                 outcome.processed.push(key);
                 allowed.push(model);
-            } else {
-                outcome.denied.push(key);
             }
         }
         outcome.missing =

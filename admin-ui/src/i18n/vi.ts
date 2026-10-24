@@ -463,6 +463,7 @@ export const vi: Record<keyof typeof en, string> = {
   "list.onlyTrashed": "Chỉ bản ghi đã xoá",
   "list.filteringBy": "Đang lọc theo {filters}",
   "list.selectAll": "Chọn tất cả",
+  "list.moreActions": "Thao tác khác cho {record}",
   "list.ascending": "tăng dần",
   "list.descending": "giảm dần",
   "list.actions": "Thao tác",

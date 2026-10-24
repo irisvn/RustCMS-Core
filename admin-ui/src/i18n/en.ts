@@ -464,6 +464,7 @@ export const en = {
   "list.onlyTrashed": "Only trashed",
   "list.filteringBy": "Filtering by {filters}",
   "list.selectAll": "Select all",
+  "list.moreActions": "More actions for {record}",
   "list.ascending": "ascending",
   "list.descending": "descending",
   "list.actions": "Actions",

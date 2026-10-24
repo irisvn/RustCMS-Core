@@ -101,7 +101,8 @@ abilities, form, table, relations?}` (`schemaVersion` 2: actions may carry a
 `form`; vocabulary 7: relations carry `kind`, `attach`, `detach`, `pivot`,
 `attachForm`, `pivotForm`; vocabulary 8: encrypted fields are
 `secret` and `secret_map` inputs, with masked views and explicit write
-operations; vocabulary 9 (current): `belongs_to_many` inputs, ADR 0035). It contains only what the user may see: inputs for
+operations; vocabulary 9: `belongs_to_many` inputs, ADR 0035; vocabulary
+10 (current): row action placement, see below). It contains only what the user may see: inputs for
 fields they may write (create), readable fields with `disabled` set when not
 writable (edit), and actions they may run. The reference payload is
 [`fixtures/contract/posts.schema.json`](https://github.com/irisvn/RustCMS-Core/blob/main/fixtures/contract/posts.schema.json),
@@ -113,6 +114,14 @@ in characters); the server re-validates everything. List pages request
 password) carry no current value; omit them from the payload to keep the stored value.
 The media library's schema also carries `abilities.upload` (`media.create`:
 `POST /media` is allowed); its `create` is always false.
+
+Vocabulary 10: an action may be `primary` (shown with its label in list
+rows; the first one a row offers); the other row actions go in the row's
+menu, those with `color: "danger"` last after a separator. Whether an action
+is offered on a record is the envelope's `abilities[action]`, which also
+reflects the action's per-record predicate (`visible_when`); the server
+decides it again when the action runs (one record: 403; several: `denied`). Older clients show every
+offered action as a button.
 
 Vocabulary 9 adds `belongs_to_many` inputs (ADR 0035): `name` is a
 belongs-to-many relation, `relationship.resource` its target, `valueType`

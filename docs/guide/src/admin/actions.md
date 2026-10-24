@@ -28,6 +28,42 @@ reported, not processed, and envelopes tell the client per record. Add
 `.requires_permission("posts.publish")` to refuse the action outright (403, and
 hidden from the schema) for users without that permission.
 
+## Per-record visibility
+
+```rust,ignore
+Action::<post::Entity>::new("unpublish", unpublish)
+    .ability("update")
+    .visible_when(|_ctx, post| post.published)
+```
+
+`visible_when(|ctx, record| …)` decides on the server, for each record as
+stored and for the user of `ctx`, whether the action is offered there. List
+and record answers carry the decision in each envelope's `abilities`
+(`"unpublish": false` on drafts), together with the policy's; the client
+never decides. Running the action decides again, on each record locked in
+the action's transaction:
+
+- a run on **one** record the action is hidden on is refused with **403**,
+  and nothing runs;
+- a run on **several** records (a selection) **skips** the records it is
+  hidden on: they are reported in `denied`, like policy refusals, and never
+  reach the handler, which runs on the others.
+
+## Placement in lists
+
+A list row shows at most one row action with its label: the first action
+marked `.primary()` that the row offers. The other row actions are in the
+row's **⋯** menu, in declaration order; destructive ones (`.destructive()`,
+which is the color `danger`) come last, after a separator. Several actions
+may be primary when `visible_when` makes them exclusive (`publish` on
+drafts, `unpublish` on published posts). Bulk actions stay in the selection
+bar; View, Edit, Delete and Restore keep their buttons.
+
+```rust,ignore
+Action::<post::Entity>::new("publish", publish).visible_when(|p| !p.published).primary(),
+Action::<post::Entity>::new("unpublish", unpublish).visible_when(|p| p.published).primary(),
+Action::<post::Entity>::new("purge_cache", purge).destructive(),
+```
 
 ## Actions with a form
 

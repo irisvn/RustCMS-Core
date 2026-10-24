@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowDown, ArrowUp, Eye, ListFilter, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Ellipsis, Eye, ListFilter, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useUncertain } from "@/api/context";
 import { useDeleteRecord, useForceDeleteRecord, useRecords, useRestoreRecord, useRunAction, useSchema } from "@/api/queries";
@@ -12,6 +12,7 @@ import { Table, TableBody, TableHeader, TableRow } from "@/components/ui/misc";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/menu";
 import { SchemaFormDialog } from "@/components/schema-form-dialog";
 import { ExportButton, ExportsPanel } from "@/components/exports";
 import { Input, NativeSelect } from "@/components/ui/input";
@@ -222,15 +223,33 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   };
 
   /** A record's actions (table rows and grid cards). */
-  const rowActionsOf = (record: Envelope) => (
+  const rowActionsOf = (record: Envelope) => {
+    // Actions the server offers on this row: the first primary one labelled,
+    // the others in a menu, destructive ones last after a separator.
+    const offered = rowActions.filter((a) => record.abilities[a.name] === true);
+    const primary = offered.find((a) => a.primary);
+    const rest = offered.filter((a) => a !== primary);
+    const safe = rest.filter((a) => a.color !== "danger");
+    const destructive = rest.filter((a) => a.color === "danger");
+    const busy = run.isPending || stale;
+    return (
     <div className="flex justify-end gap-1">
-      {rowActions
-        .filter((a) => record.abilities[a.name])
-        .map((a) => (
-          <Button key={a.name} size="sm" variant="ghost" disabled={run.isPending || stale} onClick={() => startAction(a, [record.key])}>
-            {a.label}
-          </Button>
-        ))}
+      {primary && (
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => startAction(primary, [record.key])}>
+          {primary.label}
+        </Button>
+      )}
+      {rest.length > 0 && (
+        <DropdownMenu trigger={<Ellipsis />} variant="ghost" size="icon" align="end" aria-label={t("list.moreActions", { record: record.title ?? record.key })}>
+          {safe.map((a) => (
+            <DropdownMenuItem key={a.name} disabled={busy} onSelect={() => startAction(a, [record.key])}>{a.label}</DropdownMenuItem>
+          ))}
+          {safe.length > 0 && destructive.length > 0 && <DropdownMenuSeparator />}
+          {destructive.map((a) => (
+            <DropdownMenuItem key={a.name} destructive disabled={busy} onSelect={() => startAction(a, [record.key])}>{a.label}</DropdownMenuItem>
+          ))}
+        </DropdownMenu>
+      )}
       {record.abilities.view && !record.trashed && (
         <Link
           to="/r/$slug/records/$key"
@@ -267,7 +286,8 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
         </Button>
       )}
     </div>
-  );
+    );
+  };
   const selectOf = (record: Envelope) => (
     <Checkbox
       aria-label={t("list.select", { record: record.title ?? record.key })}

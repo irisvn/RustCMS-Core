@@ -383,6 +383,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     color: action.color.clone(),
                     icon: action.icon.clone(),
                     form: self.action_form(ctx, action),
+                    primary: action.primary,
                 });
             }
         }

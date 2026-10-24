@@ -35,7 +35,8 @@ impl<R: Resource> ResourceAdapter<R> {
             // see registration, but the view decision never depends on them).
             let viewable = abilities[ability::VIEW];
             for action in &self.actions {
-                abilities.insert(action.name, !trashed && self.policy.allows(ctx, action.ability, Some(&record)).await);
+                let offered = !trashed && action.shows_for(ctx, model);
+                abilities.insert(action.name, offered && self.policy.allows(ctx, action.ability, Some(&record)).await);
             }
             // Every envelope (list, read, and the result of a write) carries data
             // only if the user may view the record; blind writes get key and abilities.

@@ -33,6 +33,15 @@ All notable changes are documented here. The format follows
   in the save's transaction). Boot refuses them without
   `AdminProvider::media()` or with a non-empty default. Contract fixture
   `settings.brand.json`.
+- `Action::visible_when(|ctx, record| …)`: whether an action is offered on
+  a record, decided by the server for each record (envelope `abilities`) and
+  again on the locked record when the action runs: a run on one record it is
+  hidden on is refused (403); a run on several skips those records (reported
+  in `denied`, never handed to the handler). Oracle case.
+  `Action::primary()` (schema `ActionSchema.primary`) and
+  `Action::destructive()` (color `danger`): a list row shows at most one
+  labelled action (the first primary one it offers) and a ⋯ menu with the
+  others, destructive ones last after a separator. Vocabulary 10.
 
 ### Fixed (0.10.1)
 - The media input reported its pending upload again on every render of its
