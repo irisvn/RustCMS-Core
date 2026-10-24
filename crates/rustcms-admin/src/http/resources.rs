@@ -53,6 +53,7 @@ pub(super) async fn panel(
         pages: crate::custom::links(&panel.custom, &ctx),
         home: crate::custom::home(&panel.custom, &ctx),
         permissions,
+        uploads: crate::media::upload_limits(&state, &ctx),
     }))
 }
 

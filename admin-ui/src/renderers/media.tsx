@@ -4,21 +4,13 @@ import { ArrowLeft, ArrowRight, FileText, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/api/client";
 import { usePanelConfig, useSession } from "@/api/context";
-import type { DataResponse, InputSchema, MediaItem } from "@/api/types";
+import type { InputSchema, MediaItem } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { mediaUrl } from "@/lib/rich-text";
 import { later, show, type Text, useT } from "@/i18n";
+import { uploadMedia } from "./uploads";
 
-/**
- * Uploads `file` with the idempotency `key` (the same key on a retry: the
- * server stores it once). Returns the stored item.
- */
-export async function uploadMedia(api: ReturnType<typeof useSession>["api"], file: File, key: string): Promise<MediaItem> {
-  const form = new FormData();
-  form.append("file", file, file.name);
-  const response = await api.request<DataResponse<MediaItem>>("POST", "/media", form, { "Idempotency-Key": key });
-  return response.data;
-}
+export { uploadMedia };
 
 const accepts = (accept: string[], mime: string) =>
   accept.length === 0 || accept.some((a) => a === mime || (a.endsWith("/*") && mime.startsWith(a.slice(0, -1))));

@@ -1,0 +1,166 @@
+// Uploads to the media library, several at a time: a queue that sends at most
+// `max_concurrent_uploads` files at once (the server answers 429 beyond),
+// each file with its own idempotency key (kept for its retries), status and
+// error. Files are checked against the server's size limit before sending;
+// the server decides the type from the content.
+import { Loader2, RotateCcw, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError } from "@/api/client";
+import { useSession } from "@/api/context";
+import { usePanel } from "@/api/queries";
+import type { DataResponse, MediaItem } from "@/api/types";
+import { Button } from "@/components/ui/button";
+import { later, show, type Text, t, useT } from "@/i18n";
+
+/**
+ * Uploads `file` with the idempotency `key` (the same key on a retry: the
+ * server stores it once). Returns the stored item.
+ */
+export async function uploadMedia(api: ReturnType<typeof useSession>["api"], file: File, key: string): Promise<MediaItem> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const response = await api.request<DataResponse<MediaItem>>("POST", "/media", form, { "Idempotency-Key": key });
+  return response.data;
+}
+
+/** The message of a failed upload: the server's field messages for a refused file. */
+export function uploadError(e: unknown): Text {
+  return () => (e instanceof ApiError && e.status === 422 ? Object.values(e.fieldErrors).flat().join(" ") || e.message : e instanceof Error ? e.message : t("media.uploadFailed"));
+}
+
+export type UploadStatus = "queued" | "uploading" | "done" | "failed";
+
+export interface Upload {
+  /** Local id (React key). */
+  id: string;
+  file: File;
+  /** Idempotency key: the same for every attempt of this file. */
+  key: string;
+  status: UploadStatus;
+  error?: Text;
+  /** A failure worth retrying (outcome unknown, busy server, network). */
+  retryable: boolean;
+  /** Its outcome is unknown: the form waits until it is retried or dismissed. */
+  uncertain: boolean;
+  item?: MediaItem;
+}
+
+/** Whether a failure may succeed when sent again (with the same key). */
+const retryable = (e: unknown) => !(e instanceof ApiError) || e.maybeApplied || e.status === 429 || e.status === 408 || e.status >= 500 || e.status === 0;
+
+/**
+ * A queue of uploads. `onUploaded` receives stored items in the order their
+ * files were added (a file still uploading holds back the ones after it; a
+ * failed one does not), only while the component is mounted.
+ * `check` may refuse a file before it is sent (returns the message).
+ */
+export function useUploads({ onUploaded, check }: { onUploaded: (item: MediaItem, file: File) => void; check?: (file: File) => Text | null }) {
+  const session = useSession();
+  const panel = usePanel();
+  const limits = panel.data?.uploads;
+  // Unknown limits (panel still loading): one at a time.
+  const concurrency = Math.max(1, limits?.maxConcurrent ?? 1);
+  const maxBytes = limits?.maxBytes;
+  const [uploads, setUploads] = useState<Upload[]>([]);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const deliver = useRef(onUploaded);
+  deliver.current = onUploaded;
+  const delivered = useRef(new Set<string>());
+
+  const patch = useCallback((id: string, change: Partial<Upload>) => {
+    if (mounted.current) setUploads((all) => all.map((u) => (u.id === id ? { ...u, ...change } : u)));
+  }, []);
+
+  // Start queued files while there is room.
+  useEffect(() => {
+    const running = uploads.filter((u) => u.status === "uploading").length;
+    const next = uploads.filter((u) => u.status === "queued").slice(0, Math.max(0, concurrency - running));
+    for (const upload of next) {
+      patch(upload.id, { status: "uploading", error: undefined });
+      uploadMedia(session.api, upload.file, upload.key).then(
+        (item) => patch(upload.id, { status: "done", item, retryable: false, uncertain: false }),
+        (e: unknown) => patch(upload.id, {
+          status: "failed",
+          error: uploadError(e),
+          retryable: retryable(e),
+          uncertain: e instanceof ApiError && e.maybeApplied,
+        }),
+      );
+    }
+  }, [uploads, concurrency, session.api, patch]);
+
+  // Hand over finished files in order, then forget them.
+  useEffect(() => {
+    const ready: Upload[] = [];
+    for (const u of uploads) {
+      if (u.status === "queued" || u.status === "uploading") break;
+      if (u.status === "done" && !delivered.current.has(u.id)) ready.push(u);
+    }
+    if (ready.length === 0) return;
+    for (const u of ready) {
+      delivered.current.add(u.id);
+      deliver.current(u.item!, u.file);
+    }
+    setUploads((all) => all.filter((u) => !delivered.current.has(u.id)));
+  }, [uploads]);
+
+  const add = useCallback((files: Iterable<File>) => {
+    const added: Upload[] = [];
+    for (const file of files) {
+      const base = { id: crypto.randomUUID(), file, key: crypto.randomUUID(), retryable: false, uncertain: false };
+      const refused = check?.(file) ?? (maxBytes !== undefined && file.size > maxBytes ? later("media.tooLarge", { file: file.name }) : null);
+      added.push(refused ? { ...base, status: "failed", error: refused } : { ...base, status: "queued" });
+    }
+    if (added.length) setUploads((all) => [...all, ...added]);
+  }, [check, maxBytes]);
+  const retry = useCallback((id: string) => patch(id, { status: "queued", error: undefined }), [patch]);
+  const dismiss = useCallback((id: string) => setUploads((all) => all.filter((u) => u.id !== id)), []);
+  const busy = uploads.some((u) => u.status === "queued" || u.status === "uploading" || u.uncertain);
+  return { uploads, add, retry, dismiss, busy };
+}
+
+/** Per-file status of a queue: waiting, sending, or failed with its message, a retry and a dismiss. */
+export function UploadList({ uploads, onRetry, onDismiss, disabled }: {
+  uploads: Upload[];
+  onRetry: (id: string) => void;
+  onDismiss: (id: string) => void;
+  disabled?: boolean;
+}) {
+  const t = useT();
+  if (uploads.length === 0) return null;
+  return (
+    <ul aria-label={t("upload.list")} className="mt-2 flex flex-col gap-1">
+      {uploads.map((u) => (
+        <li key={u.id} className="flex flex-wrap items-center gap-2 rounded-md border border-border px-2 py-1 text-xs">
+          {u.status === "uploading" && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
+          <span className="min-w-0 flex-1 truncate font-medium">{u.file.name}</span>
+          {u.status === "failed"
+            ? <span role="alert" className="text-destructive">{u.error ? show(u.error) : t("media.uploadFailed")}</span>
+            : (
+              <>
+                <span className="text-muted-foreground">{u.status === "queued" ? t("upload.queued") : t("upload.sending")}</span>
+                {/* Native, without a value: indeterminate (fetch reports no upload progress). */}
+                <progress className="h-1.5 w-20" aria-label={t("upload.progress", { file: u.file.name })} />
+              </>
+            )}
+          {u.status === "failed" && u.retryable && (
+            <Button size="sm" variant="outline" disabled={disabled} aria-label={t("upload.retry", { file: u.file.name })} onClick={() => onRetry(u.id)}>
+              <RotateCcw /> {t("media.retry")}
+            </Button>
+          )}
+          {u.status === "failed" && (
+            <Button size="icon" variant="ghost" aria-label={t("upload.dismiss", { file: u.file.name })} onClick={() => onDismiss(u.id)}>
+              <X />
+            </Button>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}

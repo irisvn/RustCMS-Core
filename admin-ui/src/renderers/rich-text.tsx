@@ -3,6 +3,7 @@
 // (`injectCSS: false`) and its nodes render no `style` attribute: its styles
 // are in index.css, as the CSP requires.
 import { findParentNode } from "@tiptap/core";
+import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { TableMap } from "@tiptap/pm/tables";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -12,8 +13,8 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type * as React from "react";
-import { ApiError } from "@/api/client";
-import { usePanelConfig, useSession } from "@/api/context";
+import type { MediaItem } from "@/api/types";
+import { usePanelConfig } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, Textarea } from "@/components/ui/input";
@@ -21,9 +22,9 @@ import {
   type DocNode, EMBED_NAMES, type Embed, IMAGE_WIDTHS, type ImageWidth, LIMITS, type RichDocument, asDocument, embedUrl,
   isEmptyDocument, mediaUrl, parseEmbedUrl, safeHref, toDocument, toEditor, validEmbed,
 } from "@/lib/rich-text";
-import { uploadMedia } from "./media";
+import { UploadList, useUploads } from "./uploads";
 import { RichCallout, RichEmbed, RichImage, RichTable, RichTableCell, RichTableHeader, RichTableRow } from "./rich-text-nodes";
-import { errorText, later, show, type Text, useT } from "@/i18n";
+import { later, useT } from "@/i18n";
 
 /** What the image dialog edits. */
 interface ImageDetails {
@@ -45,19 +46,24 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
 }) {
   const t = useT();
   const { apiPath } = usePanelConfig();
-  const session = useSession();
   const picker = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState<Text | null>(null);
-  const [uploading, setUploading] = useState(false);
-  // An image upload with an unknown outcome: retried with the same file and key.
-  const [retry, setRetry] = useState<{ file: File; key: string } | null>(null);
   // The link dialog: the address it starts from, and whether a link is being edited.
   const [linking, setLinking] = useState<{ href: string; editing: boolean } | null>(null);
   const [describing, setDescribing] = useState<ImageDetails | null>(null);
   const [embedding, setEmbedding] = useState(false);
+  // Images uploaded from the picker, dropped or pasted: inserted in the order
+  // they were added, after the selection (never replacing it).
+  const insertImage = useRef<(item: MediaItem) => void>(() => {});
+  const uploads = useUploads({
+    onUploaded: (item) => insertImage.current(item),
+    check: (file) => (file.type.startsWith("image/") ? null : later("rich.imagesOnlyFile", { file: file.name })),
+  });
+  const addFiles = useRef(uploads.add);
+  addFiles.current = uploads.add;
+  // The form may not save while an upload is pending or its outcome unknown.
   useEffect(() => {
-    onBusy?.(uploading || retry !== null);
-  }, [uploading, retry, onBusy]);
+    onBusy?.(uploads.busy);
+  }, [uploads.busy, onBusy]);
   useEffect(() => () => onBusy?.(false), [onBusy]);
   const stored = value ? asDocument(JSON.parse(value)) : null;
   const editor = useEditor({
@@ -88,6 +94,14 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         ...(invalid ? { "aria-invalid": "true" } : {}),
         class: "rich-text min-h-40 rounded-b-md border border-t-0 border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       },
+      // Files pasted are uploaded (the HTML that comes with them, external images included, is not used).
+      handlePaste: (_view, event) => {
+        const files = [...(event.clipboardData?.files ?? [])];
+        if (files.length === 0) return false;
+        event.preventDefault();
+        addFiles.current(files);
+        return true;
+      },
     },
     onUpdate: ({ editor }) => {
       const doc = toDocument(editor.getJSON() as DocNode, apiPath);
@@ -97,6 +111,31 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   useEffect(() => {
     editor?.setEditable(!disabled);
   }, [editor, disabled]);
+  // Where the next uploaded image goes: after the previous one of the same
+  // uploads (mapped through every change), else after the selection's block.
+  const anchor = useRef<number | null>(null);
+  useEffect(() => {
+    if (!editor) return;
+    const follow = ({ transaction }: { transaction: Transaction }) => {
+      if (anchor.current !== null) anchor.current = transaction.mapping.map(anchor.current, 1);
+    };
+    editor.on("transaction", follow);
+    return () => {
+      editor.off("transaction", follow);
+    };
+  }, [editor]);
+  useEffect(() => {
+    if (uploads.uploads.length === 0) anchor.current = null;
+  }, [uploads.uploads.length]);
+  insertImage.current = (item) => {
+    if (!editor || editor.isDestroyed) return;
+    const { state, view } = editor;
+    const node = state.schema.nodes.image!.create({ src: mediaUrl(apiPath, item.id), alt: item.name });
+    const at = anchor.current !== null && anchor.current <= state.doc.content.size ? anchor.current : blockEnd(state);
+    // The selection stays the user's: typing on never replaces an image that arrived meanwhile.
+    view.dispatch(state.tr.insert(at, node));
+    anchor.current = at + node.nodeSize;
+  };
   // What the toolbar shows: follows the selection (TipTap does not re-render on transactions).
   const state = useEditorState({
     editor,
@@ -136,7 +175,6 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   };
   const applyLink = (href: string) => {
     setLinking(null);
-    setError(null);
     if (!editor || editor.isDestroyed) return;
     if (href === "") return void chain().extendMarkRange("link").unsetLink().run();
     if (editor.state.selection.empty && !editor.isActive("link")) {
@@ -159,22 +197,6 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
     setEmbedding(false);
     if (!editor || editor.isDestroyed) return;
     chain().setEmbed(embed).run();
-  };
-  const image = async (file: File | undefined, key: string = crypto.randomUUID()) => {
-    if (!file || !editor) return;
-    if (!file.type.startsWith("image/")) return setError(() => later("rich.imagesOnly"));
-    setError(null);
-    setUploading(true);
-    try {
-      const item = await uploadMedia(session.api, file, key);
-      setRetry(null);
-      if (!editor.isDestroyed) chain().setImage({ src: mediaUrl(apiPath, item.id), alt: item.name }).run();
-    } catch (e) {
-      if (e instanceof ApiError && e.maybeApplied) setRetry({ file, key });
-      setError(() => errorText(e, "media.uploadFailed"));
-    } finally {
-      setUploading(false);
-    }
   };
   const s = state;
   const table = s?.table ?? null;
@@ -199,8 +221,8 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         {tool(t("rich.imageDetails"), <Settings2 />, false, describe, !s?.image)}
         {tool(t("rich.table"), <TableIcon />, false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), !!table)}
         {tool(t("rich.embed"), <Video />, false, () => setEmbedding(true))}
-        <input ref={picker} type="file" hidden accept="image/png,image/jpeg,image/gif,image/webp" onChange={(e) => {
-          void image(e.target.files?.[0]);
+        <input ref={picker} type="file" multiple hidden accept="image/png,image/jpeg,image/gif,image/webp" onChange={(e) => {
+          uploads.add([...(e.target.files ?? [])]);
           e.target.value = "";
         }} />
       </div>
@@ -217,13 +239,20 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
           </span>
         </div>
       )}
-      <EditorContent editor={editor} />
-      {retry && (
-        <Button size="sm" className="mt-2" disabled={disabled || uploading} onClick={() => void image(retry.file, retry.key)}>
-          {t("rich.retryImage")}
-        </Button>
-      )}
-      {error && <p role="alert" className="mt-1 text-xs text-destructive">{show(error)}</p>}
+      {/* Files dropped on the editor are uploaded, before ProseMirror sees the drop. */}
+      <div onDropCapture={(e) => {
+        const files = [...(e.dataTransfer?.files ?? [])];
+        if (files.length === 0 || disabled || !editor) return;
+        e.preventDefault();
+        e.stopPropagation();
+        // The images go where the files were dropped.
+        const at = editor.view.posAtCoords({ left: e.clientX, top: e.clientY });
+        if (at) editor.view.dispatch(editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(at.pos))));
+        uploads.add(files);
+      }}>
+        <EditorContent editor={editor} />
+      </div>
+      <UploadList uploads={uploads.uploads} onRetry={uploads.retry} onDismiss={uploads.dismiss} disabled={disabled} />
       <LinkDialog state={linking} onClose={() => {
         setLinking(null);
         editor?.commands.focus();
@@ -242,6 +271,17 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
       </Dialog>
     </div>
   );
+}
+
+/** The position after the selection's block, in the nearest parent that may hold an image (not a table cell or a callout). */
+function blockEnd(state: EditorState): number {
+  const $to = state.selection.$to;
+  const image = state.schema.nodes.image!;
+  for (let d = $to.depth; d > 0; d--) {
+    const index = $to.index(d - 1) + 1;
+    if ($to.node(d - 1).canReplaceWith(index, index, image)) return $to.after(d);
+  }
+  return $to.depth === 0 ? $to.pos : state.doc.content.size;
 }
 
 /** Enter in a text field applies the dialog (never submits the record's form), except while composing. */

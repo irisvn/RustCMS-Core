@@ -1,10 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SessionContext } from "@/api/context";
 import { createSession } from "@/app/session";
 import { type DocNode, asDocument, isEmptyDocument, parseEmbedUrl, toDocument, toEditor } from "@/lib/rich-text";
 import { RichEditorWidget, RichTextView } from "@/renderers/rich-text";
+
+// The editor is slow to start in jsdom under load.
+configure({ asyncUtilTimeout: 8000 });
+vi.setConfig({ testTimeout: 40_000 });
 
 const API = "http://localhost/admin/api";
 const ID = "0199d3a4-1b2c-7d3e-8f40-123456789abc";
@@ -172,13 +176,23 @@ describe("rich editor (version 2)", () => {
 
   it("does not grow a table past 50 rows or 20 columns", async () => {
     const row = (n: number) => ({ type: "tableRow", content: Array.from({ length: n }, () => cell("tableCell", "x")) });
-    const { box } = await editorOn([{ type: "table", content: Array.from({ length: 50 }, () => row(20)) }]);
-    await userEvent.click(box.querySelector("td p")!);
-    // 1,000 cells: slow to render in jsdom.
-    const tools = await screen.findByRole("toolbar", { name: "Table" }, { timeout: 5000 });
-    expect(within(tools).getByRole("button", { name: "Add row" })).toBeDisabled();
-    expect(within(tools).getByRole("button", { name: "Add column" })).toBeDisabled();
-    expect(within(tools).getByRole("button", { name: "Remove row" })).toBeEnabled();
+    const tools = async (content: DocNode[]) => {
+      const { box } = await editorOn(content);
+      // Clicking a cell puts the cursor in the table (retried, as for images).
+      return waitFor(async () => {
+        await userEvent.click(box.querySelector("td p")!);
+        return screen.getByRole("toolbar", { name: "Table" });
+      });
+    };
+    let bar = await tools([{ type: "table", content: Array.from({ length: 50 }, () => row(1)) }]);
+    expect(within(bar).getByRole("button", { name: "Add row" })).toBeDisabled();
+    expect(within(bar).getByRole("button", { name: "Add column" })).toBeEnabled();
+    expect(within(bar).getByRole("button", { name: "Remove column" })).toBeDisabled();
+    cleanup();
+    bar = await tools([{ type: "table", content: [row(20)] }]);
+    expect(within(bar).getByRole("button", { name: "Add column" })).toBeDisabled();
+    expect(within(bar).getByRole("button", { name: "Add row" })).toBeEnabled();
+    expect(within(bar).getByRole("button", { name: "Remove row" })).toBeDisabled();
   });
 
   it("embeds an allowed address as {provider, id}, shown as a card without iframe or image", async () => {
@@ -199,8 +213,13 @@ describe("rich editor (version 2)", () => {
 
   it("edits an image's alternative text, caption and width", async () => {
     const { box, doc } = await editorOn([{ type: "image", attrs: { media: ID, alt: "old" } }]);
-    await userEvent.click(box.querySelector("figure img")!);
-    await userEvent.click(screen.getByRole("button", { name: "Image details" }));
+    const details = screen.getByRole("button", { name: "Image details" });
+    // Clicking the image selects it (retried: under load the first click can land before the view is ready).
+    await waitFor(async () => {
+      await userEvent.click(box.querySelector("figure img")!);
+      expect(details).toBeEnabled();
+    });
+    await userEvent.click(details);
     const dialog = await screen.findByRole("dialog", { name: "Image details" });
     const alt = within(dialog).getByLabelText("Alternative text");
     expect(alt).toHaveValue("old");

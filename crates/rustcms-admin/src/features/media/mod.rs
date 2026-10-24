@@ -99,6 +99,15 @@ pub(crate) struct MediaState {
     pub(crate) uploads: tokio::sync::Semaphore,
 }
 
+/// The upload limits the panel's clients respect, for users who may upload.
+pub(crate) fn upload_limits(app: &AppState, ctx: &Ctx) -> Option<crate::http::PanelUploads> {
+    let media = app.service::<MediaState>()?;
+    ctx.can(&format!("{SLUG}.create")).then(|| crate::http::PanelUploads {
+        max_bytes: media.config.max_upload_bytes,
+        max_concurrent: u32::try_from(media.config.max_concurrent_uploads.max(1)).unwrap_or(u32::MAX),
+    })
+}
+
 /// The media library's services; 404 when it is not enabled.
 fn state_of(app: &AppState) -> AppResult<Arc<MediaState>> {
     app.service::<MediaState>().ok_or(AppError::NotFound)
