@@ -8,7 +8,7 @@ import { SessionContext } from "@/api/context";
 import type { InputSchema } from "@/api/types";
 import { createSession } from "@/app/session";
 import { asDocument, isEmptyDocument, mediaIdOf, safeHref, toDocument, toEditor, type DocNode } from "@/lib/rich-text";
-import { FileUploadWidget } from "@/renderers/media";
+import { FileUploadWidget, MediaThumb } from "@/renderers/media";
 import { RichEditorWidget, RichTextView } from "@/renderers/rich-text";
 
 const API = "http://localhost/admin/api";
@@ -104,6 +104,42 @@ describe("documents", () => {
     expect(container.querySelectorAll("img")).toHaveLength(1);
     expect(container.querySelector("img")!.getAttribute("src")).toBe(`${API}/media/${ID}/file`);
     expect(container.querySelector("a")).toBeNull();
+  });
+
+  it("show an unavailable chip, not a broken image, for files that cannot be loaded", () => {
+    const doc = asDocument({ type: "doc", version: 1, content: [{ type: "image", attrs: { media: ID, alt: "cat" } }] })!;
+    const { container } = render(<Providers><RichTextView doc={doc} /></Providers>);
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByRole("img", { name: "File unavailable" })).toHaveTextContent("File unavailable");
+  });
+});
+
+describe("file fields", () => {
+  it("show the same chip for files that cannot be loaded, and a link for other files", async () => {
+    const OTHER = "0199d3a4-1b2c-7d3e-8f40-123456789abe";
+    server.use(
+      http.head(`*/admin/api/media/${ID}/file`, () => new HttpResponse(null, { status: 404 })),
+      http.head(`*/admin/api/media/${OTHER}/file`, () => new HttpResponse(null, { status: 200 })),
+    );
+    const { container } = render(<Providers><MediaThumb id={ID} /><MediaThumb id={OTHER} /></Providers>);
+    for (const img of container.querySelectorAll("img")) fireEvent.error(img);
+    // Missing or trashed: the chip; a saved PDF (not an image): its download link.
+    expect(await screen.findByRole("img", { name: "File unavailable" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "File" })).toHaveAttribute("href", `${API}/media/${OTHER}/file`);
+    server.resetHandlers();
+  });
+});
+
+describe("rich text images", () => {
+  it("are tried again when their source changes", () => {
+    const doc = (id: string) => asDocument({ type: "doc", version: 1, content: [{ type: "image", attrs: { media: id, alt: "cat" } }] })!;
+    const { container, rerender } = render(<Providers><RichTextView doc={doc(ID)} /></Providers>);
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector("img")).toBeNull();
+    const OTHER = "0199d3a4-1b2c-7d3e-8f40-123456789abe";
+    rerender(<Providers><RichTextView doc={doc(OTHER)} /></Providers>);
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(`${API}/media/${OTHER}/file`);
   });
 });
 

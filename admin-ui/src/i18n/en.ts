@@ -642,6 +642,7 @@ export const en = {
   "links.full": "At most {max} records are linked per save: save, then add more.",
   "links.loadFailed": "Could not load the linked records.",
   "media.file": "File",
+  "media.unavailable": "File unavailable",
   "media.uploadFailed": "The upload failed.",
   "media.remove": "Remove file {n}",
   "media.earlier": "Move file {n} earlier",

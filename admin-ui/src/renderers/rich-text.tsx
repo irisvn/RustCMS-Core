@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
 import { type DocNode, type RichDocument, asDocument, isEmptyDocument, mediaUrl, safeHref, toDocument, toEditor } from "@/lib/rich-text";
-import { uploadMedia } from "./media";
+import { MediaImage, uploadMedia } from "./media";
 import { errorText, later, show, type Text, useT } from "@/i18n";
 
 export function RichEditorWidget({ id, label, value, onChange, disabled, invalid, describedBy, nullable, onBusy }: {
@@ -256,7 +256,7 @@ function RichNode({ node, nodes, apiPath }: { node: DocNode; nodes: (list?: DocN
     case "hardBreak":
       return <br />;
     case "image":
-      return <img src={mediaUrl(apiPath, String(node.attrs?.media))} alt={String(node.attrs?.alt ?? "")} className="max-w-full rounded-md" />;
+      return <MediaImage src={mediaUrl(apiPath, String(node.attrs?.media))} alt={String(node.attrs?.alt ?? "")} className="max-w-full rounded-md" />;
     case "text": {
       let out: React.ReactNode = node.text ?? "";
       for (const mark of node.marks ?? []) {

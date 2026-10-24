@@ -1,6 +1,6 @@
 // Media inputs: upload to the media library, keep ids in the form. Files are
 // shown only from the panel's own media URL (the CSP allows no `blob:`).
-import { ArrowLeft, ArrowRight, FileText, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, FileText, ImageOff, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/api/client";
 import { usePanelConfig, useSession } from "@/api/context";
@@ -23,13 +23,40 @@ export async function uploadMedia(api: ReturnType<typeof useSession>["api"], fil
 const accepts = (accept: string[], mime: string) =>
   accept.length === 0 || accept.some((a) => a === mime || (a.endsWith("/*") && mime.startsWith(a.slice(0, -1))));
 
-/** A stored media item: an image preview, or a file link. */
+/** A file that cannot be shown (missing, trashed, not visible to the user). */
+export function MediaUnavailable() {
+  const t = useT();
+  return (
+    <span role="img" aria-label={t("media.unavailable")} className="inline-flex items-center gap-2 rounded-md border border-dashed border-border px-2 py-1 text-sm text-muted-foreground">
+      <ImageOff className="size-4" aria-hidden="true" />
+      {t("media.unavailable")}
+    </span>
+  );
+}
+
+/** An image of the media library (`src`: its panel URL), or the "unavailable" chip when it cannot be loaded. */
+export function MediaImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
+  // Failed for this source only: another source is tried again.
+  const [failed, setFailed] = useState<string | null>(null);
+  if (failed === src) return <MediaUnavailable />;
+  return <img src={src} alt={alt} className={className} onError={() => setFailed(src)} />;
+}
+
+/** A stored media item: an image preview, or a file link ("unavailable" when it cannot be fetched). */
 export function MediaThumb({ id, item }: { id: string; item?: MediaItem }) {
   const t = useT();
   const { apiPath } = usePanelConfig();
-  const [broken, setBroken] = useState(false);
   const url = mediaUrl(apiPath, id);
-  if ((item && !item.inline) || broken) {
+  // Not shown as an image: a file of another type (PDF), or not available. The server says which.
+  const [state, setState] = useState<{ url: string; kind: "file" | "unavailable" } | null>(null);
+  const shown = state?.url === url ? state.kind : null;
+  const probe = () => {
+    void fetch(url, { method: "HEAD", credentials: "same-origin", cache: "no-store" })
+      .then((r) => setState({ url, kind: r.ok ? "file" : "unavailable" }))
+      .catch(() => setState({ url, kind: "unavailable" }));
+  };
+  if (shown === "unavailable") return <MediaUnavailable />;
+  if ((item && !item.inline) || shown === "file") {
     return (
       <a href={url} className="inline-flex items-center gap-2 rounded-md border border-border px-2 py-1 text-sm hover:bg-muted">
         <FileText className="size-4" aria-hidden="true" />
@@ -37,7 +64,7 @@ export function MediaThumb({ id, item }: { id: string; item?: MediaItem }) {
       </a>
     );
   }
-  return <img src={url} alt={item?.name ?? ""} className="size-20 rounded-md border border-border object-cover" onError={() => setBroken(true)} />;
+  return <img src={url} alt={item?.name ?? ""} className="size-20 rounded-md border border-border object-cover" onError={probe} />;
 }
 
 export function FileUploadWidget({ id, input, value, onChange, disabled, invalid, describedBy, onBusy }: {

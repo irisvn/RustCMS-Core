@@ -641,6 +641,7 @@ export const vi: Record<keyof typeof en, string> = {
   "links.full": "Mỗi lần lưu liên kết tối đa {max} bản ghi: hãy lưu rồi thêm tiếp.",
   "links.loadFailed": "Không tải được các bản ghi đã liên kết.",
   "media.file": "Tệp",
+  "media.unavailable": "Tệp không khả dụng",
   "media.uploadFailed": "Tải lên không thành công.",
   "media.remove": "Xoá tệp {n}",
   "media.earlier": "Đưa tệp {n} lên trước",

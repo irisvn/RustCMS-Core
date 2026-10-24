@@ -77,6 +77,8 @@ All notable changes are documented here. The format follows
   now carries its `valueType`, its form input's `options` and its table
   `column`, and each record its wire `data`, so the panel shows option
   labels, custom cells, badges and formatted dates (the `values` text stays).
+- A rich text image whose file is missing or trashed rendered as a broken
+  image: it shows the "File unavailable" chip, as file fields now do.
 - Generated text: a `null` value on a record's page reads "Not set" (no
   "(null)"); relation search boxes have a placeholder.
 - The media input reported its pending upload again on every render of its
