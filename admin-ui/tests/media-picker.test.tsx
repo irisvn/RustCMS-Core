@@ -115,7 +115,8 @@ describe("media library picker", () => {
     expect(within(dialog).getByText("Page 1 of 2")).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
     await within(dialog).findByText("Page 2 of 2");
-    expect(within(within(dialog).getByRole("list", { name: "Files" })).getAllByRole("button")).toHaveLength(6);
+    // The previous page stays shown until the next one is in.
+    await waitFor(() => expect(within(within(dialog).getByRole("list", { name: "Files" })).getAllByRole("button")).toHaveLength(6));
     // Search by name: back to the first page.
     await userEvent.type(within(dialog).getByLabelText("Search by name"), "cat-3");
     await waitFor(() => expect(queries.at(-1)!.get("search")).toBe("cat-3"));
