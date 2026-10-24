@@ -1,7 +1,7 @@
 # Actions
 
-Actions run on one record (row actions) or on the selected records (bulk
-actions), with the same authorization as any write.
+Actions run on one record (row actions) or, when `.bulk()`, also on the
+selected records, with the same authorization as any write.
 
 ```rust,ignore
 fn actions() -> Vec<Action<post::Entity>> {
@@ -92,8 +92,10 @@ marked `.primary()` that the row offers. The other row actions are in the
 row's **⋯** menu, in declaration order; destructive ones (`.destructive()`,
 which is the color `danger`) come last, after a separator. Several actions
 may be primary when `visible_when` makes them exclusive (`publish` on
-drafts, `unpublish` on published posts). Bulk actions stay in the selection
-bar; View, Edit, Delete and Restore keep their buttons.
+drafts, `unpublish` on published posts). A `.bulk()` action is a row action
+too (bulk means *also* offered for selections, in the bar above the table),
+on the rows the server offers it. View, Edit, Delete and Restore keep their
+buttons.
 
 ```rust,ignore
 Action::<post::Entity>::new("publish", publish).visible_when(|p| !p.published).primary(),

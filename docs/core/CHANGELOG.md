@@ -59,6 +59,9 @@ All notable changes are documented here. The format follows
   unchanged.
 
 ### Fixed (0.10.1)
+- Bulk actions were never offered on list rows, although `.bulk()` means
+  "also offered for selections": every action is now a row action where the
+  row's abilities allow it.
 - The media input reported its pending upload again on every render of its
   form (a new `onBusy` callback each time), re-rendering the form without
   end while a file was being uploaded.

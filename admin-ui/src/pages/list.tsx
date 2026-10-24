@@ -141,7 +141,9 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
   const trashMode = trash && (search.trashed === "with" || search.trashed === "only") ? search.trashed : "";
   // Actions never apply to trashed records: none in the trash-only view.
   const bulkActions = locked || trashMode === "only" ? [] : table.actions.filter((a) => a.bulk);
-  const rowActions = locked ? [] : table.actions.filter((a) => !a.bulk);
+  // Every action is a row action (`bulk` ones are also offered for selections);
+  // each row's abilities say where the server offers it.
+  const rowActions = locked ? [] : table.actions;
   const sort = search.sort ?? table.defaultSort ?? "";
   const rows = records.data?.data ?? [];
   const meta = records.data?.meta;

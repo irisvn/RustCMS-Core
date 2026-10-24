@@ -25,7 +25,7 @@ const server = setupServer(
   http.get("*/admin/api/resources/posts/records", () => HttpResponse.json({
     data: [
       // Published: unpublish is offered (the server decides per row).
-      row("a", { touch: true, unpublish: true, archive: true }),
+      row("a", { touch: true, unpublish: true, archive: true, publish: true }),
       // A draft: only the primary action.
       row("b", { touch: true, unpublish: false, archive: false }),
       // Nothing primary offered: no labelled action, the rest in the menu.
@@ -56,7 +56,7 @@ function mount() {
 
 const rowOf = (title: string) => screen.getByText(title).closest("tr")!;
 
-it("shows one labelled action per row and the others in a menu, destructive ones last", async () => {
+it("shows one labelled action per row and the others (bulk ones too) in a menu, destructive ones last", async () => {
   mount();
   await screen.findByText("Post a");
   const a = rowOf("Post a");
@@ -64,7 +64,7 @@ it("shows one labelled action per row and the others in a menu, destructive ones
   expect(within(a).queryByRole("button", { name: "Archive" })).toBeNull();
   await userEvent.click(within(a).getByRole("button", { name: "More actions for Post a" }));
   const menu = await screen.findByRole("menu");
-  expect([...menu.children].map((c) => c.getAttribute("role") === "separator" ? "---" : c.textContent)).toEqual(["Archive", "---", "Unpublish"]);
+  expect([...menu.children].map((c) => c.getAttribute("role") === "separator" ? "---" : c.textContent)).toEqual(["Publish", "Archive", "---", "Unpublish"]);
   expect(within(menu).getByRole("menuitem", { name: "Unpublish" })).toHaveClass("text-destructive");
   await userEvent.click(within(menu).getByRole("menuitem", { name: "Unpublish" }));
   await waitFor(() => expect(runs).toEqual([{ action: "unpublish", body: { keys: ["a"], data: {} } }]));
