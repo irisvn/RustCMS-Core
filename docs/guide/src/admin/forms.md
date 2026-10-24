@@ -31,7 +31,7 @@ write are left out or disabled, and the server checks everything again.
 | `SelectInput` | static `.options([(value, label)])`, or the records of a `belongs_to` field |
 | `Toggle`, `Checkbox` | booleans (three states when nullable) |
 | `CheckboxList` | a JSON list of option values |
-| `DatePicker`, `DateTimePicker` | dates, local date-times and instants (edited in UTC) |
+| `DatePicker`, `DateTimePicker` | dates, local date-times and instants (edited in UTC; shown on the record's page in the user's language, instants in their time zone, which is named) |
 | `Hidden` | a value the user does not edit |
 | `KeyValue` | a JSON object of text values ([below](#key-value)) |
 | `FileUpload`, `RichEditor` | [media and rich text](media.md) |

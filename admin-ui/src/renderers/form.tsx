@@ -30,7 +30,7 @@ import { CustomField } from "./custom";
 import { type SecretControl, SecretWidget } from "./secret";
 import { isResourceSecret, parseSecret, parseSecretMap, type SecretRow } from "@/schema/secrets";
 import { asDocument } from "@/lib/rich-text";
-import { useT } from "@/i18n";
+import { formatWireDate, useT } from "@/i18n";
 
 export interface FormContext {
   slug: string;
@@ -245,6 +245,9 @@ export function ReadOnlyComponents({ components, data, slug, record }: {
       content = value.length === 0 ? t("value.emptyList") : <ul className="space-y-1">{value.map((item, i) =>
         <li key={i}>{component.options?.find((option) => JSON.stringify(option.value) === JSON.stringify(item))?.label ?? readOnlyText(item)}</li>,
       )}</ul>;
+    } else if (typeof value === "string" && ["instant", "local_datetime", "date"].includes(component.valueType)) {
+      // Dates and times in the user's language (instants with their time zone); the wire text as a fallback.
+      content = <time dateTime={value}>{formatWireDate(component.valueType, value) ?? value}</time>;
     } else content = readOnlyText(value);
     return <dl key={component.name} className={cn("min-w-0 space-y-2", span(component.columnSpan))}>
       <dt className="text-sm font-medium text-muted-foreground">{component.label}</dt>

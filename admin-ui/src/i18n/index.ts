@@ -104,6 +104,39 @@ export function formatDateTime(date: Date): string {
   return new Intl.DateTimeFormat(current, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
+/**
+ * A date or time value of the wire (`instant`, `local_datetime`, `date`) in
+ * the current language: instants in the browser's time zone, which is named;
+ * local date-times and dates as they are (no zone). `null` when unreadable.
+ */
+const INSTANT: Intl.DateTimeFormatOptions = {
+  year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short",
+};
+
+export function formatWireDate(kind: string, value: string): string | null {
+  try {
+    if (kind === "instant") {
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return null;
+      // `dateStyle`/`timeStyle` cannot name the zone: spelled out.
+      return new Intl.DateTimeFormat(current, INSTANT).format(d);
+    }
+    const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(value);
+    if (!m || (kind !== "date" && kind !== "local_datetime")) return null;
+    const [, y, mo, da, h, mi, se] = m;
+    const utc = new Date(Date.UTC(2000, Number(mo) - 1, Number(da), Number(h ?? 0), Number(mi ?? 0), Number(se ?? 0)));
+    // Years 0–99 as they are (`Date.UTC` would read them as 1900–1999).
+    utc.setUTCFullYear(Number(y));
+    if (Number.isNaN(utc.getTime())) return null;
+    const options: Intl.DateTimeFormatOptions = kind === "date" || h === undefined
+      ? { dateStyle: "medium", timeZone: "UTC" }
+      : { dateStyle: "medium", timeStyle: se === undefined ? "short" : "medium", timeZone: "UTC" };
+    return new Intl.DateTimeFormat(current, options).format(utc);
+  } catch {
+    return null;
+  }
+}
+
 /** A whole number for display (counts, sizes); never for wire integers or decimals. */
 export function formatCount(n: number): string {
   return new Intl.NumberFormat(current).format(n);
