@@ -51,6 +51,9 @@ All notable changes are documented here. The format follows
   limit it loaded.
 
 ### Fixed
+- `GET {admin}/api/exports` answered 500 on MySQL once an export held
+  thousands of keys: the list sorted rows carrying the `keys` JSON and MySQL
+  ran out of sort memory. It now reads only the columns it shows.
 - Export and import pruning only touches its own disk: it deleted the
   metadata of expired exports and imports stored on another disk while their
   files stayed. A pass now deletes this disk's files, then their records; an

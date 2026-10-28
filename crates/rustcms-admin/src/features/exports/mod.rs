@@ -23,7 +23,7 @@ use axum::extract::{Path, Query, Request, State};
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use rustcms_auth::{ADMIN_GUARD, AuthState};
 use rustcms_core::audit::{self, AuditEntry};
 use rustcms_core::models::user;
@@ -304,14 +304,34 @@ async fn create(
 /// `GET exports`: the user's background exports (newest first, not expired).
 async fn list(AdminCtx(ctx): AdminCtx) -> AppResult<Json<Vec<ExportView>>> {
     let Ok(user_id) = ctx.principal.id.parse::<i64>() else { return Ok(Json(Vec::new())) };
-    let rows = entity::Entity::find()
-        .filter(entity::Column::UserId.eq(user_id))
-        .filter(entity::Column::ExpiresAt.gt(Utc::now()))
-        .order_by_desc(entity::Column::CreatedAt)
+    // Only what the list shows: `keys` (up to 10,000 of them) and the query
+    // stay out, so the sort never carries large JSON (MySQL's sort buffer).
+    use entity::Column as C;
+    type Row = (uuid::Uuid, String, String, i32, Option<String>, DateTime<Utc>, DateTime<Utc>);
+    let rows: Vec<Row> = entity::Entity::find()
+        .select_only()
+        .columns([C::Id, C::Resource, C::Status, C::Rows, C::Error, C::CreatedAt, C::ExpiresAt])
+        .filter(C::UserId.eq(user_id))
+        .filter(C::ExpiresAt.gt(Utc::now()))
+        .order_by_desc(C::CreatedAt)
         .limit(20)
+        .into_tuple()
         .all(&ctx.db)
         .await?;
-    Ok(Json(rows.iter().map(view).collect()))
+    let stamp = |at: DateTime<Utc>| at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    Ok(Json(
+        rows.into_iter()
+            .map(|(id, resource, status, rows, error, created_at, expires_at)| ExportView {
+                id: id.to_string(),
+                resource,
+                status,
+                rows,
+                error,
+                created_at: stamp(created_at),
+                expires_at: stamp(expires_at),
+            })
+            .collect(),
+    ))
 }
 
 fn stale() -> AppError {
