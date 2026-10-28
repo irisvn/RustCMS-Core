@@ -612,6 +612,7 @@ pub async fn prune(db: &sea_orm::DatabaseConnection, storage: &dyn Storage) -> A
         .col_expr(entity::Column::Error, Expr::value("unfinished"))
         .filter(entity::Column::Status.is_in(["pending", "running"]))
         .filter(entity::Column::CreatedAt.lt(now - chrono::Duration::hours(6)))
+        .filter(entity::Column::Disk.eq(disk))
         .exec(db)
         .await?;
     // An hour after expiry: longer than a run of the job (a late upload has

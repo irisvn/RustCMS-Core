@@ -345,8 +345,22 @@ db_test!(pruning_touches_only_imports_of_its_own_disk, |db: TestDb| async move {
     let receipts = |id: uuid::Uuid| async move {
         receipt::Entity::find().filter(receipt::Column::ImportId.eq(id)).count(db).await.unwrap()
     };
+    // An import of the other disk running for longer than any job (not expired).
+    let running = uuid::Uuid::now_v7();
+    let mut row: entity::ActiveModel = entity::Entity::find_by_id(theirs).one(db).await.unwrap().unwrap().into();
+    row.id = Set(running);
+    row.status = Set("running".into());
+    row.error = Set(None);
+    row.started_at = Set(Some(chrono::Utc::now() - chrono::Duration::hours(7)));
+    row.expires_at = Set(chrono::Utc::now() + chrono::Duration::hours(17));
+    row.insert(db).await.unwrap();
+    let state = || async move {
+        let row = entity::Entity::find_by_id(running).one(db).await.unwrap().unwrap();
+        (row.status, row.error)
+    };
 
     assert_eq!(prune(db, local).await.unwrap(), 1);
+    assert_eq!(state().await, ("running".to_owned(), None), "another disk's import is left as it is");
     assert!(entity::Entity::find_by_id(mine).one(db).await.unwrap().is_none());
     assert_eq!(receipts(mine).await, 0);
     assert!(!local.exists(&mine_key).await.unwrap());
@@ -356,6 +370,7 @@ db_test!(pruning_touches_only_imports_of_its_own_disk, |db: TestDb| async move {
     assert!(other.exists(&their_key).await.unwrap());
     // Its own disk prunes it.
     assert_eq!(prune(db, &other).await.unwrap(), 1);
+    assert_eq!(state().await, ("failed".to_owned(), Some("unfinished".to_owned())), "its own disk fails it");
     assert!(entity::Entity::find_by_id(theirs).one(db).await.unwrap().is_none());
     assert_eq!(receipts(theirs).await, 0);
     assert!(!other.exists(&their_key).await.unwrap());

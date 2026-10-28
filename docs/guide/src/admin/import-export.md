@@ -227,7 +227,8 @@ A cleanup pass runs every 10 minutes in every process that boots the
 application (a loop the admin provider starts). It deletes the files of
 exports expired for more than an hour, and expired imports. Each pass
 cleans one disk (`[storage] disk`): it deletes that disk's files, then their
-records; exports and imports stored on another disk (after a change of disk,
+records, and marks that disk's abandoned exports and imports `unfinished`;
+exports and imports stored on another disk (after a change of disk,
 or when two applications with different disks share a database) are left to
 a pass on that disk.
 

@@ -406,9 +406,33 @@ db_test!(pruning_touches_only_its_own_disk, |db: TestDb| async move {
         found.into_iter().map(|o| o.disk).collect::<Vec<_>>()
     };
     let exists = |id| async move { entity::Entity::find_by_id(id).one(db).await.unwrap().is_some() };
+    // Exports of the other disk waiting or running for longer than any job (not expired).
+    let old = chrono::Utc::now() - chrono::Duration::hours(7);
+    let mut abandoned = Vec::new();
+    for status in ["pending", "running"] {
+        let id = uuid::Uuid::now_v7();
+        let mut row: entity::ActiveModel = template.clone().into();
+        row.id = Set(id);
+        row.disk = Set(Some("s3".into()));
+        row.status = Set(status.into());
+        row.storage_key = Set(None);
+        row.keys = Set(None);
+        row.error = Set(None);
+        row.created_at = Set(old);
+        row.expires_at = Set(chrono::Utc::now() + chrono::Duration::hours(17));
+        row.insert(db).await.unwrap();
+        abandoned.push((id, status));
+    }
+    let state = |id| async move {
+        let row = entity::Entity::find_by_id(id).one(db).await.unwrap().unwrap();
+        (row.status, row.error)
+    };
 
     // This disk: its export and its objects only.
     assert_eq!(prune(db, local).await.unwrap(), 1);
+    for (id, status) in &abandoned {
+        assert_eq!(state(*id).await, ((*status).to_owned(), None), "another disk's export is left as it is");
+    }
     assert!(!exists(local_id).await && objects(local_id).await.is_empty());
     assert!(exists(theirs).await, "the other disk's export is kept");
     assert_eq!(objects(theirs).await, ["s3"]);
@@ -418,6 +442,9 @@ db_test!(pruning_touches_only_its_own_disk, |db: TestDb| async move {
     assert!(other.exists(&moved_other).await.unwrap());
     // The other disk: its export, and its object of the moved one.
     assert_eq!(prune(db, &other).await.unwrap(), 1);
+    for (id, _) in &abandoned {
+        assert_eq!(state(*id).await, ("failed".to_owned(), Some("unfinished".to_owned())), "its own disk fails it");
+    }
     assert!(!exists(theirs).await && objects(theirs).await.is_empty());
     assert!(!other.exists(&their_key).await.unwrap() && !other.exists(&moved_other).await.unwrap());
     assert!(exists(moved).await && objects(moved).await.is_empty());

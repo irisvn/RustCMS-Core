@@ -887,6 +887,7 @@ pub async fn prune(db: &sea_orm::DatabaseConnection, storage: &dyn Storage) -> A
         .col_expr(entity::Column::Error, Expr::value("unfinished"))
         .filter(entity::Column::Status.eq("running"))
         .filter(entity::Column::StartedAt.lt(now - ABANDONED))
+        .filter(entity::Column::Disk.eq(storage.disk()))
         .exec(db)
         .await?;
     let expired = entity::Entity::find()

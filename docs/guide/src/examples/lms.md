@@ -393,7 +393,7 @@ A test signs in as a seeded account and checks the queued mail:
 
 See [Testing](../basics/testing.md).
 
-## What it leaves out
+## What it leaves out {#rough-edges}
 
 Learner sign-in and quizzes are not part of the example yet.
 
