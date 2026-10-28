@@ -1,10 +1,29 @@
 # Error codes
 
-Every validation message the framework writes has a stable code, sent in
-`issues` / `formIssues` next to the English message ([Errors](../basics/errors.md)).
+Every standard application error the framework answers has a stable `code`, and every validation
+message has one too. Use this page when you write a client, translate the
+panel's messages or match errors in tests. The response shape is described in
+[Errors](../basics/errors.md).
+
+## Validation codes
+
+A 422 response lists each message in `errors` / `formErrors` (English) and, in
+the same order, its code and parameters in `issues` / `formIssues`:
+
+```json
+{
+  "message": "The given data was invalid.",
+  "code": "validation_failed",
+  "errors": { "title": ["may not be longer than 200 characters"] },
+  "issues": { "title": [{ "code": "max_length", "params": { "max": "200" } }] }
+}
+```
+
 Clients translate by code and fall back to the message; parameters are text.
-A message that follows none of these templates has the code `custom` and
-`params.message` holds it.
+A message that follows none of the templates below (one written by your own
+code) has the code `custom` (`rustcms::i18n::CUSTOM`) and `params.message`
+holds it. The table lists every template of `rustcms::i18n::TEMPLATES`; a test
+keeps it complete.
 
 | Code | English |
 |---|---|
@@ -132,6 +151,33 @@ A message that follows none of these templates has the code `custom` and
 | `validation_failed` | 422 | |
 | `too_many_requests` | 429 | |
 | `internal_error` | 500 | |
+| `unavailable` | 503 | |
+
+Every body has `message` and `code`; a 409 adds `reason`, a 422 adds `errors`,
+`formErrors`, `issues` and `formIssues`.
+
+- **409** means nothing was saved: reload, or send the request again (the panel
+  offers to). Match on `code` and `reason`, not on the message.
+- **429** carries a `Retry-After` header: the advised delay, in seconds,
+  before trying again (not always the exact time a limit resets).
+- **500** never includes the error itself: the server logs it, with the
+  request id.
+- **503** `unavailable` answers a realtime stream or socket request while the
+  server is shutting down. Connect again (to another instance).
+- `import_row_written` and `import_stopped` are 409 conflicts used inside the
+  import job; they never reach a client (the import's report and status say
+  what happened).
+
+### Responses without a JSON code
+
+| Status | When | Body |
+|---|---|---|
+| 408 | the request took longer than `http.timeout_secs` (default 30) | empty |
+| 503 | `GET /health` when the database does not answer | `{"status": "degraded", "database": "unavailable"}` |
+| 400 | a malformed typed query string, rejected before the handler runs (e.g. `GET <admin_path>/api/system/users?page=abc`) | plain text |
+
+A handler that panics drops the connection instead of answering 500: the
+client sees a network error.
 
 ## Mail
 
@@ -152,4 +198,4 @@ Codes of `rustcms::mail::MailError`: answered by `POST settings/mail/test`
 | `smtp_tls` | yes | TLS failed: no STARTTLS offered, a certificate not trusted or for another name |
 | `smtp_temporary` | yes | the server deferred the message (4xx) |
 | `smtp_timeout` | yes | too slow |
-| `smtp_throttled` | yes | this process sent `max_per_minute` already |
+| `smtp_throttled` | yes | this process could not get a send slot within a minute (`max_per_minute` is a continuously refilled per-process budget) |

@@ -70,8 +70,9 @@ fn moving(name: &'static str, up: bool) -> Action<lesson::Entity> {
 // #region reorder
 /// Moves `lesson` one place among the lessons of its course the user may see
 /// (the course is locked by the action: moves of one course never interleave).
-/// Positions are renumbered 1…n first (ties in id order), so the order is
-/// always total; every lesson whose position changes is recorded.
+/// The lessons are taken by position then id, `lesson` swaps with its
+/// neighbour (nothing happens at either end), then positions are written as
+/// 1…n; every lesson whose position changes is recorded.
 async fn reorder(ctx: &Ctx, txn: &DatabaseTransaction, lesson: &lesson::Model, up: bool) -> AppResult<()> {
     let siblings = LessonResource::scope(lesson::Entity::find(), ctx)
         .filter(lesson::Column::CourseId.eq(lesson.course_id))

@@ -59,7 +59,7 @@ impl Resource for EnrollmentResource {
                 .sortable()
                 .creatable(|_| false)
                 .updatable(|ctx| ctx.can(UPDATE_PROGRESS)),
-            Field::column(enrollment::Column::EnrolledAt).guarded().sortable(),
+            Field::column(enrollment::Column::EnrolledAt).guarded().readable(|_| true).sortable(),
         ]
     }
 

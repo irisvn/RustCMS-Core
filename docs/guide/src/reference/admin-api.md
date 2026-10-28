@@ -36,8 +36,14 @@ values follow the [wire format](wire-format.md).
 | GET | `/dashboard`, `/dashboard/widgets/{name}` | the user's widgets and their values, see [Dashboard](../admin/dashboard.md#api) |
 | GET | `/resources/{slug}/records/{key}/relations/{relation}/options?search=&keys=` | `{data: [{value, label, attached}]}`: records to attach to a record (`attach_{relation}` on it) |
 | GET | `/resources/{slug}/relations/{relation}/options?search=&keys=` | `{data: [{value, label, attached: false}]}`: records to attach in a create form's [`BelongsToManySelect`](../admin/relationships.md#choosing-links-in-the-records-form) (`create` and `attach_{relation}`) |
-| … | `/system/…` | users, roles and permissions, see [Users, roles & account](../admin/users-roles.md) |
-| GET | `/system/permission-presets` | `[{id, label, description?, permissions}]` (`roles.view_any` or `permissions.view_any`); `/system/permissions` items carry `area`, `areaLabel`, `areaSort`, and `label`/`description` when declared |
+| GET / POST | `/system/users` | see [System routes](#system-routes) |
+| GET / PATCH / DELETE | `/system/users/{id}` | |
+| PUT | `/system/users/{id}/roles`, `…/active`, `…/password` | |
+| POST | `/system/users/invitations`, `/system/users/{id}/invitation` | |
+| GET / POST | `/system/roles` | |
+| GET / DELETE | `/system/roles/{id}` | |
+| PUT | `/system/roles/{id}/permissions` | |
+| GET | `/system/permissions`, `/system/permission-presets` | |
 | GET / PUT | `/settings/{group}` | settings pages, see [Settings](../admin/settings.md#api) |
 | POST | `/settings/mail/test` `{to}` | sends a test mail with the saved settings (`mail` feature; whoever may update the mail settings), see [Settings](../admin/settings.md#mail) |
 | GET | `/audit`, `/resources/{slug}/records/{key}/history` | the audit log and record histories, see [Audit log](../digging-deeper/audit-log.md#viewing-the-log) |
@@ -62,10 +68,72 @@ as for the form and the update. Without `record`: read the field with
 `view_any`, or write it with `create` or `update`. Which records appear is
 decided by the target resource's scope and policy.
 
+## System routes
+
+Users, roles and permissions of the admin guard, used by the System pages
+([Users, roles & account](../admin/users-roles.md)). Bodies are camelCase and
+refuse unknown fields. Every change goes through `RbacService`, which checks
+the permission again, locks, audits and refuses changes to accounts or roles
+the user may not manage (privileged roles, super admins, roles they hold).
+Writes that start from what the editor saw send it back (`expected…`): if it
+changed meanwhile the write is refused with 422 and the form issue `stale`,
+and nothing is saved.
+
+| Method | Path | Body | Response | Needs |
+|---|---|---|---|---|
+| GET | `/system/users?search=&page=&per_page=` | | `{data: [SystemUser], meta}` sorted by name; `per_page` 25 by default, at most 100; `search` (name or email) at most 100 characters | `users.view_any` |
+| POST | `/system/users` | `{name, email, password, roleIds?}` | 201 `SystemUser` | `users.create` (`roles.assign` to give roles) |
+| GET | `/system/users/{id}` | | `SystemUser` | `users.view`, or the user themselves |
+| PATCH | `/system/users/{id}` | `{name, email, expected: {name, email}, currentPassword?}` | `SystemUser` | the user themselves (changing one's own email needs `currentPassword`); for another user `users.update` and `users.view` or `users.view_any`, and changing their email needs a super admin of every guard |
+| DELETE | `/system/users/{id}` | | 204 | `users.delete`; another user only |
+| PUT | `/system/users/{id}/roles` | `{roleIds, expectedRoleIds}` | `SystemUser` | `roles.assign` and `users.view` or `users.view_any`; another user only |
+| PUT | `/system/users/{id}/active` | `{active, expected}` | `SystemUser` | `users.update` and `users.view` or `users.view_any`; another user only |
+| PUT | `/system/users/{id}/password` | `{password}` | 204 | `users.update` and a super admin of every guard; another user only (your own password: `POST <admin_path>/api/auth/password`) |
+| POST | `/system/users/invitations` | `{name, email, roleIds?}` | 201 `SystemUser` (pending) | `users.create` and `users.invite` (`roles.assign` to give roles); 409 `mail_disabled` when mail is disabled |
+| POST | `/system/users/{id}/invitation` | | `SystemUser`; a new invitation mail is queued, and the old link stops working when the new one is issued | `users.invite` and `users.view` |
+| GET | `/system/roles` | | `[SystemRole]` sorted by name; permissions only with `roles.view_any` | `roles.view_any` or `roles.assign` |
+| POST | `/system/roles` | `{name, permissions?}` | 201 `SystemRole` | `roles.create` |
+| GET | `/system/roles/{id}` | | `SystemRole` | `roles.view` or `roles.view_any` |
+| DELETE | `/system/roles/{id}` | | 204 (system roles are never deleted) | `roles.delete` |
+| PUT | `/system/roles/{id}/permissions` | `{permissions, expectedPermissions}` | `SystemRole` | `roles.update` and `roles.view` or `roles.view_any` |
+| GET | `/system/permissions` | | `[{name, group?, groupLabel?, grantable, resource?, ability?, label?, description?, area, areaLabel, areaSort}]` | `roles.view_any` or `permissions.view_any` |
+| GET | `/system/permission-presets` | | `[{id, label, description?, permissions}]` | `roles.view_any` or `permissions.view_any` |
+
+- `SystemUser` is `{id, name, email, isActive, invitationPending, invitedAt?,
+  roles: [{id, name}], superAdmin, isSelf, abilities}`; `SystemRole` is `{id,
+  name, isSystem, isPrivileged, permissions, users, abilities}`. Ids are
+  strings. `abilities` tells the page which buttons to show; the server
+  decides again on each request.
+- Roles: creating one needs every permission it grants; deleting one needs
+  its active permissions; changing a role's permissions needs every
+  permission added or removed; giving or taking a role needs that role's
+  permissions. Nobody changes a role they hold.
+- After a change, a caller who may not read the user (no `users.view`, and not
+  themselves) gets 204 instead of the record.
+- Creating a user and resetting a password hash a password: each has its own
+  per-minute quota per acting user (creation: `auth.attempts_per_ip`; reset:
+  `auth.attempts_per_identifier`), separate from the sign-in throttle (429
+  beyond). Invitations
+  are limited to 20 a minute per user, resends to 5.
+- Only roles of the admin guard are listed and managed here; API-guard roles
+  are managed with `rustcms role:assign`
+  ([Limitations](limitations.md#not-supported-yet)).
+
+## Other routes under the same prefix
+
+- **Authentication** of the panel lives at `<admin_path>/api/auth/…`: `csrf`,
+  `login`, `logout`, `me`, `password`, `logout-others`, `locale`,
+  `forgot-password`, `reset-password`, `invitation`. See
+  [Authentication](../security/authentication.md).
+- **Your own JSON routes** for panel pages are declared with `AdminRoutes` and
+  live at `<admin_path>/api/x/…`, including streams (`AdminRoutes::events`)
+  and sockets (`AdminRoutes::socket`). Nothing built in lives there. See
+  [Admin routes](../admin/admin-routes.md) and
+  [Realtime](../admin/realtime.md).
 
 ## Lists
 
-`page`, `per_page` (≤ 100), `sort` (`title` or `-title`), `search`
+`page`, `per_page` (≤ 100; the panel offers 10, 25, 50 and 100), `sort` (`title` or `-title`), `search`
 (case-insensitive as the database folds case: Unicode on PostgreSQL, ASCII on
 SQLite; `%` and `_` are literal), and filters
 `filter[<field>][<op>]=<value>` with `op` in `eq`, `in`, `gt`, `gte`, `lt`,
@@ -92,6 +160,9 @@ the policy allows `view` and `restore` or `force_delete` on it.
 
 - `data` holds readable fields only, and is empty (no `title`, no `labels`) when
   the user may not view the record, e.g. the result of an update-only write.
+  One exception on a record the user may view: an encrypted field the user may
+  only write is sent as its masked state (`state`, `revision`, never the key
+  names of a map) so the form can replace it.
 - `abilities` also holds one entry per action (`"publish": true`), decided by the policy and the action's `visible_when` on that record.
 - `labels` holds titles of related records. A related record the user may not
   see is shown as `#<key>`.
@@ -134,4 +205,25 @@ hourly). Updates and deletes take no key: repeating them converges.
 | filters per request        | 10 |
 | items in an `in` filter    | 100 |
 | keys per action or lookup  | 500 |
+| keys per field-options lookup (`keys=`) | 100 |
+| keys per attach or detach  | 100 |
+| options per lookup         | 50 |
+| rows checked one by one    | 10,000 |
+
+- **Rows checked one by one.** A list, an export or a dashboard count reads
+  the matching rows in batches and checks each when the policy decides record
+  by record (`view_depends_on_record()`), when the list includes trashed
+  records (`trashed=with|only`), and, on SQLite, for dashboard counts over
+  date ranges. Past 10,000 matching rows:
+  - a list or an export at once answers 422 `too_many_matches`;
+  - a dashboard widget answers 200 with `{"kind": "too_many"}`;
+  - a background export fails and is reported as `revoked`.
+
+  Narrow the search or filters. Other lists and counts (a policy that decides
+  once for every record, active records, row filtering done by `scope()`) are
+  counted by the database, with no such limit.
+- **After a write.** A committed create or update answers with the record as
+  the user may see it. If reading it back takes more than 2 seconds (or would
+  pass the request deadline), the answer holds the record's key alone; the
+  write is committed either way.
 

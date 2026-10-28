@@ -34,7 +34,7 @@ impl Resource for CourseResource {
             Field::column(course::Column::Summary).max_length(2000),
             Field::column(course::Column::Capacity).required().sortable(),
             Field::column(course::Column::Published).filterable().sortable(),
-            Field::column(course::Column::CreatedAt).guarded().sortable(),
+            Field::column(course::Column::CreatedAt).guarded().readable(|_| true).sortable(),
             // Who teaches it decides who sees it: only staff choose.
             Field::column(course::Column::InstructorId)
                 .label("Instructor")
