@@ -80,6 +80,13 @@ review; reviewers use it as their dimensions.
   `resources/admin/{js,css}`) are committed, and the SDK copies match
   `admin-ui/sdk`: `just generated` passes.
 
+## Guide
+- A behaviour change updates its guide page in the same change; a visible UI change also recaptures its
+  screenshot (`node docs/guide/scripts/shots/shots.mjs <id>`; live apps read-only unless set up and cleaned).
+- No page or linked heading is renamed (or the old id is kept with `{#id}`); samples come from checked code by
+  `#region`; `just docs` passes (snippets, dead links, anchors, images).
+- The guide is public: no ADR/plan references, no credentials, no personal data in samples or images.
+
 ## Process
 - Every fix gets a regression test and a reverse check (revert → test fails).
 - Reviews are exhaustive and batched: list all findings per dimension, fix in one pass, verify once.
