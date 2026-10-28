@@ -61,6 +61,7 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
       { text: "Media, uploads & rich text", link: '/admin/media' },
       { text: "Custom fields", link: '/admin/custom-fields' },
       { text: "Customizing the panel", link: '/admin/customizing' },
+      { text: "Theming and branding", link: '/admin/theming' },
       { text: "React pages", link: '/admin/react-pages' },
       { text: "Admin routes", link: '/admin/admin-routes' },
       { text: "Realtime: events and WebSocket", link: '/admin/realtime' },
