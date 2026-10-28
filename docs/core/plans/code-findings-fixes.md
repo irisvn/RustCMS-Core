@@ -1,6 +1,6 @@
 # Fixing the code findings of the docs v2 inventory
 
-Status: draft r1, 2026-10-28. Source: `docs/core/reports/docs-v2-code-findings.md`. The small findings (#2, #4,
+Status: r2, 2026-10-28 (Codex plan review: 0 P1, 11 P2, 3 P3 applied below). Part E done (a2991ca, d1e4f5c). Source: `docs/core/reports/docs-v2-code-findings.md`. The small findings (#2, #4,
 #5, #9, #10, #12, #13, #14, #15) are fixed (688765a, df9a247). This plan covers the five that change behaviour:
 #1, #3 + #8, #6, #7, #11. Owner asked: fix all, test and review thoroughly, follow the project rules.
 
@@ -125,3 +125,48 @@ request id; panic in app middleware → 500; next request succeeds. Docs: `basic
 - Guide pages updated in the same commit as the code; CHANGELOG Unreleased; upgrade.md section.
 - Codex plan review applied; one Codex verify after code, findings fixed.
 - `docs-v2-code-findings.md` marks every row fixed.
+
+## r2 — Codex plan review applied
+
+A (#1):
+- Keep the strict wire types: a wrong JSON type is still `invalid` before any option check (`wire.rs:137`); the
+  canonical form is column-aware (decode, then the same rescaling/rounding as stored values, e.g. decimals,
+  `"007"` vs `"7"` on i64 strings); one canonicalisation for declarations, comparisons **and the options the
+  schema emits** (`schema.rs:219`), lossy declarations refused at boot. Review regenerated contract fixtures.
+- Duplicate inputs compare `(One|Many, canonical set)` independent of labels/order; equivalent duplicates allowed,
+  conflicting or free-input duplicates refused at boot (documented in upgrade.md).
+- Test matrix (`db_test!`): API create/update, CSV import create/update, nested relation creates, omitted/null/
+  required/nullable, guarded/read-only/write-only (denied fields stay `not_allowed`), encrypted fields with
+  options refused at boot, legacy stored values untouched when omitted, no write committed on 422, decimal/UUID/
+  timestamp options round-trip. Boundary kept and tested: hooks, action handlers, pivots and `belongs_to` keep
+  their own rules; the guarantee covers client-supplied resource field values only.
+- Docs also: `admin/authorization.md`, `admin/media.md`, `admin/import-export.md` (keep
+  `{#options-are-not-validated}` if the heading changes).
+
+B (#3, #8) — narrowed after review:
+- B1 now: `rustcms.auth-prune` and `rustcms.idempotency-prune` become framework schedules (database only, no
+  disk or per-instance state). `Schedule::framework()` is `#[doc(hidden)]`, a trusted-code opt-in (not an access
+  boundary) that waives only the reserved-prefix check (charset, length, uniqueness, action checks stay).
+- Tests: no pruning after build/commands or with `[schedule] enabled = false`; `serve_on` with the scheduler runs
+  it; a failing sub-prune does not stop the others; Run now through a worker needs `schedules.view` and
+  `schedules.manage` and is audited.
+- Cron-only deployments (no `serve`): document that `schedule:run` records history but prunes none; keep
+  `session:prune`, `idempotency:prune`, `audit:prune` as the cron path.
+- B2 deferred (finding #8 stays open, with a design note): media and exports/imports prunes are per disk and
+  sweep each instance's local staging directory (S3); a cluster-wide slot would leave other instances' staging
+  dirs unswept, and the export/import prune does not isolate disks (new finding #16: expired rows of another
+  disk lose their metadata while their files stay). Needs its own design (per-instance maintenance vs shared
+  schedule) before moving.
+
+C (#6): mandatory `db_test!` for both codes beyond their limits (10,001 rows; `too_many_matches` with a
+record-dependent policy), success at exactly the limit, other validation/authorization still `revoked`, the
+listed reason and no downloadable file.
+
+D (#7): thread the clamped value through static and runtime branding renders (cached HTML), `readConfig`,
+`session.ts:136`, `ApiClient`; tests for absent/invalid meta, UTF-8 byte boundary, binary messages, exact limit;
+CSP and `no-store` unchanged; document that open tabs keep the limit they loaded.
+
+E (#11): one fixed log line (`handler panicked`), payload never logged by us nor sent; TraceLayer's failure
+event and the panic hook's stderr output acknowledged in the docs.
+
+All parts: reverse checks; `just docs`; review regenerated contracts/types.
