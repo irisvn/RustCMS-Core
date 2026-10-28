@@ -4,7 +4,7 @@ A resource can list the records of another resource that point to it, on its
 own view page, and create new ones there: a **has-many relation**. The child
 keeps a `belongs_to` field to the parent.
 
-```rust,ignore
+```rust
 impl Resource for CategoryResource {
     // …
     fn relations() -> Vec<Relation> {
@@ -85,7 +85,7 @@ replay.
 Records linked through a **pivot table** (posts ↔ tags), with optional columns
 on each link (`position`):
 
-```rust,ignore
+```rust
 // src/models/post_tag.rs: post_id, tag_id (primary key over both), position
 fn relations() -> Vec<Relation> {
     vec![
@@ -96,7 +96,7 @@ fn relations() -> Vec<Relation> {
 }
 ```
 
-```rust,ignore
+```rust
 // The migration: unique over both keys, rows deleted with either record.
 Table::create().table(PostTags::Table)
     .col(ColumnDef::new(PostTags::PostId).big_integer().not_null())
@@ -159,7 +159,7 @@ already stored writes and records nothing.
 that changed links of the record, after the pivot rows are written, with the
 parent record and what changed (target keys, canonical, sorted):
 
-```rust,ignore
+```rust
 async fn after_relation_change(
     _ctx: &Ctx,
     txn: &DatabaseTransaction,
@@ -208,7 +208,7 @@ the page is reloaded, then shows the links as they are.
 A `BelongsToManySelect` puts the links in the record's own create and edit
 form, next to its fields (tags on a post):
 
-```rust,ignore
+```rust
 fn form() -> Form {
     Form::new().schema(components![
         TextInput::make("title"),

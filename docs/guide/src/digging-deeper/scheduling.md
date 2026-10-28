@@ -3,7 +3,7 @@
 Periodic work (reconcile every minute, prune every night) is declared on the
 application and run by `rustcms serve`:
 
-```rust,ignore
+```rust
 // src/providers/app_service_provider.rs (register)
 use rustcms::schedule::Schedule;
 
@@ -41,7 +41,7 @@ app.schedule(Schedule::every("warm-cache", Duration::from_secs(300)).run(|state|
 - **`.task(f)`** is `.run` with a context and a result the
   [Schedules page](#the-schedules-page) shows:
 
-  ```rust,ignore
+  ```rust
   app.schedule(Schedule::cron("database-backups", "0 3 * * *")?.task(|ctx| async move {
       let n = backup_all(&ctx.state).await?;
       Ok(Some(format!("{n} databases backed up")))
@@ -74,7 +74,7 @@ app.schedule(Schedule::every("warm-cache", Duration::from_secs(300)).run(|state|
 - Manual runs from the console (`schedule:run`) and `queue:retry` are not
   held back. The panel's Run now is (see below).
 
-```rust,ignore
+```rust
 /// Converges containers to the declared state: safe to repeat.
 #[derive(Serialize, Deserialize)]
 pub struct Reconcile {}

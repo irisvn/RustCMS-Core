@@ -36,7 +36,7 @@ protects your data.
 Without a policy, every ability requires the permission `{slug}.{ability}`.
 A custom policy decides per record:
 
-```rust,ignore
+```rust
 use rustcms::async_trait;
 
 pub struct PostPolicy;
@@ -67,7 +67,7 @@ permissions such as `posts.update_own` on the `AuthProvider`
 `scope()` restricts which records exist for a user, everywhere (lists, reads,
 writes, actions, relationship options and labels):
 
-```rust,ignore
+```rust
 fn scope(query: Select<post::Entity>, ctx: &Ctx) -> Select<post::Entity> {
     if ctx.can("posts.view_any") {
         query
@@ -83,7 +83,7 @@ Use `ctx.conn()` in policies (and hooks): during a write it is the write's own
 transaction, so the policy sees the state being written and never waits for a
 second pooled connection; elsewhere it is the pool.
 
-```rust,ignore
+```rust
 async fn allows(&self, ctx: &Ctx, ability: &str, record: Option<&Data>) -> bool {
     let row = ctx.conn().query_one_raw(/* membership lookup */).await;
     // …

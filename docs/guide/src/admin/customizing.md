@@ -20,7 +20,7 @@ resources/
 
 ## Theme
 
-```rust,ignore
+```rust
 // src/providers/admin_panel_provider.rs
 AdminProvider::new().theme(
     Theme::new()
@@ -68,7 +68,7 @@ When the brand is chosen while the app runs (a Settings → Branding page of
 your own), give the panel a `BrandingSource`. What it returns goes over
 `brand(…)` and the `Theme`, field by field:
 
-```rust,ignore
+```rust
 use rustcms::admin::{AdminBranding, Branding, BrandingSource};
 
 struct SettingsBranding;
@@ -125,7 +125,7 @@ A page's place in the sidebar follows `PanelPageMeta::group` and
 [`sort`](overview.md#order); `AdminProvider::home(slug)` makes one the
 [home page](overview.md#home-page).
 
-```rust,ignore
+```rust
 // src/admin/pages/course_overview_page.rs (`rustcms make:page CourseOverviewPage`)
 pub struct CourseOverviewPage;
 
@@ -225,7 +225,7 @@ Two kinds of scripts exist:
   component rendered inside the panel, with its UI kit, React Query, the API
   client, sub-pages and `can()`. Built with npm, committed.
 
-```rust,ignore
+```rust
 fn view() -> PageView { PageView::Script("lms/calendar") }    // `rustcms make:page CalendarPage --script`
 ```
 
@@ -259,7 +259,7 @@ or does not return `{ update, unmount }` shows a notice instead of the page
 
 ## Slots beside records
 
-```rust,ignore
+```rust
 pub struct CourseSeatsSlot;
 
 #[async_trait]
@@ -285,7 +285,7 @@ the record). Dashboard and header placements are planned.
 
 ## Custom cells
 
-```rust,ignore
+```rust
 TextColumn::make("progress").cell("lms/progress").props(json!({"max": 100}))
 ```
 
@@ -311,8 +311,8 @@ column is drawn by its type. No inline styles: use attributes (`meter`,
 ## Translations
 
 `rustcms lang:missing vi` lists page labels and groups, slot labels and every
-call of `t` with a string literal in your templates' code (`{{ t("Seats") }}`,
-`t( 'It\'s' )`, inside `{% %}` too; not text outside `{{ }}` / `{% %}` nor
+call of `t` with a string literal in your templates' code (<code v-pre>{{ t("Seats") }}</code>,
+`t( 'It\'s' )`, inside `{% %}` too; not text outside <code v-pre>{{ }}</code> / `{% %}` nor
 comments). Text computed at render (`t(name)`) is not found: add it to the
 catalog yourself. Script text uses
 `window.rustcms.registerTranslations` ([Custom fields](custom-fields.md)).

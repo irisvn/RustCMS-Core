@@ -15,7 +15,7 @@ For API routes, state the access on the route (`ApiRoutes`, see
 [Routing](../basics/routing.md)): it is checked before the request body is read. In a handler,
 `Auth` gives the user and its permissions:
 
-```rust,ignore
+```rust
 use rustcms::prelude::*;
 
 // Routed with `.post("/", Access::can("posts.create"), create_post)`.

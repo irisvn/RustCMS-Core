@@ -8,7 +8,7 @@ other service is needed.
 
 ## Writing a job
 
-```rust,ignore
+```rust
 use rustcms::async_trait;
 use rustcms::queue::{Job, JobCtx};
 use serde::{Deserialize, Serialize};
@@ -33,7 +33,7 @@ Jobs live in `src/jobs/`, one per file. Register each in
 `src/providers/app_service_provider.rs` (`rustcms make:job SendWelcome` writes
 the file and this line):
 
-```rust,ignore
+```rust
 app.job::<SendWelcome>();
 ```
 
@@ -57,7 +57,7 @@ Add a job **in the transaction of the change it follows from**. It then
 exists only if the change commits: an enrolment that rolls back sends no
 welcome mail.
 
-```rust,ignore
+```rust
 let txn = rustcms::db::begin_write(state.db()).await?;
 // … the change …
 rustcms::queue::dispatch(&txn, &SendWelcome { learner_id }).await?;
@@ -67,7 +67,7 @@ txn.commit().await?;
 In a resource hook or an action, `ctx.dispatch(txn, &job)` does the same and
 records the user who asked for it (see [Audit log](audit-log.md)):
 
-```rust,ignore
+```rust
 async fn after_save(ctx: &Ctx, txn: &DatabaseTransaction, enrolment: &enrolment::Model) -> AppResult<()> {
     ctx.dispatch(txn, &SendWelcome { learner_id: enrolment.learner_id }).await?;
     Ok(())
@@ -106,7 +106,7 @@ Failed jobs are deleted after `queue.failed_retention_days` (30).
 
 The table keeps a safe message only. Return a `queue::Failure` to choose it:
 
-```rust,ignore
+```rust
 return Err(Failure::new("smtp_rejected", "the mail server refused the message").into());
 ```
 
@@ -120,7 +120,7 @@ A `Failure` is logged by its code only.
 When retrying cannot help (a refused address, a missing template), fail at
 once instead of using the remaining runs:
 
-```rust,ignore
+```rust
 return Err(Failure::new("smtp_rejected", "the mail server refused the message").permanent().into());
 ```
 
@@ -137,7 +137,7 @@ idempotent:
   own transaction and returns `false` if it was recorded before (also when
   another run records it at the same time: one waits for the other);
 
-  ```rust,ignore
+  ```rust
   let txn = rustcms::db::begin_write(ctx.state.db()).await?;
   if !rustcms::queue::once(&txn, &format!("welcome:{}", self.learner_id)).await? {
       return Ok(()); // already done
@@ -161,7 +161,7 @@ another worker (it does not count as an attempt); after
 `queue.unknown_kind_grace_secs` (1 hour) the job fails. To read payloads of
 an older version, implement `upgrade`:
 
-```rust,ignore
+```rust
 const VERSION: u32 = 2;
 
 fn upgrade(version: u32, payload: serde_json::Value) -> anyhow::Result<serde_json::Value> {

@@ -8,7 +8,7 @@ commits, and the queue retries it when the server is temporarily away.
 
 Mail needs the `mail` feature (on by default in `rustcms`) and the provider:
 
-```rust,ignore
+```rust
 app.provider(rustcms::mail::MailProvider);
 app.provider(AdminProvider::new().mail_settings()); // the Mail settings page
 ```
@@ -57,7 +57,7 @@ never sent to a server it was not given for.
 
 ## Sending
 
-```rust,ignore
+```rust
 use rustcms::mail::{self, MailJob, Message};
 
 // Later, with the change (outbox): queued in the same transaction.
@@ -95,7 +95,7 @@ the server took it. A job that must not repeat a mail records that it sent it
 A template is three files per language in `resources/views/mail/{locale}/`:
 `{name}.subject.txt` (one line), `{name}.txt`, and optionally `{name}.html`.
 
-```rust,ignore
+```rust
 app.mail_template(rustcms::mail_template!("welcome", "vi", html));
 app.mail_template(rustcms::mail_template!("welcome", "en", html));
 ```
@@ -121,7 +121,7 @@ response. See [Error codes](../reference/error-codes.md#mail).
 With `rustcms-testing`'s `mail` feature, tests use the `memory` driver
 (`test_config` sets it):
 
-```rust,ignore
+```rust
 rustcms::queue::run_until_idle(app.state(), None, 10).await?;
 let mails = app.take_mails();
 assert_eq!(mails[0].to, ["learner@example.com"]);

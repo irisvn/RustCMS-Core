@@ -4,7 +4,7 @@ When none of the built-in inputs fits, an application can ship its own: a
 **widget** written in plain JavaScript, loaded by the panel from an
 **extension script** embedded in the application binary.
 
-```rust,ignore
+```rust
 // The field: any column; the server validates the value by its kind and rules.
 Field::column(category::Column::Color).max_length(7),
 

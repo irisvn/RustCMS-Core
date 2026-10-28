@@ -6,14 +6,14 @@ events**, and talk both ways (terminals, consoles) through a
 panel's session, is rechecked while open, and ends when the user signs out
 or loses access. Changes still go through ordinary POST admin routes.
 
-```rust,ignore
+```rust
 // src/routes/admin.rs
 AdminRoutes::new("/docker")
     .events("/containers/{id}/stats", AdminAccess::can("docker.view"), controllers::docker::stats)
     .post("/containers/{id}/restart", AdminAccess::can("docker.manage"), controllers::docker::restart)
 ```
 
-```rust,ignore
+```rust
 // src/http/controllers/docker.rs
 use rustcms::auth::{EventStream, LiveSession};
 use rustcms::realtime::{Event, StreamExt, stream, time};
@@ -50,7 +50,7 @@ pub async fn stats(live: LiveSession, Path(id): Path<String>, Inject(docker): In
 - A check written once for several streams returns a `TargetFuture` (a
   boxed future):
 
-  ```rust,ignore
+  ```rust
   use rustcms::auth::TargetFuture;
 
   fn sees_container(docker: Docker, id: String) -> impl Fn(Principal) -> TargetFuture + Send + Sync + 'static {
@@ -68,7 +68,7 @@ pub async fn stats(live: LiveSession, Path(id): Path<String>, Inject(docker): In
 
 ## Many viewers, one producer: the hub
 
-```rust,ignore
+```rust
 // bound once, e.g. in a provider's register: app.bind(Stats(Hub::new(app.shutdown(), HubLimits::default())))
 pub struct Stats(pub Hub<String>);
 
@@ -146,13 +146,13 @@ response, and never renew the session by themselves.
 
 ## WebSocket
 
-```rust,ignore
+```rust
 // src/routes/admin.rs
 AdminRoutes::new("/docker")
     .socket("/containers/{id}/exec", AdminAccess::can("docker.exec"), controllers::docker::exec)
 ```
 
-```rust,ignore
+```rust
 // src/http/controllers/docker.rs
 use rustcms::auth::{LiveSocket, SocketMessage, SocketResponse};
 

@@ -3,7 +3,7 @@
 Actions run on one record (row actions) or, when `.bulk()`, also on the
 selected records, with the same authorization as any write.
 
-```rust,ignore
+```rust
 fn actions() -> Vec<Action<post::Entity>> {
     vec![Action::<post::Entity>::new("publish", |_ctx, txn, posts, _data| {
         Box::pin(async move {
@@ -30,7 +30,7 @@ hidden from the schema) for users without that permission.
 
 ## Per-record visibility
 
-```rust,ignore
+```rust
 Action::<post::Entity>::new("unpublish", unpublish)
     .ability("update")
     .visible_when(|_ctx, post| post.published)
@@ -55,7 +55,7 @@ the action's transaction:
 `Action::with_outcome` when its handler should tell the panel what to do
 next; it returns an `ActionOutcome`:
 
-```rust,ignore
+```rust
 Action::<invoice::Entity>::with_outcome("pdf", |_ctx, _txn, invoices, _data| {
     Box::pin(async move {
         let url = format!("https://files.example.com/invoices/{}.pdf", invoices[0].id);
@@ -118,7 +118,7 @@ on a parent's page, with the related resource's actions: the server's
 abilities for each record decide, and running one is authorized as from the
 list.
 
-```rust,ignore
+```rust
 Action::<post::Entity>::new("publish", publish).visible_when(|_ctx, p| !p.published).primary(),
 Action::<post::Entity>::new("unpublish", unpublish).visible_when(|_ctx, p| p.published).primary(),
 Action::<post::Entity>::new("purge_cache", purge).destructive(),
@@ -128,7 +128,7 @@ Action::<post::Entity>::new("purge_cache", purge).destructive(),
 
 An action can ask for values first, in a dialog:
 
-```rust,ignore
+```rust
 Action::<post::Entity>::new("move", |_ctx, txn, posts, data| {
     Box::pin(async move {
         // `data` holds every field of the form: checked, canonical, defaults applied.

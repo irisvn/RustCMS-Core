@@ -28,8 +28,8 @@ POST /api/v1/auth/jwt/logout   {refreshToken}                   → 204
 ```
 
 Both sign-in and refresh answer `{accessToken, tokenType: "Bearer", expiresIn,
-refreshToken, refreshExpiresAt, abilities}`. Send `Authorization: Bearer
-<accessToken>` like an API token; abilities (omitted = `*`) are fixed for the
+refreshToken, refreshExpiresAt, abilities}`. Send
+`Authorization: Bearer <accessToken>` like an API token; abilities (omitted = `*`) are fixed for the
 sign-in and narrow the user's API permissions.
 
 - Refresh before `expiresIn` runs out, with the **latest** refresh token. Each

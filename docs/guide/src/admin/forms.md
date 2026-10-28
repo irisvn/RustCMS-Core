@@ -3,7 +3,7 @@
 `fields()` define data and permissions; `form()` only describes presentation.
 Without `form()`, the panel shows one input per field, chosen by column type.
 
-```rust,ignore
+```rust
 fn form() -> Form {
     Form::new().columns(2).schema(components![
         Section::make("Content").schema(components![
@@ -59,7 +59,7 @@ when the session sends the tab elsewhere (sign-out, another user signing in).
 | `Grid::make(columns)` | columns without a title |
 | `Tabs::make()` with `Tab::make(label)` children | tabs |
 
-```rust,ignore
+```rust
 Tabs::make().schema(components![
     Tab::make("Content").schema(components![TextInput::make("title")]),
     Tab::make("Attributes").schema(components![KeyValue::make("specs")]),
@@ -76,7 +76,7 @@ an error and focuses its input.
 For long content (a post, a page), lay the form out like an editor: the
 whole width, a main column and a narrow aside with the details.
 
-```rust,ignore
+```rust
 Form::new().width(FormWidth::Full).schema(components![Split::make()
     .main(components![
         TextInput::make("title"),
@@ -137,7 +137,7 @@ set" (distinct from an empty object).
 
 ## Encrypted fields
 
-```rust,ignore
+```rust
 Field::column(integration::Column::ApiToken).encrypted(),
 Field::column(integration::Column::Env).encrypted_map().max_items(20),
 ```

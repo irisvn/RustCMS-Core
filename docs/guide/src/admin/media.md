@@ -5,7 +5,7 @@ rich text fields hold documents that may embed images from it.
 
 ## Enabling
 
-```rust,ignore
+```rust
 app.provider(rustcms::storage::StorageProvider);          // `[storage]`
 app.provider(AdminProvider::new().media().resource::<PostResource>());
 ```
@@ -97,7 +97,7 @@ worker retries until it succeeds.
 
 ## Media fields
 
-```rust,ignore
+```rust
 Field::column(post::Column::Cover).media().accept(&["image/*"]).max_size(2_000_000),  // Uuid column
 Field::column(post::Column::Gallery).media_list(10),                                   // JSON array of ids
 FileUpload::make("cover"),
@@ -118,7 +118,7 @@ migration is stored without these checks: do not give these columns one.
 
 ## Rich text
 
-```rust,ignore
+```rust
 Field::column(post::Column::Content).rich_text(),   // JSON column
 RichEditor::make("content"),
 ```
@@ -215,7 +215,7 @@ The server checks every chosen reference again on save (scope, trash,
 
 ### Headless rendering
 
-```rust,ignore
+```rust
 use std::collections::HashMap;
 use rustcms::admin::rich_text::{self, ImageInfo};
 use uuid::Uuid;

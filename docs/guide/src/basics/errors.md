@@ -28,7 +28,7 @@ JSON in one format:
 
 ## Validation errors
 
-```rust,ignore
+```rust
 let mut errors = ValidationErrors::new();
 errors.add("email", "must be a valid email address");
 errors.add_form("This was changed by someone else meanwhile. Reload and try again.");

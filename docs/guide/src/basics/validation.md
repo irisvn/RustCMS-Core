@@ -4,7 +4,7 @@
 
 `Validated<T>` reads the JSON body, then calls `T::validate`:
 
-```rust,ignore
+```rust
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NewPost {
@@ -48,7 +48,7 @@ gives each message a stable code clients can translate
 
 ## Pagination
 
-```rust,ignore
+```rust
 pub async fn list(State(app): State<AppState>, page: Pagination) -> AppResult<Json<ApiPage<PostJson>>> {
     let select = post::Entity::find().order_by_desc(post::Column::Id); // always order a paged list
     Ok(Json(ApiPage::fetch(select, app.db(), &page, PostJson::from).await?))

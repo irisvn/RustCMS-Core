@@ -246,4 +246,4 @@ Không phát hành lên crates.io: app phụ thuộc tag Git của RustCMS-Core 
 - Lệnh CLI: `docs/guide/src/reference/cli.md`
 - Quyết định kiến trúc: `docs/core/adr/`
 - Báo cáo review: `docs/core/reports/` (vd. `2026-10-13-codebase-review.vi.md`)
-- Xem docs dạng web: `mdbook serve docs/guide` → http://localhost:3000
+- Xem docs dạng web: `just docs-dev` (VitePress) → http://localhost:5173

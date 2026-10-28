@@ -19,7 +19,7 @@ left out.
 
 ## Declaring routes
 
-```rust,ignore
+```rust
 // src/routes/api.rs
 use crate::http::controllers::post_controller;
 
@@ -70,7 +70,7 @@ Run `rustcms permission:sync` after adding routes.
 
 Handlers are ordinary Axum handlers returning `AppResult<…>`:
 
-```rust,ignore
+```rust
 pub async fn show(State(app): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<PostJson>> {
     let post = post::Entity::find_by_id(id).one(app.db()).await?.ok_or(AppError::NotFound)?;
     Ok(Json(PostJson::from(post)))
@@ -81,7 +81,7 @@ Use `rustcms::Json` rather than `axum::Json`: rejections become RustCMS
 errors (413 too large, 400 malformed, 422 wrong shape) in the standard
 [format](errors.md). `Auth` gives the authenticated user:
 
-```rust,ignore
+```rust
 pub async fn mine(auth: Auth, State(app): State<AppState>) -> AppResult<Json<Vec<PostJson>>> {
     let user = &auth.0.user;                 // the users row
     let can_publish = auth.principal().can("posts.publish");
@@ -93,7 +93,7 @@ pub async fn mine(auth: Auth, State(app): State<AppState>) -> AppResult<Json<Vec
 
 Routes that are not JSON APIs (webhooks, files) can be added directly:
 
-```rust,ignore
+```rust
 app.routes(|router| router.route("/webhooks/stripe", post(stripe_webhook)));
 ```
 

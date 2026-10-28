@@ -1,8 +1,8 @@
 # Console
 
 The application's binary is its console (Laravel's `artisan`). In an
-application directory, `rustcms <command>` runs it for you (`cargo run --
-<command>`); in production, run the binary itself: `./blog migrate`.
+application directory, `rustcms <command>` runs it for you
+(`cargo run -- <command>`); in production, run the binary itself: `./blog migrate`.
 
 ```sh
 cargo run -- --help     # every command of the application, the framework's and yours
@@ -49,7 +49,7 @@ server. The model must be in `src/models/<snake_name>.rs`.
 
 ## Writing commands
 
-```rust,ignore
+```rust
 // Cargo.toml: anyhow = "1" (clap comes as `rustcms::clap`)
 use rustcms::clap::{Arg, ArgMatches, Command};
 use rustcms::prelude::*;
@@ -82,7 +82,7 @@ prints the error and exits with status 1.
 
 Commands that must not run in production check the environment:
 
-```rust,ignore
+```rust
 if state.config().app.env == rustcms::config::Environment::Production {
     anyhow::bail!("refusing in production");
 }

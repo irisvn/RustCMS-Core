@@ -5,7 +5,7 @@ variables, registry credentials) is stored as an `Encrypted<T>`. The column
 holds only ciphertext sealed with `APP_KEY`, and the value never leaves your
 code unless you open it.
 
-```rust,ignore
+```rust
 // src/models/integration.rs
 use rustcms::crypto::Encrypted;
 
@@ -22,7 +22,7 @@ pub struct Model {
 }
 ```
 
-```rust,ignore
+```rust
 use rustcms::crypto::{Context, Encrypted};
 
 let context = Context::column("integrations", "env");
@@ -58,7 +58,7 @@ Columns are found by `key:reencrypt`.
 - **Admin fields** register theirs.
 - **Others:** register them yourself, in a provider's `register`:
 
-  ```rust,ignore
+  ```rust
   app.encrypted_column::<integration::Entity>(integration::Column::ApiToken, Binding::Column);
   ```
 

@@ -8,7 +8,7 @@ complete admin panel).
 
 You describe your data in Rust:
 
-```rust,ignore
+```rust
 impl Resource for PostResource {
     type Entity = post::Entity;
     const SLUG: &'static str = "posts";

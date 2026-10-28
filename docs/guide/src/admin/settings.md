@@ -17,7 +17,7 @@ writes both and registers the page):
 - the **page**, `src/admin/pages/general_settings_page.rs`: how the panel
   shows and checks it (`impl SettingsPage` for the same struct).
 
-```rust,ignore
+```rust
 // src/settings/general_settings.rs
 use rustcms::settings::{Secret, Settings};
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,7 @@ impl Settings for GeneralSettings {
 }
 ```
 
-```rust,ignore
+```rust
 // src/admin/pages/general_settings_page.rs
 use rustcms::admin::{SettingField, SettingsMeta, SettingsPage};
 use rustcms::async_trait;
@@ -75,7 +75,7 @@ impl SettingsPage for GeneralSettings {
 
 Register it with the panel (`src/providers/admin_panel_provider.rs`):
 
-```rust,ignore
+```rust
 AdminProvider::new().settings::<GeneralSettings>()
 ```
 
@@ -121,7 +121,7 @@ read them.
 
 ### Media settings
 
-```rust,ignore
+```rust
 SettingField::media("logo").accept(&["image/*"]).max_size(500_000),   // logo: Option<Uuid>
 SettingField::media_list("slides", 5),                                 // slides: Vec<Uuid>
 ```
@@ -151,7 +151,7 @@ before it is saved, inside the write (its `ctx` has the transaction and the
 user's current permissions). Secrets quoted in its messages are replaced by
 `[redacted]`:
 
-```rust,ignore
+```rust
 fn form() -> Form {
     Form::new().schema(components![
         Section::make("Site").schema(components![TextInput::make("site_name"), Textarea::make("tagline")]),
@@ -173,7 +173,7 @@ async fn validate(_ctx: &Ctx, settings: &Self) -> Result<(), ValidationErrors> {
 
 Anywhere you have the application state:
 
-```rust,ignore
+```rust
 let general: GeneralSettings = rustcms::settings::get(&state).await?;
 if general.enrolments_open { /* … */ }
 let password = general.smtp_password.expose(); // Option<&str>
@@ -221,7 +221,7 @@ and as saved; an error rolls the save back. Use it to react to a change in
 the same transaction, e.g. dispatch a job that rebuilds what depends on the
 setting:
 
-```rust,ignore
+```rust
 async fn after_save(
     _state: &AppState,
     _ctx: &Ctx,

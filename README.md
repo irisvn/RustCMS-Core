@@ -79,7 +79,8 @@ just e2e                      # browser tests against the demo
 just ci                       # most of CI; also `just test-cli`, `just e2e`, `just msrv`
 ```
 
-- Developer guide (public, mdBook): [`docs/guide/`](docs/guide/src/SUMMARY.md) — `mdbook serve docs/guide`
+- Developer guide (public, VitePress): [`docs/guide/`](docs/guide/src/introduction.md) — `just docs-dev`,
+  published at https://irisvn.github.io/RustCMS/
 - Core docs (private): [`docs/core/`](docs/core/README.md) — architecture, admin protocol, ADRs,
   reports, [CHANGELOG](docs/core/CHANGELOG.md), review checklist
 

@@ -12,15 +12,9 @@ three of its own in `src/providers/`:
 | `admin_panel_provider.rs` | the panel: resources, settings pages, translations (`AdminProvider`) |
 | `app_service_provider.rs` | jobs, seeders and console commands (`ServiceProvider`) |
 
-```rust,ignore
-// src/bootstrap/providers.rs
-pub fn register(app: &mut AppBuilder, api: &ApiRoutes) {
-    app.provider(providers::auth_service_provider::provider(api));
-    app.provider(providers::admin_panel_provider::provider());
-    app.provider(providers::app_service_provider::AppServiceProvider);
-    app.provider(BillingProvider);
-}
-```
+<<< @/../../../examples/demo/src/bootstrap/providers.rs#register [src/bootstrap/providers.rs]
+
+Your own providers go in the same list: `app.provider(BillingProvider);`.
 
 ## Writing a provider
 
@@ -28,7 +22,7 @@ Like Laravel, a provider has two phases: `register` runs while the
 application is assembled (bind services, add routes and commands); `boot`
 runs once the database is connected.
 
-```rust,ignore
+```rust
 // Cargo.toml: anyhow = "1"
 use rustcms::async_trait;
 
@@ -55,7 +49,7 @@ Register providers in dependency order: `AdminProvider` uses the services of
 
 `app.bind(value)` stores one shared instance per type. Read it back:
 
-```rust,ignore
+```rust
 // In a handler:
 async fn charge(Inject(stripe): Inject<Stripe>, State(app): State<AppState>) -> AppResult<Json<Receipt>> {
     // app.db() and app.config() are always available

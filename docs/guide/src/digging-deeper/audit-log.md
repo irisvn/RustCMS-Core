@@ -95,7 +95,7 @@ when its foreign key field is. A primary key cannot be `.audit_redact()`
 `.audit(false)`. Keys longer than 255 characters (and keys that look like
 such a shortened form) are stored as their start and a digest.
 
-```rust,ignore
+```rust
 fn fields() -> Vec<Field> {
     vec![
         Field::column(customer::Column::Name),
@@ -116,7 +116,7 @@ fields per event, never free-form request data.
 
 To skip a resource entirely (a log table of your own, a cache):
 
-```rust,ignore
+```rust
 fn meta() -> ResourceMeta {
     ResourceMeta::new("Page view").audit(false)
 }
@@ -127,7 +127,7 @@ fn meta() -> ResourceMeta {
 Inside a hook or an action, `ctx.audit` records an entry in the same
 transaction, with the same actor and request:
 
-```rust,ignore
+```rust
 use rustcms::audit::AuditEntry;
 
 Action::<order::Entity>::new("refund", |ctx, txn, orders, _data| {
@@ -144,7 +144,7 @@ Action::<order::Entity>::new("refund", |ctx, txn, orders, _data| {
 In your own routes, build the context from the signed-in user and the
 request, and record in your transaction:
 
-```rust,ignore
+```rust
 use rustcms::audit::{self, AuditActor, AuditContext, AuditEntry, RequestMeta};
 
 async fn close_course(auth: Auth, request: RequestMeta, State(app): State<AppState>) -> AppResult<StatusCode> {

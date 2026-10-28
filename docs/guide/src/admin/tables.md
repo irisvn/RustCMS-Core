@@ -2,7 +2,7 @@
 
 `table()` describes the list page. Without it, the first fields are columns.
 
-```rust,ignore
+```rust
 fn table() -> Table {
     Table::new()
         .columns(vec![
@@ -42,7 +42,7 @@ Columns and filters for fields the user may not read are left out.
 
 ## Narrow screens
 
-```rust,ignore
+```rust
 use rustcms::admin::Breakpoint;
 
 TextColumn::make("category_id").hide_below(Breakpoint::Sm),   // hidden under 640 px

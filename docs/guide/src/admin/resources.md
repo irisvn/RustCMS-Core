@@ -6,7 +6,7 @@ policy. `rustcms make:resource Post --generate` writes one from the model in
 `src/admin/resources/post_resource.rs` and registers it in
 `src/providers/admin_panel_provider.rs`:
 
-```rust,ignore
+```rust
 pub fn provider() -> AdminProvider {
     AdminProvider::new().brand("Blog").resource::<PostResource>().resource::<CategoryResource>()
 }
@@ -16,7 +16,7 @@ Each resource declares its permissions (`posts.view_any`, `posts.view`,
 `posts.create`, `posts.update`, `posts.delete`, plus action abilities) for
 `rustcms permission:sync`.
 
-```rust,ignore
+```rust
 use rustcms::admin::*;
 
 pub struct PostResource;
@@ -106,7 +106,7 @@ Hooks see foreign keys **before** they are checked: do not trust a
 `belongs_to` value read in `mutate_before_*` (look the record up under your
 own rules, or wait for `after_save`).
 
-```rust,ignore
+```rust
 async fn mutate_before_create(ctx: &Ctx, _txn: &DatabaseTransaction, mut data: Data) -> AppResult<Data> {
     data.insert("author_id".into(), json!(ctx.principal.id));     // guarded fields may be set here
     Ok(data)
@@ -146,7 +146,7 @@ A rule over a parent's children (at most `capacity` active enrollments per
 course) or a permission read through the parent (the course's instructor)
 holds only if writes under one parent do not interleave. Declare the parent:
 
-```rust,ignore
+```rust
 fn meta() -> ResourceMeta {
     ResourceMeta::new("Enrollment").lock_parent("course_id", "courses")
 }
@@ -173,7 +173,7 @@ course meanwhile no longer passes the scope, checked again under the lock.
 
 ## Soft deletes
 
-```rust,ignore
+```rust
 fn meta() -> ResourceMeta {
     ResourceMeta::new("Post").soft_deletes()   // or .soft_deletes_column("removed_at")
 }

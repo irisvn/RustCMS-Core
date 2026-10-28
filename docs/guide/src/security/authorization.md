@@ -26,7 +26,7 @@ ignored, `đ` too). Declare how
 permissions are shown on the `AuthProvider`. Nothing here is stored or grants
 anything:
 
-```rust,ignore
+```rust
 use rustcms::auth::{ADMIN_GUARD, PermissionArea, PermissionMeta, PermissionPreset};
 
 AuthProvider::new()
@@ -105,7 +105,7 @@ The panel manages admin-guard roles. API-guard roles (for tokens and JWT), or
 roles you seed, are created through `RbacService`, for example in a console
 command:
 
-```rust,ignore
+```rust
 use rustcms::auth::{API_GUARD, Actor, AuthState, RbacService};
 
 async fn run(&self, state: &AppState, _: &ArgMatches) -> anyhow::Result<()> {

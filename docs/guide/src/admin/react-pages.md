@@ -21,7 +21,7 @@ cd resources/admin && npm install && npm run build   # Node 20.19+ or 22.12+
   `css/<app>/stats.css`;
 - in the admin provider:
 
-  ```rust,ignore
+  ```rust
   .extension_script_v2("stats", include_str!("../../resources/admin/js/blog/stats.js"),
       Requires { react: "19.3", react_query: "5.104", ui: 2 })
   .extension_style("stats", include_str!("../../resources/admin/css/blog/stats.css"))

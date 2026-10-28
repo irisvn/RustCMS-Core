@@ -6,7 +6,7 @@ list engine for the user looking at it — their scope, the resource's policy
 (record by record when it decides so), its filters and field rules — and
 never cached.
 
-```rust,ignore
+```rust
 use rustcms::admin::dashboard::{Bucket, Dashboard, Widget};
 use rustcms::admin::resource::FilterOp;
 

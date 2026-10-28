@@ -5,7 +5,7 @@ spreadsheet opens) and imported from CSV files.
 
 ## Exporting
 
-```rust,ignore
+```rust
 fn meta() -> ResourceMeta {
     ResourceMeta::new("Post").title("title").exportable()
 }
@@ -69,7 +69,7 @@ there was a search, the sort), never the searched or filtered values.
 
 ## Importing
 
-```rust,ignore
+```rust
 fn meta() -> ResourceMeta {
     ResourceMeta::new("Learner").title("name")
         .unique("learners_email_key", &["email"], "is already registered")

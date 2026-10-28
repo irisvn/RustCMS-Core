@@ -4,7 +4,7 @@ The admin panel is a single-page application that renders your
 [resources](resources.md). It is embedded in your binary: using it never
 requires Node.
 
-```rust,ignore
+```rust
 app.provider(AuthProvider::new());                 // first: the panel uses its session guard
 app.provider(rustcms::storage::StorageProvider);   // only for the media library
 app.provider(
@@ -39,7 +39,7 @@ allow, and their own Account page.
 Resources the user may list (`view_any`) appear in the sidebar, grouped by
 `ResourceMeta::group`, with `ResourceMeta::icon`:
 
-```rust,ignore
+```rust
 ResourceMeta::new("Post").plural("Posts").group("Content").icon("file-text")
 ```
 
@@ -64,7 +64,7 @@ the same order. `.sort(n)` on
   first appearance;
 - System and Settings always come last.
 
-```rust,ignore
+```rust
 PanelPageMeta::new("Templates").permission("templates.view").sort(1)
 ResourceMeta::new("Project").group("Docker").sort(10)
 ```

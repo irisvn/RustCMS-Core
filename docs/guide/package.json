@@ -1,0 +1,17 @@
+{
+  "name": "rustcms-guide",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.12", "npm": ">=10" },
+  "scripts": {
+    "check-deps": "node scripts/check-deps-age.mjs",
+    "check-snippets": "node scripts/check-snippets.mjs",
+    "check-site": "node scripts/check-site.mjs",
+    "dev": "vitepress dev",
+    "build": "node scripts/check-snippets.mjs && vitepress build && node scripts/check-site.mjs",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  }
+}

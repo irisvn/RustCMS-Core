@@ -63,7 +63,7 @@ module names are snake_case (`http/controllers`, not `Http/Controllers`).
 `src/bootstrap/mod.rs` turns the configuration into an `AppBuilder`; the
 providers do the rest:
 
-```rust,ignore
+```rust
 pub fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
     let api = crate::routes::api::routes();
@@ -73,7 +73,7 @@ pub fn build(config: Config) -> AppBuilder {
 }
 ```
 
-```rust,ignore
+```rust
 // src/providers/admin_panel_provider.rs
 pub fn provider() -> AdminProvider {
     AdminProvider::new()
@@ -88,7 +88,7 @@ pub fn provider() -> AdminProvider {
 `src/main.rs` is the whole application (HTTP server, console, embedded admin
 panel):
 
-```rust,ignore
+```rust
 fn main() -> std::process::ExitCode {
     rustcms::Console::<blog::database::migrations::Migrator>::new(blog::bootstrap::build).run_blocking()
 }

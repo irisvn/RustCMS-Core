@@ -10,7 +10,7 @@ included with `#[path = "../support/mod.rs"] mod support;`.
 `rustcms make:test PostAdminTest` writes `tests/feature/post_admin_test.rs`
 and adds it to `main.rs`.
 
-```rust,ignore
+```rust
 use blog::bootstrap;
 use blog::database::migrations::Migrator;
 use rustcms_testing::{TestApp, TestDb, UserFactory, Factory, db_test};
@@ -83,7 +83,7 @@ three run as before.
 `TestApp::new` (and `with_config`) takes any `FnOnce(Config) -> AppBuilder`,
 so a closure can bind a double next to your real providers:
 
-```rust,ignore
+```rust
 struct Docker(Arc<dyn DockerApi>); // a newtype: `bind` keys services by type
 
 let fake = Arc::new(FakeDocker::default());
@@ -134,7 +134,7 @@ An upgrade needs a real connection: `client.socket(path)` starts a listener
 for the app on `127.0.0.1` (once, stopped with the app) and opens the socket
 with the client's cookies, `Origin` and CSRF subprotocol.
 
-```rust,ignore
+```rust
 let mut socket = app.acting_as(&user).await.socket("/admin/api/x/docker/exec/web").await.unwrap();
 socket.send_text("ls\n").await;
 let output = socket.next_data(Duration::from_secs(2)).await;      // Some(Message::Text(..))

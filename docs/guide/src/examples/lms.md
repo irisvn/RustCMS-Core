@@ -55,7 +55,7 @@ A course takes at most `capacity` active enrollments, and a learner enrolls
 in a course once (withdrawing and coming back change the same row). The
 rules are one function in the service:
 
-```rust,ignore
+```rust
 // src/services/enrollment_service.rs
 pub async fn check(txn, course_id, learner_id, status, current) -> AppResult<Result<(), Refusal>>
 // AlreadyEnrolled (said before the seats), NoSeat, NoCourse, UnknownStatus
@@ -92,7 +92,7 @@ Staff hold `lms.all_courses`; everyone else sees what they teach. Each
 resource's `scope()` adds an `EXISTS` subquery from the model (a join could
 repeat rows):
 
-```rust,ignore
+```rust
 // src/admin/resources/lesson_resource.rs
 fn scope(query: Select<lesson::Entity>, ctx: &Ctx) -> Select<lesson::Entity> {
     match instructor(ctx) {

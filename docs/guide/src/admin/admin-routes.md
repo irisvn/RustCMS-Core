@@ -5,7 +5,7 @@ service, a process, a remote API), its script needs JSON endpoints of its
 own. `AdminRoutes` declares them on the panel's session, each with the access
 it requires, checked before the handler reads anything.
 
-```rust,ignore
+```rust
 // src/routes/admin.rs
 use rustcms::prelude::*;
 
@@ -93,7 +93,7 @@ window.rustcms.registerPage("docker/containers", {
 and checks the status you expect. It also fails when a declared route has no
 case, so a new route cannot go untested.
 
-```rust,ignore
+```rust
 use rustcms_testing::admin_routes::{Case, assert_access};
 
 let anonymous = app.client();

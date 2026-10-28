@@ -44,7 +44,7 @@ recheck, because rechecks read the database.
 
 Use a [schedule](scheduling.md), declared in a provider's `register`:
 
-```rust,ignore
+```rust
 app.schedule(Schedule::every("invoices-sync", Duration::from_secs(60)).job(|| SyncInvoices {}));
 ```
 

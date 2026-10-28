@@ -1,6 +1,6 @@
 # rustcms — notes for AI agents
 
-- Docs: `docs/guide/` is the PUBLIC developer guide (English mdBook); `docs/core/` is PRIVATE (architecture,
+- Docs: `docs/guide/` is the PUBLIC developer guide (English, VitePress; conventions in `docs/README.md`); `docs/core/` is PRIVATE (architecture,
   protocol, ADRs in `docs/core/adr/`, reports, CHANGELOG). Every change updates the matching guide page.
 - Commands: `just test-fast` (every test on SQLite, the inner loop), `just ci`, `just test-matrix` (starts PostgreSQL,
   MySQL, Redis, S3Mock and Mailpit with docker compose, in memory without fsync), `just test-cli` (slow scaffold test),
@@ -24,6 +24,9 @@
 - Serializing transactions: `rustcms_core::db::xact_lock` (first lock of the transaction), never
   backend-specific advisory locks; migrations use `rustcms::migration` helpers (`create_table`,
   `instant`, …) so they re-run on MySQL (ADR 0010).
+- Guide: `just docs-dev` / `just docs`; navigation in `docs/guide/.vitepress/sidebar.ts`; never rename a page or a
+  linked heading (mdBook ids are kept, the build fails on a dead link/anchor); Rust samples are imported from
+  checked code by `#region`; not embedded in the binary (`rustcms docs` opens `/v/X.Y.Z/`).
 - `docs/guide/src/reference/cli.md` is generated: run `cargo run -p rustcms-cli -- docs:cli > docs/guide/src/reference/cli.md` after changing commands.
 - App template lives in `crates/rustcms-cli/templates/app`; `examples/demo` and `examples/lms` follow its layout
   (ADR 0017: Laravel folder names inside `src/` — bootstrap, providers, routes, http, models, services, policies,

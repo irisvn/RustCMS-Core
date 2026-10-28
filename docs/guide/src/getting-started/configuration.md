@@ -136,7 +136,7 @@ fail closed (500). See [Several instances](../digging-deeper/instances.md).
 
 ## Your own sections
 
-```rust,ignore
+```rust
 #[derive(serde::Deserialize)]
 struct Mail { from: String }
 

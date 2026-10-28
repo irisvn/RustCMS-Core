@@ -9,7 +9,7 @@ and MySQL 8.4 are supported (MariaDB is not). Configure the connection with
 Models are SeaORM entities in `src/models/`. `rustcms make:model Post -m`
 writes the entity and a migration creating its table:
 
-```rust,ignore
+```rust
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "posts")]
 pub struct Model {
@@ -23,7 +23,7 @@ pub struct Model {
 
 Query them with SeaORM, using the pool from the state:
 
-```rust,ignore
+```rust
 let posts = post::Entity::find().filter(post::Column::Title.contains("rust")).all(app.db()).await?;
 ```
 
@@ -77,7 +77,7 @@ Differences to know:
 | `.instant(manager)` / `.instant_now(manager)` | `TIMESTAMPTZ` (with `CURRENT_TIMESTAMP`), `DATETIME(6)` on MySQL |
 | `.local_date_time(manager)` | date and time without zone, microseconds on MySQL |
 
-```rust,ignore
+```rust
 create_table(manager, Table::create().table(Posts::Table)
     .col(ColumnDef::new(Posts::Id).big_integer().not_null().auto_increment().primary_key())
     .col(ColumnDef::new(Posts::PublishedAt).instant(manager).null())
@@ -125,7 +125,7 @@ off. They live in `src/database/seeders/`: `DatabaseSeeder` (named
 `src/providers/app_service_provider.rs` (`rustcms make:seeder CourseSeeder`
 does both).
 
-```rust,ignore
+```rust
 use rustcms::database::Seeder;
 use rustcms::{AppState, async_trait};
 

@@ -3,7 +3,7 @@
 `StorageProvider` binds the configured storage; the [media library](../admin/media.md)
 keeps its files there.
 
-```rust,ignore
+```rust
 app.provider(rustcms::storage::StorageProvider);   // reads `[storage]`
 ```
 
