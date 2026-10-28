@@ -26,6 +26,8 @@ fixture() {
   echo install-0.1.0 > "$tmp/pages/install.sh"
   echo v0.1.0 > "$tmp/pages/latest.txt"
   echo docs.example.com > "$tmp/pages/CNAME"
+  echo x > "$tmp/pages/..odd"
+  ln -s nowhere "$tmp/pages/dangling"
 }
 kept_history() {
   has "$tmp/pages/v/0.2.0-rc.1/index.html" rc
@@ -47,6 +49,7 @@ has "$tmp/pages/latest.txt" v0.2.0
 has "$tmp/pages/v/0.1.0/index.html" v0.1.0
 has "$tmp/pages/dev/index.html" dev-old
 [ ! -e "$tmp/pages/old" ] || fail "release-stable kept a page of the old root guide"
+[ ! -e "$tmp/pages/..odd" ] && [ ! -L "$tmp/pages/dangling" ] || fail "release-stable kept ..odd or a dangling link"
 kept_history
 
 # release-rc: only its version dir.
@@ -76,6 +79,7 @@ has "$tmp/pages/install.sh" install-0.1.0
 has "$tmp/pages/latest.txt" v0.1.0
 has "$tmp/pages/dev/index.html" dev-old
 [ ! -e "$tmp/pages/old" ] || fail "docs-stable kept a page of the old root guide"
+[ ! -e "$tmp/pages/..odd" ] && [ ! -L "$tmp/pages/dangling" ] || fail "docs-stable kept ..odd or a dangling link"
 kept_history
 
 # Refusals.
@@ -84,6 +88,10 @@ refused docs-stable "$tmp/pages" 0.0.9 "$tmp/versioned" "$tmp/root"        # not
 refused release-stable "$tmp/pages" 0.2.0-rc.1 "$tmp/versioned" "$tmp/root" "$tmp/install.sh"
 refused release-rc "$tmp/pages" 0.2.0 "$tmp/versioned"
 refused release-rc "$tmp/pages" '../x' "$tmp/versioned"
+refused release-rc "$tmp/pages" "$(printf '1.2.3-rc.1\n/../../.git/hooks')" "$tmp/versioned"
+refused release-stable "$tmp/pages" "$(printf '1.2.3\n/../../.git/hooks')" "$tmp/versioned" "$tmp/root" "$tmp/install.sh"
+refused docs-stable "$tmp/pages" "$(printf '0.1.0\n/../x')" "$tmp/versioned" "$tmp/root"
+[ ! -e "$tmp/pages/.git/hooks/index.html" ] || fail "wrote into .git/hooks"
 for name in install.sh latest.txt CNAME v dev .git .github .nojekyll; do
   build "bad-$name"; mkdir -p "$tmp/bad-$name/$name" 2>/dev/null || true; touch "$tmp/bad-$name/$name" 2>/dev/null || true
   refused docs-dev "$tmp/pages" "$tmp/bad-$name"

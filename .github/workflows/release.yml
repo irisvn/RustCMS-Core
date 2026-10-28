@@ -168,13 +168,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { persist-credentials: false }
+      # Archives and guide apart: nothing in the built guide can stand in for an archive.
       - uses: actions/download-artifact@v4
-        with: { path: "${{ runner.temp }}/artifacts" }
+        with: { pattern: "asset-*", path: "${{ runner.temp }}/artifacts" }
+      - uses: actions/download-artifact@v4
+        with: { name: site, path: "${{ runner.temp }}/site" }
       - name: Assets, checksums, manifest and notes
         run: |
           set -eu
           a="$RUNNER_TEMP/assets"; mkdir -p "$a"
-          find "$RUNNER_TEMP/artifacts" -path '*/asset-*/*' -type f -exec cp {} "$a/" \;
+          # Each asset-<target> artifact holds exactly its archive, a regular file.
+          for d in "$RUNNER_TEMP"/artifacts/asset-*; do
+            target=${d##*/asset-}; name="rustcms-$TAG-$target.tar.gz"
+            [ "$(ls -A "$d")" = "$name" ] && [ -f "$d/$name" ] && [ ! -L "$d/$name" ] \
+              || { echo "$d: expected only $name"; ls -lA "$d"; exit 1; }
+            cp "$d/$name" "$a/"
+          done
           count=$(ls "$a" | wc -l); [ "$count" = 3 ] || { echo "expected 3 assets, got $count"; exit 1; }
           (cd "$a" && sha256sum rustcms-* > SHA256SUMS)
           targets=$(ls "$a" | sed -n "s/^rustcms-$TAG-\(.*\)\.tar\.gz$/\1/p" | sort | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().split()))')
@@ -245,7 +254,7 @@ jobs:
         run: |
           set -eu
           version="${TAG#v}"
-          site="$RUNNER_TEMP/artifacts/site"
+          site="$RUNNER_TEMP/site"
           url="https://x-access-token:$GH_TOKEN@github.com/$DIST_REPO.git"
           # A push that loses a race re-clones and places the guides again.
           for attempt in 1 2 3; do

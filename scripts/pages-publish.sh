@@ -41,9 +41,11 @@ check_build() {
 }
 
 check_version() {
+  # One line of digits, dots and `-rc.` only (grep alone checks line by line).
+  case $1 in *[!0-9.rc-]* | "") die "$1 is not a $2 version" ;; esac
   case $2 in
-    stable) echo "$1" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' ;;
-    rc) echo "$1" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.(0|[1-9][0-9]*)$' ;;
+    stable) printf '%s\n' "$1" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' ;;
+    rc) printf '%s\n' "$1" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.(0|[1-9][0-9]*)$' ;;
   esac || die "$1 is not a $2 version"
 }
 
@@ -57,8 +59,8 @@ replace_dir() {
 # Replaces the root guide: everything at the top level except what is listed in $2.
 replace_root() {
   keep=".git v dev CNAME $2"
-  for entry in "$pages"/* "$pages"/.[!.]*; do
-    [ -e "$entry" ] || continue
+  for entry in "$pages"/* "$pages"/.[!.]* "$pages"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
     name=${entry##*/}
     case " $keep " in *" $name "*) continue ;; esac
     rm -rf "$entry"

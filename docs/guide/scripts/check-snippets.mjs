@@ -16,9 +16,34 @@ function* pages(dir) {
   }
 }
 
-// Same marker shapes as VitePress for `//` and `#` comments.
-const marker = (kind, name) =>
-  new RegExp(`^(?://|#) ?#?${kind} ${name.replace(/[-*]/g, '\\$&')}$`)
+// VitePress 1.6.4's `findRegion` (node/chunk-*.js), ported as is: the first start
+// marker of any known syntax, then the first end marker of the same syntax.
+const REGION = [
+  /^\/\/ ?#?((?:end)?region) ([\w*-]+)$/,
+  /^\/\* ?#((?:end)?region) ([\w*-]+) ?\*\/$/,
+  /^#pragma ((?:end)?region) ([\w*-]+)$/,
+  /^<!-- #?((?:end)?region) ([\w*-]+) -->$/,
+  /^#((?:End )Region) ([\w*-]+)$/,
+  /^::#((?:end)region) ([\w*-]+)$/,
+  /^# ?((?:end)?region) ([\w*-]+)$/,
+]
+function isMarker(line, regexp, name, end) {
+  const [full, tag, found] = regexp.exec(line.trim()) || []
+  return full && tag && found === name && tag.match(end ? /^[Ee]nd ?[rR]egion$/ : /^[rR]egion$/)
+}
+function findRegion(lines, name) {
+  let regexp = null
+  let start = -1
+  for (const [i, line] of lines.entries()) {
+    if (regexp === null) {
+      const r = REGION.find((reg) => isMarker(line, reg, name, false))
+      if (r) [regexp, start] = [r, i + 1]
+    } else if (isMarker(line, regexp, name, true)) {
+      return lines.slice(start, i).filter((l) => !regexp.test(l.trim()))
+    }
+  }
+  return null
+}
 
 const errors = []
 let count = 0
@@ -34,12 +59,9 @@ for (const page of pages(root)) {
     const file = raw.startsWith('@') ? join(root, raw.slice(1)) : resolve(dirname(page), raw)
     if (!existsSync(file) || !statSync(file).isFile()) return errors.push(`${where}: no file ${raw}`)
     if (!region) return errors.push(`${where}: import a #region, not a whole file`)
-    const lines = readFileSync(file, 'utf8').split('\n').map((l) => l.trim())
-    const starts = lines.flatMap((l, n) => (marker('region', region).test(l) ? [n] : []))
-    const ends = lines.flatMap((l, n) => (marker('endregion', region).test(l) ? [n] : []))
-    if (starts.length !== 1 || ends.length !== 1 || ends[0] < starts[0])
-      return errors.push(`${where}: region ${region} of ${raw} needs one start and one end marker`)
-    if (!lines.slice(starts[0] + 1, ends[0]).some(Boolean)) errors.push(`${where}: region ${region} is empty`)
+    const code = findRegion(readFileSync(file, 'utf8').replace(/\r\n/g, '\n').split('\n'), region)
+    if (code === null) return errors.push(`${where}: no region ${region} in ${raw} (VitePress would show the whole file)`)
+    if (!code.some((l) => l.trim())) errors.push(`${where}: region ${region} is empty`)
   })
 }
 if (errors.length) {

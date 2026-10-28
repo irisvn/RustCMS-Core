@@ -1,6 +1,6 @@
 # Docs v2: VitePress + full rewrite of the guide
 
-Status: draft r3, 2026-10-28 (Codex plan review: round 1 = 4 P1/11 P2/3 P3, round 2 = 3 P1/8 P2/1 P3, all applied).
+Status: r3; Phase 0 done 2026-10-28 (b5cc436, d43ebae), Codex verify fixed (1 P1, 2 P2, 1 P3) (Codex plan review: round 1 = 4 P1/11 P2/3 P3, round 2 = 3 P1/8 P2/1 P3, all applied).
 Owner chose **VitePress** (over Starlight, MkDocs/Zensical, re-themed mdBook).
 
 Goals:

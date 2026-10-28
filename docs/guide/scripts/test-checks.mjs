@@ -13,7 +13,11 @@ const run = (script, arg) => {
 const fixture = (name) => new URL(`fixtures/${name}`, import.meta.url).pathname
 
 const snippets = run('check-snippets.mjs', fixture('snippets'))
-assert.match(snippets, /page\.md:3: region missing/)
+assert.match(snippets, /page\.md:3: no region missing/)
+assert.match(snippets, /page\.md:13: no region hashed/)
+assert.match(snippets, /page\.md:15: no region mixed/)
+assert.match(snippets, /page\.md:17: region empty is empty/)
+assert.doesNotMatch(snippets, /page\.md:19/)
 assert.match(snippets, /page\.md:5: import a #region/)
 assert.match(snippets, /page\.md:7: no file/)
 assert.doesNotMatch(snippets, /inside-a-fence/)
