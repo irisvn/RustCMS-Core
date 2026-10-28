@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-10-28
+
 ### Changed
 - The guide moved from mdBook to VitePress (search, dark mode, phone layout).
   Page paths (`x.html`) and heading anchors are kept. `rustcms docs` opens the

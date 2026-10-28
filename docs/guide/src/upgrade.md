@@ -29,7 +29,12 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
-## Unreleased
+## From 0.10.3 to 0.11.0
+
+No migration. Read the first points before upgrading: they can make a
+request a 422 or stop the boot. To roll back, install 0.10.3 again; no data
+changes shape.
+
 
 - `rustcms docs` opens the guide of your version online
   (`https://irisvn.github.io/RustCMS/v/X.Y.Z/`); the command no longer

@@ -1,7 +1,31 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.10.3**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.11.0**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.11.0
+
+Read the [upgrade guide](upgrade.md#from-0103-to-0110) first: static select and
+checkbox options are now enforced, and some form declarations stop the boot.
+No migration.
+
+- **A new guide**: rewritten from the source, with screenshots and samples
+  from compiled examples, on VitePress (search, dark mode, phones). `rustcms
+  docs` opens the online guide of your version.
+- **Options are validated**: a client write outside a `SelectInput`'s or
+  `CheckboxList`'s options is a 422; a matched value is stored as its option
+  ([Options are validated](admin/forms.md#options-are-not-validated)).
+- **Framework cleanups are schedules**: the auth and idempotency cleanups run
+  in `serve` as `rustcms.auth-prune` and `rustcms.idempotency-prune`, shown on
+  System → Schedules ([Framework schedules](digging-deeper/scheduling.md#framework-schedules)).
+- A panic in a handler answers the standard 500 instead of dropping the
+  connection ([Errors](basics/errors.md)).
+- A background export over its limits says why (`too_many_to_export`,
+  `too_many_matches`); the export list no longer fails on MySQL with large
+  exports; export and import cleanups only touch their own disk
+  ([Import and export](admin/import-export.md)).
+- The panel's sockets send up to `[realtime] max_message_bytes`
+  ([Realtime](admin/realtime.md)).
 
 ## 0.10.3
 

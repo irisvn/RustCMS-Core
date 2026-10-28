@@ -55,14 +55,14 @@ the line to add to your shell profile, or adds it itself with
 | `RUSTCMS_INSTALL` | `~/.rustcms` | the install root: the command goes in its `bin/` (`/opt/rustcms` → `/opt/rustcms/bin/rustcms`) |
 
 ```sh
-curl -fsSL https://irisvn.github.io/RustCMS/install.sh | RUSTCMS_VERSION=v0.10.3 sh
+curl -fsSL https://irisvn.github.io/RustCMS/install.sh | RUSTCMS_VERSION=v0.11.0 sh
 ```
 
 - Builds exist for macOS on Apple silicon (11 or newer) and Linux (x86_64 and
   arm64, any distribution: the binary is static). An x86_64 shell running
   under Rosetta on Apple silicon gets the native build. On an Intel Mac, build
   the command from source with Cargo:
-  `cargo install --git https://github.com/irisvn/RustCMS-Core --tag v0.10.3 rustcms-cli`.
+  `cargo install --git https://github.com/irisvn/RustCMS-Core --tag v0.11.0 rustcms-cli`.
 - To read the script first: `curl -fsSLO https://irisvn.github.io/RustCMS/install.sh`,
   then `sh install.sh`. Or download an archive from the releases page and put
   `rustcms` on your `PATH` yourself.
@@ -98,7 +98,7 @@ then resolves its dependencies (`Cargo.lock`). Its `Cargo.toml` depends on the
 RustCMS-Core tag of the command's version:
 
 ```toml
-rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.10.3" }
+rustcms = { git = "https://github.com/irisvn/RustCMS-Core", tag = "v0.11.0" }
 ```
 
 | Option | |
