@@ -65,6 +65,10 @@ fn build(config: Config) -> AppBuilder {
             .route("/bytes", post(|bytes: axum::body::Bytes| async move { bytes.len().to_string() }))
             .route("/ip", get(|ClientIp(ip): ClientIp| async move { ip.to_string() }))
             .route("/missing-service", get(|Inject(_): Inject<Arc<String>>| async { "unreachable" }))
+            .route("/panic", get(|| async { boom(|| panic!("boom {}", 42)) }))
+            .route("/panic-static", get(|| async { boom(|| panic!("static boom")) }))
+            .route("/panic-other", get(|| async { boom(|| std::panic::panic_any(7_u8)) }))
+            .route("/guarded", get(|| async { "unreachable" }))
             .route(
                 "/slow",
                 get(|| async {
@@ -73,7 +77,22 @@ fn build(config: Config) -> AppBuilder {
                 }),
             )
     });
+    // A middleware that panics on `/guarded`, like a broken guard.
+    app.middleware(|router, _| {
+        router.layer(axum::middleware::from_fn(|req: Request<Body>, next: axum::middleware::Next| async move {
+            if req.uri().path() == "/guarded" {
+                panic!("guard bug");
+            }
+            next.run(req).await
+        }))
+    });
     app
+}
+
+/// A handler body that panics (typed, so the closure is a handler).
+fn boom(panic: impl FnOnce()) -> &'static str {
+    panic();
+    "unreachable"
 }
 
 async fn app_with(configure: impl FnOnce(Config) -> Config) -> TestApp {
@@ -253,4 +272,19 @@ fn plain(config: Config) -> AppBuilder {
 async fn a_function_still_builds_the_app() {
     let app = TestApp::new(plain, TestDb::sqlite().await).await;
     app.client().get("/nothing-here").await.assert_status(StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_panic_answers_the_standard_500() {
+    let app = app_with(|c| c).await;
+    for path in ["/panic", "/panic-static", "/panic-other", "/guarded"] {
+        let request = Request::get(path).header("x-request-id", "req-1").body(Body::empty()).unwrap();
+        let response = app.request(request).await;
+        response
+            .assert_status(StatusCode::INTERNAL_SERVER_ERROR)
+            .assert_json("", json!({"message": "Server error.", "code": "internal_error"}));
+        assert_eq!(response.headers["x-request-id"], "req-1", "{path}");
+    }
+    // The application keeps serving.
+    app.get("/health").await.assert_status(StatusCode::OK);
 }

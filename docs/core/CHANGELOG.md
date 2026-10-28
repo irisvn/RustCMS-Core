@@ -14,6 +14,9 @@ All notable changes are documented here. The format follows
   are gone). The guide of `main` is published to `/dev/`.
 - Release and the new Docs workflow read `DIST_TOKEN` from the `pages`
   environment and write `gh-pages` one at a time (`scripts/pages-publish.sh`).
+- A panic in a handler, a guard or app middleware answers the standard 500
+  (`internal_error`), logged once in the request's span with its message
+  (tower-http `catch-panic`); the connection was dropped before.
 
 ## [0.10.3] — 2026-10-24
 

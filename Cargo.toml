@@ -30,7 +30,7 @@ tokio-tungstenite = { version = "0.29", default-features = false }
 # 5-field cron expressions of `AppBuilder::schedule` (UTC).
 croner = { version = "4.0", default-features = false, features = ["chrono"] }
 tower = { version = "0.5.3", features = ["util"] }
-tower-http = { version = "0.7.1", features = ["trace", "request-id", "timeout", "limit", "util"] }
+tower-http = { version = "0.7.1", features = ["trace", "request-id", "timeout", "limit", "util", "catch-panic"] }
 http-body-util = "0.1"
 figment = { version = "0.10.19", features = ["toml", "env"] }
 dotenvy = "0.15.7"

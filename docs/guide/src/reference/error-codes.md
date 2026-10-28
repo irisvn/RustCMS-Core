@@ -176,8 +176,8 @@ Every body has `message` and `code`; a 409 adds `reason`, a 422 adds `errors`,
 | 503 | `GET /health` when the database does not answer | `{"status": "degraded", "database": "unavailable"}` |
 | 400 | a malformed typed query string, rejected before the handler runs (e.g. `GET <admin_path>/api/system/users?page=abc`) | plain text |
 
-A handler that panics drops the connection instead of answering 500: the
-client sees a network error.
+A handler that panics answers the standard 500 (`internal_error`); only a
+stream that has already started (server-sent events) ends instead.
 
 ## Mail
 

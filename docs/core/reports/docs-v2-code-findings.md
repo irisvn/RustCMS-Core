@@ -15,7 +15,7 @@ owner's decision. The guide describes the current behaviour honestly until then.
 | 8 | P3 (rule) | Media prune (and export/import prune) are `tokio::spawn` loops in `AdminProvider::boot`, not `AppBuilder::schedule`. | `crates/rustcms-admin/src/panel/provider.rs:404-440` |
 | 9 | fixed | Stale comment "saves version 2" (the editor writes the lowest version a document needs). | `admin-ui/src/lib/rich-text.ts:5-6,22` |
 | 10 | fixed | Stray text "Haha: " in the LMS course overview template. | `examples/lms/resources/views/admin/course_overview.html:4` |
-| 11 | P3 | A handler panic is not turned into a 500 (no catch-panic layer): the connection drops. | `crates/rustcms-core/src/http/mod.rs:206-222` |
+| 11 | fixed | A handler panic is not turned into a 500 (no catch-panic layer): the connection drops. | `crates/rustcms-core/src/http/mod.rs:206-222` |
 | 12 | fixed | The `make:policy` template says `record` is "the record's readable data"; it is every column, unfiltered (encrypted fields null). | `crates/rustcms-cli/templates/stubs/policy.rs.tmpl`, `crates/rustcms-admin/src/resources/policy.rs:30-33` |
 | 13 | fixed | The LMS uses icons outside the icon set (`book-open`, `clipboard-check`, `graduation-cap`, `list`, `newspaper`): they fall back to the generic icon. | `examples/lms/src/admin/resources/` |
 | 14 | fixed | LMS dashboard: the New enrollments / New courses widgets answer 403 for the admin because `enrolled_at` and `courses.created_at` are `.guarded()` without `.readable(...)`, and widgets refuse fields the user cannot read. | `examples/lms/src/admin/resources/{course,enrollment}_resource.rs` |

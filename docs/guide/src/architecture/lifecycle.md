@@ -78,6 +78,9 @@ Every request goes through, outermost first:
 4. **Timeout**: `http.timeout_secs`, then 408 with an empty body.
    `rustcms::http::request_deadline()` returns the instant the current request
    will be cut off, so a handler can finish optional work in time.
+   Inside it, a **panic** in a handler, a guard or your middleware answers
+   the standard 500 (`internal_error`), logged once with the request id; the
+   application keeps serving.
 5. **Body limit**: `http.body_limit`, then 413, on every request body (a
    larger `Content-Length` is refused before the handler runs; chunked bodies
    stop at the limit). A route may have its own
