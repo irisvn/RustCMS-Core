@@ -46,7 +46,7 @@ Job schedules enqueue their own job kinds ([Scheduling](../digging-deeper/schedu
 
 ## Failed jobs
 
-![The Queue page filtered on failed jobs, with Retry and Forget](/img/operations/queue-failed.webp)
+![The Queue page filtered on failed jobs, with Retry and Forget](/img/digging-deeper/queue-page.webp)
 *The demo application: System → Queue, failed jobs.*
 
 A job fails after its last attempt, at once on a permanent failure (a mail

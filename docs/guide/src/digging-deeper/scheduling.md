@@ -45,6 +45,23 @@ The job it enqueues:
 
 <<< @/../../../examples/demo/src/jobs/post_digest.rs#job [src/jobs/post_digest.rs]
 
+::: details In a real application: RDockPanel's backups
+[RDockPanel](https://github.com/irisvn/RDockPanel), a hosting panel built on RustCMS, checks every
+minute which backups are due and queues them; the summary shows on the Schedules page
+([`src/providers/app_service_provider.rs`](https://github.com/irisvn/RDockPanel/blob/v0.9.3/src/providers/app_service_provider.rs#L77-L89),
+v0.9.3):
+
+```rust
+app.schedule(
+    rustcms::schedule::Schedule::every("database-backups", std::time::Duration::from_secs(60))
+        .task(|ctx| async move {
+            let n = crate::services::backup_service::tick(&ctx.state).await?;
+            Ok((n > 0).then(|| format!("{n} backups queued")))
+        }),
+);
+```
+:::
+
 ## When it fires
 
 - `Schedule::every(name, period)`: 10 s to 7 days, whole seconds, on the
@@ -152,6 +169,9 @@ run.
 
 ![The Schedules page: each schedule's rule, action, next run and last run](/img/digging-deeper/schedules-page.webp)
 *The demo application: System → Schedules, with `posts-ping` and `posts-digest`.*
+
+![RDockPanel's Schedules page: backups, deployments, certificate and health checks](/img/digging-deeper/schedules-rdockpanel.webp)
+*RDockPanel, a hosting panel built on RustCMS: its periodic work (backups, certificate expiry, health alerts) as schedules.*
 
 **System → Schedules** lists every schedule to users with `schedules.view`:
 its rule, what it does (a job kind or a task), its next run, and its last

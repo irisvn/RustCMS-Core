@@ -10,6 +10,9 @@ you authorize; changes to data still go through ordinary POST admin routes.
 ![A live counter and an echo form on a script page](/img/admin/realtime-live.webp)
 *A RustCMS demo application: the Live page (server-sent events and a WebSocket).*
 
+![RDockPanel's dashboard: CPU, memory, disk and network figures with live sparklines](/img/admin/realtime-rdockpanel.webp)
+*RDockPanel, a hosting panel built on RustCMS: the server figures on its dashboard are pushed over an event stream.*
+
 ## Quick start
 
 ```rust

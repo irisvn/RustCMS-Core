@@ -120,8 +120,8 @@ so this instance shows the change at once:
 app.service::<rustcms::admin::AdminBranding>().expect("AdminProvider").invalidate();
 ```
 
-![A Settings → Branding page and the panel using the chosen brand](/img/admin/runtime-branding.webp)
-*RDockPanel, built on RustCMS: an operator's branding page.*
+![RDockPanel's Settings → Branding tab: name, primary color, logos and favicon](/img/admin/runtime-branding.webp)
+*RDockPanel, a hosting panel built on RustCMS: its own Branding page, built on runtime branding (name, color, logos).*
 
 ### What a `Branding` sets
 

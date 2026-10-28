@@ -80,6 +80,20 @@ The boot stops (a panic with the reason) on:
 - the same method and path declared twice (at `register`);
 - an invalid `[auth]` section (at `register`).
 
+::: details In a real application: RDockPanel's container routes
+[RDockPanel](https://github.com/irisvn/RDockPanel) gives each route its own permission: reading
+logs, following them as an event stream, live stats, and a shell over a WebSocket
+([`src/routes/admin.rs`](https://github.com/irisvn/RDockPanel/blob/v0.9.3/src/routes/admin.rs#L40-L60),
+v0.9.3, trimmed):
+
+```rust
+.get("/containers/{id}/logs", AdminAccess::can(permissions::DOCKER_LOGS), docker::logs)
+.events("/containers/{id}/logs/follow", AdminAccess::can(permissions::DOCKER_LOGS), docker::follow_logs)
+.events("/containers/{id}/stats", view(), docker::live_stats)
+.socket("/containers/{id}/exec", AdminAccess::can(permissions::DOCKER_EXEC), docker::exec)
+```
+:::
+
 ## Access
 
 | Access | Who |
@@ -164,8 +178,19 @@ remainder).
   reaches the access check on writes (401); without one, the guard refuses
   first (403).
 
-![rustcms route:list showing the application's admin routes](/img/admin/admin-routes-route-list.webp)
-*A RustCMS demo application: `rustcms route:list` in a terminal.*
+`rustcms route:list` shows them with the source `app` (the demo application,
+trimmed):
+
+```text
+METHOD  PATH                            SOURCE
+GET     /admin/api/x/demo/echo          app
+GET     /admin/api/x/demo/hello         app
+GET     /admin/api/x/demo/ticks         app
+POST    /admin/api/x/demo/ticks/reset   app
+GET     /api/v1/ping                    app
+GET     /api/v1/posts                   app
+POST    /api/v1/posts                   app
+```
 
 ## Security notes
 

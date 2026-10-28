@@ -68,6 +68,44 @@ Its [form](forms.md), [table](tables.md), [actions](actions.md),
 [policy and scope](authorization.md) and [tags relation](relationships.md) are
 on their own pages.
 
+::: details In a real application: RBlog's posts
+[RBlog](https://github.com/irisvn/RBlog), a blog built on RustCMS, declares its posts like this
+([`src/admin/resources/post_resource.rs`](https://github.com/irisvn/RBlog/blob/v0.1.0/src/admin/resources/post_resource.rs#L27-L64),
+v0.1.0, trimmed). The workflow columns are set only by its actions, so they are `guarded()` and made
+readable:
+
+```rust
+fn meta() -> ResourceMeta {
+    ResourceMeta::new("Post")
+        .plural("Posts")
+        .title("title")
+        .icon("file-text")
+        .group("Content")
+        .soft_deletes()
+        .unique("posts_slug_key", &["slug"], "is already taken")
+}
+
+fn fields() -> Vec<Field> {
+    vec![
+        Field::column(post::Column::Title).required().searchable().sortable().max_length(255),
+        Field::column(post::Column::Slug).max_length(200),
+        Field::column(post::Column::Body).rich_text(),
+        Field::column(post::Column::CoverMediaId).label("Cover image").media().accept(&["image/*"]),
+        Field::column(post::Column::CategoryId).label("Category").belongs_to("categories").filterable(),
+        // Set by the server only.
+        Field::column(post::Column::Status).guarded().readable(|_| true).filterable(),
+        Field::column(post::Column::PublishedAt).label("Publish date").guarded().readable(|_| true).sortable(),
+        Field::column(post::Column::AuthorId)
+            .label("Author")
+            .guarded()
+            .readable(|_| true)
+            .belongs_to("post_authors")
+            .filterable(),
+    ]
+}
+```
+:::
+
 ## Generating a resource
 
 `rustcms make:resource <Model> --generate` reads the model and writes a field,

@@ -7,7 +7,7 @@ panel route, and [policies](../admin/authorization.md) per record in the admin
 panel. This page covers how permissions are declared, granted and checked.
 
 ![The Roles page: areas, the resource matrix and permission groups](/img/security/roles.webp)
-*RBlog, a blog built on RustCMS: System → Roles.*
+*The RustCMS demo app (examples/demo): System → Roles.*
 
 ## Quick start
 

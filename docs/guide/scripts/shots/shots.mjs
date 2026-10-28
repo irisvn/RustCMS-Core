@@ -4,6 +4,9 @@
 //   RDP_EMAIL=… RDP_PASSWORD=… RBLOG_EMAIL=… RBLOG_PASSWORD=… \
 //     node docs/guide/scripts/shots/shots.mjs [id-prefix…]
 //
+// Local demo: LOCAL_EMAIL / LOCAL_PASSWORD (admin), LOCAL_EDITOR_EMAIL /
+// LOCAL_EDITOR_PASSWORD for shots with `account: 'editor'`.
+//
 // Uses the Playwright of admin-ui (PLAYWRIGHT_CHANNEL=chrome by default) and
 // `cwebp`. Live demos:
 // - the only write allowed is the sign-in POST (session + audit entry); the
@@ -15,7 +18,10 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { SHOTS, SITES } from './shots.config.mjs'
+import { SHOTS as LOCAL, SITES } from './shots.config.mjs'
+import { LIVE } from './shots.live.mjs'
+
+const SHOTS = [...LOCAL, ...LIVE]
 
 const repo = new URL('../../../../', import.meta.url).pathname
 const { chromium } = createRequire(join(repo, 'admin-ui/package.json'))('playwright')
@@ -29,16 +35,24 @@ if (shots.length === 0) throw new Error(`no shot matches ${only.join(' ')}`)
 const tmp = mkdtempSync(join(tmpdir(), 'rustcms-shots-'))
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL ?? 'chrome' })
 const blocked = []
+const failed = []
 try {
   // One signed-in context per site, viewport and theme.
-  const groups = Map.groupBy(shots, (s) => `${s.site}|${s.viewport ?? 'desktop'}|${s.theme ?? 'light'}|${s.signedOut ? 'out' : 'in'}`)
+  // `account` picks another of the site's accounts (`site.accounts`, env names only).
+  const groups = Map.groupBy(shots, (s) => `${s.site}|${s.viewport ?? 'desktop'}|${s.theme ?? 'light'}|${s.signedOut ? 'out' : 'in'}|${s.account ?? ''}`)
   for (const [key, group] of groups) {
-    const [siteId, viewport, theme, state] = key.split('|')
-    const site = SITES[siteId]
-    if (!site) throw new Error(`unknown site ${siteId}`)
+    const [siteId, viewport, theme, state, account] = key.split('|')
+    const base = SITES[siteId]
+    if (!base) throw new Error(`unknown site ${siteId}`)
+    const env = account ? base.accounts?.[account] : undefined
+    if (account && !env) throw new Error(`unknown account ${account} of ${siteId}`)
+    const site = env ? { ...base, emailEnv: env.emailEnv, passwordEnv: env.passwordEnv } : base
     const context = await signedIn(site, viewport, theme, state === 'out')
     try {
-      for (const shot of group) await capture(context, site, shot)
+      for (const shot of group) {
+        // One failing shot does not stop the others.
+        await capture(context, site, shot).catch((e) => failed.push(`${shot.id}: ${e.message.split('\n')[0]}`))
+      }
     } finally {
       await context.close()
     }
@@ -46,6 +60,10 @@ try {
 } finally {
   await browser.close()
   rmSync(tmp, { recursive: true, force: true })
+}
+if (failed.length) {
+  console.error(`failed:\n  ${failed.join('\n  ')}`)
+  process.exitCode = 1
 }
 if (blocked.length) console.log(`blocked writes (expected while opening dialogs):\n  ${blocked.join('\n  ')}`)
 
@@ -113,6 +131,8 @@ async function capture(context, site, shot) {
     mkdirSync(dirname(webp), { recursive: true })
     execFileSync('cwebp', ['-quiet', '-q', '82', png, '-o', webp])
     console.log(`${shot.id}.webp  (${site.name}${shot.path})`)
+    // Local shots: undo what `actions` changed (e.g. the account's language).
+    if (shot.after) await shot.after(page)
   } finally {
     await page.close()
   }
@@ -124,10 +144,14 @@ async function redact(page, email) {
   await page.evaluate((email) => {
     const account = document.querySelector('a[title*="@"]')
     const name = account?.querySelector('span span')?.textContent?.trim()
+    // The email first (as a token), then the name as a whole word, so a name
+    // that is part of the email (or of other words) is not half-replaced.
+    const token = '\u0000email\u0000'
+    const word = name && name.length > 1 ? new RegExp(`(?<![\\w@.])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w@])`, 'g') : null
     const swap = (text) => {
-      let out = text.split(email).join('demo@example.com')
-      if (name && name.length > 1) out = out.split(name).join('Demo User')
-      return out
+      let out = email ? text.split(email).join(token) : text
+      if (word) out = out.replace(word, 'Demo User')
+      return out.split(token).join('demo@example.com')
     }
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
     for (let node; (node = walker.nextNode()); ) {
@@ -138,6 +162,6 @@ async function redact(page, email) {
     for (const el of account?.querySelectorAll('span') ?? [])
       if (/^[A-Z0-9]{1,3}$/.test(el.textContent.trim()) && !el.children.length) el.textContent = 'DU'
     for (const el of document.querySelectorAll('[title]')) el.title = swap(el.title)
-    for (const el of document.querySelectorAll('input')) if (el.value) el.value = swap(el.value)
+    for (const el of document.querySelectorAll('input:not([type=file])')) if (el.value) el.value = swap(el.value)
   }, email ?? '')
 }

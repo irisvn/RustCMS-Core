@@ -267,7 +267,7 @@ listed in [Error codes](../reference/error-codes.md).
 ### In the panel
 
 ![The rich text editor: toolbar, a table, an embed card and a callout](/img/admin/rich-text-editor.webp)
-*RBlog, a blog built on RustCMS: the post editor.*
+*The RustCMS demo app (examples/demo): the post editor.*
 
 The editor is TipTap. It injects no styles and its nodes render no `style`
 attribute, so the panel's Content Security Policy is unchanged. Its toolbar
