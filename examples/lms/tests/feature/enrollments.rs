@@ -29,9 +29,10 @@ db_test!(seats_bound_active_enrollments, migrate = Migrator, |db: TestDb| async 
     enroll(&app, &staff, course.id, bob.id).await.assert_status(StatusCode::CREATED);
     let back = patch(&app, &staff, &ann_enrollment, json!({"status": "active"})).await;
     assert!(errors(&back).contains("has no seats left"));
+    // Not one of the select's options: refused before the hooks run.
     assert!(
         errors(&patch(&app, &staff, &ann_enrollment, json!({"status": "paused"})).await)
-            .contains("active or withdrawn")
+            .contains("is not one of the options")
     );
     assert_eq!(active(&app, course.id).await, 1);
     // A key spelled another way (`0…`) is refused as input, never a server error.
