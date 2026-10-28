@@ -186,7 +186,8 @@ jobs:
         working-directory: admin-ui
 
   e2e:
-    runs-on: ubuntu-latest
+    # Playwright's Chromium does not support ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
     # Invitations and password resets are read back from Mailpit (`e2e/serve.sh`).
     services:
       mailpit:
