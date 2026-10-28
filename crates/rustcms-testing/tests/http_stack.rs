@@ -284,7 +284,8 @@ async fn a_panic_answers_the_standard_500() {
             .assert_status(StatusCode::INTERNAL_SERVER_ERROR)
             .assert_json("", json!({"message": "Server error.", "code": "internal_error"}));
         assert_eq!(response.headers["x-request-id"], "req-1", "{path}");
+        assert!(!text(&response).contains("boom") && !text(&response).contains("guard bug"), "payload never sent");
     }
-    // The application keeps serving.
+    // The application keeps serving, and the timeout still answers 408.
     app.get("/health").await.assert_status(StatusCode::OK);
 }

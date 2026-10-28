@@ -226,15 +226,12 @@ pub(crate) fn router(
         .with_state(state)
 }
 
-/// A handler's (or middleware's) panic: the standard 500, logged once with
-/// its message. A stream that already answered cannot become a 500.
-fn panic_response(err: Box<dyn std::any::Any + Send>) -> Response {
-    let detail = err
-        .downcast_ref::<String>()
-        .map(String::as_str)
-        .or_else(|| err.downcast_ref::<&str>().copied())
-        .unwrap_or("non-text panic");
-    AppError::Internal(format!("handler panicked: {detail}")).into_response()
+/// A handler's (or middleware's) panic: the standard 500 with a fixed log
+/// line in the request's span. The payload is never logged here nor sent (it
+/// may hold data; Rust's panic hook has already printed it to stderr). A stream
+/// that already answered cannot become a 500.
+fn panic_response(_payload: Box<dyn std::any::Any + Send>) -> Response {
+    AppError::Internal("handler panicked".to_owned()).into_response()
 }
 
 /// Keeps a client's `x-request-id` only when it is a short token (letters,

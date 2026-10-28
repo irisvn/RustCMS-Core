@@ -155,8 +155,10 @@ Handlers can call `rustcms::http::request_deadline()` to know when the 408
 will cut the request off, and finish optional work before it.
 
 A panic in a handler (or in a guard or middleware) answers the standard 500
-(`{"message": "Server error.", "code": "internal_error"}`) and is logged once,
-with its message, in the request's span; the connection stays usable. A
+(`{"message": "Server error.", "code": "internal_error"}`), logged as
+`internal error: handler panicked` in the request's span (the panic's message
+is not logged there nor sent; Rust's panic hook prints it to stderr, and the
+request's trace records the 500); the connection stays usable. A
 stream that has already answered (server-sent events) cannot become a 500: the
 panic ends that stream. Prefer returning `AppError::internal`: a panic says
 nothing to the caller and can leave shared state half-updated.
