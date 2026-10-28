@@ -170,7 +170,7 @@ enum Command {
     },
     /// Open the guide of this version in a browser
     Docs {
-        /// Print where it is instead of opening it
+        /// Print its URL instead of opening it
         #[arg(long)]
         print_path: bool,
     },

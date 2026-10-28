@@ -29,6 +29,13 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## Unreleased
+
+- `rustcms docs` opens the guide of your version online
+  (`https://irisvn.github.io/RustCMS/v/X.Y.Z/`); the command no longer
+  carries an offline copy. The guide's sources are Markdown files in
+  RustCMS-Core (`docs/guide/src`).
+
 ## From 0.10.2 to 0.10.3
 
 - Nothing to change. On phones a record page's Edit and Delete are in its

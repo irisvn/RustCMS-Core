@@ -1,0 +1,119 @@
+# Publishes the guide without a release (docs/core/guides/releasing.md):
+#   dev     main → https://irisvn.github.io/RustCMS/dev/ (unreleased, noindex)
+#   stable  branch docs/vX.Y.Z (the latest release + doc-only commits) → the root
+#           guide and /v/X.Y.Z/; install.sh and latest.txt are left alone
+# The build runs npm packages and holds no secret; the publish job holds the
+# token (environment `pages`) and runs only this workflow's own code.
+name: Docs
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "dev (main) or stable (docs/v<latest release>)"
+        type: choice
+        options: [dev, stable]
+        default: dev
+
+permissions:
+  contents: read
+
+env:
+  DIST_REPO: irisvn/RustCMS
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false, fetch-depth: 0 }
+      # Which commit to build: decided here, before any npm package runs.
+      - id: source
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -eu
+          if [ "$TARGET" = dev ]; then
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "DOCS_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          [ "$TARGET" = stable ] || { echo "unknown target"; exit 1; }
+          tag=$(curl -fsSL "https://raw.githubusercontent.com/$DIST_REPO/gh-pages/latest.txt" | tr -d '\n')
+          echo "$tag" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || { echo "latest.txt: '$tag'"; exit 1; }
+          branch="docs/$tag"
+          git fetch -q origin "refs/heads/$branch:refs/remotes/origin/$branch" "refs/tags/$tag:refs/tags/$tag" \
+            || { echo "no branch $branch: create it from $tag and cherry-pick the doc commits"; exit 1; }
+          git checkout -q "origin/$branch"
+          git merge-base --is-ancestor "$tag" HEAD || { echo "$branch does not contain $tag"; exit 1; }
+          outside=$(git diff --name-only "$tag" HEAD | grep -Ev '^(docs/guide/|examples/demo/tests/docs_snippets\.rs$)' || true)
+          [ -z "$outside" ] || { echo "$branch changes more than the guide:"; echo "$outside"; exit 1; }
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "DOCS_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/check-deps-age.mjs && npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: docs/guide
+      - env:
+          VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          set -eu
+          if [ -z "$VERSION" ]; then
+            DOCS_CHANNEL=dev DOCS_BASE=/RustCMS/dev/ DOCS_OUT="$RUNNER_TEMP/site/dev" npm run build
+          else
+            DOCS_VERSION="$VERSION" DOCS_BASE="/RustCMS/v/$VERSION/" DOCS_OUT="$RUNNER_TEMP/site/versioned" npm run build
+            DOCS_VERSION="$VERSION" DOCS_BASE=/RustCMS/ DOCS_OUT="$RUNNER_TEMP/site/root" npm run build
+          fi
+        working-directory: docs/guide
+      - uses: actions/upload-artifact@v4
+        with: { name: site, path: "${{ runner.temp }}/site", if-no-files-found: error }
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # DIST_TOKEN lives in the `pages` environment (branch main and tags v*).
+    environment: pages
+    # release.yml writes gh-pages too: one writer at a time, never cancelled.
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.DIST_TOKEN }}
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      # This workflow's commit on main, for scripts/pages-publish.sh; nothing
+      # from the built site is executed.
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false, ref: "${{ github.sha }}" }
+      - uses: actions/download-artifact@v4
+        with: { name: site, path: "${{ runner.temp }}/site" }
+      - run: |
+          set -eu
+          git config --global user.name "rustcms-docs"
+          git config --global user.email "rustcms-docs@users.noreply.github.com"
+          site="$RUNNER_TEMP/site"
+          url="https://x-access-token:$GH_TOKEN@github.com/$DIST_REPO.git"
+          # A push that loses a race re-clones and places the guide again
+          # (docs-stable re-checks latest.txt each time).
+          for attempt in 1 2 3; do
+            rm -rf "$RUNNER_TEMP/pages"
+            git clone --quiet --branch gh-pages --depth 1 "$url" "$RUNNER_TEMP/pages"
+            if [ -z "$VERSION" ]; then
+              sh scripts/pages-publish.sh docs-dev "$RUNNER_TEMP/pages" "$site/dev"
+              message="Guide of main ${GITHUB_SHA:0:12}"
+            else
+              sh scripts/pages-publish.sh docs-stable "$RUNNER_TEMP/pages" "$VERSION" "$site/versioned" "$site/root"
+              message="Guide of v$VERSION (docs/v$VERSION)"
+            fi
+            cd "$RUNNER_TEMP/pages"
+            git add -A
+            git diff --cached --quiet && { echo "nothing changed"; exit 0; }
+            git commit -q -m "$message"
+            if git push -q origin gh-pages; then exit 0; fi
+            cd "$GITHUB_WORKSPACE"; sleep $((attempt * 10))
+          done
+          echo "gh-pages: push failed 3 times"; exit 1

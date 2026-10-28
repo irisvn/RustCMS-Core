@@ -4,10 +4,14 @@ What a release publishes and why: [ADR 0025](../adr/0025-distribution.md).
 
 ## Once
 
-- `DIST_TOKEN` secret in RustCMS-Core: a fine-grained personal access token,
-  repository access *only* `irisvn/RustCMS`, permission *Contents: read and
-  write*. It expires: set a reminder; a release with an expired token fails in
-  `publish` and can be re-run after `gh secret set DIST_TOKEN -R irisvn/RustCMS-Core`.
+- Environment `pages` in RustCMS-Core (Settings → Environments), deployment
+  branches and tags: *Selected*, branch `main` and tag `v*`. Its secret
+  `DIST_TOKEN`: a fine-grained personal access token, repository access *only*
+  `irisvn/RustCMS`, permission *Contents: read and write*. Only the jobs that
+  declare the environment (`token`, `publish` of Release; `publish` of Docs)
+  see it; the jobs that run npm packages never do. It expires: set a reminder;
+  a release with an expired token fails in `publish` and can be re-run after
+  `gh secret set DIST_TOKEN --env pages -R irisvn/RustCMS-Core`.
 - Pages of irisvn/RustCMS: source "Deploy from a branch", `gh-pages`, `/`
   (`gh api repos/irisvn/RustCMS/pages -X POST -f 'source[branch]=gh-pages' -f 'source[path]=/'`).
 
@@ -47,6 +51,27 @@ release is fixed by the next one.
 - `publish`: re-run the job. A draft release gets its missing assets; a
   published one is left alone; Pages and `main` are only committed when they
   change.
+
+## The guide without a release
+
+The `Docs` workflow (Actions → Docs → Run workflow, from `main`):
+
+- `dev`: the guide of `main` at `/dev/` (a banner says it is unreleased,
+  search engines skip it).
+- `stable`: a fix to the guide of the latest release. Branch
+  `docs/vX.Y.Z` from the tag `vX.Y.Z` (the version in `latest.txt`),
+  cherry-pick the doc-only commits, push the branch, run the workflow. It
+  refuses a branch that does not contain the tag or changes anything but
+  `docs/guide/` (and `examples/demo/tests/docs_snippets.rs`). It rewrites the
+  root guide and `/v/X.Y.Z/`; `install.sh` and `latest.txt` stay. Releases
+  before the move to VitePress cannot be republished this way.
+
+Release and Docs write `gh-pages` one at a time (job concurrency group
+`gh-pages`). GitHub keeps one waiting run per group: a run that was
+replaced while waiting shows as cancelled; run it again.
+`scripts/pages-publish.sh` places the guides (tested by
+`scripts/test-pages-publish.sh`); a built guide never contains `install.sh`,
+`latest.txt`, `v/`, `dev/`, `CNAME`, `.nojekyll` or a symlink.
 
 ## Release candidates
 

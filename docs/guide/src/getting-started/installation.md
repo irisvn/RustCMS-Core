@@ -27,7 +27,7 @@ line to add to your shell profile, or adds it with `sh -s -- --modify-path`.
 `rustcms self-update` updates it later; `rustcms doctor` checks that this
 machine can build an application (Rust version, C compiler, access to
 RustCMS-Core) and says what to install; `rustcms docs` opens this guide for
-your version, offline.
+your version (online; the guide's sources are in the RustCMS-Core repository).
 
 - A given version: `RUSTCMS_VERSION=v0.4.0` (release candidates are only
   installed this way). Another directory: `RUSTCMS_INSTALL=/opt/rustcms`.

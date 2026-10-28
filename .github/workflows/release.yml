@@ -18,7 +18,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   DIST_REPO: irisvn/RustCMS
-  MDBOOK_VERSION: "0.5.4"
 
 jobs:
   verify:
@@ -34,6 +33,8 @@ jobs:
   token:
     needs: verify
     runs-on: ubuntu-latest
+    # DIST_TOKEN lives in the `pages` environment (branch main and tags v*).
+    environment: pages
     env:
       GH_TOKEN: ${{ secrets.DIST_TOKEN }}
     steps:
@@ -68,23 +69,36 @@ jobs:
           done
           echo "no successful CI run on main for $GITHUB_SHA: push the commit to main before the tag"; exit 1
 
+  # The guide of this version, for /v/X.Y.Z/ and (stable) the root. No secret
+  # here: npm packages run in this job.
   docs:
     needs: verify
     runs-on: ubuntu-latest
+    env:
+      DOCS_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
-        with: { persist-credentials: false }
-      - uses: taiki-e/install-action@v2
-        with: { tool: "mdbook@${{ env.MDBOOK_VERSION }}" }
-      - run: mdbook build docs/guide -d "$RUNNER_TEMP/book"
+        with: { persist-credentials: false, fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/check-deps-age.mjs && npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: docs/guide
+      - run: |
+          set -eu
+          version="${GITHUB_REF_NAME#v}"
+          DOCS_VERSION="$version" DOCS_BASE="/RustCMS/v/$version/" DOCS_OUT="$RUNNER_TEMP/site/versioned" npm run build
+          if [[ "$GITHUB_REF_NAME" != *-rc.* ]]; then
+            DOCS_VERSION="$version" DOCS_BASE=/RustCMS/ DOCS_OUT="$RUNNER_TEMP/site/root" npm run build
+          fi
+        working-directory: docs/guide
       - uses: actions/upload-artifact@v4
-        with: { name: book, path: "${{ runner.temp }}/book", if-no-files-found: error }
+        with: { name: site, path: "${{ runner.temp }}/site", if-no-files-found: error }
 
   # Built, packaged, installed with the install script from the packaged
   # asset, then an application is created from the tag, built and tested, all
   # on a native runner. A target that fails is not published.
   target:
-    needs: [verify, token, docs]
+    needs: [verify, token]
     strategy:
       fail-fast: false
       matrix:
@@ -103,13 +117,7 @@ jobs:
         with: { targets: "${{ matrix.target }}" }
       - if: matrix.musl
         run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
-      # The guide is embedded (`rustcms docs`); a release build without it fails.
-      - uses: actions/download-artifact@v4
-        with: { name: book, path: "${{ runner.temp }}/book" }
       - run: cargo build --release --locked -p rustcms-cli --target ${{ matrix.target }}
-        env:
-          RUSTCMS_DOCS_DIR: ${{ runner.temp }}/book
-          RUSTCMS_RELEASE: "1"
       - name: Package
         run: |
           tag=$GITHUB_REF_NAME
@@ -136,7 +144,7 @@ jobs:
         run: |
           rustcms --version | grep -F "${GITHUB_REF_NAME#v} (${{ matrix.target }})"
           rustcms doctor
-          test -f "$(rustcms docs --print-path)"
+          test "$(rustcms docs --print-path)" = "https://irisvn.github.io/RustCMS/v/${GITHUB_REF_NAME#v}/"
           cd "$RUNNER_TEMP"
           rustcms new demo
           cd demo
@@ -149,6 +157,11 @@ jobs:
   publish:
     needs: [ci, docs, target, token]
     runs-on: ubuntu-latest
+    environment: pages
+    # docs.yml writes gh-pages too: one writer at a time, never cancelled.
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
     env:
       GH_TOKEN: ${{ secrets.DIST_TOKEN }}
       TAG: ${{ github.ref_name }}
@@ -183,8 +196,6 @@ jobs:
           print(body.strip())
           PY
           if [[ "$TAG" == *-rc.* ]]; then echo "PRERELEASE=1" >> "$GITHUB_ENV"; else echo "PRERELEASE=0" >> "$GITHUB_ENV"; fi
-      - uses: actions/download-artifact@v4
-        with: { name: book, path: "${{ runner.temp }}/book" }
       # The dist repository: `main` holds dist/ (README, install scripts); a
       # release needs a commit there to point at.
       - name: Sync the dist repository
@@ -234,31 +245,39 @@ jobs:
         run: |
           set -eu
           version="${TAG#v}"
-          cd "$RUNNER_TEMP"
+          site="$RUNNER_TEMP/artifacts/site"
           url="https://x-access-token:$GH_TOKEN@github.com/$DIST_REPO.git"
-          if git clone --quiet --branch gh-pages --depth 1 "$url" pages 2>/dev/null; then :; else
-            mkdir pages && git -C pages init -q -b gh-pages && git -C pages remote add origin "$url"
-          fi
-          cd pages
-          rm -rf "v/$version" && mkdir -p "v/$version" && cp -R "$RUNNER_TEMP/book/." "v/$version/"
-          if [ "$PRERELEASE" = 0 ]; then
-            find . -mindepth 1 -maxdepth 1 ! -name .git ! -name v -exec rm -rf {} +
-            cp -R "$RUNNER_TEMP/book/." .
-            cp "$GITHUB_WORKSPACE"/dist/install.sh .
-            echo "$TAG" > latest.txt
-          fi
-          touch .nojekyll
-          git add -A
-          git diff --cached --quiet || git commit -q -m "RustCMS $TAG"
-          git push -q origin gh-pages
+          # A push that loses a race re-clones and places the guides again.
+          for attempt in 1 2 3; do
+            rm -rf "$RUNNER_TEMP/pages"
+            if ! git clone --quiet --branch gh-pages --depth 1 "$url" "$RUNNER_TEMP/pages" 2>/dev/null; then
+              mkdir "$RUNNER_TEMP/pages" && git -C "$RUNNER_TEMP/pages" init -q -b gh-pages && git -C "$RUNNER_TEMP/pages" remote add origin "$url"
+            fi
+            if [ "$PRERELEASE" = 1 ]; then
+              sh scripts/pages-publish.sh release-rc "$RUNNER_TEMP/pages" "$version" "$site/versioned"
+            else
+              sh scripts/pages-publish.sh release-stable "$RUNNER_TEMP/pages" "$version" "$site/versioned" "$site/root" dist/install.sh
+            fi
+            cd "$RUNNER_TEMP/pages"
+            git add -A
+            git diff --cached --quiet || git commit -q -m "RustCMS $TAG"
+            if git push -q origin gh-pages; then exit 0; fi
+            cd "$GITHUB_WORKSPACE"; sleep $((attempt * 10))
+          done
+          echo "gh-pages: push failed 3 times"; exit 1
       - name: Check what developers download
         run: |
           set -eu
           base="https://irisvn.github.io/RustCMS"
           check() { for i in $(seq 1 30); do curl -fsSL --max-time 10 "$1" >/dev/null 2>&1 && return 0; sleep 10; done; echo "not served: $1"; return 1; }
           check "$base/v/${TAG#v}/index.html"
+          check "$base/v/${TAG#v}/admin/resources.html"
+          asset=$(curl -fsSL "$base/v/${TAG#v}/admin/resources.html" | grep -o "/RustCMS/v/${TAG#v}/assets/[^\"]*\.js" | head -n 1)
+          [ -n "$asset" ] || { echo "no asset under /v/${TAG#v}/"; exit 1; }
+          check "https://irisvn.github.io$asset"
           check "https://github.com/$DIST_REPO/releases/download/$TAG/SHA256SUMS"
           if [ "$PRERELEASE" = 0 ]; then
+            check "$base/index.html"
             check "$base/install.sh"
             for i in $(seq 1 30); do [ "$(curl -fsSL "$base/latest.txt" | tr -d '\n')" = "$TAG" ] && exit 0; sleep 10; done
             echo "latest.txt is not $TAG"; exit 1

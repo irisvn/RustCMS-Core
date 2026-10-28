@@ -80,10 +80,27 @@ test-reset-db:
     docker compose exec -T postgres psql -U postgres -tAc "select 'drop database ' || datname || ';' from pg_database where datname like 'rustcms_t%'" | docker compose exec -T postgres psql -U postgres
     docker compose exec -T mysql mysql -uroot -pmysql -N -e "select concat('drop database ', schema_name, ';') from information_schema.schemata where schema_name like 'rustcms\_t%'" | docker compose exec -T mysql mysql -uroot -pmysql
 
-doc:
+doc: docs
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
     cargo test --workspace --doc
-    mdbook build docs/guide
+
+# The guide (VitePress): dependency age, install, build with snippet/link/anchor checks, script tests.
+docs:
+    cd docs/guide && node scripts/check-deps-age.mjs && npm ci --ignore-scripts --no-audit --no-fund
+    cd docs/guide && npm run build && node scripts/test-checks.mjs
+    sh scripts/test-pages-publish.sh
+
+# The guide with live reload: http://localhost:5173
+docs-dev:
+    cd docs/guide && npm run dev
+
+# The guide at its three published prefixes (/RustCMS/, /RustCMS/v/X.Y.Z/, /RustCMS/dev/), served like Pages.
+docs-prefixes:
+    cd docs/guide && node scripts/test-prefixes.mjs
+
+# Links of the guide to other sites (not part of CI).
+docs-links:
+    cd docs/guide && node scripts/check-links.mjs
 
 # Generated files are up to date (CLI docs, TypeScript types, built admin assets).
 generated:

@@ -6,6 +6,15 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The guide moved from mdBook to VitePress (search, dark mode, phone layout).
+  Page paths (`x.html`) and heading anchors are kept. `rustcms docs` opens the
+  online guide of its version (`https://irisvn.github.io/RustCMS/v/X.Y.Z/`);
+  release builds no longer embed it (`RUSTCMS_DOCS_DIR`, `RUSTCMS_RELEASE`
+  are gone). The guide of `main` is published to `/dev/`.
+- Release and the new Docs workflow read `DIST_TOKEN` from the `pages`
+  environment and write `gh-pages` one at a time (`scripts/pages-publish.sh`).
+
 ## [0.10.3] — 2026-10-24
 
 ### Fixed (0.10.3)

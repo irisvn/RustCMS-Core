@@ -3,7 +3,9 @@
 *.db
 .env
 node_modules/
-/docs/guide/book
+/docs/guide/node_modules/
+/docs/guide/.vitepress/dist/
+/docs/guide/.vitepress/cache/
 .idea/
 .codex/
 /admin-ui/playwright-report/

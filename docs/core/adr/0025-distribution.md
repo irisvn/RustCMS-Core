@@ -1,6 +1,6 @@
 # ADR 0025: Distribution: binaries and guide in irisvn/RustCMS, Git dependencies on Core
 
-- Status: accepted (M24a)
+- Status: accepted (M24a); the embedded guide is superseded (2026-10-28, see below)
 - Date: 2026-10-16
 
 ## Context
@@ -49,6 +49,9 @@ Cargo must reach Core's source. crates.io is not used yet.
   knows that version's SeaORM pins, so no compatibility table is needed);
   `self-update` (only under an `install.json`, never a Cargo install);
   `docs` (the guide embedded in release builds, which fail without it).
+  **Superseded 2026-10-28** (plan `docs/core/plans/docs-v2-vitepress.md`): the guide moved to VitePress, whose
+  output needs HTTP; it is no longer embedded and `rustcms docs` opens `/v/X.Y.Z/` online. Sources stay in
+  Core; `main` is published to `/dev/` and doc fixes of the latest release to the root by the `Docs` workflow.
 
 ## Consequences
 
