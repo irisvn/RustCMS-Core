@@ -98,7 +98,9 @@ with its code). The value's **type** is checked first, as for any field.
   `Decimal(10, 2)`, an instant with an offset the same instant in UTC, a UUID
   in any case the same UUID. Options are declared in any of these spellings;
   the schema shows them canonical. Wire types stay strict: `12` (a number) is
-  not an `i64` value. Checkbox list items are compared as JSON values.
+  not an `i64` value. The value stored is the option matched: `"10.505"` on a
+  `Decimal(10, 2)` rounds to the option `"10.50"`, which is what is written.
+  Checkbox list items are compared as JSON values.
 - An update that leaves the field out keeps the stored value, even one outside
   the options (stored before the check, or by a hook).
 - The guarantee covers values a **client** sends. Hooks
@@ -111,10 +113,13 @@ with its code). The value's **type** is checked first, as for any field.
 
 Declarations that cannot hold stop the application at boot: an option that is
 not a value of its column (`12` for an `i64` column), one that would be stored
-as another value (`"10.555"` on a column of scale 2), a `CheckboxList` on a
-column that is not JSON, or a field in several inputs that do not offer the
-same options (another set, a select and a checkbox list, or an input without
-options). The same options in another order or with other labels are allowed.
+as another value or read back differently (`"10.555"` on a column of scale 2,
+`"100000000.00"` beyond a `Decimal(10, 2)`'s precision, `0.1` on an `f32`
+column, a timestamp with a fraction finer than microseconds), a
+`CheckboxList` on a column that is not JSON, or a field in several inputs that
+do not offer the same options (another set, a select and a checkbox list, or
+an input without options). The same options in another order or with other
+labels are allowed. `SecretInput` and `SecretMapInput` take no options.
 
 The LMS offers two statuses in its enrollment form:
 

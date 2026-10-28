@@ -232,6 +232,11 @@ impl<R: Resource> ResourceAdapter<R> {
                  `Field::encrypted_map`, and those inputs only for them",
                 input.name
             );
+            assert!(
+                secret.is_none() || input.options.is_empty(),
+                "resource `{slug}`: encrypted field `{}` takes no options",
+                input.name
+            );
         }
         let relations = R::relations();
         let mut link_inputs = HashSet::new();

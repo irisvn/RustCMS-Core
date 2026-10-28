@@ -57,6 +57,9 @@ impl<R: Resource> ResourceAdapter<R> {
     pub(super) fn accept_input(&self, ctx: &Ctx, op: Operation, input: Data) -> AppResult<Data> {
         let mut errors = ValidationErrors::new();
         let natural_create = op == Operation::Create && matches!(self.meta.key, KeyStrategy::Natural);
+        // Select values as stored: their canonical form (a decimal rounded to
+        // the column's scale is the option it matched, not what was sent).
+        let mut canonical = Vec::new();
         for (name, value) in &input {
             let allowed =
                 self.field(name).filter(|f| f.can_write(op, ctx)).filter(|_| *name != self.pk_name || natural_create);
@@ -70,8 +73,15 @@ impl<R: Resource> ResourceAdapter<R> {
                 continue;
             }
             // Static options bound client input only: hooks may write any value.
-            let rule = InputRule { options: self.input_options(name), ..self.rule(name, field.required) };
-            check_input(name, &rule, value, &mut errors);
+            let options = self.input_options(name);
+            let rule = InputRule { options, ..self.rule(name, field.required) };
+            if check_input(name, &rule, value, &mut errors)
+                && !value.is_null()
+                && let Some(Options::One { scale, .. }) = options
+                && let Ok(value) = crate::wire::canonical(rule.kind, scale, value)
+            {
+                canonical.push((name.clone(), value));
+            }
         }
         if op == Operation::Create {
             for field in self.fields.iter().filter(|f| f.required && f.can_write(op, ctx)) {
@@ -81,6 +91,8 @@ impl<R: Resource> ResourceAdapter<R> {
             }
         }
         errors.into_result()?;
+        let mut input = input;
+        input.extend(canonical);
         Ok(input)
     }
 
@@ -250,6 +262,9 @@ pub(super) fn static_options<C: ColumnTrait>(
                     "resource `{slug}`: option {} of select `{name}` would be stored as {canonical}",
                     option.value
                 );
+                if let Err(problem) = storable(column.column.def().get_column_type(), column.kind, &canonical) {
+                    panic!("resource `{slug}`: option {} of select `{name}` {problem}", option.value);
+                }
                 option.value = canonical;
             }
         }
@@ -266,4 +281,37 @@ pub(super) fn static_options<C: ColumnTrait>(
         out.insert(name, first);
     }
     out
+}
+
+/// Whether the column stores `canonical` (a select option in canonical form)
+/// exactly, so that the value read back is still that option: an `f32`
+/// keeps few digits, timestamps keep microseconds (PostgreSQL, MySQL), a
+/// decimal at most its precision.
+fn storable(
+    column_type: &sea_orm::sea_query::ColumnType,
+    kind: FieldKind,
+    canonical: &serde_json::Value,
+) -> Result<(), String> {
+    use chrono::Timelike;
+    use sea_orm::sea_query::ColumnType;
+    let Some(value) = kind.decode(canonical).ok().and_then(|c| c.into_iter().next()) else { return Ok(()) };
+    match (column_type, value) {
+        (ColumnType::Float, Value::Double(Some(n))) => {
+            let narrow = f64::from(n as f32);
+            if narrow == n { Ok(()) } else { Err(format!("would be stored as {narrow} (an f32 column)")) }
+        }
+        (_, Value::ChronoDateTime(Some(d))) if d.nanosecond() % 1_000 != 0 => {
+            Err("has a fraction of a second finer than microseconds".to_owned())
+        }
+        (_, Value::ChronoDateTimeUtc(Some(d))) if d.nanosecond() % 1_000 != 0 => {
+            Err("has a fraction of a second finer than microseconds".to_owned())
+        }
+        (
+            ColumnType::Decimal(Some((precision, _))) | ColumnType::Money(Some((precision, _))),
+            Value::Decimal(Some(d)),
+        ) if d.mantissa().unsigned_abs() >= 10u128.pow((*precision).min(38)) => {
+            Err(format!("has more than {precision} digits"))
+        }
+        _ => Ok(()),
+    }
 }

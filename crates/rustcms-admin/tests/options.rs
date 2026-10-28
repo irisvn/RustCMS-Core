@@ -47,6 +47,8 @@ pub mod swatch {
         pub price: Option<Decimal>,
         pub token: Option<Uuid>,
         pub at: Option<DateTimeUtc>,
+        pub weight: Option<f32>,
+        pub local_at: Option<DateTime>,
         /// Never written by clients.
         pub tier: Option<String>,
         /// Written, never read back.
@@ -70,6 +72,8 @@ pub mod vault {
         pub id: i32,
         #[sea_orm(column_type = "Text", nullable)]
         pub token: Option<rustcms_core::crypto::Encrypted<String>>,
+        #[sea_orm(column_type = "Text", nullable)]
+        pub env: Option<rustcms_core::crypto::Encrypted<std::collections::BTreeMap<String, String>>>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -109,6 +113,8 @@ fn swatch_fields() -> Vec<Field> {
         Field::column(C::Price),
         Field::column(C::Token),
         Field::column(C::At),
+        Field::column(C::Weight),
+        Field::column(C::LocalAt),
         Field::column(C::Tier).creatable(|_| false).updatable(|_| false),
         Field::column(C::Code).readable(|_| false),
         Field::column(C::PaletteId).belongs_to("palettes"),
@@ -143,7 +149,11 @@ impl Resource for SwatchResource {
             SelectInput::make("serial").options([("0012", "Twelve"), ("7", "Seven")]),
             SelectInput::make("price").options([("10.5", "Cheap"), ("20", "Dear")]),
             SelectInput::make("token").options([(TOKEN.to_uppercase(), "First")]),
-            SelectInput::make("at").options([("2026-01-01T02:00:00+02:00", "New year")]),
+            SelectInput::make("at")
+                .options([("2026-01-01T02:00:00+02:00", "New year"), ("2026-01-01T00:00:00.123456Z", "Just after")]),
+            // Values an `f32` and timestamps (microseconds) store exactly.
+            SelectInput::make("weight").options([(0.5, "Half"), (0.25, "Quarter")]),
+            SelectInput::make("local_at").options([("2026-01-01T10:00:00.123456", "Morning")]),
             SelectInput::make("tier").options([("gold", "Gold")]),
             SelectInput::make("code").options([("x1", "X1")]),
             // A relation: its key is checked against the relation, never these.
@@ -345,6 +355,64 @@ db_test!(hooks_actions_and_relations_keep_their_own_rules, |db: TestDb| async mo
     client.post_json(&nested, &json!({"name": "n", "status": "live"})).await.assert_status(StatusCode::CREATED);
 });
 
+/// The stored price of `key`, as the wire shows it.
+async fn stored_price(app: &TestApp, key: &str) -> Option<String> {
+    stored(app, key).await.price.map(|p| {
+        let mut p = p.round_dp(2);
+        p.rescale(2);
+        p.to_string()
+    })
+}
+
+db_test!(selects_store_the_option_they_matched, |db: TestDb| async move {
+    let (app, admin) = setup(db).await;
+    let client = app.acting_as(&admin).await;
+    // A decimal rounded to the column's scale matches an option: that option is stored.
+    for (name, price) in [("a", "10.504"), ("b", "10.505"), ("c", "10.5")] {
+        let created = create(&client, &app, json!({"name": name, "status": "draft", "price": price})).await;
+        created.assert_status(StatusCode::CREATED);
+        let key = created.json()["data"]["key"].as_str().unwrap().to_owned();
+        assert_eq!(stored_price(&app, &key).await.as_deref(), Some("10.50"), "{price}");
+        let row = stored(&app, &key).await;
+        assert_eq!(row.price.map(|p| p * rust_decimal::Decimal::from(1000)), Some(rust_decimal::Decimal::from(10_500)));
+    }
+    let created = create(&client, &app, json!({"name": "d", "status": "draft", "price": "20"})).await;
+    let key = created.json()["data"]["key"].as_str().unwrap().to_owned();
+    let uri = app.admin_api(&format!("resources/swatches/records/{key}"));
+    client.send(Method::PATCH, &uri, Some(&json!({"price": "10.505"}))).await.assert_status(StatusCode::OK);
+    let row = stored(&app, &key).await;
+    assert_eq!(row.price.map(|p| p * rust_decimal::Decimal::from(1000)), Some(rust_decimal::Decimal::from(10_500)));
+
+    // Every option reads back as itself: sent again, it is still accepted.
+    let body = json!({
+        "name": "e",
+        "status": "draft",
+        "price": "20.00",
+        "weight": 0.25,
+        "at": "2026-01-01T00:00:00.123456Z",
+        "local_at": "2026-01-01T10:00:00.123456",
+    });
+    let created = create(&client, &app, body).await;
+    created.assert_status(StatusCode::CREATED);
+    let key = created.json()["data"]["key"].as_str().unwrap().to_owned();
+    let uri = app.admin_api(&format!("resources/swatches/records/{key}"));
+    let record = client.get(&uri).await.json()["data"]["data"].clone();
+    assert_eq!(
+        (&record["price"], &record["weight"], &record["at"], &record["local_at"]),
+        (&json!("20.00"), &json!(0.25), &json!("2026-01-01T00:00:00.123456Z"), &json!("2026-01-01T10:00:00.123456")),
+        "{record}"
+    );
+    let again = json!({
+        "price": record["price"],
+        "weight": record["weight"],
+        "at": record["at"],
+        "local_at": record["local_at"],
+    });
+    client.send(Method::PATCH, &uri, Some(&again)).await.assert_status(StatusCode::OK);
+    let refused = client.send(Method::PATCH, &uri, Some(&json!({"weight": 0.3}))).await;
+    assert_eq!(code(&refused, "weight"), json!("not_option"));
+});
+
 db_test!(the_schema_shows_the_canonical_options, |db: TestDb| async move {
     let (app, admin) = setup(db).await;
     let client = app.acting_as(&admin).await;
@@ -371,9 +439,36 @@ db_test!(the_schema_shows_the_canonical_options, |db: TestDb| async move {
     assert_eq!(shown("serial"), [json!(["12", "7"])]);
     assert_eq!(shown("price"), [json!(["10.50", "20.00"])]);
     assert_eq!(shown("token"), [json!([TOKEN])]);
-    assert_eq!(shown("at"), [json!(["2026-01-01T00:00:00Z"])]);
+    assert_eq!(shown("at"), [json!(["2026-01-01T00:00:00Z", "2026-01-01T00:00:00.123456Z"])]);
     assert_eq!(shown("status"), [json!(["draft", "live"]), json!(["live", "draft"])]);
     assert_eq!(shown("colors"), [json!(["red", "green", "blue"])]);
+});
+
+db_test!(imports_store_the_option_they_matched, |db: TestDb| async move {
+    let (app, admin) = setup(db).await;
+    let client = app.acting_as(&admin).await;
+    create(&client, &app, json!({"name": "kept", "status": "draft", "price": "20"}))
+        .await
+        .assert_status(StatusCode::CREATED);
+    let csv = "name,status,price\r\nfresh,draft,10.504\r\nkept,draft,10.505\r\n";
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(app.admin_api("resources/swatches/imports"))
+        .header(header::CONTENT_TYPE, "text/csv")
+        .body(Body::from(csv))
+        .unwrap();
+    let uploaded = client.request(request).await;
+    uploaded.assert_status(StatusCode::CREATED);
+    let id = uploaded.json()["id"].as_str().unwrap().to_owned();
+    let mapping = json!({"mapping": {"name": "name", "status": "status", "price": "price"}});
+    client.post_json(&app.admin_api(&format!("imports/{id}/run")), &mapping).await.assert_status(StatusCode::OK);
+    rustcms_core::queue::run_until_idle(app.state(), None, 10).await.unwrap();
+    let shown = client.get(&app.admin_api(&format!("imports/{id}"))).await.json();
+    assert_eq!((shown["created"].clone(), shown["updated"].clone()), (json!(1), json!(1)), "{shown}");
+    for row in swatch::Entity::find().all(app.state().db()).await.unwrap() {
+        let price = row.price.map(|p| p * rust_decimal::Decimal::from(1000));
+        assert_eq!(price, Some(rust_decimal::Decimal::from(10_500)), "{}", row.name);
+    }
 });
 
 db_test!(imports_report_rows_out_of_the_options, |db: TestDb| async move {
@@ -501,6 +596,34 @@ refused_at_boot!(
 );
 
 refused_at_boot!(
+    an_option_an_f32_does_not_keep,
+    LossyFloat,
+    "option 0.1 of select `weight` would be stored as 0.10000000149011612 (an f32 column)",
+    components![SelectInput::make("weight").options([(0.1, "Tenth")])]
+);
+
+refused_at_boot!(
+    an_instant_finer_than_microseconds,
+    NanoInstant,
+    "option \"2026-01-01T00:00:00.1234567Z\" of select `at` has a fraction of a second finer than microseconds",
+    components![SelectInput::make("at").options([("2026-01-01T00:00:00.1234567Z", "Odd")])]
+);
+
+refused_at_boot!(
+    a_local_time_finer_than_microseconds,
+    NanoLocal,
+    "of select `local_at` has a fraction of a second finer than microseconds",
+    components![SelectInput::make("local_at").options([("2026-01-01T10:00:00.000000001", "Odd")])]
+);
+
+refused_at_boot!(
+    a_decimal_over_its_precision,
+    WideDecimal,
+    "option \"100000000.00\" of select `price` has more than 10 digits",
+    components![SelectInput::make("price").options([("99999999.99", "Most"), ("100000000.00", "Too much")])]
+);
+
+refused_at_boot!(
     a_checkbox_list_on_a_text_column,
     TextList,
     "checkbox list `status` needs a JSON column",
@@ -531,3 +654,47 @@ impl Resource for SecretOptions {
 fn encrypted_fields_have_no_options() {
     Registry::new().register::<SecretOptions>();
 }
+
+/// A vault whose form is `form`, to check encrypted inputs at boot.
+macro_rules! vault_refused_at_boot {
+    ($test:ident, $resource:ident, $message:literal, $form:expr) => {
+        pub struct $resource;
+
+        impl Resource for $resource {
+            type Entity = vault::Entity;
+            const SLUG: &'static str = "vaults";
+
+            fn meta() -> ResourceMeta {
+                ResourceMeta::new("Vault")
+            }
+
+            fn fields() -> Vec<Field> {
+                vec![Field::column(vault::Column::Token).encrypted(), Field::column(vault::Column::Env).encrypted_map()]
+            }
+
+            fn form() -> Form {
+                Form::new().schema($form)
+            }
+        }
+
+        #[test]
+        #[should_panic(expected = $message)]
+        fn $test() {
+            Registry::new().register::<$resource>();
+        }
+    };
+}
+
+vault_refused_at_boot!(
+    a_secret_input_with_options,
+    SecretInputOptions,
+    "encrypted field `token` takes no options",
+    components![SecretInput::make("token").options([("a", "A")]), SecretMapInput::make("env")]
+);
+
+vault_refused_at_boot!(
+    a_secret_map_input_with_options,
+    SecretMapOptions,
+    "encrypted field `env` takes no options",
+    components![SecretInput::make("token"), SecretMapInput::make("env").options([("a", "A")])]
+);
