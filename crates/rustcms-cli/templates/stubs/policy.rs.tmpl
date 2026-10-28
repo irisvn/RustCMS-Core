@@ -4,8 +4,9 @@ use rustcms::admin::{Ctx, Data, Policy};
 use rustcms::async_trait;
 
 /// Deny by default. `ability` is `view_any`, `view`, `create`, `update`,
-/// `delete` or an action name; `record` is the record's readable data when
-/// the check concerns one record.
+/// `delete` or an action name; `record` holds every column of the record
+/// (not only readable fields; encrypted fields are `null`) when the check
+/// concerns one record.
 pub struct {{ name }};
 
 #[async_trait]

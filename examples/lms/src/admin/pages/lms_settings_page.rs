@@ -9,7 +9,7 @@ use crate::settings::lms_settings::{LmsSettings, MAX_CAPACITY};
 #[async_trait]
 impl SettingsPage for LmsSettings {
     fn meta() -> SettingsMeta {
-        SettingsMeta::new("School").icon("graduation-cap")
+        SettingsMeta::new("School").icon("settings")
     }
 
     fn fields() -> Vec<SettingField> {

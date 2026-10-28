@@ -3,7 +3,7 @@
 // accepts survive the mapping; images travel as media ids, shown through the
 // panel's own media URL; embeds as a provider and an id (never a URL or HTML).
 // Version 1 documents are read as they are (a subset of version 2); the
-// editor saves version 2.
+// editor writes the lowest version a document needs (`fromEditor`).
 
 export interface DocNode {
   type: string;
@@ -19,7 +19,7 @@ export interface RichDocument {
   content: DocNode[];
 }
 
-/** The version the editor saves. */
+/** The newest version the editor reads and writes (it writes version 1 when a document needs no more). */
 export const DOCUMENT_VERSION = 2;
 
 /** The server's limits (`rustcms_admin::rich_text`). */

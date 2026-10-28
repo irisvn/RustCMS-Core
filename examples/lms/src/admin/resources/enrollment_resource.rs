@@ -32,7 +32,7 @@ impl Resource for EnrollmentResource {
     /// and the instructor's access hold until it commits.
     fn meta() -> ResourceMeta {
         ResourceMeta::new("Enrollment")
-            .icon("clipboard-check")
+            .icon("activity")
             .exportable()
             .group("Learning")
             .lock_parent("course_id", "courses")

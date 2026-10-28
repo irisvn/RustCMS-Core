@@ -392,17 +392,9 @@ A test signs in as a seeded account and checks the queued mail:
 
 See [Testing](../basics/testing.md).
 
-## Rough edges
+## What it leaves out
 
-The example is kept small; a few things in it are not as polished as the
-rest:
-
-- Some icons it names (`book-open`, `clipboard-check`, `graduation-cap`,
-  `list`, `newspaper`) are not in the panel's icon set and show as the
-  generic icon.
-- Its migrations do not override `use_transaction()` to `Some(true)`, which
-  the [migration guide](../basics/database.md#migrations) recommends.
-- Not part of the example yet: learner sign-in and quizzes.
+Learner sign-in and quizzes are not part of the example yet.
 
 ## Related pages
 

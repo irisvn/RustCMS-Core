@@ -46,7 +46,8 @@ pub struct AppConfig {
     pub name: String,
     /// Environment.
     pub env: Environment,
-    /// Exposes error details in logs at debug level.
+    /// For the application's own use (`APP_DEBUG`); the framework does not
+    /// change behaviour on it, and error responses never carry internal details.
     pub debug: bool,
     /// Public URL, also the default trusted origin for the admin panel.
     pub url: String,

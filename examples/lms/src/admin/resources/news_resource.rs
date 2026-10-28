@@ -46,7 +46,7 @@ impl Resource for NewsResource {
     const SLUG: &'static str = "news";
 
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("News article").plural("News").title("title").icon("newspaper").group("News").unique(
+        ResourceMeta::new("News article").plural("News").title("title").icon("bell").group("News").unique(
             "news_slug_key",
             &["slug"],
             "is already taken",

@@ -72,7 +72,7 @@ function Tags(props: PageProps<Data>) {
           <li key={tag.key} className="demo-react-row">
             <span>{tag.data.name}</span>
             <DropdownMenu trigger={props.t("Actions")} aria-label={`${props.t("Actions")} ${tag.data.name}`} variant="ghost">
-              <DropdownMenuItem onSelect={() => props.navigate(`/r/tags/${tag.key}`)}>{props.t("Open")}</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => props.navigate(`/r/tags/records/${tag.key}`)}>{props.t("Open")}</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem destructive onSelect={() => remove.mutate({ key: tag.key })}>
                 {props.t("Delete")}

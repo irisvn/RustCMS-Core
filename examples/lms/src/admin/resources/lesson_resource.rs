@@ -18,7 +18,11 @@ impl Resource for LessonResource {
     /// Writes lock the course first: one that changes instructor meanwhile
     /// waits, and the instructor's access is checked again under the lock.
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("Lesson").title("title").icon("list").group("Learning").lock_parent("course_id", "courses")
+        ResourceMeta::new("Lesson")
+            .title("title")
+            .icon("file-text")
+            .group("Learning")
+            .lock_parent("course_id", "courses")
     }
 
     fn fields() -> Vec<Field> {

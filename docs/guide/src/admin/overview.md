@@ -104,7 +104,7 @@ Icons (also for pages): `activity`, `bell`, `box`, `calendar`, `chart`,
 `history`, `home`, `image`, `key`, `layers`, `link`, `lock`, `logs`, `mail`,
 `network`, `package`, `rocket`, `server`, `settings`, `shield`,
 `shopping-cart`, `tag`, `terminal`, `users`, `workflow`. Any other name shows
-a generic icon (the LMS example's `book-open` and `clipboard-check` do).
+a generic icon.
 
 ### Order
 

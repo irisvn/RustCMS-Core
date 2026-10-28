@@ -19,7 +19,7 @@ impl Resource for CourseResource {
     const SLUG: &'static str = "courses";
 
     fn meta() -> ResourceMeta {
-        ResourceMeta::new("Course").title("title").icon("book-open").group("Learning").unique(
+        ResourceMeta::new("Course").title("title").icon("package").group("Learning").unique(
             "courses_slug_key",
             &["slug"],
             "is already taken",

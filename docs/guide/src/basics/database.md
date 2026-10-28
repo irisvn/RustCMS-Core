@@ -99,12 +99,6 @@ run in a transaction. MySQL is different: each DDL statement commits on its
 own, so write migrations that can run again (the helpers below skip what
 exists).
 
-::: warning Example migrations
-A few migrations in the demo and LMS examples (`create_tags`,
-`create_integrations` and the LMS migrations) do not declare
-`use_transaction`. Do not copy them as they are: add the method.
-:::
-
 ### Commands
 
 | Command | Does |
@@ -341,7 +335,6 @@ SeaORM connection, a transaction included. In tests,
 - A `String` column is `varchar(255)` on MySQL: longer values fail there only.
 - `migrate:rollback --step N` follows the migrator's order, not the order
   migrations ran.
-- Example migrations without `use_transaction` are not a model to follow.
 
 ## Related pages
 

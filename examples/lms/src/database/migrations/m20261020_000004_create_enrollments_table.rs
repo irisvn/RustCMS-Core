@@ -7,6 +7,12 @@ pub struct Migration;
 
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
+    /// Schema change and migration record commit together, also on SQLite
+    /// (whose default is no transaction), so a failed run can be retried.
+    fn use_transaction(&self) -> Option<bool> {
+        Some(true)
+    }
+
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         create_table(
             manager,
