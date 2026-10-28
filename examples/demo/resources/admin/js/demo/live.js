@@ -16,6 +16,7 @@
       reset.type = "button";
       reset.className = "rc-button";
       reset.textContent = ctx.t("Reset");
+      // #region reset
       reset.addEventListener("click", async () => {
         const csrf = await fetch(`${base}/api/auth/csrf`, { credentials: "same-origin" }).then((r) => r.json());
         await fetch(`${base}/api/x/demo/ticks/reset`, {
@@ -24,7 +25,9 @@
           headers: { "X-CSRF-Token": csrf.csrfToken },
         });
       });
+      // #endregion reset
       element.append(count, status, reset);
+      // #region events
       ctx.realtime.events("/demo/ticks", {
         onEvent(name, data) {
           if (name === "tick") count.textContent = String(data.count);
@@ -33,6 +36,7 @@
           status.textContent = state.state === "open" ? "" : ctx.t(state.state === "closed" ? "Stopped" : "Reconnecting…");
         },
       });
+      // #endregion events
       const form = document.createElement("form");
       const input = document.createElement("input");
       input.className = "rc-input";
@@ -44,6 +48,7 @@
       echoed.setAttribute("aria-label", ctx.t("Echo"));
       form.append(input, send, echoed);
       element.append(form);
+      // #region socket
       const socket = ctx.realtime.socket("/demo/echo", {
         onMessage(data) {
           if (typeof data === "string") echoed.textContent = data;
@@ -53,6 +58,7 @@
         event.preventDefault();
         if (socket.send(input.value)) input.value = "";
       });
+      // #endregion socket
       return { update() {}, unmount() {} };
     },
   });

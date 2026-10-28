@@ -41,7 +41,9 @@ impl Job for SendWelcome {
         if rustcms::models::job_receipt::Entity::find_by_id(receipt.clone()).one(db).await?.is_some() {
             return Ok(());
         }
+        // #region read-settings
         let school = rustcms::settings::get::<LmsSettings>(&ctx.state).await?.school_name;
+        // #endregion read-settings
         let data = json!({ "name": learner.name, "course": course.title, "school": school });
         let locale = ctx.state.config().app.locale.clone();
         let sent = async {

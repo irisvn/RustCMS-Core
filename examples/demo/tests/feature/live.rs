@@ -18,6 +18,7 @@ db_test!(only_allowed_users_reach_the_live_routes, migrate = Migrator, |db: Test
     visitor.fetch_csrf().await;
     let editor = app.login_as("editor@example.test", PASSWORD).await;
     let admin = app.login_as("admin@example.test", PASSWORD).await;
+    // #region assert-access
     assert_access(
         &app,
         &demo::routes::admin::routes(),
@@ -44,12 +45,14 @@ db_test!(only_allowed_users_reach_the_live_routes, migrate = Migrator, |db: Test
         ],
     )
     .await;
+    // #endregion assert-access
 });
 
 db_test!(the_echo_socket_answers_and_authorizes_its_command, migrate = Migrator, |db: TestDb| async move {
     let app = TestApp::new(bootstrap::build, db).await;
     seed(app.state()).await;
     let admin = app.login_as("admin@example.test", PASSWORD).await;
+    // #region socket-test
     let mut socket = admin.socket("/admin/api/x/demo/echo").await.expect("admitted");
     let wait = std::time::Duration::from_secs(2);
     socket.send_text("hello").await;
@@ -57,6 +60,7 @@ db_test!(the_echo_socket_answers_and_authorizes_its_command, migrate = Migrator,
     socket.send_text("whoami").await;
     let me = socket.next_data(wait).await.map(|m| m.to_string()).unwrap_or_default();
     assert!(me.starts_with("admin:"), "{me}");
+    // #endregion socket-test
     // Without the permission there is no socket.
     let editor = app.login_as("editor@example.test", PASSWORD).await;
     assert_eq!(editor.socket("/admin/api/x/demo/echo").await.err().map(|e| e.status), Some(StatusCode::FORBIDDEN));

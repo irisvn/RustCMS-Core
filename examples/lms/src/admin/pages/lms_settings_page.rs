@@ -19,10 +19,12 @@ impl SettingsPage for LmsSettings {
         ]
     }
 
+    // #region validate
     async fn validate(ctx: &rustcms::admin::Ctx, settings: &Self) -> Result<(), rustcms::ValidationErrors> {
         if !(1..=MAX_CAPACITY).contains(&i64::from(settings.default_capacity)) {
             return Err(rustcms::ValidationErrors::field("default_capacity", ctx.t("must be between 1 and 10000")));
         }
         Ok(())
     }
+    // #endregion validate
 }

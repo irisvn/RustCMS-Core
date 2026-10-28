@@ -26,6 +26,7 @@ impl Resource for CourseResource {
         )
     }
 
+    // #region fields
     fn fields() -> Vec<Field> {
         vec![
             Field::column(course::Column::Title).required().searchable().sortable().max_length(200),
@@ -42,7 +43,9 @@ impl Resource for CourseResource {
                 .updatable(|ctx| ctx.can(ASSIGN_INSTRUCTOR)),
         ]
     }
+    // #endregion fields
 
+    // #region form
     fn form() -> Form {
         Form::new().columns(2).schema(components![
             TextInput::make("title"),
@@ -53,6 +56,7 @@ impl Resource for CourseResource {
             Textarea::make("summary").column_span(2),
         ])
     }
+    // #endregion form
 
     fn table() -> Table {
         Table::new()
@@ -66,6 +70,7 @@ impl Resource for CourseResource {
             .default_sort("title")
     }
 
+    // #region actions
     /// "Enroll a learner…": a dialog asks which (a learner the user may see);
     /// the course is locked by the action, then the seat rules apply.
     fn actions() -> Vec<Action<course::Entity>> {
@@ -95,14 +100,18 @@ impl Resource for CourseResource {
             .form(vec![ActionField::belongs_to("learner_id", "learners").label("Learner").required()]),
         ]
     }
+    // #endregion actions
 
+    // #region relations
     fn relations() -> Vec<Relation> {
         vec![
             Relation::has_many("lessons", "lessons", "course_id"),
             Relation::has_many("enrollments", "enrollments", "course_id"),
         ]
     }
+    // #endregion relations
 
+    // #region scope
     /// Instructors see the courses they teach.
     fn scope(query: Select<course::Entity>, ctx: &Ctx) -> Select<course::Entity> {
         match instructor(ctx) {
@@ -110,6 +119,7 @@ impl Resource for CourseResource {
             Some(me) => query.filter(course::Column::InstructorId.eq(me)),
         }
     }
+    // #endregion scope
 
     async fn mutate_before_create(ctx: &Ctx, txn: &DatabaseTransaction, data: Data) -> AppResult<Data> {
         check(ctx, txn, &data, None).await?;

@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 
 use crate::models::enrollment;
 
+// #region slot
 pub struct CourseSeatsSlot;
 
 #[async_trait]
@@ -43,3 +44,4 @@ impl PanelSlot for CourseSeatsSlot {
         }))
     }
 }
+// #endregion slot

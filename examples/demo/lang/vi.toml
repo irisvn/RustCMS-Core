@@ -2,6 +2,7 @@
 # `cargo run -- lang:missing vi` lists what is still missing.
 # Labels of the framework's own resources and common fields come with rustcms.
 
+# region catalog
 "Post" = "Bài viết"
 "Posts" = "Bài viết"
 "Categories" = "Danh mục"
@@ -10,6 +11,7 @@
 "Display" = "Hiển thị"
 "Publish" = "Xuất bản"
 "Publish the selected posts?" = "Xuất bản các bài viết đã chọn?"
+# endregion catalog
 "Move to category…" = "Chuyển sang danh mục…"
 "Unpublish" = "Gỡ xuất bản"
 "Preview" = "Xem trước"
@@ -54,6 +56,8 @@
 "Viewer" = "Người xem"
 "Reads posts and categories" = "Đọc bài viết và danh mục"
 
+# region scoped
 [posts]
 # "Content" is also a navigation group; on the post form it is the first tab.
 "Content" = "Nội dung"
+# endregion scoped

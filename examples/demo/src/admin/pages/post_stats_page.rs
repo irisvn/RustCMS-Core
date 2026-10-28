@@ -4,6 +4,7 @@ use rustcms::admin::{Ctx, Filter, FilterOp, ListQuery, PageView, PanelPage, Pane
 use rustcms::{AppResult, async_trait};
 use serde_json::{Value, json};
 
+// #region page
 pub struct PostStatsPage;
 
 #[async_trait]
@@ -30,3 +31,4 @@ impl PanelPage for PostStatsPage {
         Ok(json!({ "total": posts.meta.total, "published": published.meta.total, "latest": latest }))
     }
 }
+// #endregion page

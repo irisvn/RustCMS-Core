@@ -31,12 +31,12 @@ const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL 
 const blocked = []
 try {
   // One signed-in context per site, viewport and theme.
-  const groups = Map.groupBy(shots, (s) => `${s.site}|${s.viewport ?? 'desktop'}|${s.theme ?? 'light'}`)
+  const groups = Map.groupBy(shots, (s) => `${s.site}|${s.viewport ?? 'desktop'}|${s.theme ?? 'light'}|${s.signedOut ? 'out' : 'in'}`)
   for (const [key, group] of groups) {
-    const [siteId, viewport, theme] = key.split('|')
+    const [siteId, viewport, theme, state] = key.split('|')
     const site = SITES[siteId]
     if (!site) throw new Error(`unknown site ${siteId}`)
-    const context = await signedIn(site, viewport, theme)
+    const context = await signedIn(site, viewport, theme, state === 'out')
     try {
       for (const shot of group) await capture(context, site, shot)
     } finally {
@@ -49,7 +49,7 @@ try {
 }
 if (blocked.length) console.log(`blocked writes (expected while opening dialogs):\n  ${blocked.join('\n  ')}`)
 
-async function signedIn(site, viewport, theme) {
+async function signedIn(site, viewport, theme, signedOut) {
   const email = process.env[site.emailEnv]
   const password = process.env[site.passwordEnv]
   if (!email || !password) throw new Error(`set ${site.emailEnv} and ${site.passwordEnv}`)
@@ -82,6 +82,8 @@ async function signedIn(site, viewport, theme) {
       localStorage.setItem('rustcms.colorScheme', scheme)
     } catch {}
   }, theme)
+  // Shots of the sign-in page itself: nothing to sign in to.
+  if (signedOut) return context
   const page = await context.newPage()
   await page.goto(`${site.url}/login`)
   await page.getByLabel(/^Email$/).fill(email)
@@ -99,7 +101,7 @@ async function capture(context, site, shot) {
     await page.goto(`${site.url}${shot.path}`)
     // Live pages keep a stream open: wait for quiet, but not forever.
     await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {})
-    await page.getByRole('main').waitFor()
+    await page.locator(shot.waitFor ?? 'main').first().waitFor()
     if (shot.actions) await shot.actions(page)
     await page.waitForTimeout(shot.settle ?? 400)
     await redact(page, process.env[site.emailEnv])

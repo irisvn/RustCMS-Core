@@ -5,6 +5,7 @@ use rustcms::admin::{Ctx, PageView, PanelPage, PanelPageMeta};
 use rustcms::{AppResult, async_trait};
 use serde_json::{Value, json};
 
+// #region react-page
 pub struct ReactPage;
 
 #[async_trait]
@@ -27,3 +28,4 @@ impl PanelPage for ReactPage {
         }))
     }
 }
+// #endregion react-page

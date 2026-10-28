@@ -69,6 +69,7 @@ db_test!(the_last_seat_goes_to_one_request, migrate = Migrator, |db: TestDb| asy
     let other = as_user(&app, "admin@example.test").await;
     let db = app.state().db();
 
+    // #region last-seat
     // Two new enrollments.
     let course = CourseFactory::new().capacity(1).create(db).await;
     let (ann, bob) = (LearnerFactory.create(db).await, LearnerFactory.create(db).await);
@@ -81,6 +82,7 @@ db_test!(the_last_seat_goes_to_one_request, migrate = Migrator, |db: TestDb| asy
         b.text()
     );
     assert_eq!(active(&app, course.id).await, 1);
+    // #endregion last-seat
 
     // The same learner twice.
     let roomy = CourseFactory::new().capacity(5).create(db).await;
@@ -172,11 +174,13 @@ db_test!(enrolling_queues_a_welcome, migrate = Migrator, |db: TestDb| async move
     let roomy = CourseFactory::new().create(db).await;
     enroll(&app, &staff, roomy.id, 999_999).await.assert_validation_error("learner_id");
     assert_eq!(jobs().await, 1);
+    // #region queued-mail
     app.take_mails();
     assert_eq!(rustcms::queue::run_until_idle(app.state(), None, 10).await.unwrap(), 1);
     assert_eq!(jobs().await, 0, "done");
     let mails = app.take_mails();
     assert_eq!(mails.len(), 1);
+    // #endregion queued-mail
     assert_eq!((mails[0].to.clone(), mails[0].from.as_str()), (vec![ann.email.clone()], "LMS <no-reply@lms.example>"));
     assert!(mails[0].subject.contains(&course.title) && mails[0].html.is_some(), "{:?}", mails[0]);
     // Once per seat: the job running again sends nothing.

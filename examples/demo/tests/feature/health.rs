@@ -1,3 +1,4 @@
+// #region health-test
 use demo::bootstrap;
 use demo::database::migrations::Migrator;
 use rustcms::axum::http::StatusCode;
@@ -10,6 +11,7 @@ db_test!(health_and_ping, migrate = Migrator, |db: TestDb| async move {
     app.get("/api/v1/ping").await.assert_status(StatusCode::OK).assert_json("/pong", json!(true));
     app.get("/missing").await.assert_status(StatusCode::NOT_FOUND).assert_json("/code", json!("not_found"));
 });
+// #endregion health-test
 
 db_test!(admin_sign_in, migrate = Migrator, |db: TestDb| async move {
     let app = TestApp::new(bootstrap::build, db).await;

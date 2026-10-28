@@ -118,6 +118,7 @@ pub const VIEWER: &[&str] = &[
     "dashboard.new_courses",
 ];
 
+// #region role-seeder
 pub struct RoleSeeder;
 
 #[async_trait]
@@ -140,6 +141,7 @@ impl Seeder for RoleSeeder {
         Ok(())
     }
 }
+// #endregion role-seeder
 
 /// The admin-guard role `name`.
 pub async fn find(state: &AppState, name: &str) -> anyhow::Result<Option<role::Model>> {

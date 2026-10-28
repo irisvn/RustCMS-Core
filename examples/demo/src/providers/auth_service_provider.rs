@@ -4,6 +4,7 @@
 use rustcms::auth::{ADMIN_GUARD, PermissionArea, PermissionMeta, PermissionPreset};
 use rustcms::prelude::*;
 
+// #region auth-provider
 pub fn provider(api: &ApiRoutes, admin: &AdminRoutes) -> AuthProvider {
     AuthProvider::new()
         // Editors edit their own posts (see `PostPolicy`).
@@ -33,3 +34,4 @@ pub fn provider(api: &ApiRoutes, admin: &AdminRoutes) -> AuthProvider {
             ]),
         )
 }
+// #endregion auth-provider

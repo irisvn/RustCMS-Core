@@ -1,0 +1,536 @@
+# Docs v2 inventory: batches 9–11 (admin pages)
+
+Audited at commit `d4e87e3`. Read-only audit. Paths are relative to the repo root. Abbreviations:
+
+- `admin/` = `crates/rustcms-admin/src/`
+- `auth/` = `crates/rustcms-auth/src/`
+- `core/` = `crates/rustcms-core/src/`
+- `sdk/` = `admin-ui/sdk/`
+
+No example has `// #region` markers yet, except `examples/demo/src/bootstrap/providers.rs` (`#region register`).
+
+---
+
+## Batch 9
+
+### admin/import-export.md
+- **Public API covered**:
+  - Builders: `ResourceMeta::exportable()`, `importable()`, `import_key(field)`, `unique(name, cols, msg)`.
+  - Abilities: `export`, `import` (`ability::EXPORT`/`IMPORT`, admin/resources/policy.rs:25,27; set in engine/adapter/operations.rs:144,147).
+  - Routes:
+    - `GET {admin}/api/resources/{slug}/export`, `POST …/exports`, `GET exports/{id}/file` (admin/features/exports/mod.rs:90-93).
+    - `POST resources/{slug}/imports`, `GET imports/{id}`, `POST imports/{id}/preview`, `POST imports/{id}/run` (imports/mod.rs:84-87).
+  - Export limits, all correct (exports/mod.rs:47-59): 1,000 rows / 10 MiB at once; 10,000 rows / 50 MiB in the background; 3 waiting per user; kept 24 h; batches of 500.
+  - Import limits, all correct (imports/mod.rs:44-56): 5 MiB, 10,000 rows, 100 columns, 10,000 characters per cell, 3 waiting, kept 24 h, batches of 100.
+  - Codes: `too_many_to_export`, `too_large_to_export` (core/i18n/issues.rs:112-113), `export_stale` (exports/mod.rs:317), `import_started` (imports/mod.rs:612).
+  - CSV formula escaping (exports/csv.rs:9-15). Audit actions `exported`/`imported` (exports/mod.rs:162-166, imports/mod.rs:869).
+- **Wrong or outdated**:
+  - **Background export over 10,000 rows ends as `revoked`, not "too many rows".**
+    - `POST …/exports` does not count rows first (exports/mod.rs:222-296).
+    - The job's `export_keys(…, MAX_ROWS)` returns a 422 (engine/adapter/export.rs:72-84).
+    - `refusal()` maps every `AppError::Validation` to `revoked` (exports/mod.rs:443-447, called at :491).
+    - The page states the cap but not the outcome. Either the docs or the code (a dedicated reason) needs fixing.
+  - Line 39 links "storage provider" to `media.md`. It should link to `../digging-deeper/storage.md`.
+  - Line 38, "with no body": whitespace or `{}` is also accepted, and any other body gets 422 `body: is not allowed` (exports/mod.rs:235-237). Minor.
+- **Missing**:
+  - **Undocumented route:** `GET {admin}/api/exports` lists the user's background exports, newest first, at most 20, not expired (exports/mod.rs:302-312). It appears only in reference/admin-api.md:34.
+  - **Error responses:**
+    - 409 `export_not_ready` on downloading an unfinished export (exports/mod.rs:333-338).
+    - 429 `Retry-After: 60` past the waiting limit, for exports (exports/mod.rs:271-273) and imports (imports/mod.rs:355-357).
+    - At most 4 import reads at once, then 429 `Retry-After: 5` (imports/mod.rs:60,65-67). Over-size file: 413 (:360).
+    - Without the storage provider, export POST and import upload answer 404 (exports/mod.rs:231, imports/mod.rs:349).
+  - **Import behaviour:**
+    - The report keeps at most 1,000 row problems; the counts stay complete (imports/mod.rs:58).
+    - A running import with no progress for 6 h is abandoned (imports/mod.rs:63).
+    - The import key needs a `unique` constraint on that column alone; boot panics otherwise (engine/adapter/mod.rs:167-172; resources/resource.rs:102-104). The page shows this only in the example.
+  - **Encrypted fields** are never exported (engine/adapter/export.rs:28) or imported (engine/adapter/import.rs:44-45).
+  - **Pruning and jobs:** expired exports and imports are pruned every 10 min (panel/provider.rs:422-440,459). The job kinds `admin.export`/`admin.import` (exports/mod.rs:392, imports/mod.rs:635) are not mentioned here or on queues.md.
+- **Examples available**:
+  - `examples/lms/src/admin/resources/learner_resource.rs`, `LearnerResource::meta` (lines 15-22). This is exactly the page's hand-written sample.
+  - `examples/demo/src/admin/resources/tag_resource.rs`, `TagResource::meta` (`.unique("tags_name_key",…).import_key("name")`).
+  - `examples/demo/src/admin/resources/post_resource.rs`, `PostResource::meta` (`.exportable()`, line 23).
+  - `examples/lms/src/admin/resources/enrollment_resource.rs`, `meta` (`.exportable()`, line 33).
+  - The template app has none.
+- **Screenshots needed**:
+  - List with **Export CSV** and the **Exports** panel (state + Download).
+  - The "export in the background" prompt (422).
+  - Import dialog: upload, column→field mapping with the key marked, preview, outcome report with row problems.
+  - Sources: local examples/demo (posts export, tags import) or LMS learners. RBlog for posts export, if enabled. Not RDockPanel.
+- **Linked anchors**: `#exporting` (reference/admin-api.md) and `#importing` (admin/resources.md, reference/admin-api.md). Both exist (lines 6 and 70).
+
+### admin/media.md
+- **Public API covered**:
+  - **Provider and resource:** `rustcms::storage::StorageProvider`, `AdminProvider::media()` (panel/provider.rs:77), `MediaResource`, `MediaPolicy`.
+  - **Permissions:** `media.view_all`, `media.manage_all` (media/resource.rs:109,113).
+  - **Fields:**
+    - `Field::media()`, `media_list(max)`, `accept(&[..])`, `max_size(bytes)`, `rich_text()` (resources/field.rs:194-226).
+    - `FileUpload::make`, `RichEditor::make`, `SettingField::media`/`media_list` (settings/mod.rs:158,168).
+  - **Config:** `allowed_types`, `max_pixels`, `max_upload_bytes`, `max_concurrent_uploads` (`StorageConfig`, core/storage/mod.rs:107-121, defaults :160-170).
+  - **CLI:** `media:prune` (panel/provider.rs:467-473; registered only with `media()`, :315).
+  - **Routes:** `POST {admin}/api/media`, `GET {admin}/api/media/{id}/file` (http/mod.rs:162-163).
+  - **Migration:** `m20261201_000022_add_alt_to_media`.
+  - **Rich text API** (features/rich_text/mod.rs, html.rs:25-70, outline.rs:10-60): `rich_text::{parse, to_html, to_html_with, ImageInfo::new/.size, outline → Heading{level,text,id}, slug, media_ids, upgrade_value, Embed::from_url, MAX_*}`. Reachable as `rustcms::admin::rich_text`.
+  - **Limits, all correct:**
+    - Names and downloads: MAX_NAME 255 (detect.rs:17), MAX_ALT 500 (resource.rs:12), 600 downloads/min (download.rs:14).
+    - Pruning: abandoned uploads after 60 min (prune.rs:6), prune every 60 s (provider.rs:462).
+    - Rich text: 256 KiB, 10,000 nodes, depth 16, 100 images, 50 embeds, 50×20 tables, caption 1,000 (parse.rs:7-23).
+    - Panel: 24 per page (media-picker.tsx:26, media-library.tsx:64); upload queue of 2 with 3 retries (uploads.tsx:58-60); new tables 3×3 with a header row (rich-text.tsx:249).
+- **Wrong or outdated**:
+  - **Line 127, "The panel's editor saves version 2"**, contradicts line 275 and the code. The editor writes `needsV2(content) ? 2 : 1` (admin-ui/src/lib/rich-text.ts:324,328-329). The stale comment at rich-text.ts:5-6,22 has the same error.
+  - **Lines 91-92, `Cache-Control: private, no-store`:** this header is not set by the download handler (media/download.rs:29-36). The auth middleware adds it to every admin API path (auth/guards/guard.rs:113-116). True in effect, but not specific to this route.
+  - **Line 54, "also run every minute by `serve`":** the prune loop is a `tokio::spawn` in `AdminProvider::boot` (panel/provider.rs:404-419). It runs whenever the app is built, not only under `serve`. This is also a code deviation from ADR 0031.
+- **Missing**:
+  - **Startup order:** `StorageProvider` must be registered before `.media()`, or the panel panics at boot (panel/provider.rs:297-306).
+  - **Upload errors:**
+    - Body limit is `max_upload_bytes` + 64 KiB, then 413 (provider.rs:310-311, upload.rs:165).
+    - 429 `Retry-After: 5` when `max_concurrent_uploads` is busy (upload.rs:30).
+    - 422 messages: "is not a complete file of its type", "is not a valid image", "has too many pixels" (upload.rs:42,46-51).
+    - Over-hour uploads fail with code `write_conflict` (upload.rs:120-121). The page says 409 but not the code.
+  - **Headless types:** `MediaItem` (media/mod.rs:59-84) and `rustcms::admin::media::entity::Model` (`alt`).
+  - **Rich text, unlisted public items:**
+    - `VERSION`, `OLDEST_VERSION`, `MAX_BYTES`, `MAX_HREF` (2,048 bytes, parse.rs:15).
+    - `safe_href`, `Embed::url`, `EmbedProvider::{as_str, from_name, valid_id}`, `CalloutTone`, `DocumentError`.
+    - `Node` is `#[non_exhaustive]` (mod.rs:55), which matters for `match`.
+  - **Rich text, `to_html` output:** the page's list of produced tags omits links (`rel="noopener noreferrer nofollow"`), `<pre><code>`, `<hr>`, `<br>`, `<strong>/<em>/<s>/<code>` (html.rs:128-170).
+  - **Rich text, issue codes:** `document_*`, `max_images`, `max_embeds` are not named. They are in reference/error-codes.md:99-107; a link would do.
+  - **Storage keys:** `disk`, `root`, `[storage.s3]` (core/storage/mod.rs:110-170) are left to digging-deeper/storage.md, which is fine.
+- **Examples available**:
+  - **Enabling:** `examples/demo/src/bootstrap/providers.rs`, `register` (already `#region register`, lines 7-17). `examples/demo/src/providers/admin_panel_provider.rs`, `provider()` `.media()` (line 16); same in lms at line 26.
+  - **Resource fields and form:**
+    - `examples/demo/src/admin/resources/post_resource.rs`: `PostResource::fields` (`Cover.media().accept(&["image/*"])`, `Content.rich_text()`, lines 34-35) and `PostResource::form` (`FileUpload::make("cover")`, `RichEditor::make("content")`, lines 45-46).
+    - `examples/lms/src/admin/resources/news_resource.rs`: `NewsResource::fields` (lines 60-61) and `form` (lines 75-76).
+  - **Settings:** `examples/demo/src/admin/pages/site_settings_page.rs:22` (`SettingField::media("logo")`).
+  - **Not covered by any example:** `media_list`, `max_size`, headless rendering (`to_html_with`, `outline`).
+- **Screenshots needed**:
+  - **Media page:** grid and table views, the upload queue with retry, a record page (type/size/dimensions, name/alt). Local demo or RBlog.
+  - **Roles page:** "See every file" / "Manage every file".
+  - **Rich text editor:** toolbar, table toolbar, embed card, callouts, image details dialog. RBlog is the best source; demo posts also work.
+  - **Library picker:** Library and Upload tabs.
+  - **"File unavailable" chip:** demo, after trashing a referenced file.
+  - **Headless HTML output:** RBlog's public post page (TOC from `outline`, figures, embeds).
+  - RDockPanel is not relevant.
+- **Linked anchors** (all exist):
+  - `#whose-files-a-user-sees` (17), `#the-media-page` (56), `#names-and-alternative-text` (70), `#the-media-library-picker` (198), `#headless-rendering` (216). Linked from release-notes.md.
+  - `#media-fields` (98). Linked from settings.md and relationships.md.
+  - `#rich-text` (119). Linked from release-notes.md, upgrade.md and resources.md.
+  - `#when-a-referenced-file-is-trashed-or-deleted` (297). Linked from settings.md.
+
+### admin/custom-fields.md
+- **Public API covered**:
+  - **Rust:** `CustomInput::make(name, "vendor/name")`, `Input::props(json)` (forms/inputs.rs:166-184; 4 KiB checked at boot, engine/adapter/mod.rs:276-277). `AdminProvider::extension_script`, `extension_style`, `extension_timeout` (panel/provider.rs:88,108,118; 1–60 s, default 10).
+  - **Name rules:** widget `vendor/name`, 1–32 characters each part (inputs.rs:187-191, widgets.ts:89). Extension names 1–64 characters.
+  - **Assets:** `{admin}/assets/ext/<name>.<hash>.js|css`, immutable (panel/spa.rs:222,284,327).
+  - **CLI:** `make:widget` (cli main.rs:148; generate.rs:94-99).
+  - **JS:** `window.rustcms.registerWidget/registerTranslations/registerPage/registerSlot/registerCell`. `WidgetContext {id, label, value, disabled, invalid, describedBy, props, locale, t, onChange}` matches (admin-ui/src/lib/widgets.ts:10-34).
+  - **Behaviour:** the unsafe-number disable rule (renderers/custom.tsx:51-53) and the fallback message (i18n en.ts:499) match.
+- **Wrong or outdated**: none found.
+- **Missing**:
+  - **v2 extensions:**
+    - `extension_script_v2(name, js, Requires{react, react_query, ui})` (panel/provider.rs:96-102) and `window.rustcms.v2`/`apiVersion` (widgets.ts:256-272).
+    - Field widgets exist only in the v1 DOM API. The SDK has React pages, slots and cells but no React widget (sdk/index.d.ts:145-147; ADR 0032). The guide never says so.
+    - The "Pages, slots and cells" section links only customizing.md; add react-pages.md.
+  - **Duplicate names:** adding an extension name twice panics (provider.rs:122-129). One name may serve once as a script and once as a style.
+  - **Custom cells:** `TableColumn::cell("vendor/name")`/`props` (tables/columns.rs:52,58; 4 KiB, engine/adapter/mod.rs:322-323). Link to customizing.md#custom-cells.
+  - **Late registration:** a widget registered after its script's timeout is refused (widgets.ts:93-100).
+- **Examples available**:
+  - `examples/demo/src/admin/resources/category_resource.rs`: `CategoryResource::fields` (`Color.max_length(7)`, line 27) and `CategoryResource::form` (`CustomInput::make("color", "demo/color").props(json!({"palette": …}))`, lines 38-43).
+  - `examples/demo/src/providers/admin_panel_provider.rs`:
+    - `.extension_script`/`.extension_style("demo-color", …)`, lines 47-49.
+    - `extension_script_v2` with `Requires`, lines 52-57.
+  - `examples/demo/resources/admin/js/demo/color.js`: a complete widget, which could replace the contract snippet.
+  - `crates/rustcms-cli/templates/stubs/widget.js.tmpl`: the `make:widget` starter.
+- **Screenshots needed**:
+  - The demo category form with the `demo/color` swatch widget.
+  - The read-only fallback when a widget fails.
+  - Only the local demo has a custom widget; RBlog and RDockPanel are not known to.
+- **Linked anchors**: none incoming. Outgoing links `i18n.md#extensions`, customizing.md and wire-format.md resolve.
+
+---
+
+## Batch 10
+
+### admin/customizing.md
+- **Public API covered**:
+  - **`AdminProvider` methods:** `theme`, `brand`, `branding`, `page`, `slot`, `home`, `extension_script`, `extension_style`, `extension_script_v2`.
+  - **Theme:**
+    - `Theme::{new, color, primary, primary_foreground, dark, radius, font_family, logo, favicon, color_scheme}`.
+    - `ColorScheme::{System (default), Light, Dark}`, `Palette::{color, try_color}`.
+  - **Runtime branding:** `Branding::{new, name, logo, logo_dark, favicon, color, primary, dark, radius, check_image, check_color, check_name}`, `BrandingSource::load`, `AdminBranding::invalidate`.
+  - **Pages and slots:**
+    - `PanelPage {SLUG, meta, view, data}`, `PanelPageMeta::{new, icon, group, sort, permission, permission_any, declare_permission}`.
+    - `PageView::{Template, Script}`, `view!`.
+    - `PanelSlot {NAME, placement, meta, view, data}`, `Placement::RecordAside`, `SlotMeta::{new, label, permission}`.
+    - `Ctx::{records, record}`, `TextColumn::cell/props`.
+  - **Config:** `[admin] branding` (`runtime`/`static`), `branding_ttl_secs` (30, 1–3600), `branding_timeout_ms` (2000, 1–30000) (features/custom/branding.rs:276-298). Env var `RUSTCMS_ADMIN__BRANDING` (core/config.rs:333).
+  - **CLI:** `make:page`, `make:page --script`, `admin:branding` (panel/provider.rs:508), `lang:missing`.
+  - **JS:** `window.rustcms.registerPage/registerSlot/registerCell/registerTranslations`.
+  - **Checked and correct:**
+    - Limits: 512 KiB per file, 1 MiB `data` (custom/mod.rs:23).
+    - Escaping (custom/template.rs:155-171) and the HTML allowlist (custom/html.rs:10-77,134-153).
+    - All 9 `rc-*` classes exist (admin-ui/src/index.css). The user's light/dark choice works as described (admin-ui/src/lib/theme.ts:5-6).
+- **Wrong or outdated**:
+  - Lines 46-47: fonts are "each quoted for you". Generic families (`system-ui`, `sans-serif`, `serif`, `monospace`, `ui-*`) stay unquoted (custom/theme.rs:191,203-205).
+  - Lines 57-58: the brand assets list `{theme.css,logo,favicon}` leaves out `logo-dark`, which runtime branding serves (custom/branding.rs:261). overview.md:27 does list it.
+  - Line 276: the slot card is "titled with its label", but the label is optional; `SlotMeta::new()` gives no heading (custom/page.rs:183-192).
+  - Line 237: the v1 `ctx` comment lists `{data, locale, t, navigate, reload}` and omits `ctx.realtime.{events, socket}` (admin-ui/src/lib/widgets.ts:60-72), which realtime.md uses.
+- **Missing**:
+  - **Name and boot rules:**
+    - Page slugs and slot names are 1–64 of `a-z0-9-`; a duplicate stops boot (custom/mod.rs:38-40,72-73,88-89).
+    - Extension names are 1–64 `[a-z0-9-]` and unique (panel/spa.rs:107-111).
+    - A slot needs at least one permission, has no `permission_any`, and an unknown resource stops boot (custom/mod.rs:90-92).
+  - **Defaults and limits:** `PanelPage::data` defaults to `Null` (custom/page.rs:163). `font_family` is at most 200 characters (theme.rs:196). The static `Theme` has no dark logo; only `Branding::logo_dark` does.
+  - **What `make:page` generates:**
+    - It declares `<snake>.view` with `declare_permission` and hints `permission:sync` (cli/src/make.rs:239,321; templates/stubs/page.rs.tmpl:14-15).
+    - The script vendor is the package name with `_`→`-` (make.rs:222).
+  - **Unmentioned exports:** `TOKENS`, `BrandingError` (custom/mod.rs:15,20), `AdminBranding::{is_runtime, has_source, probe}` (custom/branding.rs:358-380).
+  - **Directory tree (lines 12-19):** it lacks the v2 layout `resources/admin/{src/<vendor>/*.tsx, sdk/, package.json, package-lock.json, .rustcms-build.json}`.
+- **Examples available**:
+  - **Theme:** `examples/lms/src/providers/admin_panel_provider.rs`, the `.theme(Theme::new()…)` block in `provider()` (lines 17-25).
+  - **Runtime branding:** `examples/demo/src/admin/branding.rs`, `SiteBranding`, registered at `examples/demo/src/providers/admin_panel_provider.rs:13-15`, with `examples/demo/config/admin.toml`.
+  - **Custom page:**
+    - `examples/lms/src/admin/pages/course_overview_page.rs`, `CourseOverviewPage` (the page's own sample), with `resources/views/admin/course_overview.html`. **Caution:** line 4 of that template contains a stray `Haha: `, which should be fixed before import.
+    - Alternative: `examples/demo/src/admin/pages/post_stats_page.rs`, `PostStatsPage`, with `post_stats.html`.
+  - **Script page:** `examples/demo/src/admin/pages/live_page.rs`, `LivePage`, with `resources/admin/js/demo/live.js`.
+  - **Slot:** `examples/lms/src/admin/slots/course_seats_slot.rs`, `CourseSeatsSlot` (the page's sample), with `course_seats.html`; also `examples/demo/src/admin/slots/post_summary_slot.rs`, `PostSummarySlot`.
+  - **Cell:** `examples/lms/resources/admin/js/lms/progress.js` and `examples/lms/src/admin/resources/enrollment_resource.rs:77`.
+  - **Stubs:** `crates/rustcms-cli/templates/stubs/page.rs.tmpl`, `page.html.tmpl`, `page.js.tmpl`.
+- **Screenshots needed**:
+  - **Theme:** themed panel in light and dark with logo (local lms; the demo has no static theme). Sign-in page with brand. The Light/Dark/System switch.
+  - **Runtime branding:** an operator Settings → Branding page in RDockPanel (ADR 0033 was written for it). Locally, demo Settings → Site renames the brand.
+  - **Template page:** lms `/admin/p/course-overview` or demo `/admin/p/post-stats`.
+  - **Script page:** demo `/admin/p/live`.
+  - **Slot:** lms course view ("Seats") or demo post view ("Visibility").
+  - **Cell:** lms enrollments progress meter.
+  - **Home page** (`AdminProvider::home`): RBlog for a real custom dashboard.
+- **Linked anchors** (all exist):
+  - `#theme` (line 21). Linked from release-notes.md and overview.md.
+  - `#runtime-branding` (65). Linked from release-notes.md, security/production.md, digging-deeper/instances.md, overview.md and getting-started/configuration.md.
+  - `#custom-pages` (122). Linked from overview.md and reference/admin-api.md.
+  - `#script-pages` (218). Linked from react-pages.md and admin-routes.md.
+  - `#slots-beside-records` (260). Linked from overview.md.
+  - `#custom-cells` (286). Linked from tables.md.
+
+### admin/react-pages.md
+- **Public API covered**:
+  - **Rust:** `extension_script_v2(name, js, Requires{react, react_query, ui})` (panel/spa.rs:87-94), `extension_timeout(Duration)` (1–60 s, default 10; panel/provider.rs:56,108-115), `PageView::Script`, `Ctx::page_path` (engine/context.rs:84).
+  - **CLI:** `make:page --react` (conflicts with `--script`, cli main.rs:138), `make:sdk`, `upgrade`.
+  - **npm:** `npm run build` (`rustcms-build`), `npm run typecheck`, Node `^20.19.0 || >=22.12.0`.
+  - **`@rustcms/admin-sdk`:**
+    - `registerPage/Slot/Cell`, `useAdminQuery`, `useAdminMutation`, `useEvents`, `useSocket`, `useColorScheme`, `useResource`, `useRecord`, `useResourceMutation`, `fieldErrors`.
+    - Types `PageProps`, `SlotProps`, `CellProps`.
+    - `/ui`: the full list matches admin-ui/src/lib/host.ts:73-115 and sdk/ui.d.ts.
+    - `/host`: `ApiError`, `versions`.
+  - **Checked and correct:**
+    - Props table (sdk/index.d.ts:91-140).
+    - Toasts 5 s / 8 s, at most 5 (admin-ui/src/components/toast.tsx:9, lib/toast.ts:15).
+    - Sub-path limits of 16 segments and 512 bytes (custom/subpath.rs:5-7) and the path refusals (paths.ts:31-45).
+    - The "ui 2 bundle declaring ui 1" refusal (widgets.ts:154-156). SDK version 0.10.3.
+- **Wrong or outdated**:
+  - **Lines 25-26, provider snippet:** it is not what `make:page --react` writes. The real code is `.extension_script_v2("<name>", include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/admin/js/<vendor>/<name>.js")), rustcms::admin::Requires { react: "19.3", react_query: "5.104", ui: 2 })` (cli make.rs:293-306, react.rs:15). The page also mixes `<app>` (lines 18-21) with `blog` (line 25).
+  - **Lines 45-64, component sample:** it would fail `npm run typecheck`. `Post` is undefined (line 52), and `useEvents` and `Dialog` are imported but unused.
+  - **Line 277, "warns when `resources/admin/sdk` is older":** it warns on any version difference, newer included (cli/src/react.rs:146).
+  - **Lines 34-37, files to commit:** `.rustcms-build.json` is missing. The build writes it and uses it to delete outputs of removed entries (sdk/build.js:45-55); the demo commits it.
+- **Missing**:
+  - **Build preset:** `@rustcms/admin-sdk/vite` `rustcmsExtension({entry, root})` (sdk/vite.js:35; entries are `src/<vendor>/<name>.tsx`). The `rustcms-build` bin writes an empty CSS file for entries with no styles (build.js:33-36).
+  - **Unmentioned SDK exports:**
+    - `SDK_UI`, `queryPairs`, `adminKey`, `resourceKey` (sdk/index.js:14,36,59,163).
+    - `props.resources.track(slug)` (index.d.ts:50) and the signature `useRecord(props, slug, key, options)` (:187).
+    - `RecordPage.meta {page, perPage, total, lastPage}` and `Envelope.trashed` (:63-79).
+  - **Return values and errors:**
+    - `useSocket` returns `{send}` (index.d.ts:173).
+    - `ApiError.{fieldErrors, formErrors, maybeApplied}`, and the shape of `versions` `{api, react, reactQuery, ui}` (sdk/host.d.ts:2-12).
+  - **Older panels:** the SDK's `registerPage` throws on a panel whose `ui` is below 2 (sdk/index.js:19-23).
+  - **Toast length:** toast text is cut at 500 characters (lib/toast.ts:16).
+  - **Cell props:** cells get `scope` but not `api`/`navigate`. The table is right; the page never says why.
+- **Examples available**:
+  - `examples/demo/resources/admin/src/demo/react.tsx`:
+    - `Tags` (`useResource`/`useResourceMutation`/`fieldErrors`/toasts) could replace the hand-written block at lines 149-161.
+    - Also `title(...)` (~line 91), `useEvents(props, "/demo/ticks")` (line 115) and `registerPage("demo/react", ReactDemo)`.
+  - `examples/demo/src/admin/pages/react_page.rs`, `ReactPage` (sub-paths via `ctx.page_path()`). Registration: `examples/demo/src/providers/admin_panel_provider.rs:53-58`.
+  - `crates/rustcms-cli/templates/stubs/page.tsx.tmpl` and `page.css.tmpl`: exactly what `make:page --react` generates, which beats the invented "stats" sample.
+- **Screenshots needed**:
+  - **Local demo** `/admin/p/react-demo`: tabs, tags CRUD with toasts, dropdown menu, tooltip, dialog, sub-page `items/2` with a custom title, live ticks.
+  - **RDockPanel:** realtime pages (`useEvents`/`useSocket`), logs or terminals, service restart actions.
+  - **"Unavailable" state:** an unbuilt page shows it with Retry.
+- **Linked anchors**: `#calling-your-routes` (line 109) and `#records-of-your-resources` (142) both exist; both are linked from release-notes.md. Internal `#components` (207).
+
+### admin/admin-routes.md
+- **Public API covered**:
+  - **Routes:** `AdminRoutes::new`, `.get`, `.post`, `.register`, `.events` (linked only). `AdminAccess::authenticated()`, `AdminAccess::can(..)`.
+  - **Auth and CLI:** `AuthProvider::admin_permissions` (auth/provider.rs:76). `rustcms permission:sync`, `rustcms route:list`.
+  - **CSRF:** `{admin}/api/auth/csrf` returning `csrfToken` (auth/http/routes.rs:248). Header `X-CSRF-Token`, code `csrf_mismatch`.
+  - **Script context:** `window.rustcms.registerPage`, `ctx.reload`.
+  - **Testing:** `rustcms_testing::admin_routes::{Case, assert_access}`, `Case::new`, `.expect`, `app.client()`, `app.acting_as()`, `client.fetch_csrf()`.
+  - All exist: auth/http/admin_routes.rs:58,66,127,137-143,149,228; crates/rustcms-testing/src/admin_routes.rs:35,40,53; client.rs:27,45,157.
+- **Wrong or outdated**:
+  - **Line 49, "`HEAD` follows `GET`":** this is stated for all routes, but `.events` and `.socket` routes answer 405 to anything but GET (admin_routes.rs:261-263,277-279).
+  - **Lines 96-111, testing sample:** it gives no warning for socket or event routes.
+    - With `assert_access`, an allowed actor on a **socket** route gets 400, because in-process requests carry no upgrade (examples/demo/tests/feature/live.rs:30-34; crates/rustcms-auth/tests/sockets.rs:217 accepts 400 or 426).
+    - An admitted event stream is checked by its status and then dropped (testing/src/admin_routes.rs:46-47).
+- **Missing**:
+  - **Builder methods:**
+    - `.put`, `.patch`, `.delete` (admin_routes.rs:137-143).
+    - `AdminRoutes::scope()` and `.nest(prefix, routes)` (:133,186); nested routes keep their access.
+    - `list()` and `permissions()` (:208,213).
+  - **Boot panics:**
+    - `AdminAccess::can` with an empty name, whitespace, or a leading or trailing `.` (:64-74).
+    - A `new` prefix, route path or `nest` prefix without a leading `/` (:125-128,154,174,187,196).
+    - `register` with an invalid `[auth]` (:226-231).
+  - **Permissions:** `admin_permissions` skips a permission already declared in the `admin` guard (provider.rs:78). The page doesn't link `permission_meta`/`permission_area` (provider.rs:92,102), which set labels on the Roles page.
+  - **React pages:** they call these routes with `props.api.get/post/put/patch/delete`, `useAdminQuery` and `useAdminMutation` (sdk/index.d.ts:9-15,153-164). CSRF and path validation are handled (paths.ts:26-45). The page should link react-pages.md#calling-your-routes.
+  - **Path parameters:** `{id}` and `{*rest}` are supported and matched by `assert_access` (testing/src/admin_routes.rs:87-103). The wildcard is not mentioned.
+- **Examples available**:
+  - `examples/demo/src/routes/admin.rs`, `fn routes` (lines 8-14): get, post, events and socket routes, all `AdminAccess::can("demo.live")`.
+  - Registration: `examples/demo/src/bootstrap/mod.rs:10-16` and `examples/demo/src/providers/auth_service_provider.rs:7-13` (`admin_permissions(admin)`).
+  - `examples/demo/tests/feature/live.rs`, `only_allowed_users_reach_the_live_routes` (lines 14-46): an access table including the socket 400 case and `fetch_csrf`.
+  - Client side: `examples/demo/resources/admin/js/demo/live.js:19-26` (raw-fetch CSRF POST) and `examples/demo/resources/admin/src/demo/react.tsx:111-112` (`useAdminQuery`/`useAdminMutation`).
+  - lms and the template app have none, apart from a hint comment in templates/stubs/page.tsx.tmpl:11.
+- **Screenshots needed**:
+  - The Roles page showing `demo.live` (local demo).
+  - `rustcms route:list` output with source `app` (terminal).
+  - A page calling the routes: demo `/admin/p/live` or `/admin/p/react-demo`; RDockPanel for a realistic case (container restart).
+- **Linked anchors**: none incoming. Headings: `#access`, `#calling-them-from-a-script-page`, `#testing`.
+
+### admin/realtime.md
+- **Public API covered**:
+  - **Routes:** `AdminRoutes::events`, `AdminRoutes::socket`, `.post`, `AdminAccess::can`.
+  - **Auth types:** `rustcms::auth::{EventStream, LiveSession, TargetFuture, LiveSocket, SocketMessage, SocketResponse}`, `LiveSession::stream`, `LiveSession::principal()`, `EventStream::target`.
+  - **Events:** `rustcms::realtime::{Event, StreamExt, stream, time}`, `Event::json`, `Event::resync()`.
+  - **Hub:** `Hub::new/subscribe/publish`, `Subscription::into_events`, `HubLimits::default()`, `HubLimits::idle_grace`, `app.shutdown()`.
+  - **Sockets:** `LiveSocket::accept`, `SocketResponse::target`, `AdminSocket::{recv, send, authorize}`, `SendError::TooLarge`. Errors: `AppError::TooManyRequests{retry_after}`.
+  - **Browser:** `ctx.realtime.events(path, {onEvent, onState})` returning `{close()}`; `ctx.realtime.socket(path, {onOpen, onMessage, onState}, {reconnect})` returning `send`.
+  - **Protocol:**
+    - Subprotocols `rustcms.v1` and `rustcms.csrf.<token>`.
+    - Close reasons `signed_out`, `forbidden`, `shutdown`, `lagging`, `error`.
+    - Close codes 4401, 4403, 1001, 4008, 1009, 1011, 1000.
+  - **Config:** `revalidate_secs` (30), `max_connections` (1000), `max_per_user` (10), opens 60 and 300 per minute, `shutdown_grace_secs` (5), `socket_revalidate_secs` (10), `max_message_bytes` (64 KiB), `send_timeout_secs`, `database.max_connections`.
+  - All exist: auth/realtime/mod.rs:43-81,239-291,384-397,438-450; auth/realtime/socket.rs:41-44,220-247,307-357,373-388,437-438; core/realtime.rs:22-26,107,124,157-170,246,264,293,396; core/app.rs:202; admin-ui/src/lib/realtime.ts.
+- **Wrong or outdated**:
+  - **Line 120, final statuses:** the events client "stops for good on 401, 403 or 404". It also stops on **400 and 405** (`FINAL_STATUSES`, admin-ui/src/lib/realtime.ts:24). It stops with reason `session` when the response belongs to another account (realtime.ts:96-100).
+  - **Line 230, socket send size:** `send` returns false when "too large", which suggests the server's `max_message_bytes`. The browser limit is a fixed 64 KiB: realtime.ts:229 sets the default, and `ctx.realtime.socket` passes only `{reconnect}` (components/custom.tsx:142, react-view.tsx:193). Raising `[realtime] max_message_bytes` does not raise what pages can send. Possibly a code bug.
+  - **Lines 46-48, target check outcomes:** only `Err(Forbidden)`/`Err(NotFound)` are described. `Err(Unauthenticated)` also maps to `forbidden`, any other error ends the stream as `error`, and so does a recheck slower than 5 s (`CHECK_TIMEOUT`, mod.rs:89,383-397).
+  - **Line 44, event names:** the length limit of 64 characters is missing (core/realtime.rs:108-110).
+  - **Lines 56-61, `TargetFuture` example:** it uses `Principal` without importing it. It is not in the prelude (crates/rustcms/src/lib.rs:36-48) and needs `rustcms::Principal`.
+- **Missing**:
+  - **Config:**
+    - The page never names the `[realtime]` section (`config/realtime.toml`) or `RUSTCMS_REALTIME__*` (core/config.rs:7), and doesn't link getting-started/configuration.md:110-125.
+    - Key names `opens_per_user_per_minute` and `opens_per_ip_per_minute` are not given. The `send_timeout_secs` default (10, mod.rs:79) is not given.
+    - Clamping: the three `*_secs` keys are at least 1; `max_message_bytes` is 1..1 MiB (mod.rs:100-104).
+  - **Panel origin:** it means `auth.admin_origins`, or `APP_URL` when that is empty (auth/state.rs:111-115). This matters behind a proxy.
+  - **Timing:** an SSE keep-alive goes out every 15 s (mod.rs:91,459). The first recheck is jittered to 50–100% of the interval (mod.rs:472-474; socket.rs:520-521).
+  - **Hub API not covered:**
+    - `HubLimits::max_keys` (1000) and `capacity` (64) (core/realtime.rs:157-170).
+    - `HubFull` is also returned while the server is stopping (:261-263,284).
+    - `Subscription::next`/`into_stream` (:386,407), `HubEvent::{Item, Lagged, Ended}` (:141-149), `Hub::active_keys` (:300); `Hub` is `Clone`.
+    - The hub's resync carries `{"missed": n}` (:400), while `Event::resync()` carries `{}`.
+    - `Shutdown::{token, is_open, spawn}` (:48-67), `MAX_EVENT_BYTES`, `Event::name()/data()` (:129-136).
+  - **Socket errors and shutdown:**
+    - `SendError::Closed` and `SocketClosed` (socket.rs:280-293); `authorize()` returns `Result<Principal, SocketClosed>`.
+    - A session that returned flushes its queued output within `send_timeout_secs` before the 1000 close; any other end discards it (socket.rs:560-573).
+    - A send blocked past `send_timeout_secs` ends the socket as `lagging` (socket.rs:332-340).
+    - The CSRF subprotocol is checked before the limits (socket.rs:156-158).
+  - **Paths given to `ctx.realtime.*`:** they go through `extensionPath`: no `?` or `#`, segments `[A-Za-z0-9._~-]` (admin-ui/src/lib/paths.ts:26-45). This contradicts the `encodeURIComponent(ctx.data.id)` sample for ids with other characters.
+  - **React and client:** `useEvents(props, path, handlers)` and `useSocket(props, path, handlers, {reconnect})` (sdk/index.d.ts:166-172) are not mentioned here. The events backoff runs 1 s → 30 s (realtime.ts:46-47).
+  - **Testing:** no section; link basics/testing.md#websockets (`TestClient::socket`, `TestSocket`, testing/src/socket.rs:60-151).
+- **Examples available**:
+  - `examples/demo/src/routes/admin.rs:8-14`: `.events("/ticks")` and `.socket("/echo")`.
+  - `examples/demo/src/http/controllers/live_controller.rs`:
+    - `ticks` (11-16): LiveSession plus hub subscription.
+    - `echo` (26-41): LiveSocket and `accept`; `whoami` uses `authorize()`.
+    - `reset` (19-22): a POST beside a stream.
+  - `examples/demo/src/services/ticker.rs`: `Ticker::new` (Hub, HubLimits, Shutdown), `Ticker::subscribe` (`stream::unfold`, `time::sleep`, `TooManyRequests`), `Ticker::reset` (`publish`).
+  - `examples/demo/src/providers/app_service_provider.rs:15-16`: `Ticker::new(app.shutdown())`.
+  - `examples/demo/resources/admin/js/demo/live.js:28-55`: `ctx.realtime.events/socket`.
+  - `examples/demo/resources/admin/src/demo/react.tsx:115`: `useEvents`.
+  - `examples/demo/tests/feature/live.rs`, `the_echo_socket_answers_and_authorizes_its_command` (48-63): TestSocket.
+  - **No example of:** `.target(...)`/`TargetFuture`, `Event::resync()`, binary messages, `reconnect: true`, `useSocket`. lms and the template app have no realtime code.
+- **Screenshots needed**:
+  - **Local demo:** `/admin/p/live` (ticking counter, "Reconnecting…"/"Stopped" states, echo form) and `/admin/p/react-demo` (`useEvents` counter).
+  - **RDockPanel** for realistic shots: container stats over SSE, a terminal/exec page over WebSocket, closed states (4401/4403, "signed out").
+  - RBlog likely has no realtime pages.
+- **Linked anchors**:
+  - `#websocket` (`## WebSocket`, line 147) exists; it is linked from release-notes.md:232 and security/production.md:35.
+  - Duplicate headings "In a script page" (lines 94, 222) and "What the server enforces" (125, 245) get `-1` suffixes, so links to the WebSocket subsections are fragile. Make them unique.
+
+### Theming/branding: where it is documented
+- **Main coverage:** customizing.md `#theme` (lines 21-63) and `#runtime-branding` (65-120).
+- **Config:** getting-started/configuration.md:70-78 covers `[admin] branding`, `branding_ttl_secs`, `branding_timeout_ms` and `RUSTCMS_ADMIN__BRANDING`. These match custom/branding.rs:285-298.
+- **Elsewhere:**
+  - overview.md:27 (brand asset routes, including `logo-dark`) and overview.md:107.
+  - digging-deeper/instances.md:28-30 (cache per instance), security/production.md:42-44 (checklist).
+  - react-pages.md:128-131,239-253 (`useColorScheme`, CSS variables).
+  - upgrade.md:52-53,166-183 and release-notes.md:128-139.
+- **Gaps:**
+  - `logo-dark` is missing from customizing's asset list. Generic font families are not quoted. `font_family` is limited to 200 characters.
+  - `TOKENS`, `BrandingError` and `AdminBranding::{is_runtime, has_source, probe}` are not mentioned.
+  - CSS variables differ by page (customizing: `--radius-lg`/`--font-sans`; react-pages: `--radius`; both valid, admin-ui/src/index.css:28-30). Neither page lists them all.
+  - A dark logo needs runtime branding; this isn't said.
+  - The template app scaffolds no theme or `config/admin.toml`, which is fine but unmentioned.
+- **Recommendation:** a dedicated `admin/theming.md` (static theme, runtime branding, CSS variables, color scheme), split out of customizing.md.
+
+---
+
+## Batch 11
+
+### admin/users-roles.md
+- **Public API covered**:
+  - **Service:** `RbacService`.
+  - **Permissions:** `users.{view_any, view, create, invite, update, delete}`, `roles.{view_any, view, create, update, delete, assign}`, `permissions.view_any`. Config `invitation_days`.
+  - **Routes** under `{admin}/api/system`: `/users`, `/users/invitations`, `/users/{id}/invitation`, `/users/{id}`, `/users/{id}/roles`, `/users/{id}/active`, `/users/{id}/password`, `/roles`, `/roles/{id}`, `/roles/{id}/permissions`, `/permissions`, `/permission-presets`. All match admin/features/system/mod.rs:33-71 and the `*Input` structs.
+  - **Types:** `UserPage`, `SystemUser`, `SystemRole`, `PermissionInfo`, `PermissionPresetInfo`, `abilities`.
+  - **Checked and correct:** name rules (≤120 characters, unique ignoring case; auth/rbac/service.rs:125-137) and rate limits 20/min and 5/min (system/users.rs:355-357).
+- **Wrong or outdated**:
+  - **Line 22, delete a role:** the page omits "not a role you hold", which the service refuses (rbac/service.rs:236-241); the ability is computed with it at roles.rs:79.
+  - **Line 17, change an email:** changing someone else's email also needs `users.update` and a manageable target (users.rs:30; rbac/service.rs ~633).
+  - **Line 46, Account → sign out other sessions:** the current password is required (auth/http/routes.rs:349-361, `confirm_password`).
+  - **Line 45, password change:** API tokens are also revoked when `auth.revoke_tokens_on_password_change` is set, which is the default (auth/config.rs:29,104).
+  - **Line 66, `/permissions`:** the item fields omit `name`, `group`, `groupLabel` (dto.rs:117-154).
+- **Missing**:
+  - **Listing users:** `GET /users` `per_page` defaults to 25, clamped 1–100; `search` is at most 100 characters (users.rs:69-75). `GET /users/{id}` works on yourself without `users.view` (users.rs:135).
+  - **Passwords:** at least `auth.password_min_length` (8) characters and at most 1,024 bytes (users.rs:159-167). Hashing budgets: `attempts_per_ip` for creation, `attempts_per_identifier` for resets (users.rs:182,336).
+  - **409 codes:** `mail_disabled` (users.rs:360-371), `invitation_accepted`, `user_inactive` (rbac/service.rs:536-549).
+  - **Fields and abilities:**
+    - `SystemUser.{invitationPending, invitedAt, superAdmin, isSelf}`.
+    - User abilities `update, changeEmail, delete, assignRoles, activate, resetPassword, resendInvitation` (users.rs:27-40).
+    - Role abilities `update, delete, assign` (roles.rs:75-82).
+    - `SystemLinks` in `PanelResponse.system` (dto.rs:9-41).
+  - **Built-in permissions:** the full list (auth/provider.rs:16-31), including `permissions.assign`, which is used only by `RbacService::grant_permission`/`revoke_permission` (service.rs:313,347).
+  - **CLI:** `make:user --email --name [--password] [--super-admin] [--guard]` and `role:assign --email --role [--guard]` (auth/console/commands.rs:29-40,182-186). The page says "same rules as the CLI" without linking either.
+  - **Invitations:** `auth.invitation_days` defaults to 7, maximum 30 (auth/config.rs:43,111; recovery `MAX_INVITATION_DAYS`).
+- **Examples available**:
+  - `examples/demo/src/providers/auth_service_provider.rs::provider` (`permission_area`, `permission_meta`, `permission_preset`, `posts.update_own`), for the Roles-page paragraph.
+  - No example calls `RbacService`.
+- **Screenshots needed**:
+  - Users list with the *Invited* badge.
+  - New user dialog with "Send an invitation instead".
+  - User page with roles and "Send the invitation again".
+  - Role page with areas, matrix, presets and disabled boxes.
+  - Account page.
+  - Sources: the local demo is best (it declares an area, labels and a preset). RBlog for realistic editor/author roles. Not RDockPanel.
+- **Linked anchors**: none incoming. The outgoing link `security/authorization.md#the-roles-page-areas-labels-and-presets` exists.
+
+### admin/i18n.md
+- **Public API covered**:
+  - **Config:** `app.locale`, `app.locales` (core/config.rs:64,66; defaults `en` / `["en","vi"]` at :122). Column `users.locale`.
+  - **Auth routes:** `GET {admin}/api/auth/me`, `POST {admin}/api/auth/locale` (auth/http/routes.rs:69,161-178). Header `X-Rustcms-Locale` (routes.rs:133).
+  - **Rust:** `AdminProvider::translations` (panel/provider.rs:144), `.plural()` (resources/resource.rs:180), `ctx.t`/`ctx.t_in` (engine/context.rs:147,152), `groupLabel`.
+  - **CLI:** `rustcms lang:missing <locale>` (provider.rs:533).
+  - **Errors:** body `code`, `issues`, `formIssues` (core/error.rs:228-243); issue `custom` (core/i18n/issues.rs:37); reasons `busy`, `upload_expired`, `receipt_expired`.
+  - **JS:** `ctx.locale`, `ctx.t`, `window.rustcms.registerTranslations` (admin-ui/src/lib/widgets.ts:206).
+- **Wrong or outdated**:
+  - **Lines 59-64, `lang:missing`:** it "reads the resource definitions", but it also lists settings labels, custom page and slot labels (including `t("…")` in templates), dashboard widget labels and non-resource permission groups (provider.rs:601-611).
+  - **Lines 90-94:** only widgets are described. Pages, slots and cells (`ViewContext.locale`/`t`, widgets.ts:47-50) and v2 props `locale`/`t` (sdk/index.d.ts:92-95) work the same way.
+  - **Lookup order:** it is simplified. The framework catalog is also consulted scoped first (core/i18n/catalog.rs:135-138).
+- **Missing**:
+  - **Validation:**
+    - `lang:missing` refuses a locale that is not in `app.locales` (provider.rs:540-544).
+    - Boot refuses an `app.locale` not in `app.locales`, or a malformed tag (core/config.rs:283-291).
+  - **Auth responses:** `/me` also returns `preferredLocale` and `locales` (routes.rs:103-108). `POST /locale` answers `{locale}`, or 422 for an unoffered locale.
+  - **Accept-Language matching:** q-values, primary subtag fallback, first 20 entries (core/i18n/mod.rs:18-49).
+  - **Context fields:** `Ctx`/`Principal` `locale` (context.rs:29, core/principal.rs:27).
+  - **Other translated labels:** settings, custom pages, dashboard and Roles-page catalog labels use the same catalogs.
+  - **Mail locale:** auth mails use the user's saved locale, else `app.locale` (auth/recovery/jobs.rs:77-81). The test mail uses the request locale (settings/mail.rs:108). Cross-link mail.md.
+  - **Public API:** `rustcms_core::i18n::{Translator, Tr, Issue, TEMPLATES, negotiate}`; new server messages need a `TEMPLATES` entry.
+  - **Env override:** `RUSTCMS_APP__…` for `app.locale(s)` is not mentioned.
+- **Examples available**:
+  - Catalogs: `examples/demo/lang/vi.toml` and `examples/lms/lang/vi.toml` (real catalogs, including a settings section).
+  - Registration:
+    - `examples/demo/src/providers/admin_panel_provider.rs::provider` (lines 60-61, `.translations("vi", …)`).
+    - Template `crates/rustcms-cli/templates/app/src/providers/admin_panel_provider.rs.tmpl:10` with `templates/app/lang/vi.toml`.
+    - `examples/lms/config/app.toml:5-6`.
+  - `ctx.t` in hooks: `examples/lms/src/admin/resources/course_resource.rs` (lines 137-157) and `examples/lms/src/admin/pages/lms_settings_page.rs::validate` (line 24).
+  - Extensions: `examples/demo/resources/admin/js/demo/color.js` (lines 4-10) and `examples/demo/resources/admin/src/demo/react.tsx` (`props.t`, line 42 onward).
+  - **Gap:** the React demo registers no `vi` strings, so it shows no translated v2 text.
+- **Screenshots needed**:
+  - The language selector on the Account page and the login page.
+  - A resource list and form in Vietnamese.
+  - A Vietnamese validation error.
+  - Sources: demo or lms in `vi`; RBlog with a vi catalog would show real content labels.
+- **Linked anchors**: `#extensions` (`## Extensions`, line 90) exists; it is linked from custom-fields.md. The outgoing `forms.md#inputs` exists.
+
+### admin/settings.md
+- **Public API covered**:
+  - **Settings:** `rustcms::settings::{Settings, Secret, get, load}` (core/settings.rs:46,60,291,296), `Settings::GROUP`.
+  - **Admin types:** `rustcms::admin::{SettingField, SettingsMeta, SettingsPage}`.
+    - `SettingField` constructors `text, textarea, integer, boolean, select, key_value, date, secret, media, media_list` (admin/features/settings/mod.rs:100-262).
+    - `SettingField` modifiers `.required, .nullable, .max_length, .max_items, .label, .help, .placeholder, .email, .url, .audit_redact, .accept, .max_size, .kept_while`.
+    - `SettingsMeta::new/.icon`; `SettingsPage::{meta, fields, form, validate, validate_in, after_save}` (mod.rs:320-360).
+  - **Registration:** `AdminProvider::settings`, `mail_settings` (panel/provider.rs:156,173), `AdminProvider::media`.
+  - **Secrets and CLI:** `Secret::expose/default`. `rustcms make:settings` (cli main.rs:121, make.rs:131), `migrate`, `key:reencrypt`, `permission:sync`. `APP_KEY`, `APP_PREVIOUS_KEYS`.
+  - **Permissions and audit:** `settings.<group>.view|update`; audit actions `settings.updated`, `mail.test_sent`; issue `stale` (core/i18n/issues.rs:120).
+  - **Routes:** `GET/PUT {admin}/api/settings/{group}`, `POST …/settings/mail/test` (settings/http.rs:25-42).
+  - **Jobs and forms:** `rustcms::queue::dispatch(txn, &job)` (core/queue/mod.rs:442). Form API `Form::new().schema`, `components!`, `Section`, `TextInput`, `Textarea`, `Toggle`, `NumberInput`, `SecretInput`.
+- **Wrong or outdated**:
+  - **Line 195:** `Secret` "prints as `Secret(set)`". When unset it prints `Secret(unset)` (core/settings.rs:80-83).
+  - **Line 264:** the test mail "needs `settings.mail.update`". It needs both `.view` and `.update` (mail.rs:99 → http.rs:133-145). The 5/min limit is counted before the body is read (mail.rs:101).
+  - **Line 284, response `{form, data, secrets, version, abilities}`:** the response also has `schemaVersion`, `vocabularyVersion`, `group`, `label` (http.rs:60-106). `version` is a string (`"0"` when never saved). `secrets` values are `set|unset|unreadable`. `abilities` is `{update, test}`.
+  - **Structure:** `validate_in` (line 213) and "### Reacting to a save" (line 216) sit under "## Secrets" but apply to every group. If they move, keep the heading text so `#reacting-to-a-save` keeps its id.
+  - **Hard-coded paths:** `/admin/...` at lines 87, 262 and 284-285, instead of `{admin}`.
+- **Missing**:
+  - **Secret methods:** `Secret::new`, `Secret::is_set` (core/settings.rs:64-76).
+  - **Public types:** `SettingKind`, `SettingsResponse`, `SecretStatus`, `SettingsAbilities`, `SettingsLink`, `MailTestResult`.
+  - **`key_value` default:** 50 pairs of 1,000 characters (mod.rs:110,126).
+  - **PUT validation** (http.rs:271-339):
+    - `version` must be an integer string.
+    - An unknown field gets "is not allowed".
+    - A secret `""` gets "is empty", and a non-string secret is refused.
+  - **Boot checks:** a field declared twice, a form input used twice, a media setting without `AdminProvider::media` (provider.rs:274; mod.rs ~405-500).
+  - **`make:settings`:**
+    - The name must be PascalCase ending in `Settings`, and the group is its snake_case stem.
+    - A group over 32 characters is refused.
+    - It writes both files or neither, and prints a `permission:sync` hint (make.rs:131-157).
+  - **Mail page:**
+    - It needs the `mail` feature, on by default (provider.rs:172; crates/rustcms/Cargo.toml:14,23).
+    - `from_address` is required once `host` is set, and a password is refused with `encryption = none` (mail.rs:40-58).
+    - Fields and limits: mail.rs:22-37.
+    - The test mail times out after 15 s with `smtp_timeout` and uses the `rustcms.test` template in the user's language (mail.rs:88,108,111).
+  - **Low-level functions:** `rustcms::settings::{read, write, typed, reseal, groups}` (core/settings.rs:197-348).
+- **Examples available**:
+  - **Model:** `examples/demo/src/settings/site_settings.rs::SiteSettings` (`Default` and `Settings` impls). It is almost identical to the page's `GeneralSettings`, including `Secret` and a media logo.
+  - **Page:** `examples/demo/src/admin/pages/site_settings_page.rs`, `impl SettingsPage for SiteSettings`.
+  - **lms:** `examples/lms/src/settings/lms_settings.rs::LmsSettings` and `examples/lms/src/admin/pages/lms_settings_page.rs` (`validate` with `ctx.t`).
+  - **Registration:** `examples/demo/src/providers/admin_panel_provider.rs` lines 22-23 (`.settings::<SiteSettings>()`, `.mail_settings()`); lms lines 35-36.
+  - **Reading:**
+    - `examples/demo/src/admin/branding.rs::SiteBranding` (line 16, `settings::get`).
+    - `examples/lms/src/jobs/send_welcome.rs:44`, a job reading settings itself, which is the pattern the secrets section recommends.
+    - `examples/lms/src/database/seeders/course_seeder.rs:29`.
+  - **Built-in reference:** `MailSettings` (admin/features/settings/mail.rs) shows `select`, `kept_while`, `email()`, `validate_in`.
+  - **No example of:** `form()`, `after_save`, `media_list`, `key_value`, `date`, `textarea`, `audit_redact`. Extend the demo's `SiteSettings`, or keep those samples hand-written. The CLI stubs are not compiled.
+- **Screenshots needed**:
+  - Settings → Site with a secret (Set / Replace / Clear / Undo), the media logo, and the "Cannot be read" state.
+  - Settings → Mail with the Send test mail card.
+  - The stale-version reload prompt.
+  - Sources: the local demo shows both pages; RBlog for a realistic blog settings page. Not RDockPanel.
+- **Linked anchors** (all exist):
+  - `#api` (line 280) and `#mail` (256). Linked from reference/admin-api.md.
+  - `#media-settings` (122) and `#reacting-to-a-save` (216). Linked from release-notes.md.
+  - `#secrets` (188). Linked from security/production.md and reference/database-schema.md.
+
+---
+
+## Features in this area with no guide page of their own
+
+- **Rich text** is only a section of media.md (sidebar title "Media, uploads & rich text", docs/guide/.vitepress/sidebar.ts:61). It carries the schema, editor, headless rendering, slugs and versioning, and three pages link to `media.md#rich-text`. Consider `admin/rich-text.md`. Headless rendering for public frontends is not an admin topic.
+- **Headless/public media serving**: no guidance. The only route is the authorized `{admin}/api/media/{id}/file`; `my_public_url` is left to the app, and no example implements it.
+- **Theming/branding**: it is split between customizing.md and configuration.md. A dedicated page would help (see above).
+- **SDK build tooling**: `@rustcms/admin-sdk/vite`, the `rustcms-build` bin, `.rustcms-build.json`, and low-level helpers (`adminKey`, `resourceKey`, `queryPairs`, `SDK_UI`). `window.rustcms.v2` (`modules`, `versions`) is undocumented as a raw API (CHANGELOG:427).
+- **React field widgets**: they don't exist (v1 DOM only). The guide never says so.
+- **Hub as a general API**: `Hub`, `Subscription`, `HubEvent` beyond SSE, and `Shutdown::spawn` for app-owned tasks (core/realtime.rs).
+- **Route composition**: `AdminRoutes::nest`, `scope`, `list`, `permissions` are documented nowhere (only the unit test at admin_routes.rs:300-316).
+- **WebSocket CSP**: `connect-src` adds `ws(s)://` panel origins (`rustcms::admin::spa::content_security_policy`, CHANGELOG 0.4.0). No guide page mentions it.
+- **Background export/import jobs**: the `admin.export` and `admin.import` kinds and their 10-minute prune cadence are not on queues.md.
+- **Password resets and invitations (ADR 0023)**: only a section in security/authentication.md:65 and operations/mail.md. There is no admin workflow or token model, and `InvitationJob`/`PasswordResetJob` are not covered (auth/recovery/mod.rs:31).
+- **Permission catalog (ADR 0034)**: only a section of security/authorization.md:21. There is no reference for `PermissionCatalog` or `BUILT_IN_PERMISSIONS`. Direct user permissions (`permissions.assign`, `RbacService::grant_permission`) are documented nowhere.
+- **Locale catalogs**:
+  - The framework catalogs (`crates/rustcms-admin/lang/vi.toml` via `add_framework`) and the SPA catalogs (`admin-ui/src/i18n/{en,vi}.ts`) are not explained.
+  - Nothing says outright that apps cannot add a panel language (`PANEL_LOCALES`).
+- **Account page**: it gets only a paragraph in users-roles.md. `POST {admin}/api/auth/password` and `logout-others` (with password confirmation) are not documented there.
+- **CLI user management** (`make:user`, `role:assign`): mentioned in installation, deployment and authorization, but not tied to the Users screen.
+
+## Code issues surfaced (not docs)
+
+- Background export over 10,000 rows fails as `revoked` (admin/features/exports/mod.rs:443-447).
+- The browser socket send limit is a fixed 64 KiB, independent of `[realtime] max_message_bytes` (admin-ui/src/lib/realtime.ts:229; components/custom.tsx:142, react-view.tsx:193).
+- The media prune loop is a `tokio::spawn` in `AdminProvider::boot` (panel/provider.rs:404-419), not `AppBuilder::schedule` (ADR 0031). The export/import prune (provider.rs:422-440) should be checked the same way.
+- There is a stale comment in admin-ui/src/lib/rich-text.ts:5-6,22 ("saves version 2").
+- `examples/lms/resources/views/admin/course_overview.html:4` contains a stray "Haha: ".

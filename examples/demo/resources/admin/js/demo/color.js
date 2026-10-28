@@ -1,6 +1,7 @@
 // Demo widget `demo/color`: picks a category color from the palette in
 // `props.palette` ([{ value, label }]). Styles live in color.css: the panel's
 // CSP forbids inline styles. Its text is translated with `ctx.t`.
+// #region widget
 window.rustcms.registerTranslations("vi", {
   None: "Không màu",
   Red: "Đỏ",
@@ -59,3 +60,4 @@ window.rustcms.registerWidget("demo/color", {
     };
   },
 });
+// #endregion widget

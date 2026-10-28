@@ -6,6 +6,7 @@ use rustcms::async_trait;
 
 use crate::settings::site_settings::SiteSettings;
 
+// #region settings-page
 #[async_trait]
 impl SettingsPage for SiteSettings {
     fn meta() -> SettingsMeta {
@@ -30,3 +31,4 @@ impl SettingsPage for SiteSettings {
         Ok(())
     }
 }
+// #endregion settings-page

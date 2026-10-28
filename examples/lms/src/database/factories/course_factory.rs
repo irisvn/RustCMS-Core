@@ -1,5 +1,6 @@
 //! Courses for tests: `CourseFactory::new().capacity(1).create(db)`.
 
+// #region course-factory
 use rustcms::database::Factory;
 use sea_orm::ActiveValue::Set;
 
@@ -45,3 +46,4 @@ impl Factory for CourseFactory {
         }
     }
 }
+// #endregion course-factory

@@ -3,6 +3,7 @@
 use rustcms::prelude::*;
 use serde::Deserialize;
 
+// #region new-post
 /// A new draft: a title, and an optional body.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -11,7 +12,9 @@ pub struct NewPost {
     #[serde(default)]
     pub body: Option<String>,
 }
+// #endregion new-post
 
+// #region validate
 impl Validate for NewPost {
     /// Trims both; an empty body is no body.
     fn validate(&mut self) -> Result<(), ValidationErrors> {
@@ -27,3 +30,4 @@ impl Validate for NewPost {
         if errors.is_empty() { Ok(()) } else { Err(errors) }
     }
 }
+// #endregion validate

@@ -5,6 +5,7 @@
 use rustcms::settings::{Secret, Settings};
 use serde::{Deserialize, Serialize};
 
+// #region site-settings
 /// The site's name and what visitors may do.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiteSettings {
@@ -34,3 +35,4 @@ impl Default for SiteSettings {
 impl Settings for SiteSettings {
     const GROUP: &'static str = "site";
 }
+// #endregion site-settings

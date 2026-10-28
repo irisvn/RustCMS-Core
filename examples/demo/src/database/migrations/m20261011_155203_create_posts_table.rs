@@ -1,3 +1,4 @@
+// #region create-posts
 use rustcms::migration::*;
 
 #[derive(DeriveMigrationName)]
@@ -36,3 +37,4 @@ enum Posts {
     CreatedAt,
     UpdatedAt,
 }
+// #endregion create-posts

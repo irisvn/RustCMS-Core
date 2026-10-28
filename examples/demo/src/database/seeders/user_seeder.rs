@@ -62,6 +62,7 @@ impl Seeder for UserSeeder {
     }
 }
 
+// #region refuse-in-production
 /// Well-known passwords and a super admin: never in production, whatever
 /// `db:seed --force` says.
 pub fn refuse_in_production(state: &AppState) -> anyhow::Result<()> {
@@ -70,6 +71,7 @@ pub fn refuse_in_production(state: &AppState) -> anyhow::Result<()> {
     }
     Ok(())
 }
+// #endregion refuse-in-production
 
 /// The user with `email`, created (password [`PASSWORD`]) if missing.
 pub async fn account(state: &AppState, name: &str, email: &str) -> anyhow::Result<user::Model> {

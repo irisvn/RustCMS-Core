@@ -26,4 +26,29 @@ export const SITES = {
 }
 
 export const SHOTS = [
+  // introduction.md
+  { id: 'introduction/posts-list', site: 'rblog', path: '/r/posts' },
+  {
+    id: 'introduction/post-form',
+    site: 'rblog',
+    path: '/r/posts',
+    actions: async (page) => {
+      await page.getByRole('main').getByRole('row').nth(1).getByRole('link').first().click()
+      await page.getByRole('main').getByRole('link', { name: /^Edit$/ }).first().click()
+      await page.getByRole('main').locator('form').first().waitFor()
+    },
+  },
+  { id: 'introduction/dashboard', site: 'local', path: '' },
+  // getting-started/installation.md
+  { id: 'getting-started/sign-in', site: 'local', path: '/login', signedOut: true, waitFor: 'form' },
+  // basics/errors.md: a 422 shown in the form (empty title).
+  {
+    id: 'basics/form-errors',
+    site: 'local',
+    path: '/r/posts/create',
+    actions: async (page) => {
+      await page.getByRole('main').getByRole('button', { name: /^(Create|Save)$/ }).first().click()
+      await page.getByText(/required|must/i).first().waitFor()
+    },
+  },
 ]

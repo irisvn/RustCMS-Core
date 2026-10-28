@@ -15,6 +15,7 @@ db_test!(token_api_lists_and_creates_posts, migrate = Migrator, |db: TestDb| asy
     crate::support::seed(app.state()).await;
     let admin = user_by_email(&app, "admin@example.test").await;
 
+    // #region api-access
     // No token, or an admin session cookie: not this API.
     app.client().get("/api/v1/posts").await.assert_status(StatusCode::UNAUTHORIZED);
     app.acting_as(&admin).await.get("/api/v1/posts").await.assert_status(StatusCode::UNAUTHORIZED);
@@ -27,6 +28,7 @@ db_test!(token_api_lists_and_creates_posts, migrate = Migrator, |db: TestDb| asy
     reader.get("/api/v1/posts?page=abc").await.assert_validation_error("page");
     // Refused before the body is read, whatever it is.
     reader.post_json("/api/v1/posts", &json!({"nonsense": true})).await.assert_status(StatusCode::FORBIDDEN);
+    // #endregion api-access
 
     // A token that may create: drafts, owned by the token's user, not listed.
     let writer = app.with_token(&admin, &["*"]).await;

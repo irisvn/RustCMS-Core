@@ -5,6 +5,7 @@ use rustcms::prelude::*;
 
 use crate::http::controllers::live_controller;
 
+// #region admin-routes
 pub fn routes() -> AdminRoutes {
     AdminRoutes::new("/demo")
         .events("/ticks", AdminAccess::can("demo.live"), live_controller::ticks)
@@ -12,3 +13,4 @@ pub fn routes() -> AdminRoutes {
         .socket("/echo", AdminAccess::can("demo.live"), live_controller::echo)
         .get("/hello", AdminAccess::can("demo.live"), live_controller::hello)
 }
+// #endregion admin-routes

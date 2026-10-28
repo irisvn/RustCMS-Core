@@ -8,6 +8,7 @@ use rustcms::{AppError, AppResult, AppState, async_trait};
 
 use crate::settings::site_settings::SiteSettings;
 
+// #region site-branding
 pub struct SiteBranding;
 
 #[async_trait]
@@ -22,3 +23,4 @@ impl BrandingSource for SiteBranding {
         Ok(Some(branding.primary("#7c3aed").map_err(AppError::internal)?))
     }
 }
+// #endregion site-branding

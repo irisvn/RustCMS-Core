@@ -12,6 +12,7 @@ impl Resource for LearnerResource {
     type Entity = learner::Entity;
     const SLUG: &'static str = "learners";
 
+    // #region meta
     fn meta() -> ResourceMeta {
         // Imported learners are matched by email: known ones are updated.
         ResourceMeta::new("Learner")
@@ -21,6 +22,7 @@ impl Resource for LearnerResource {
             .unique("learners_email_key", &["email"], "is already registered")
             .import_key("email")
     }
+    // #endregion meta
 
     fn fields() -> Vec<Field> {
         vec![

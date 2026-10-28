@@ -7,6 +7,7 @@ use rustcms::realtime::{Event, StreamExt, stream};
 
 use crate::services::ticker::Ticker;
 
+// #region ticks
 /// `GET /admin/api/x/demo/ticks`: the counter, as server-sent events.
 pub async fn ticks(live: LiveSession, Inject(ticker): Inject<Ticker>) -> AppResult<EventStream> {
     let events = ticker.subscribe()?.into_events();
@@ -14,13 +15,17 @@ pub async fn ticks(live: LiveSession, Inject(ticker): Inject<Ticker>) -> AppResu
     let first = stream::once(async { Event::json("hello", &json!({})).expect("small") });
     Ok(live.stream(first.chain(events)))
 }
+// #endregion ticks
 
+// #region inject-reset
 /// `POST /admin/api/x/demo/ticks/reset`.
 pub async fn reset(Inject(ticker): Inject<Ticker>) -> StatusCode {
     ticker.reset();
     StatusCode::NO_CONTENT
 }
+// #endregion inject-reset
 
+// #region echo
 /// `GET /admin/api/x/demo/echo` (WebSocket): sends back what it gets;
 /// `whoami` is a command, authorized when it runs.
 pub async fn echo(live: LiveSocket) -> SocketResponse {
@@ -39,6 +44,7 @@ pub async fn echo(live: LiveSocket) -> SocketResponse {
         }
     })
 }
+// #endregion echo
 
 /// `GET /admin/api/x/demo/hello`: read by the React demo page (`useAdminQuery`).
 pub async fn hello() -> Json<serde_json::Value> {

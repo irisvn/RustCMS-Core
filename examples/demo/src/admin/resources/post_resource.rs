@@ -19,10 +19,14 @@ impl Resource for PostResource {
     type Entity = post::Entity;
     const SLUG: &'static str = "posts";
 
+    // #region intro-post
+    // #region meta
     fn meta() -> ResourceMeta {
         ResourceMeta::new("Post").title("title").icon("file-text").group("Content").soft_deletes().exportable()
     }
+    // #endregion meta
 
+    // #region fields
     fn fields() -> Vec<Field> {
         vec![
             Field::column(post::Column::Title).required().searchable().sortable().max_length(200),
@@ -36,7 +40,10 @@ impl Resource for PostResource {
             Field::column(post::Column::Attributes).key_value().max_items(20).max_length(200),
         ]
     }
+    // #endregion fields
+    // #endregion intro-post
 
+    // #region form
     fn form() -> Form {
         Form::new().schema(components![Tabs::make().schema(components![
             Tab::make("Content").schema(components![
@@ -57,7 +64,9 @@ impl Resource for PostResource {
             ]),
         ])])
     }
+    // #endregion form
 
+    // #region table
     fn table() -> Table {
         Table::new()
             .columns(vec![
@@ -73,7 +82,9 @@ impl Resource for PostResource {
             ])
             .default_sort("-published_at")
     }
+    // #endregion table
 
+    // #region policy-scope
     fn policy() -> Arc<dyn Policy> {
         Arc::new(PostPolicy)
     }
@@ -86,9 +97,11 @@ impl Resource for PostResource {
             query.filter(post::Column::AuthorId.eq(ctx.principal.id.parse::<i64>().unwrap_or(-1)))
         }
     }
+    // #endregion policy-scope
 
     fn actions() -> Vec<Action<post::Entity>> {
         vec![
+            // #region publish
             Action::<post::Entity>::new("publish", |_ctx, txn, posts, _data| {
                 Box::pin(async move {
                     for post in posts {
@@ -103,6 +116,8 @@ impl Resource for PostResource {
             .label("Publish")
             .bulk()
             .requires_confirmation("Publish the selected posts?"),
+            // #endregion publish
+            // #region move
             // Asks for a category (one the user may see) in a dialog.
             Action::<post::Entity>::new("move", |_ctx, txn, posts, data| {
                 Box::pin(async move {
@@ -118,6 +133,8 @@ impl Resource for PostResource {
             .label("Move to category…")
             .bulk()
             .form(vec![ActionField::belongs_to("category_id", "categories").label("Category").required()]),
+            // #endregion move
+            // #region unpublish
             // Offered on published posts only (decided by the server per post); the
             // row's labelled action there, the others are under ⋯.
             Action::<post::Entity>::new("unpublish", |_ctx, txn, posts, _data| {
@@ -136,6 +153,8 @@ impl Resource for PostResource {
             .visible_when(|_ctx, post| post.published)
             .primary()
             .destructive(),
+            // #endregion unpublish
+            // #region preview
             // Tells the panel what to do next: a message and a page to open in a new tab.
             Action::<post::Entity>::with_outcome("preview", |_ctx, _txn, posts, _data| {
                 Box::pin(async move {
@@ -146,9 +165,11 @@ impl Resource for PostResource {
             })
             .label("Preview")
             .ability("view"),
+            // #endregion preview
         ]
     }
 
+    // #region relations
     /// Tags, attached and detached on a post's page; `position` orders them.
     fn relations() -> Vec<Relation> {
         vec![
@@ -157,11 +178,14 @@ impl Resource for PostResource {
                 .label("Tags"),
         ]
     }
+    // #endregion relations
 
+    // #region hooks
     async fn mutate_before_create(ctx: &Ctx, _txn: &DatabaseTransaction, mut data: Data) -> AppResult<Data> {
         data.insert("author_id".into(), json!(ctx.principal.id));
         Ok(data)
     }
+    // #endregion hooks
 }
 
 fn chrono_now() -> sea_orm::prelude::DateTimeUtc {

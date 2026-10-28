@@ -16,6 +16,7 @@ impl Resource for IntegrationResource {
         ResourceMeta::new("Integration").title("name").icon("key").group("Settings")
     }
 
+    // #region fields
     fn fields() -> Vec<Field> {
         vec![
             Field::column(integration::Column::Name).required().searchable().sortable().max_length(60),
@@ -23,4 +24,5 @@ impl Resource for IntegrationResource {
             Field::column(integration::Column::Env).encrypted_map().max_items(20).label("Environment"),
         ]
     }
+    // #endregion fields
 }

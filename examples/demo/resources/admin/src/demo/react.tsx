@@ -33,6 +33,7 @@ type Data = { path: string; items: Array<{ id: number; name: string }> };
 
 type Tag = { name: string };
 
+// #region tags
 /** Tags through the resource API: the panel's policy, validation and audit apply. */
 function Tags(props: PageProps<Data>) {
   const tags = useResource<Tag>(props, "tags", { query: { per_page: "100" } });
@@ -83,13 +84,16 @@ function Tags(props: PageProps<Data>) {
     </div>
   );
 }
+// #endregion tags
 
 function ReactDemo(props: PageProps<Data>) {
   const tab = props.path === "tags" ? "tags" : "overview";
+  // #region title
   // The sub-path names itself in the panel's heading and breadcrumb.
   useEffect(() => {
     if (props.path === "tags") props.title(props.t("React demo: tags"));
   }, [props.path, props.title, props.t]);
+  // #endregion title
   return (
     <Tabs value={tab} onValueChange={(v) => props.navigate(v === "tags" ? "/p/react-demo/tags" : "/p/react-demo")}>
       <TabsList aria-label={props.t("Sections")}>
@@ -112,11 +116,13 @@ function Overview(props: PageProps<Data>) {
   const reset = useAdminMutation(props, "/demo/ticks/reset", "post");
   const [count, setCount] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
+  // #region use-events
   useEvents(props, "/demo/ticks", {
     onEvent(name, data) {
       if (name === "tick") setCount((data as { count: number }).count);
     },
   });
+  // #endregion use-events
   const item = props.data.items.find((i) => props.path === `items/${i.id}`);
   return (
     <Card className="demo-react">

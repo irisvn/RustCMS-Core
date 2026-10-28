@@ -5,6 +5,7 @@ use serde::Serialize;
 
 use crate::models::post;
 
+// #region post-json
 #[derive(Serialize)]
 pub struct PostJson {
     id: String,
@@ -25,3 +26,4 @@ impl From<post::Model> for PostJson {
         }
     }
 }
+// #endregion post-json

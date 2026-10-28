@@ -2,6 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
+// #region model
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "post_tags")]
 pub struct Model {
@@ -12,6 +13,7 @@ pub struct Model {
     #[sea_orm(default_value = 0)]
     pub position: i32,
 }
+// #endregion model
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}

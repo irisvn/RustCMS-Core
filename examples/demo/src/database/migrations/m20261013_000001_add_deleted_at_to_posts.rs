@@ -1,3 +1,4 @@
+// #region add-column
 use rustcms::migration::*;
 
 #[derive(DeriveMigrationName)]
@@ -24,3 +25,4 @@ enum Posts {
     Table,
     DeletedAt,
 }
+// #endregion add-column

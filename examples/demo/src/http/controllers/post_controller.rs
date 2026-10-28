@@ -11,6 +11,7 @@ use crate::models::post;
 /// Drafts a user may create per minute through the API.
 const CREATES_PER_MINUTE: u32 = 30;
 
+// #region index
 /// Published posts (publication date reached, not trashed), newest first.
 pub async fn index(State(app): State<AppState>, page: Pagination) -> AppResult<Json<ApiPage<PostJson>>> {
     let select = post::Entity::find()
@@ -23,7 +24,9 @@ pub async fn index(State(app): State<AppState>, page: Pagination) -> AppResult<J
         .order_by_desc(post::Column::Id);
     Ok(Json(ApiPage::fetch(select, app.db(), &page, PostJson::from).await?))
 }
+// #endregion index
 
+// #region store
 /// Creates an unpublished draft owned by the token's user.
 pub async fn store(
     State(app): State<AppState>,
@@ -45,3 +48,4 @@ pub async fn store(
     .await?;
     Ok((StatusCode::CREATED, Json(post.into())))
 }
+// #endregion store

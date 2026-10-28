@@ -10,6 +10,7 @@ use rustcms::{AppError, AppResult};
 /// The only key: everyone sees the same counter.
 const KEY: &str = "ticks";
 
+// #region ticker
 pub struct Ticker {
     hub: Hub<&'static str>,
     /// Changed and published under this lock, by ticks and resets alike: a
@@ -53,3 +54,4 @@ impl Ticker {
 fn tick(count: u64) -> Event {
     Event::json("tick", &serde_json::json!({ "count": count })).expect("a small event")
 }
+// #endregion ticker

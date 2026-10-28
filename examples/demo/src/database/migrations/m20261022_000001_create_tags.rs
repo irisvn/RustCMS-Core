@@ -18,6 +18,7 @@ impl MigrationTrait for Migration {
                 .to_owned(),
         )
         .await?;
+        // #region post-tags
         create_table(
             manager,
             Table::create()
@@ -43,6 +44,7 @@ impl MigrationTrait for Migration {
                 .to_owned(),
         )
         .await
+        // #endregion post-tags
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {

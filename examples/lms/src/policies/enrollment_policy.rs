@@ -4,6 +4,7 @@ use rustcms::admin::*;
 
 use super::permissions::UPDATE_PROGRESS;
 
+// #region policy
 /// `enrollments.<ability>`; `enrollments.update_progress` also admits `update`
 /// (field rules then limit the change to `progress`). Decisions never depend
 /// on the record: which records a user sees is the resource's scope.
@@ -32,3 +33,4 @@ impl Policy for EnrollmentPolicy {
         false
     }
 }
+// #endregion policy

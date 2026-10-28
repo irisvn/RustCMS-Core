@@ -18,13 +18,16 @@ use crate::services::enrollment_service;
 
 pub struct EnrollmentResource;
 
+// #region statuses
 const STATUSES: [(&str, &str); 2] = [(enrollment::ACTIVE, "Active"), (enrollment::WITHDRAWN, "Withdrawn")];
+// #endregion statuses
 
 #[async_trait::async_trait]
 impl Resource for EnrollmentResource {
     type Entity = enrollment::Entity;
     const SLUG: &'static str = "enrollments";
 
+    // #region meta
     /// Every write first locks the course (both, when moving): the seat count
     /// and the instructor's access hold until it commits.
     fn meta() -> ResourceMeta {
@@ -39,6 +42,7 @@ impl Resource for EnrollmentResource {
                 "This learner is already enrolled in this course.",
             )
     }
+    // #endregion meta
 
     fn fields() -> Vec<Field> {
         let manage = |ctx: &Ctx| ctx.can("enrollments.update");
@@ -59,6 +63,7 @@ impl Resource for EnrollmentResource {
         ]
     }
 
+    // #region form
     fn form() -> Form {
         Form::new().schema(components![
             SelectInput::make("course_id"),
@@ -67,7 +72,9 @@ impl Resource for EnrollmentResource {
             NumberInput::make("progress").help("Percent of the course done (0 to 100)"),
         ])
     }
+    // #endregion form
 
+    // #region table
     fn table() -> Table {
         Table::new()
             .columns(vec![
@@ -80,6 +87,7 @@ impl Resource for EnrollmentResource {
             .filters(vec![SelectFilter::make("course_id"), SelectFilter::make("status").options(STATUSES)])
             .default_sort("-enrolled_at")
     }
+    // #endregion table
 
     fn policy() -> Arc<dyn Policy> {
         Arc::new(EnrollmentPolicy)
@@ -93,6 +101,7 @@ impl Resource for EnrollmentResource {
         }
     }
 
+    // #region hooks
     async fn mutate_before_create(ctx: &Ctx, txn: &DatabaseTransaction, data: Data) -> AppResult<Data> {
         let (Some(course_id), Some(learner_id)) = (int(&data, "course_id"), int(&data, "learner_id")) else {
             // The engine reports the missing fields.
@@ -129,4 +138,5 @@ impl Resource for EnrollmentResource {
         }
         Ok(data)
     }
+    // #endregion hooks
 }

@@ -8,19 +8,26 @@ use crate::admin::resources::{
     category_resource::CategoryResource, post_resource::PostResource, tag_resource::TagResource,
 };
 
+// #region provider
 pub fn provider() -> AdminProvider {
     AdminProvider::new()
+        // #region branding
         .brand("demo")
         // The site's name, once set in Settings → Site (runtime branding).
         .branding(crate::admin::branding::SiteBranding)
+        // #endregion branding
+        // #region media
         .media()
+        // #endregion media
         .resource::<CategoryResource>()
         .resource::<PostResource>()
         .resource::<TagResource>()
         .resource::<crate::admin::resources::integration_resource::IntegrationResource>()
         // rustcms:resources
+        // #region settings
         .settings::<crate::settings::site_settings::SiteSettings>()
         .mail_settings()
+        // #endregion settings
         .dashboard(
             rustcms::admin::dashboard::Dashboard::new()
                 .widget(rustcms::admin::dashboard::Widget::stat("posts", "posts").label("Posts"))
@@ -44,11 +51,14 @@ pub fn provider() -> AdminProvider {
         .page::<crate::admin::pages::react_page::ReactPage>()
         // rustcms:pages
         .slot::<crate::admin::slots::post_summary_slot::PostSummarySlot>()
+        // #region color-extension
         // The `demo/color` widget of the category form.
         .extension_script("demo-color", include_str!("../../resources/admin/js/demo/color.js"))
         .extension_style("demo-color", include_str!("../../resources/admin/css/demo/color.css"))
+        // #endregion color-extension
         // The live page (`LivePage`, server-sent events).
         .extension_script("demo-live", include_str!("../../resources/admin/js/demo/live.js"))
+        // #region react-extension
         // The React demo page (v2, built by `npm run build` in resources/admin).
         .extension_script_v2(
             "demo-react",
@@ -56,7 +66,11 @@ pub fn provider() -> AdminProvider {
             Requires { react: "19.3", react_query: "5.104", ui: 2 },
         )
         .extension_style("demo-react", include_str!("../../resources/admin/css/demo/react.css"))
+        // #endregion react-extension
         // rustcms:extensions
+        // #region translations
         // Vietnamese labels (`cargo run -- lang:missing vi` lists what is missing).
         .translations("vi", include_str!("../../lang/vi.toml"))
+    // #endregion translations
 }
+// #endregion provider

@@ -2,6 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
+// #region post-model
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "posts")]
 pub struct Model {
@@ -25,3 +26,4 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+// #endregion post-model

@@ -1,6 +1,8 @@
 {# Beside a course: who is enrolled, and how far they are. #}
+<!-- #region template -->
 <dl class="rc-stack">
   <div><dt class="rc-muted">{{ t("Active") }}</dt><dd>{{ data.active }} / {{ data.capacity }}</dd></div>
   <div><dt class="rc-muted">{{ t("Withdrawn") }}</dt><dd>{{ data.withdrawn }}</dd></div>
   <div><dt class="rc-muted">{{ t("Average progress") }}</dt><dd><meter class="rc-meter" min="0" max="100" value="{{ data.progress }}"></meter> {{ data.progress }}%</dd></div>
 </dl>
+<!-- #endregion template -->

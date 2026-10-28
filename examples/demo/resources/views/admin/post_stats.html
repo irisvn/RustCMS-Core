@@ -1,4 +1,5 @@
 {# Posts at a glance (the posts the user may list). #}
+<!-- #region template -->
 <section class="rc-grid">
   <article class="rc-card">
     <h2 class="rc-title">{{ t("Published") }}</h2>
@@ -10,3 +11,4 @@
     <ul>{% for post in data.latest %}<li><a class="rc-link" href="{{ admin_url('r/posts/records/' ~ post.key) }}">{{ post.title }}</a></li>{% endfor %}</ul>
   </article>
 </section>
+<!-- #endregion template -->

@@ -2,6 +2,7 @@
 
 use rustcms::admin::*;
 
+// #region policy
 /// What editors with `posts.update_own` may do with their own posts: view and
 /// edit them, publish, tag them and move them to another category.
 const OWN: [&str; 7] = ["view", "update", "publish", "attach_tags", "detach_tags", "update_pivot_tags", "move"];
@@ -27,3 +28,4 @@ impl Policy for PostPolicy {
             || ((ability == "view_any" || OWN.contains(&ability)) && ctx.can("posts.update_own"))
     }
 }
+// #endregion policy

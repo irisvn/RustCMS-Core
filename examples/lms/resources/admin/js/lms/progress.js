@@ -1,6 +1,7 @@
 // The `lms/progress` cell: an enrollment's progress as a bar and a number
 // (`TextColumn::make("progress").cell("lms/progress")`). No inline styles:
 // the bar is a native <meter>, styled by resources/admin/css/lms/progress.css.
+// #region cell
 window.rustcms.registerCell("lms/progress", {
   apiVersion: 1,
   mount(element, ctx) {
@@ -27,3 +28,4 @@ window.rustcms.registerCell("lms/progress", {
   },
 });
 window.rustcms.registerTranslations("vi", { Progress: "Tiến độ" });
+// #endregion cell

@@ -44,6 +44,7 @@ impl Refusal {
     }
 }
 
+// #region lock-course
 /// Locks the course's row until `txn` ends (SQLite: the write transaction
 /// already holds the database lock).
 pub async fn lock_course(txn: &DatabaseTransaction, course_id: i64) -> AppResult<Option<course::Model>> {
@@ -51,7 +52,9 @@ pub async fn lock_course(txn: &DatabaseTransaction, course_id: i64) -> AppResult
     let select = if txn.get_database_backend() == DbBackend::Sqlite { select } else { select.lock_exclusive() };
     Ok(select.one(txn).await?)
 }
+// #endregion lock-course
 
+// #region check
 /// Whether an enrollment of `learner_id` in `course_id` with `status` may be
 /// written; `current` is the enrollment being changed, if any. The caller
 /// holds the course's lock.
@@ -84,6 +87,7 @@ pub async fn check(
     }
     Ok(Ok(()))
 }
+// #endregion check
 
 /// Active enrollments of a course (under its lock, an exact count).
 pub async fn active_count(txn: &impl ConnectionTrait, course_id: i64) -> AppResult<u64> {
@@ -94,6 +98,7 @@ pub async fn active_count(txn: &impl ConnectionTrait, course_id: i64) -> AppResu
         .await?)
 }
 
+// #region enroll
 /// Enrolls `learner_id` in `course_id` (active) in a transaction of its own,
 /// queuing the welcome with it. For code outside the admin panel (seeders,
 /// jobs, an API).
@@ -115,6 +120,7 @@ pub async fn enroll(
         }
     }
 }
+// #endregion enroll
 
 /// Enrolls `learner_id` in `course_id` (active) in `txn`, whose caller holds
 /// the course's lock (an action on the course, or [`enroll`]), queuing the

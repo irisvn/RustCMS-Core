@@ -12,6 +12,7 @@ mod m20261022_000001_create_tags;
 mod m20261101_000001_create_integrations;
 // rustcms:migration-mods
 
+// #region migrator
 pub struct Migrator;
 
 impl MigratorTrait for Migrator {
@@ -32,3 +33,4 @@ impl MigratorTrait for Migrator {
         migrations
     }
 }
+// #endregion migrator

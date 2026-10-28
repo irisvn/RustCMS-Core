@@ -6,6 +6,7 @@ use rustcms::prelude::*;
 
 use crate::http::controllers;
 
+// #region api-routes
 /// Every API route, with the access it requires.
 pub fn routes() -> ApiRoutes {
     ApiRoutes::new("/api/v1")
@@ -14,6 +15,7 @@ pub fn routes() -> ApiRoutes {
         .post("/posts", Access::can("posts.create"), controllers::post_controller::store)
     // rustcms:api-routes
 }
+// #endregion api-routes
 
 async fn ping() -> Json<serde_json::Value> {
     Json(json!({ "pong": true }))

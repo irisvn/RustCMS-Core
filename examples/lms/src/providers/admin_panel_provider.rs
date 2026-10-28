@@ -14,6 +14,7 @@ use crate::admin::resources::{
 pub fn provider() -> AdminProvider {
     AdminProvider::new()
         .brand("lms")
+        // #region theme
         .theme(
             Theme::new()
                 .primary("#2563eb")
@@ -23,6 +24,7 @@ pub fn provider() -> AdminProvider {
                 .logo(include_bytes!("../../resources/admin/logo.png"), "image/png")
                 .favicon(include_bytes!("../../resources/admin/favicon.png"), "image/png"),
         )
+        // #endregion theme
         .media()
         .resource::<CourseResource>()
         .resource::<LessonResource>()
@@ -34,6 +36,7 @@ pub fn provider() -> AdminProvider {
         // rustcms:resources
         .settings::<crate::settings::lms_settings::LmsSettings>()
         .mail_settings()
+        // #region dashboard
         .dashboard(
             Dashboard::new()
                 .widget(Widget::stat("learners", "learners").label("Learners"))
@@ -56,12 +59,15 @@ pub fn provider() -> AdminProvider {
                         .sort("-created_at"),
                 ),
         )
+        // #endregion dashboard
         .page::<crate::admin::pages::course_overview_page::CourseOverviewPage>()
         // rustcms:pages
         .slot::<crate::admin::slots::course_seats_slot::CourseSeatsSlot>()
+        // #region cell-extension
         // The `lms/progress` cell of the enrollments table.
         .extension_script("lms-progress", include_str!("../../resources/admin/js/lms/progress.js"))
         .extension_style("lms-progress", include_str!("../../resources/admin/css/lms/progress.css"))
+        // #endregion cell-extension
         // rustcms:extensions
         // Vietnamese labels (`cargo run -- lang:missing vi` lists what is missing).
         .translations("vi", include_str!("../../lang/vi.toml"))
