@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// Largest capacity a course may have.
 pub const MAX_CAPACITY: i64 = 10_000;
 
+// #region settings
 /// The school, and defaults for new courses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LmsSettings {
@@ -26,3 +27,4 @@ impl Default for LmsSettings {
 impl Settings for LmsSettings {
     const GROUP: &'static str = "lms";
 }
+// #endregion settings

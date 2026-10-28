@@ -44,6 +44,7 @@ impl Resource for LessonResource {
         vec![moving("move_up", true).label("Move up"), moving("move_down", false).label("Move down")]
     }
 
+    // #region scope
     /// Instructors see the lessons of their courses.
     fn scope(query: Select<lesson::Entity>, ctx: &Ctx) -> Select<lesson::Entity> {
         match instructor(ctx) {
@@ -51,6 +52,7 @@ impl Resource for LessonResource {
             Some(me) => query.filter(course::taught_by(me, (lesson::Entity, lesson::Column::CourseId))),
         }
     }
+    // #endregion scope
 }
 
 fn moving(name: &'static str, up: bool) -> Action<lesson::Entity> {
@@ -65,6 +67,7 @@ fn moving(name: &'static str, up: bool) -> Action<lesson::Entity> {
     .ability("update")
 }
 
+// #region reorder
 /// Moves `lesson` one place among the lessons of its course the user may see
 /// (the course is locked by the action: moves of one course never interleave).
 /// Positions are renumbered 1…n first (ties in id order), so the order is
@@ -96,3 +99,4 @@ async fn reorder(ctx: &Ctx, txn: &DatabaseTransaction, lesson: &lesson::Model, u
     }
     Ok(())
 }
+// #endregion reorder

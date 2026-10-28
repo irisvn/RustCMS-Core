@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::post;
 
+// #region job
 /// Counts the posts (a stand-in for real work).
 #[derive(Serialize, Deserialize)]
 pub struct PingPosts;
@@ -29,7 +30,9 @@ impl Job for PingPosts {
         Ok(())
     }
 }
+// #endregion job
 
+// #region schedule
 /// The demo's schedules.
 pub fn schedule(app: &mut AppBuilder) {
     app.schedule(Schedule::every("posts-ping", Duration::from_secs(3600)).job(|| PingPosts).without_overlapping());
@@ -43,3 +46,4 @@ pub fn schedule(app: &mut AppBuilder) {
             .timeout(Duration::from_secs(60)),
     );
 }
+// #endregion schedule

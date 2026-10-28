@@ -7,11 +7,13 @@ use rustcms::prelude::*;
 #[allow(unused_imports)]
 use crate::http::controllers;
 
+// #region api-routes
 /// Every API route, with the access it requires.
 pub fn routes() -> ApiRoutes {
     ApiRoutes::new("/api/v1").get("/ping", Access::public(), ping)
     // rustcms:api-routes
 }
+// #endregion api-routes
 
 async fn ping() -> Json<serde_json::Value> {
     Json(json!({ "pong": true }))

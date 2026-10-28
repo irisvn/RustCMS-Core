@@ -7,6 +7,7 @@ pub struct Migration;
 
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
+    // #region up
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         create_table(
             manager,
@@ -20,6 +21,7 @@ impl MigrationTrait for Migration {
         )
         .await
     }
+    // #endregion up
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         drop_table(manager, Integrations::Table).await

@@ -24,6 +24,7 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
+// #region taught-by
 /// Scope: the course whose id is `course_id` (a column of the outer query)
 /// is taught by `instructor`. `EXISTS` keeps one row per outer row, where a
 /// join could repeat them.
@@ -37,3 +38,4 @@ pub fn taught_by(instructor: i64, course_id: impl IntoColumnRef) -> SimpleExpr {
             .to_owned(),
     )
 }
+// #endregion taught-by

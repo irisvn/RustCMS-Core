@@ -13,6 +13,7 @@ use serde_json::json;
 use crate::models::{course, learner};
 use crate::settings::lms_settings::LmsSettings;
 
+// #region job
 /// Ids only: the job reads the rows again when it runs.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SendWelcome {
@@ -45,6 +46,7 @@ impl Job for SendWelcome {
         let school = rustcms::settings::get::<LmsSettings>(&ctx.state).await?.school_name;
         // #endregion read-settings
         let data = json!({ "name": learner.name, "course": course.title, "school": school });
+        // #region send
         let locale = ctx.state.config().app.locale.clone();
         let sent = async {
             let rendered = mail::render(&ctx.state, "welcome", &locale, &data)?;
@@ -56,6 +58,7 @@ impl Job for SendWelcome {
             Err(err) if err.is_permanent() => return Err(Failure::from(err).permanent().into()),
             Err(err) => return Err(Failure::from(err).into()),
         }
+        // #endregion send
         // A short transaction after the mail, never held across the send.
         let txn = rustcms::db::begin_write(db).await?;
         rustcms::queue::once(&txn, &receipt).await?;
@@ -63,3 +66,4 @@ impl Job for SendWelcome {
         Ok(())
     }
 }
+// #endregion job

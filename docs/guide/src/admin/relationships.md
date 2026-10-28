@@ -1,34 +1,44 @@
 # Relationships
 
-A resource can list the records of another resource that point to it, on its
-own view page, and create new ones there: a **has-many relation**. The child
-keeps a `belongs_to` field to the parent.
+A record's page can list the records of another resource that belong to it,
+and link records through a pivot table:
+
+- a **has-many relation** lists the records pointing to this one (a
+  category's posts) and creates new ones there. The child keeps a
+  `belongs_to` field to the parent.
+- a **belongs-to-many relation** links records through a pivot table (posts ↔
+  tags), with optional columns on each link.
+
+A single reference to another record (a post's category) is a field with
+[`.belongs_to(…)`](resources.md#fields): a select in the form, the related
+record's title in tables.
+
+![The demo's category page with its Posts section](/img/admin/relationships-has-many.webp)
+*The demo application: a category's posts.*
+
+## Quick start
+
+The demo's categories list their posts; each post points to its category:
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#relations [src/admin/resources/category_resource.rs]
 
 ```rust
-impl Resource for CategoryResource {
-    // …
-    fn relations() -> Vec<Relation> {
-        vec![Relation::has_many("posts", "posts", "category_id").label("Posts")]
-    }
-}
-
-impl Resource for PostResource {
-    fn fields() -> Vec<Field> {
-        vec![
-            // …
-            Field::column(post::Column::CategoryId).belongs_to("categories"),
-        ]
-    }
-}
+// in PostResource::fields()
+Field::column(post::Column::CategoryId).belongs_to("categories").filterable(),
 ```
 
 `Relation::has_many(name, target, field)`: `name` is the relation's id in URLs
 (snake_case, unique on the resource), `target` the child resource's slug and
-`field` the child's foreign key. The registry checks, when the panel starts,
-that the target exists, that `field` is a field of it declared
-`belongs_to("<this slug>")`, that its column kind matches this resource's
-primary key and that it is not the child's own key; anything else panics with
-the fix.
+`field` the child's foreign key. `.label(…)` titles its section (default: the
+name in words). A resource may have several; the LMS course page shows its
+lessons and its enrollments:
+
+<<< @/../../../examples/lms/src/admin/resources/course_resource.rs#relations [src/admin/resources/course_resource.rs]
+
+When the panel starts it checks that the target exists, that `field` is a
+field of it declared `belongs_to("<this slug>")`, that its column kind matches
+this resource's primary key and that it is not the child's own key; anything
+else stops the boot with the fix.
 
 ## What users see
 
@@ -50,7 +60,8 @@ extra condition (`field = parent key`).
 - **Listing** needs `view` on the parent resource (`admits`) and the target's
   `view_any`, checked before the parent is looked up: without them the answer is
   403 whatever the key. Then the parent must be visible to the user (scope,
-  policy, not trashed), otherwise 404, exactly like `GET …/records/{key}`. The
+  policy, not trashed), otherwise 404. A policy refusal is a 404 here too,
+  unlike `GET …/records/{key}`, which answers 403 for a record it may not view. The
   children are filtered by the target's scope, policy and field rules as on its
   own list; `trashed=with|only` works as there. The foreign key field must be
   readable by the user. Every check that does not depend on a record (the
@@ -69,8 +80,8 @@ extra condition (`field = parent key`).
   (`relations[].create` says whether **New** is offered).
 
 A parent trashed while a child is being created keeps the
-[write-in-progress rule](../reference/limitations.md): the child's `belongs_to`
-check sees the parent as it was when the check ran.
+[write-in-progress rule](../reference/limitations.md#writes-in-flight): the
+child's `belongs_to` check sees the parent as it was when the check ran.
 
 ## Idempotency
 
@@ -83,31 +94,22 @@ replay.
 ## Belongs-to-many (pivot tables)
 
 Records linked through a **pivot table** (posts ↔ tags), with optional columns
-on each link (`position`):
+on each link (`position`). The demo's posts have tags:
 
-```rust
-// src/models/post_tag.rs: post_id, tag_id (primary key over both), position
-fn relations() -> Vec<Relation> {
-    vec![
-        Relation::belongs_to_many("tags", "tags", post_tag::Column::PostId, post_tag::Column::TagId)
-            .pivot(vec![Field::column(post_tag::Column::Position)])
-            .label("Tags"),
-    ]
-}
-```
+<<< @/../../../examples/demo/src/admin/resources/post_resource.rs#relations [src/admin/resources/post_resource.rs]
 
-```rust
-// The migration: unique over both keys, rows deleted with either record.
-Table::create().table(PostTags::Table)
-    .col(ColumnDef::new(PostTags::PostId).big_integer().not_null())
-    .col(ColumnDef::new(PostTags::TagId).integer().not_null())
-    .col(ColumnDef::new(PostTags::Position).integer().not_null().default(0))
-    .primary_key(Index::create().col(PostTags::PostId).col(PostTags::TagId))
-    .foreign_key(ForeignKey::create().from(PostTags::Table, PostTags::PostId)
-        .to(Posts::Table, Posts::Id).on_delete(ForeignKeyAction::Cascade))
-    .foreign_key(ForeignKey::create().from(PostTags::Table, PostTags::TagId)
-        .to(Tags::Table, Tags::Id).on_delete(ForeignKeyAction::Cascade))
-```
+`Relation::belongs_to_many(name, target, parent_column, related_column)`
+takes the pivot's two key columns: the one holding this resource's key, and
+the one holding the target's. `.pivot(fields)` declares the pivot columns
+users see and edit with each link. The pivot is a SeaORM model of its own,
+with a primary key over both columns:
+
+<<< @/../../../examples/demo/src/models/post_tag.rs#model [src/models/post_tag.rs]
+
+Its migration makes both columns the key and deletes a link with either
+record, through the migration helpers so it also runs on MySQL:
+
+<<< @/../../../examples/demo/src/database/migrations/m20261022_000001_create_tags.rs#post-tags [src/database/migrations/m20261022_000001_create_tags.rs]
 
 The record's page lists the linked records (the target's table, scope and
 policy, search and pages) with the readable pivot columns, and offers, as
@@ -124,6 +126,9 @@ Rows also offer the target resource's [actions](actions.md#placement-in-lists),
 as in has-many tables: the server's abilities for each record decide, and
 running one is authorized as from the target's list.
 
+![The demo's post page: the Tags section and its Attach dialog](/img/admin/relationships-tags.webp)
+*The demo application: a post's tags, with the position of each link.*
+
 ### Permissions
 
 Writes need an ability of the **parent** record:
@@ -133,25 +138,39 @@ with pivot fields). With the default policy that is `posts.attach_tags`,
 `permission:sync`. A policy of your own receives them like any ability; if it
 decides per record (`allows` with the record), also override
 [`Policy::admits`](authorization.md) for them, so users without the
-permission are refused before the request body is read.
+permission are refused before the request body is read. The demo's
+`PostPolicy` lets owners tag their own posts this way. `LinkOp::Attach`,
+`Detach` and `UpdatePivot` name these abilities in code
+(`LinkOp::Attach.ability("tags")` is `"attach_tags"`).
 
 Every write checks, in this order: the ability is admitted (403, whatever the
 body or the record); the body (422: 1 to 100 keys, pivot columns by their
 field rules; undeclared columns are refused); then, in one transaction, the
 parent record (in scope: 404; policy: 403) locked, and the targets the user may
-view locked and checked again. Targets not found, outside the user's scope,
-trashed or not viewable come back in `missing` and are left alone. The answer
-is `{processed, missing}`.
+view locked and checked again. For attach and detach, targets not found,
+outside the user's scope, trashed or not viewable come back in `missing` and
+are left alone; the answer is `{processed, missing}`. A link edit answers 404
+when its target key is invalid, not viewable or not linked.
+
+### Pivot fields
 
 Pivot columns are [fields](resources.md#fields): `readable`, `creatable`,
 `updatable`, `required`, `max_length` apply, values follow the
 [wire format](../reference/wire-format.md); columns not declared never leave
-the server. Pivot columns not declared must be nullable or have a default; a
-mandatory one is a `.required()` pivot field (the panel refuses to start
-otherwise), and users who may not write it cannot attach (403). Attaching sends
-only the pivot columns the user filled in (the others keep their database
-defaults); editing a link sends only what changed, and a change to the values
-already stored writes and records nothing.
+the server. Attaching sends only the pivot columns the user filled in (the
+others keep their database defaults); editing a link sends only what changed,
+and a change to the values already stored writes and records nothing. Users
+who may not write a `.required()` pivot field whose column is not nullable and
+has no database default cannot attach (403); otherwise the field is left out.
+
+A pivot field may not be:
+
+- one of the two key columns, a column the pivot does not have, or declared
+  twice;
+- a `belongs_to`, media, rich text or encrypted field.
+
+Every pivot column that is not a key and not declared must be nullable or have
+a default; a mandatory one is a `.required()` pivot field.
 
 ### Reacting to link changes
 
@@ -160,6 +179,7 @@ that changed links of the record, after the pivot rows are written, with the
 parent record and what changed (target keys, canonical, sorted):
 
 ```rust
+// A sketch: the demo's posts do not implement it.
 async fn after_relation_change(
     _ctx: &Ctx,
     txn: &DatabaseTransaction,
@@ -186,6 +206,8 @@ parent is already locked by the write.
 
 ### Rules checked at boot
 
+- The relation's name is unique snake_case on the resource, and its target
+  exists.
 - The two key columns exist in the pivot with the types of the two keys.
 - One relation per pivot table, and not to the same resource; the target may
   not declare `lock_parent`; and no cycle among resources, counting both
@@ -193,6 +215,7 @@ parent is already locked by the write.
   child): posts → tags with tags → posts is refused. These keep one lock order
   for every writer: the parent (and its own `lock_parent`), then the targets in
   key order, then the pivot rows.
+- The pivot field rules [above](#pivot-fields).
 
 The record's history lists link changes (`attached`, `detached`,
 `pivot_updated`): which records and the pivot values only to readers who may
@@ -206,7 +229,7 @@ the page is reloaded, then shows the links as they are.
 ### Choosing links in the record's form
 
 A `BelongsToManySelect` puts the links in the record's own create and edit
-form, next to its fields (tags on a post):
+form, next to its fields (tags on a post, in its Publishing tab):
 
 ```rust
 fn form() -> Form {
@@ -222,10 +245,10 @@ scope and policy) and a search over the records the user may attach. Saving
 sends what changed, never the whole set:
 
 ```json
-{"title": "Hello", "tags": {"attach": ["rust"], "detach": ["sql"]}}
+{"title": "Hello", "tags": {"attach": ["1"], "detach": ["2"]}}
 ```
 
-so links made by someone else meanwhile, and links to records the user
+(the keys of the tags, as text), so links made by someone else meanwhile, and links to records the user
 cannot see, are kept. The record's write checks them as the relation manager
 does: `attach_{relation}` and `detach_{relation}` are admitted before the keys
 are read (403), then decided on the record as the write stores it (403; the
@@ -252,3 +275,24 @@ record's transaction, and the history lists `attached` / `detached` after
   resource per save, over all its relations). A record with more than 100
   visible links shows them read-only in the form: change them on its page.
 - Detaching on create is refused (422).
+
+## API
+
+Under `/admin/api/resources/{slug}`:
+
+| Method | Path | Does |
+|---|---|---|
+| GET | `/records/{key}/relations/{relation}` | the related records (a page, like a list; belongs-to-many adds the readable pivot columns per target) |
+| POST | `/records/{key}/relations/{relation}` | create a child (has-many) |
+| POST | `/records/{key}/relations/{relation}/attach` | `{keys, pivot?}` |
+| POST | `/records/{key}/relations/{relation}/detach` | `{keys}` |
+| PATCH | `/records/{key}/relations/{relation}/links/{target}` | the pivot columns of one link |
+| GET | `/records/{key}/relations/{relation}/options` | targets to attach (`search`, `keys`): `{value, label, attached}` |
+| GET | `/relations/{relation}/options` | targets to attach from a create form |
+
+See the [Admin API](../reference/admin-api.md) for the common rules.
+
+## Related pages
+
+- [Resources](resources.md), [forms](forms.md), [authorization](authorization.md)
+- [Database and migrations](../basics/database.md#migrations)

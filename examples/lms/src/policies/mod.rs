@@ -8,6 +8,7 @@ pub mod permissions;
 
 use rustcms::admin::Ctx;
 
+// #region instructor
 /// The instructor whose courses bound what `ctx` sees, or `None` for staff.
 pub fn instructor(ctx: &Ctx) -> Option<i64> {
     if ctx.can(permissions::ALL_COURSES) {
@@ -16,3 +17,4 @@ pub fn instructor(ctx: &Ctx) -> Option<i64> {
     // A principal that is not a user id sees nothing.
     Some(ctx.principal.id.parse::<i64>().unwrap_or(-1))
 }
+// #endregion instructor

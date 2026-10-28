@@ -5,6 +5,7 @@ use rustcms::prelude::*;
 
 use crate::policies::permissions::{ALL_COURSES, ASSIGN_INSTRUCTOR, UPDATE_PROGRESS};
 
+// #region permissions
 pub fn provider(api: &ApiRoutes) -> AuthProvider {
     AuthProvider::new()
         .permission(ADMIN_GUARD, ALL_COURSES, "courses")
@@ -13,3 +14,4 @@ pub fn provider(api: &ApiRoutes) -> AuthProvider {
         // The API's permissions come from its routes.
         .api_permissions(api)
 }
+// #endregion permissions

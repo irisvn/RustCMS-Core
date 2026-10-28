@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use crate::admin::int;
 use crate::services::enrollment_service;
 
+// #region page
 pub struct CourseOverviewPage;
 
 #[async_trait]
@@ -41,3 +42,4 @@ impl PanelPage for CourseOverviewPage {
         Ok(json!({ "courses": out }))
     }
 }
+// #endregion page

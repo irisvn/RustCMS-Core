@@ -16,3 +16,6 @@ owner's decision. The guide describes the current behaviour honestly until then.
 | 9 | P3 | Stale comment "saves version 2" (the editor writes the lowest version a document needs). | `admin-ui/src/lib/rich-text.ts:5-6,22` |
 | 10 | P3 | Stray text "Haha: " in the LMS course overview template. | `examples/lms/resources/views/admin/course_overview.html:4` |
 | 11 | P3 | A handler panic is not turned into a 500 (no catch-panic layer): the connection drops. | `crates/rustcms-core/src/http/mod.rs:206-222` |
+| 12 | P3 | The `make:policy` template says `record` is "the record's readable data"; it is every column, unfiltered (encrypted fields null). | `crates/rustcms-cli/templates/stubs/policy.rs.tmpl`, `crates/rustcms-admin/src/resources/policy.rs:30-33` |
+| 13 | P3 | The LMS uses icons outside the icon set (`book-open`, `clipboard-check`, `graduation-cap`, `list`, `newspaper`): they fall back to the generic icon. | `examples/lms/src/admin/resources/` |
+| 14 | P2 (example) | LMS dashboard: the New enrollments / New courses widgets answer 403 for the admin because `enrolled_at` and `courses.created_at` are `.guarded()` without `.readable(...)`, and widgets refuse fields the user cannot read. | `examples/lms/src/admin/resources/{course,enrollment}_resource.rs` |

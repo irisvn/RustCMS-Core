@@ -56,7 +56,7 @@ impl Resource for PostResource {
                 SelectInput::make("category_id"),
                 Toggle::make("published"),
                 DateTimePicker::make("published_at"),
-                // Linked from the form too, not only on the post's page (ADR 0035).
+                // Linked from the form too, not only on the post's page.
                 BelongsToManySelect::make("tags"),
             ]),
             Tab::make("Attributes").schema(components![

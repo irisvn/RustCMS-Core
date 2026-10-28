@@ -19,11 +19,15 @@ impl ServiceProvider for AppServiceProvider {
         app.seeder(seeders::enrollment_seeder::EnrollmentSeeder);
         app.seeder(seeders::news_seeder::NewsSeeder);
         // rustcms:seeders
+        // #region jobs
         // New enrollments queue a welcome mail.
         app.job::<crate::jobs::send_welcome::SendWelcome>();
+        // #region mail-templates
         app.mail_template(rustcms::mail_template!("welcome", "en", html));
         app.mail_template(rustcms::mail_template!("welcome", "vi", html));
+        // #endregion mail-templates
         // rustcms:jobs
+        // #endregion jobs
         // rustcms:commands
     }
 }

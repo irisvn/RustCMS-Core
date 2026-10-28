@@ -1,40 +1,59 @@
 # Actions
 
-Actions run on one record (row actions) or, when `.bulk()`, also on the
-selected records, with the same authorization as any write.
+An action is an operation on records other than create, edit and delete:
+publish, move, enroll, send. It runs on one record (a row or the record's
+page) or, when `.bulk()`, also on the records selected in a list. Each record
+is authorized like any write, and the whole run is one transaction.
+
+![A demo post row: the labelled Unpublish action and the ⋯ menu](/img/admin/actions-row.webp)
+*The demo application: row actions in the posts list.*
+
+## Quick start
+
+<<< @/../../../examples/demo/src/admin/resources/post_resource.rs#publish [src/admin/resources/post_resource.rs]
+
+Add it to the resource's `actions()`, then run `rustcms permission:sync`:
+the action declares the permission `posts.publish`.
 
 ```rust
 fn actions() -> Vec<Action<post::Entity>> {
-    vec![Action::<post::Entity>::new("publish", |_ctx, txn, posts, _data| {
-        Box::pin(async move {
-            for post in posts {
-                let mut post = post.into_active_model();
-                post.published = Set(true);
-                post.update(txn).await?;
-            }
-            Ok(())
-        })
-    })
-    .label("Publish")
-    .bulk()
-    .requires_confirmation("Publish the selected posts?")]
+    vec![/* the actions */]
 }
 ```
 
 Name the entity (`Action::<post::Entity>::new`) so the closure's types are
-inferred. Each selected record is checked by the policy with the action's
-ability (default: its name, or `.ability("update")`); denied records are
-reported, not processed, and envelopes tell the client per record. Add
-`.requires_permission("posts.publish")` to refuse the action outright (403, and
-hidden from the schema) for users without that permission.
+inferred. The handler receives the `Ctx`, the transaction, the records the
+user may run the action on, and the form's `data`, and returns a boxed
+future (`Box::pin(async move { … })`). Its writes commit together; an error
+rolls the whole run back.
+
+## Who may run it
+
+Each selected record is checked by the policy with the action's **ability**:
+its name by default, or `.ability("update")` to reuse an existing one. The
+default policy needs `{slug}.{ability}` (`posts.publish`). Denied records are
+reported, not processed, and the answer tells the client per record.
+
+An action is listed in the schema, and may run at all, only if:
+
+- the user has its `.requires_permission("…")` permission, when it has one
+  (403 otherwise, before the body is read), and
+- the policy `admits` its ability ([Authorization](authorization.md)).
+
+Both permissions are declared for `permission:sync`. The LMS's *Enroll a
+learner…* runs with the course's `view` ability, but only for users who may
+create enrollments:
+
+<<< @/../../../examples/lms/src/admin/resources/course_resource.rs#actions [src/admin/resources/course_resource.rs]
+
+Action handlers are your code: they call no resource hooks and may write any
+column. Check what the handler needs in the handler, and return
+`ValidationErrors` to refuse (the whole run rolls back and the panel shows
+the messages, as above).
 
 ## Per-record visibility
 
-```rust
-Action::<post::Entity>::new("unpublish", unpublish)
-    .ability("update")
-    .visible_when(|_ctx, post| post.published)
-```
+<<< @/../../../examples/demo/src/admin/resources/post_resource.rs#unpublish [src/admin/resources/post_resource.rs]
 
 `visible_when(|ctx, record| …)` decides on the server, for each record as
 stored and for the user of `ctx`, whether the action is offered there. List
@@ -55,43 +74,37 @@ the action's transaction:
 `Action::with_outcome` when its handler should tell the panel what to do
 next; it returns an `ActionOutcome`:
 
-```rust
-Action::<invoice::Entity>::with_outcome("pdf", |_ctx, _txn, invoices, _data| {
-    Box::pin(async move {
-        let url = format!("https://files.example.com/invoices/{}.pdf", invoices[0].id);
-        Ok(ActionOutcome::open(url).with_message("The PDF opens in a new tab."))
-    })
-})
-```
+<<< @/../../../examples/demo/src/admin/resources/post_resource.rs#preview [src/admin/resources/post_resource.rs]
 
 - `ActionOutcome::message(text)` / `.with_message(text)`: shown to the user
-  with the action's summary (plain text, at most 500 characters), as
-  written: translate it with `ctx.t("…")` ([i18n](i18n.md)).
+  with the action's summary (plain text, at most 500 characters,
+  `MAX_OUTCOME_MESSAGE`), as written: translate it with `ctx.t("…")`
+  ([i18n](i18n.md)).
 - `ActionOutcome::open(url)` / `.with_open(url)`: once the action has
   committed, the panel opens the page in a new tab with `noopener` and
   `noreferrer`, and shows a link to it as well (a browser may block a tab
   opened after the request). Accepted: `https://` URLs without credentials
   (a DNS name, an IPv4 or a bracketed IPv6 address; a port of 1–65535),
   and absolute paths of this site (`/admin/…`, `/blog/…`; never `//…`, `..`,
-  backslashes or whitespace), at most 2,048 bytes. Anything else
-  (`http:`, `javascript:`, `data:`) fails the action with a server error and
-  rolls it back. A page is opened only for a run on **one** record: a run
-  on several records whose handler returns one is refused (422, rolled
-  back). That is decided once the handler has returned, from the keys the
-  request named (a request naming two records, one of them hidden, reaches
-  the handler with one record and is still refused): its database writes
-  roll back, not what it did elsewhere. Do work outside the database in a
-  [job](../digging-deeper/queues.md) dispatched in the action's
-  transaction, so a refused run never does it.
-  The panel checks the URL again before opening it.
+  backslashes or whitespace), at most 2,048 bytes (`MAX_OUTCOME_URL`).
+  Anything else (`http:`, `javascript:`, `data:`) fails the action with a
+  server error and rolls it back. A page is opened only for a run on **one**
+  record: a run on several records whose handler returns one is refused
+  (422, rolled back). That is decided once the handler has returned, from the
+  keys the request named (a request naming two records, one of them hidden,
+  reaches the handler with one record and is still refused): its database
+  writes roll back, not what it did elsewhere. Do work outside the database
+  in a [job](../digging-deeper/queues.md) dispatched in the action's
+  transaction, so a refused run never does it. The panel checks the URL
+  again before opening it.
 
-The keys (`processed`, `denied`, `missing`) are the framework's: whatever
-the handler sets there is ignored. The outcome is part of the idempotency
-receipt, so a retried request answers with the same message and page, but
-only to a user who may still view every record it processed: otherwise (the
-action or someone else hid a record meanwhile) the message and page are
-left out of the answer, first or replayed. Receipts are kept for 24 hours:
-never put a secret in `open` (a presigned or bearer URL is stored and
+The keys (`processed`, `denied`, `missing`, `replayed`) are the framework's:
+whatever the handler sets there is ignored. The outcome is part of the
+idempotency receipt, so a retried request answers with the same message and
+page, but only to a user who may still view every record it processed:
+otherwise (the action or someone else hid a record meanwhile) the message and
+page are left out of the answer, first or replayed. Receipts are kept for 24
+hours: never put a secret in `open` (a presigned or bearer URL is stored and
 answered again as it was, possibly expired); link to a page of the app that
 checks the user instead.
 
@@ -105,7 +118,7 @@ may be primary when `visible_when` makes them exclusive (`publish` on
 drafts, `unpublish` on published posts). A `.bulk()` action is a row action
 too (bulk means *also* offered for selections, in the bar above the table),
 on the rows the server offers it. View, Edit, Delete and Restore keep their
-buttons.
+buttons. Trashed records offer no actions.
 
 `.color(…)` only has an effect as `"danger"` (what `.destructive()` sets):
 the action goes last in the **⋯** menu and its bulk button is the
@@ -124,31 +137,27 @@ Action::<post::Entity>::new("unpublish", unpublish).visible_when(|_ctx, p| p.pub
 Action::<post::Entity>::new("purge_cache", purge).destructive(),
 ```
 
+![The demo's bulk bar with Publish and Move to category](/img/admin/actions-bulk-bar.webp)
+*The demo application: bulk actions on a selection of posts.*
+
 ## Actions with a form
 
-An action can ask for values first, in a dialog:
+An action can ask for values first, in a dialog. The demo moves posts to a
+category the user may see:
+
+<<< @/../../../examples/demo/src/admin/resources/post_resource.rs#move [src/admin/resources/post_resource.rs]
+
+A form can mix field kinds:
 
 ```rust
-Action::<post::Entity>::new("move", |_ctx, txn, posts, data| {
-    Box::pin(async move {
-        // `data` holds every field of the form: checked, canonical, defaults applied.
-        let category = data["category_id"].as_str().and_then(|k| k.parse::<i32>().ok());
-        for post in posts {
-            let mut post = post.into_active_model();
-            post.category_id = Set(category);
-            post.update(txn).await?;
-        }
-        Ok(())
-    })
-})
-.label("Move to category…")
-.bulk()
+// A sketch: the handler reads data["mode"], data["weight"], data["note"].
 .form(vec![
     ActionField::belongs_to("category_id", "categories").label("Category").required(),
     ActionField::select("mode", [("move", "Move"), ("copy", "Copy")]).default("move"),
-    ActionField::integer("weight"),
-    ActionField::text("note").max_length(200),
+    ActionField::integer("weight").help("Higher comes first"),
+    ActionField::text("note").max_length(200).placeholder("Why?"),
 ])
+.submit_label("Move")
 ```
 
 | Field | Value in `data` |
@@ -160,13 +169,17 @@ Action::<post::Entity>::new("move", |_ctx, txn, posts, data| {
 | `datetime` | a point in time, entered in UTC (the input says so) like a form's `DateTimePicker` of an instant column; sent as RFC 3339 and given to the handler in UTC: `"2026-10-12T02:30:00Z"` (`chrono::DateTime::parse_from_rfc3339`) |
 | `belongs_to(field, target)` | the key of a record of `target` the user may view, as text (`"12"`, a UUID) |
 
-Fields left empty are `null` (`.required()` refuses that), or their
-`.default(…)` (checked at boot). The server checks the form in this order:
+Every field takes `.label(…)` (default: the name in words), `.help(…)`,
+`.placeholder(…)`, `.required()`, `.max_length(n)` and `.default(value)`.
+`data` holds every field of the form: fields left empty are `null`
+(`.required()` refuses that), or their `.default(…)`. The server checks the
+form in this order:
 
 1. The user may run the action at all (`requires_permission`, then the
    policy's [`admits`](authorization.md)): 403 before the body is read.
 2. Each value (422 on the field): unknown fields, types, options, lengths. The
-   values are made canonical (`7` and `"07"` are the same number), so a
+   values are made canonical (a `belongs_to` key may be sent as `12` or
+   `"12"`; `integer` fields take JSON numbers only), so a
    retry of the same request with the same `Idempotency-Key` is recognized
    however it was written.
 3. In the action's transaction: each `belongs_to` value is a record the user
@@ -181,3 +194,53 @@ An action without a form refuses any `data` (422). A handler may return
 `ValidationErrors` (on a form field, or for the whole form): the action is
 rolled back and the dialog shows them. The dialog's relationship inputs read
 `GET …/actions/{action}/fields/{field}/options`, under the same admission.
+
+![The demo's Move to category dialog](/img/admin/actions-form-dialog.webp)
+*The demo application: an action's form.*
+
+## Reference
+
+| `Action` | Does |
+|---|---|
+| `Action::<E>::new(name, handler)` | an action whose handler returns `()` |
+| `Action::<E>::with_outcome(name, handler)` | an action whose handler returns an `ActionOutcome` |
+| `.label(text)` | the button's label (default: the name in words) |
+| `.bulk()` | also offered for selections |
+| `.requires_confirmation(question)` | asks this question before running |
+| `.ability(name)` | the ability checked per record (default: the action's name) |
+| `.requires_permission(name)` | refuses users without this permission (403, hidden) |
+| `.visible_when(\|ctx, record\| …)` | offered only on records for which it holds |
+| `.primary()` | the row's labelled action |
+| `.destructive()`, `.color(name)` | last in the menu (`danger`) |
+| `.icon(name)` | accepted, not shown yet |
+| `.form(fields)`, `.submit_label(text)` | a dialog asking for values first |
+
+Labels, confirmation questions and submit labels are translated per resource
+([i18n](i18n.md)).
+
+### API
+
+`POST /admin/api/resources/{slug}/actions/{action}` with
+`{"keys": ["12", "13"], "data": {…}}` (`data` only for actions with a form),
+at most 500 keys. It accepts an `Idempotency-Key` header
+([retrying writes safely](../reference/admin-api.md#retrying-writes-safely))
+and answers the `ActionOutcome`:
+`{processed, denied, missing, replayed?, message?, open?}`.
+
+## Checked at boot
+
+The boot stops when:
+
+- two actions of a resource have the same name, or a name is longer than 57
+  bytes;
+- an action is named after a built-in ability: `view_any`, `view`, `create`,
+  `update`, `delete`, `restore`, `force_delete`, `export`, `import`;
+- a form field's name is not unique snake_case;
+- a form field's `.default(…)` is not a valid value, or is set on a
+  `belongs_to` field (those take no default).
+
+## Related pages
+
+- [Authorization](authorization.md), [resources](resources.md), [tables](tables.md)
+- [Queues](../digging-deeper/queues.md), for work outside the database
+- [Admin API](../reference/admin-api.md)

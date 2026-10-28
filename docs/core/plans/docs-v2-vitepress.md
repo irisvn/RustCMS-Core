@@ -154,6 +154,13 @@ phones…).
 
 ## Phase 2 — Screenshots (per batch, after the batch's text settles)
 
+Owner decision 2026-10-28: prefer the live apps (RBlog, RDockPanel) for every screen they can show; the local
+demo/LMS only for features those apps lack. Writes on RBlog are allowed only to set up a shot and are cleaned up
+right after (records prefixed "[docs] ", deleted and purged); RDockPanel stays read-only (never touch containers,
+projects, domains, firewall). Code: samples imported from `examples/*` (compiled), plus "real-world" excerpts from
+RBlog/RDockPanel (public repos) with a GitHub link pinned to a tag.
+
+
 - Sources, in order of preference:
   1. Existing images: `../rblog-slides/img/*` (20, RBlog) and `../rustcms-slides/img/*` (18, incl. `rdp-ui.png`)
      — reuse when the UI still matches the current version, else recapture.

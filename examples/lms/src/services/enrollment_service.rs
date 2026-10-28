@@ -16,6 +16,7 @@ use sea_orm::{
 use crate::jobs::send_welcome::SendWelcome;
 use crate::models::{course, enrollment};
 
+// #region refusal
 /// Why an enrollment cannot be written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refusal {
@@ -43,6 +44,7 @@ impl Refusal {
         ValidationErrors::field(field, translate(message))
     }
 }
+// #endregion refusal
 
 // #region lock-course
 /// Locks the course's row until `txn` ends (SQLite: the write transaction
@@ -122,6 +124,7 @@ pub async fn enroll(
 }
 // #endregion enroll
 
+// #region enroll-in
 /// Enrolls `learner_id` in `course_id` (active) in `txn`, whose caller holds
 /// the course's lock (an action on the course, or [`enroll`]), queuing the
 /// welcome with it.
@@ -146,3 +149,4 @@ pub async fn enroll_in(
     rustcms::queue::dispatch(txn, &SendWelcome { course_id, learner_id }).await?;
     Ok(Ok(created))
 }
+// #endregion enroll-in

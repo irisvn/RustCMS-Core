@@ -9,6 +9,7 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 use super::role_seeder;
 
+// #region accounts
 /// Password of the seeded accounts (example only).
 pub const PASSWORD: &str = "password123";
 
@@ -21,6 +22,7 @@ pub const ACCOUNTS: [(&str, &str, Option<&str>); 6] = [
     ("Eve Editor", "editor@example.test", Some("editor")),
     ("Vic Viewer", "viewer@example.test", Some("viewer")),
 ];
+// #endregion accounts
 
 pub struct UserSeeder;
 
