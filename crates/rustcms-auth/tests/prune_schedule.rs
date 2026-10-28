@@ -1,14 +1,17 @@
 //! `rustcms.auth-prune` (ADR 0031): the hourly auth cleanup is a framework
 //! schedule, run only by `serve` (or `schedule:run`), never at boot, by a
-//! command or in tests. All databases.
+//! command or in tests. Tokio's time is advanced past an hour boundary, so a
+//! boot loop would have run. All databases (serving it: the admin's
+//! `framework_schedules` test).
 
 mod support;
 
 use std::time::Duration;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use rustcms_auth::entities::{session, user_token};
 use rustcms_core::models::schedule_run;
+use rustcms_core::schedule::testing::TokioClock;
 use rustcms_core::schedule::{ScheduleList, ScheduleRun, Schedules};
 use rustcms_core::{AppCommand, AppState};
 use rustcms_migration::Migrator;
@@ -20,6 +23,27 @@ use sea_orm::{
 use support::{auth, setup};
 
 const NAME: &str = "rustcms.auth-prune";
+/// Half past the current hour: the next slot is half an hour away. Near the
+/// real time, so the scheduler's history pruning (which also wakes on the
+/// jump) keeps the runs it just recorded.
+fn start() -> DateTime<Utc> {
+    DateTime::from_timestamp(Utc::now().timestamp().div_euclid(3600) * 3600 + 1800, 0).unwrap()
+}
+
+/// Moves tokio's time one second past the second hour boundary of `clock`
+/// (more than an hour: what a boot loop's first tick waited), then lets the
+/// woken tasks work in real time.
+async fn cross_an_hour(clock: &TokioClock) {
+    let now = clock.now();
+    let boundary = DateTime::from_timestamp((now.timestamp().div_euclid(3600) + 2) * 3600 + 1, 0).unwrap();
+    tokio::time::pause();
+    // One poll moves the clock (then `advance` yields): nothing awaits while
+    // time is paused, so tokio never auto-advances it further.
+    let mut advance = std::pin::pin!(tokio::time::advance((boundary - now).to_std().unwrap()));
+    let _ = std::future::Future::poll(advance.as_mut(), &mut std::task::Context::from_waker(std::task::Waker::noop()));
+    tokio::time::resume();
+    tokio::time::sleep(Duration::from_millis(800)).await;
+}
 
 /// One expired session and one expired reset link.
 async fn expired_rows(app: &TestApp, seed: &support::Seed) {
@@ -79,9 +103,11 @@ db_test!(nothing_is_pruned_at_boot_or_by_a_command, migrate = Migrator, |db: Tes
     // Another process booting on the same database (a command, a worker).
     let other = support::build(app.state().config().clone()).build_with_db(app.state().db().clone()).await.unwrap();
     command(other.state(), &ScheduleList, &["schedule:list"]).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Past an hour boundary and a full hour after boot.
+    cross_an_hour(&TokioClock::starting_at(start())).await;
     assert_eq!(counts(app.state()).await, before, "no cleanup outside the scheduler");
     assert!(runs(app.state()).await.is_empty());
+    drop(other);
 });
 
 db_test!(schedule_run_prunes_and_records_its_summary, migrate = Migrator, |db: TestDb| async move {
@@ -116,13 +142,18 @@ db_test!(serve_without_the_scheduler_prunes_nothing, migrate = Migrator, |db: Te
     let (app, seed) = setup(db).await;
     expired_rows(&app, &seed).await;
     let config = app.state().config().clone().with("schedule.enabled", false).unwrap();
-    let served = support::build(config).build_with_db(app.state().db().clone()).await.unwrap();
+    let clock = TokioClock::starting_at(start());
+    let mut served = support::build(config);
+    // What the scheduler would read, were it enabled.
+    served.bind(clock.clone());
+    let served = served.build_with_db(app.state().db().clone()).await.unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
     let task = tokio::spawn(served.serve_on(listener, async move {
         let _ = stopped.await;
     }));
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    cross_an_hour(&clock).await;
     stop.send(()).unwrap();
     tokio::time::timeout(Duration::from_secs(10), task).await.unwrap().unwrap().unwrap();
     assert_eq!(counts(app.state()).await, (1, 1));

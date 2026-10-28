@@ -51,6 +51,8 @@ rustcms-migration = { path = "../rustcms-migration" }
 rustcms-testing = { path = "../rustcms-testing", features = ["mail"] }
 serde = { workspace = true }
 toml.workspace = true
+# Paused time: tests cross the hourly schedules.
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

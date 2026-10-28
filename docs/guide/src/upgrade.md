@@ -55,12 +55,15 @@
   options must list the value. Hooks and action handlers are not affected.
 - New boot failures (the application refuses to start): a select option that
   is not a value of its column (`12` for an `i64` column, write `"12"`) or that
-  would be stored as another value (`"10.555"` on a column of scale 2); a
+  would be stored as another value (`"10.555"` on a column of scale 2, more
+  digits than a decimal's precision, `0.1` on an `f32` column, a timestamp
+  finer than microseconds); options on a `SecretInput` or `SecretMapInput`; a
   `CheckboxList` on a column that is not JSON; a field in several inputs that
   do not offer the same options (another set, a select and a checkbox list,
   or one of them without options). See
   [options](admin/forms.md#options-are-not-validated). The schema now shows
-  select options in canonical form (`"0012"` → `"12"`). No migration.
+  select options in canonical form (`"0012"` → `"12"`), and a matched select
+  value is stored as its option (`"10.505"` → `"10.50"`). No migration.
 - A background export over its limits now fails with the reason
   `too_many_to_export` or `too_many_matches` instead of `revoked`. A client
   of `GET {admin}/api/exports` that maps reasons should add both (unknown

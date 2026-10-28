@@ -58,7 +58,12 @@ pub(crate) fn start(state: &AppState, grace: Duration) -> anyhow::Result<Option<
     if !config.enabled || schedules.is_empty() {
         return Ok(None);
     }
-    Ok(Some(start_with(state, schedules, &config, grace, Arc::new(SystemClock))))
+    // The framework's tests bind a clock that follows tokio's time.
+    let clock: Arc<dyn Clock> = match state.service::<super::testing::TokioClock>() {
+        Some(clock) => clock,
+        None => Arc::new(SystemClock),
+    };
+    Ok(Some(start_with(state, schedules, &config, grace, clock)))
 }
 
 pub(crate) fn start_with(

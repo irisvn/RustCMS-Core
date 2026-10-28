@@ -34,9 +34,11 @@ All notable changes are documented here. The format follows
   the column's scale, instants in UTC, UUIDs lowercase), and the schema shows
   the options canonical. Hooks, action handlers, pivot columns and
   `belongs_to` keep their own rules; omitted fields keep stored values. Boot
-  refuses an option that is not a value of its column or would be stored as
-  another, a `CheckboxList` on a non-JSON column, and a field in inputs with
-  different options (or one without). Before, any value of the column's type
+  refuses an option that is not a value of its column or would be stored or
+  read back as another (scale, decimal precision, `f32`, sub-microsecond
+  timestamps), options on encrypted inputs, a `CheckboxList` on a non-JSON
+  column, and a field in inputs with different options (or one without). A
+  matched select value is stored as its option (`"10.505"` → `"10.50"`). Before, any value of the column's type
   was stored.
 - A background export over its limits fails with its own reason,
   `too_many_to_export` (more than 10,000 rows) or `too_many_matches` (more
@@ -58,7 +60,8 @@ All notable changes are documented here. The format follows
   metadata of expired exports and imports stored on another disk while their
   files stayed. A pass now deletes this disk's files, then their records; an
   export with a run's object on another disk keeps its row until that disk's
-  pass has deleted it.
+  pass has deleted it. Marking abandoned exports and imports `unfinished`
+  is per disk too.
 
 ## [0.10.3] — 2026-10-24
 

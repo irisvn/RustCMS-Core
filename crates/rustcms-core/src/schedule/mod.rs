@@ -606,4 +606,31 @@ pub mod testing {
     pub async fn prune(state: &AppState, before: DateTime<Utc>) -> AppResult<u64> {
         claim::prune(state.db(), before).await
     }
+
+    /// A scheduler clock that follows tokio's time from `start`: bound with
+    /// `app.bind(..)`, `serve`'s scheduler reads it instead of the system
+    /// clock, so a test that pauses and advances tokio's time crosses slots.
+    #[derive(Clone)]
+    pub struct TokioClock {
+        start: DateTime<Utc>,
+        at: tokio::time::Instant,
+    }
+
+    impl TokioClock {
+        /// Reads `start` now, then moves with tokio's time.
+        pub fn starting_at(start: DateTime<Utc>) -> Self {
+            Self { start, at: tokio::time::Instant::now() }
+        }
+
+        /// The time it reads.
+        pub fn now(&self) -> DateTime<Utc> {
+            self.start + chrono::Duration::from_std(self.at.elapsed()).unwrap_or_default()
+        }
+    }
+
+    impl super::Clock for TokioClock {
+        fn now(&self) -> DateTime<Utc> {
+            TokioClock::now(self)
+        }
+    }
 }
