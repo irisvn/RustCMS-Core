@@ -40,7 +40,7 @@ prefix = "rustcms:blog"
 - **Rate limits** (sign-in, `Throttle<N>`, uploads, …) are counted in Redis
   for all instances, atomically across the keys of one check. If Redis does
   not answer, checks fail closed (500).
-- **The framework's periodic cleanups** take a lease, which avoids most
+- **The media and exports cleanups** take a lease, which avoids most
   duplicate runs. It is best effort: a lease expires (it is not renewed
   during a long run), and when Redis does not answer the cleanup runs anyway.
   Every cleanup is safe to run twice, also at the same time. Their lease
@@ -48,14 +48,16 @@ prefix = "rustcms:blog"
 
   | Lease | Every | Deletes |
   |---|---|---|
-  | `auth-prune` | hour | expired sessions, ended JWT sign-ins, expired reset and invitation links, audit entries past retention |
-  | `idempotency-prune` | hour | expired idempotency receipts |
   | `media-prune:<disk>` | minute | files of deleted media, abandoned uploads |
   | `exports-prune:<disk>` | 10 minutes | expired exports and imports |
 
   These cleanups start when the application boots, in every process that
   boots it: `serve`, `queue:work`, and also application commands for as long
-  as they run. See [Data retention](../operations/retention.md).
+  as they run. The auth and idempotency cleanups need no lease: they are
+  [framework schedules](scheduling.md#framework-schedules)
+  (`rustcms.auth-prune`, `rustcms.idempotency-prune`), each slot claimed once
+  in the database, run only by `serve`. See
+  [Data retention](../operations/retention.md).
 
 Permissions need no Redis: a change made on one instance applies on every
 instance from the next request (the permission cache follows a counter kept

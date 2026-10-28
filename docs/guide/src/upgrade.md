@@ -35,6 +35,46 @@
   (`https://irisvn.github.io/RustCMS/v/X.Y.Z/`); the command no longer
   carries an offline copy. The guide's sources are Markdown files in
   RustCMS-Core (`docs/guide/src`).
+- The hourly auth cleanup (expired sessions, ended JWT sign-ins, reset and
+  invitation links, old audit entries) and the idempotency cleanup are now
+  framework schedules, `rustcms.auth-prune` and `rustcms.idempotency-prune`:
+  only `serve` runs them, with `[schedule] enabled`, on the hour (UTC), once
+  across instances. They no longer run in `queue:work`, console commands or
+  tests, and take no Redis lease. If no instance runs `serve` with the
+  scheduler, cron `schedule:run rustcms.auth-prune` (or `session:prune`,
+  `audit:prune`) and `idempotency:prune`. They appear on System → Schedules
+  and in `schedule:list`; holders of `schedules.manage` can Run them now.
+  Application schedules still cannot use the `rustcms.` prefix. No migration.
+- **Behaviour change: static options are validated.** A client write to a
+  resource (create, update, a relation create, a CSV import row) whose value
+  is not one of a `SelectInput`'s or `CheckboxList`'s `.options(…)` is now a
+  422 (`not_option`; a checkbox list also `invalid` when not a list and
+  `given_twice` for a repeated item); it was stored before. Records already
+  holding other values keep them until the field is written. Clients and
+  imports sending values outside the options must send an option, or the
+  options must list the value. Hooks and action handlers are not affected.
+- New boot failures (the application refuses to start): a select option that
+  is not a value of its column (`12` for an `i64` column, write `"12"`) or that
+  would be stored as another value (`"10.555"` on a column of scale 2); a
+  `CheckboxList` on a column that is not JSON; a field in several inputs that
+  do not offer the same options (another set, a select and a checkbox list,
+  or one of them without options). See
+  [options](admin/forms.md#options-are-not-validated). The schema now shows
+  select options in canonical form (`"0012"` → `"12"`). No migration.
+- A background export over its limits now fails with the reason
+  `too_many_to_export` or `too_many_matches` instead of `revoked`. A client
+  of `GET {admin}/api/exports` that maps reasons should add both (unknown
+  reasons should already show as a generic failure).
+- The panel's sockets refuse to send messages larger than `[realtime]
+  max_message_bytes` (it was a fixed 64 KiB): with a lower value, pages that
+  sent up to 64 KiB now get `false` from `send` for larger messages. Keep the
+  value the same on every instance; open tabs keep the limit they loaded until
+  reloaded.
+- Export and import pruning only cleans its own disk (`[storage] disk`).
+  After a change of disk, expired exports and imports of the old disk stay
+  (rows and files) until a process configured with the old disk boots and
+  prunes them, or you delete them yourself (they are no longer listed nor
+  downloadable once expired). No migration.
 
 ## From 0.10.2 to 0.10.3
 

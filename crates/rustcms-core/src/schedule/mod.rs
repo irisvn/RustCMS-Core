@@ -161,6 +161,7 @@ pub struct Schedule {
     pub(crate) action: Option<Action>,
     pub(crate) without_overlapping: bool,
     pub(crate) timeout: Duration,
+    pub(crate) framework: bool,
 }
 
 impl Schedule {
@@ -180,6 +181,7 @@ impl Schedule {
             action: None,
             without_overlapping: false,
             timeout: DEFAULT_TIMEOUT,
+            framework: false,
         }
     }
 
@@ -194,6 +196,7 @@ impl Schedule {
             action: None,
             without_overlapping: false,
             timeout: DEFAULT_TIMEOUT,
+            framework: false,
         })
     }
 
@@ -285,6 +288,25 @@ impl Schedule {
             self.name
         );
         self.timeout = timeout;
+        self
+    }
+
+    /// Marks one of the framework's own schedules (`rustcms.auth-prune`, …):
+    /// only these may use the reserved `rustcms.` prefix. Every other check
+    /// (characters, length, uniqueness, action) still applies. A trusted-code
+    /// opt-in for the framework's crates, not an access boundary.
+    ///
+    /// # Panics
+    /// When the name does not start with `rustcms.`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn framework(mut self) -> Self {
+        assert!(
+            self.name.starts_with(RESERVED),
+            "schedule `{}`: framework schedules are named `{RESERVED}…`",
+            self.name
+        );
+        self.framework = true;
         self
     }
 
@@ -385,7 +407,10 @@ impl Schedules {
                 && name.bytes().all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.' | b'-')),
             "schedule `{name}`: names are 1–64 of `a-z`, `0-9`, `_`, `.`, `-`"
         );
-        assert!(!name.starts_with(RESERVED), "schedule `{name}`: names starting with `{RESERVED}` are reserved");
+        assert!(
+            schedule.framework || !name.starts_with(RESERVED),
+            "schedule `{name}`: names starting with `{RESERVED}` are reserved"
+        );
         assert!(self.0.iter().all(|s| s.name != *name), "schedule `{name}` declared twice");
         match &schedule.action {
             None => panic!("schedule `{name}`: give it a `.job(..)`, `.run(..)` or `.task(..)`"),
@@ -517,6 +542,32 @@ mod tests {
             assert!(result.is_err(), "{bad:?}");
         }
     }
+
+    #[test]
+    fn only_framework_schedules_use_the_reserved_prefix() {
+        let mut jobs = Jobs::default();
+        let run = |name: &str| Schedule::every(name, MIN_PERIOD).run(|_| async { Ok(()) });
+        let mut schedules = Schedules::default();
+        schedules.add(run("rustcms.prune").framework(), &mut jobs);
+        assert!(schedules.get("rustcms.prune").is_some());
+        let refused = |schedules: &Schedules, schedule: Schedule| {
+            let mut copy = schedules.clone();
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| copy.add(schedule, &mut Jobs::default()))).is_err()
+        };
+        // Without the opt-in the prefix stays reserved.
+        assert!(refused(&schedules, run("rustcms.other")));
+        // The other checks still apply to framework schedules.
+        assert!(refused(&schedules, run("rustcms.prune").framework()), "declared twice");
+        assert!(refused(&schedules, run("rustcms.Bad").framework()), "charset");
+        assert!(refused(&schedules, run(&format!("rustcms.{}", "x".repeat(60))).framework()), "length");
+        assert!(refused(&schedules, Schedule::every("rustcms.none", MIN_PERIOD).framework()), "no action");
+    }
+
+    #[test]
+    #[should_panic(expected = "framework schedules are named `rustcms.…`")]
+    fn framework_schedules_need_the_prefix() {
+        let _ = Schedule::every("prune", MIN_PERIOD).framework();
+    }
 }
 
 /// Hooks for the framework's own tests (not a stable API).
@@ -539,6 +590,7 @@ pub mod testing {
             action: None,
             without_overlapping: false,
             timeout: super::DEFAULT_TIMEOUT,
+            framework: false,
         }
     }
 

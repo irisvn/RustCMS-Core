@@ -118,3 +118,26 @@ unless Redis was configured.
   job `rustcms.schedule.run {name, run_id}`, so long closures never run in a
   web request and a crash never repeats one. No named lock is added. The
   console's `schedule:run` stays in-process and is recorded as a manual run.
+
+## Amendment (Unreleased, 2026-10-28): framework schedules
+
+- The framework's own periodic work uses this scheduler too. The auth cleanup
+  (`rustcms.auth-prune`: sessions, JWT sign-ins, reset and invitation links,
+  audit retention) and the idempotency cleanup (`rustcms.idempotency-prune`)
+  are hourly `.task` schedules registered in `AuthProvider::register` and
+  `AdminProvider::register`; the `tokio::spawn` loops in `boot` and their
+  Redis leases are gone (slot claims replace them; both prunes are safe when
+  concurrent).
+- `Schedule::framework()` (`#[doc(hidden)]`) marks a framework schedule: it
+  asserts the name starts with `rustcms.` and waives only the reserved-prefix
+  check of `Schedules::add` (characters, length, uniqueness and action checks
+  stay). A trusted-code opt-in, not an access boundary.
+- Consequences: they run only in `serve` with `[schedule] enabled`, never in
+  `queue:work`, commands or tests; cron-only deployments use `schedule:run
+  rustcms.auth-prune` or the prune commands (`session:prune`,
+  `idempotency:prune`, `audit:prune`); `schedule:run` records a run but does
+  not prune the schedule history. Each part of the auth cleanup runs even if
+  another fails; the run then fails with `prune_failed`.
+- Not moved: the media and exports/imports prunes are per disk and sweep each
+  instance's local staging directory; a cluster-wide slot would leave other
+  instances' directories unswept (plan `code-findings-fixes.md` B2).

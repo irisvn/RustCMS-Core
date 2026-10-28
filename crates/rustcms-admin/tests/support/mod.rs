@@ -704,3 +704,57 @@ pub async fn role_id(app: &rustcms_testing::TestApp, name: &str) -> String {
     let found = role::Entity::find().filter(role::Column::Name.eq(name)).one(app.state().db()).await.unwrap();
     found.unwrap_or_else(|| panic!("role {name}")).id.to_string()
 }
+
+/// A second disk for pruning tests: local files under its own root, named
+/// `s3` (rows of two disks in one database).
+pub struct OtherDisk(pub rustcms_core::storage::LocalStorage);
+
+impl OtherDisk {
+    pub fn new() -> Self {
+        let root = std::env::temp_dir().join(format!("rustcms-other-disk-{}", Uuid::now_v7()));
+        Self(rustcms_core::storage::LocalStorage::new(&root).unwrap())
+    }
+
+    /// Stores `bytes` under a new key.
+    pub async fn put(&self, bytes: &[u8]) -> rustcms_core::storage::StorageKey {
+        use rustcms_core::storage::Storage;
+        let key = rustcms_core::storage::StorageKey::generate("csv").unwrap();
+        let file = self.0.staging_dir().join(format!("put-{}", Uuid::now_v7()));
+        std::fs::write(&file, bytes).unwrap();
+        self.put_file(&key, &file, "text/csv").await.unwrap();
+        key
+    }
+}
+
+#[async_trait::async_trait]
+impl rustcms_core::storage::Storage for OtherDisk {
+    fn disk(&self) -> &'static str {
+        "s3"
+    }
+    fn staging_dir(&self) -> std::path::PathBuf {
+        self.0.staging_dir()
+    }
+    async fn put_file(
+        &self,
+        key: &rustcms_core::storage::StorageKey,
+        file: &std::path::Path,
+        content_type: &str,
+    ) -> Result<(), rustcms_core::storage::StorageError> {
+        self.0.put_file(key, file, content_type).await
+    }
+    async fn open(
+        &self,
+        key: &rustcms_core::storage::StorageKey,
+    ) -> Result<(axum::body::Body, u64), rustcms_core::storage::StorageError> {
+        self.0.open(key).await
+    }
+    async fn delete(&self, key: &rustcms_core::storage::StorageKey) -> Result<(), rustcms_core::storage::StorageError> {
+        self.0.delete(key).await
+    }
+    async fn exists(
+        &self,
+        key: &rustcms_core::storage::StorageKey,
+    ) -> Result<bool, rustcms_core::storage::StorageError> {
+        self.0.exists(key).await
+    }
+}

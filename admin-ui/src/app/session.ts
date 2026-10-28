@@ -135,6 +135,7 @@ export function createSession(
 
   const api = new ApiClient({
     apiPath: config.apiPath,
+    socketMaxBytes: config.realtime?.maxMessageBytes,
     onUnauthenticated: unauthenticated,
     verifyIdentity: (id) => session.verify(id),
     observeIdentity: (id) => session.observe(id),

@@ -658,6 +658,8 @@ status: string,
 rows: number, 
 /**
  * Why it failed: `revoked`, `account_changed`, `fields_changed`,
+ * `too_many_to_export` (more records than a background export holds),
+ * `too_many_matches` (more candidates than a per-record policy checks),
  * `too_large`, `unfinished` or `failed`.
  */
 error?: string, 

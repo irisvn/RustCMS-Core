@@ -59,6 +59,8 @@ function reason(t: ReturnType<typeof useT>, code: string): string {
     case "revoked": return t("export.reason.revoked");
     case "account_changed": return t("export.reason.account_changed");
     case "fields_changed": return t("export.reason.fields_changed");
+    case "too_many_to_export": return t("export.reason.too_many_to_export");
+    case "too_many_matches": return t("export.reason.too_many_matches");
     case "too_large": return t("export.reason.too_large");
     case "unfinished": return t("export.reason.unfinished");
     default: return t("export.reason.failed");

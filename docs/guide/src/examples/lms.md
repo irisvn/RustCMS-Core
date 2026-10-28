@@ -165,9 +165,10 @@ More rules:
 - To move an enrollment, staff change its `course_id`: the seat is checked in
   the new course. To withdraw, set `status` to `withdrawn`; setting it back to
   `active` needs a free seat.
-- `status` is checked by the service (`UnknownStatus`): the
-  `SelectInput::options` of the form do not bound the stored value
-  ([options are not validated](../admin/forms.md#options-are-not-validated)).
+- `status` must be one of the form's `SelectInput::options`
+  ([options are validated](../admin/forms.md#options-are-not-validated)); the
+  service checks it too (`UnknownStatus`), for the enroll action and the
+  seeder, which do not go through the form.
 
 See [Parent locks](../admin/resources.md#parent-locks) and
 [Actions with a form](../admin/actions.md#actions-with-a-form).

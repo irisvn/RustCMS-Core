@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use axum::middleware::from_fn_with_state;
+use rustcms_core::queue::Failure;
+use rustcms_core::schedule::Schedule;
 use rustcms_core::{AppBuilder, AppState, Principal, ServiceProvider};
 
 use crate::commands::{MakeUser, PermissionSync, RoleAssign, SessionPrune, TokenCreate};
@@ -30,7 +32,13 @@ pub const BUILT_IN_PERMISSIONS: &[(&str, &str)] = &[
     ("permissions", "permissions.assign"),
 ];
 
+/// The framework schedule that deletes expired sessions, ended JWT sign-ins,
+/// expired reset and invitation links and audit entries past their retention.
+const AUTH_PRUNE: &str = "rustcms.auth-prune";
 const PRUNE_EVERY: Duration = Duration::from_secs(3600);
+const PRUNE_TIMEOUT: Duration = Duration::from_secs(1800);
+/// Time the audit part may spend per run (the next run goes on).
+const AUDIT_BUDGET: Duration = Duration::from_secs(60);
 
 /// Adds authentication and authorization to an application.
 ///
@@ -174,6 +182,13 @@ impl ServiceProvider for AuthProvider {
             .command(PermissionSync)
             .command(SessionPrune)
             .command(crate::console::commands::AuditPrune);
+        // Only `serve` runs it (ADR 0031), once per slot across instances.
+        app.schedule(
+            Schedule::every(AUTH_PRUNE, PRUNE_EVERY)
+                .framework()
+                .timeout(PRUNE_TIMEOUT)
+                .task(|ctx| async move { prune(&ctx.state).await }),
+        );
     }
 
     async fn boot(&self, state: &AppState) -> anyhow::Result<()> {
@@ -195,41 +210,33 @@ impl ServiceProvider for AuthProvider {
             // Every instance counts in the same place.
             auth.limiter.use_redis((*redis).clone());
         }
-        let db = state.db().clone();
-        let app = state.clone();
-        tokio::spawn(async move {
-            // First run after one period: never competes with startup work.
-            let mut every = tokio::time::interval_at(tokio::time::Instant::now() + PRUNE_EVERY, PRUNE_EVERY);
-            loop {
-                every.tick().await;
-                let db = db.clone();
-                let app_for_job = app.clone();
-                rustcms_core::jobs::exclusive(&app, "auth-prune", PRUNE_EVERY / 2, || async move {
-                    match crate::session::prune_expired(&db).await {
-                        Ok(n) if n > 0 => tracing::info!(pruned = n, "expired sessions deleted"),
-                        Ok(_) => {}
-                        Err(err) => tracing::warn!(%err, "session pruning failed"),
-                    }
-                    match crate::guards::jwt_session::prune(&db).await {
-                        Ok(n) if n > 0 => tracing::info!(pruned = n, "ended JWT sign-ins deleted"),
-                        Ok(_) => {}
-                        Err(err) => tracing::warn!(%err, "JWT pruning failed"),
-                    }
-                    match crate::recovery::prune(&db).await {
-                        Ok(n) if n > 0 => tracing::info!(pruned = n, "expired reset and invitation tokens deleted"),
-                        Ok(_) => {}
-                        Err(err) => tracing::warn!(%err, "token pruning failed"),
-                    }
-                    match crate::console::commands::prune_audit(&app_for_job, std::time::Duration::from_secs(60)).await
-                    {
-                        Ok(n) if n > 0 => tracing::info!(pruned = n, "old audit entries deleted"),
-                        Ok(_) => {}
-                        Err(err) => tracing::warn!(%err, "audit pruning failed"),
-                    }
-                })
-                .await;
-            }
-        });
         Ok(())
     }
+}
+
+/// One pass of [`AUTH_PRUNE`]: every part runs even when another fails.
+async fn prune(state: &AppState) -> anyhow::Result<Option<String>> {
+    let db = state.db();
+    let mut failed = false;
+    let mut count = |what: &str, result: anyhow::Result<u64>| match result {
+        Ok(n) => {
+            if n > 0 {
+                tracing::info!(pruned = n, "{what} deleted");
+            }
+            n
+        }
+        Err(err) => {
+            tracing::warn!(err = %format!("{err:#}"), "pruning {what} failed");
+            failed = true;
+            0
+        }
+    };
+    let sessions = count("expired sessions", crate::session::prune_expired(db).await.map_err(Into::into));
+    let jwt = count("ended JWT sign-ins", crate::guards::jwt_session::prune(db).await.map_err(Into::into));
+    let links = count("expired reset and invitation links", crate::recovery::prune(db).await.map_err(Into::into));
+    let audit = count("old audit entries", crate::console::commands::prune_audit(state, AUDIT_BUDGET).await);
+    if failed {
+        return Err(Failure::new("prune_failed", "some cleanups failed (see the logs)").into());
+    }
+    Ok(Some(format!("{sessions} sessions, {jwt} JWT sign-ins, {links} links, {audit} audit entries")))
 }

@@ -17,7 +17,12 @@ export interface PanelConfig {
   theme?: { logo?: string; logoDark?: string; favicon?: string; colorScheme: "system" | "light" | "dark" };
   /** What the sign-in page offers. */
   signIn?: { passwordReset: boolean; remember: boolean };
+  /** `[realtime]` as the server applies it: the largest socket message. */
+  realtime?: { maxMessageBytes: number };
 }
+
+/** Largest socket message the server may set (`[realtime] max_message_bytes` is clamped to it). */
+const MAX_SOCKET_BYTES = 1024 * 1024;
 
 export function readConfig(doc: Document = document): PanelConfig {
   const raw = doc.querySelector('meta[name="rustcms-admin"]')?.getAttribute("content");
@@ -28,6 +33,7 @@ export function readConfig(doc: Document = document): PanelConfig {
   let brand: string | undefined;
   const theme: NonNullable<PanelConfig["theme"]> = { colorScheme: "system" };
   const signIn = { passwordReset: false, remember: false };
+  let realtime: PanelConfig["realtime"];
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as Partial<PanelConfig>;
@@ -62,6 +68,11 @@ export function readConfig(doc: Document = document): PanelConfig {
         signIn.passwordReset = parsed.signIn.passwordReset === true;
         signIn.remember = parsed.signIn.remember === true;
       }
+      // An integer the server could have set, or nothing (the socket keeps its default).
+      const bytes = (parsed.realtime as { maxMessageBytes?: unknown } | undefined)?.maxMessageBytes;
+      if (typeof bytes === "number" && Number.isInteger(bytes) && bytes >= 1 && bytes <= MAX_SOCKET_BYTES) {
+        realtime = { maxMessageBytes: bytes };
+      }
       const look = parsed.theme as Partial<NonNullable<PanelConfig["theme"]>> | undefined;
       const image = (path: unknown, kind: string) =>
         typeof path === "string" && new RegExp(`^assets/brand/${kind}\\?v=[0-9a-f]{8}$`).test(path) ? path : undefined;
@@ -78,7 +89,9 @@ export function readConfig(doc: Document = document): PanelConfig {
   }
   basePath = "/" + basePath.replace(/^\/+|\/+$/g, "");
   if (basePath === "/") basePath = "";
-  return { basePath, apiPath: `${basePath}/api`, extensions, locale, locales, brand, theme, signIn };
+  const config: PanelConfig = { basePath, apiPath: `${basePath}/api`, extensions, locale, locales, brand, theme, signIn };
+  if (realtime) config.realtime = realtime;
+  return config;
 }
 
 /**

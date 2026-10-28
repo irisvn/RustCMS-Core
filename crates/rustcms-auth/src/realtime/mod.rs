@@ -118,6 +118,13 @@ impl Realtime {
         permits.user.is_some().then_some(permits)
     }
 
+    /// Largest WebSocket message, either way: `[realtime] max_message_bytes`
+    /// as applied (1 byte to 1 MiB). The admin panel sends it to the browser,
+    /// which refuses to send larger messages.
+    pub fn max_message_bytes(&self) -> usize {
+        self.config.max_message_bytes
+    }
+
     /// Open streams of `user_id` (tests).
     pub fn open_for(&self, user_id: i64) -> usize {
         let users = self.users.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -522,4 +529,18 @@ async fn pump(stream: EventStream, tx: mpsc::Sender<Queued>, queued: Arc<AtomicU
         let _ = tx.try_send(closed(reason));
     }
     drop(live);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_message_limit_is_read_as_applied() {
+        let with = |bytes| Realtime::new(RealtimeConfig { max_message_bytes: bytes, ..RealtimeConfig::default() });
+        assert_eq!(Realtime::new(RealtimeConfig::default()).max_message_bytes(), 64 * 1024);
+        assert_eq!(with(1000).max_message_bytes(), 1000);
+        assert_eq!(with(0).max_message_bytes(), 1);
+        assert_eq!(with(usize::MAX).max_message_bytes(), 1024 * 1024);
+    }
 }

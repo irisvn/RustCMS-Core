@@ -79,7 +79,8 @@ app.schedule(
 - A **missed slot is skipped, never caught up**: after a restart or a pause
   only the next slot runs. A slot is still taken up to
   `schedule.grace_secs` (30) late.
-- Names are 1–64 of `a-z 0-9 _ . -`, unique; `rustcms.` is reserved.
+- Names are 1–64 of `a-z 0-9 _ . -`, unique; `rustcms.` is reserved for the
+  [framework's schedules](#framework-schedules).
 
 ## What it does
 
@@ -233,10 +234,28 @@ schedule.
   `.expect("a valid cron expression")`.
 - Cron times are UTC: `0 6 * * *` is 06:00 UTC, not local time.
 - Run now needs a queue worker even for a `.task` schedule.
-- The framework's own cleanups (sessions, JWT sign-ins, reset and invitation
-  links, audit entries, idempotency keys, media, exports and imports) are not
-  schedules: they are background loops started when the application boots,
-  and do not appear on this page. See [Data retention](../operations/retention.md).
+- Media, exports and imports cleanups are not schedules yet: they are
+  background loops started when the application boots, and do not appear on
+  this page. See [Data retention](../operations/retention.md).
+
+## Framework schedules
+
+The framework registers its own schedules, named `rustcms.…` (the prefix is
+reserved: an application's `rustcms.x` panics at boot):
+
+| Schedule | Every | Does | Summary |
+|---|---|---|---|
+| `rustcms.auth-prune` | hour (timeout 30 min) | deletes expired sessions, ended JWT sign-ins, expired reset and invitation links, audit entries past `audit.retention_days` | `3 sessions, 0 JWT sign-ins, 1 links, 0 audit entries` |
+| `rustcms.idempotency-prune` | hour (timeout 30 min) | deletes expired idempotency receipts of admin writes | `12 expired keys` |
+
+They behave like yours: only `serve` runs them, once per slot across
+instances; they are listed on System → Schedules and by `schedule:list`, and
+`schedules.manage` can Run now (audited). Each part of the auth cleanup runs
+even when another fails; the run then fails with
+`prune_failed: some cleanups failed (see the logs)`. Without `serve` (or with
+`[schedule] enabled = false` everywhere), run them from cron with
+`schedule:run rustcms.auth-prune` or the prune commands
+([Data retention](../operations/retention.md#from-cron)).
 
 ## Related
 

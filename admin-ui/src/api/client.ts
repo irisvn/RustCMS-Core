@@ -89,6 +89,8 @@ export interface ClientOptions {
    * discards the response: the page belongs to another account.
    */
   observeIdentity?: (userId: string) => boolean;
+  /** Largest socket message (`[realtime] max_message_bytes`, from the page's configuration). */
+  socketMaxBytes?: number;
   fetch?: typeof fetch;
 }
 
@@ -106,6 +108,11 @@ export class ApiClient {
 
   get apiPath() {
     return this.opts.apiPath;
+  }
+
+  /** Largest message a socket of this panel sends, when the server said. */
+  get socketMaxBytes(): number | undefined {
+    return this.opts.socketMaxBytes;
   }
 
   /** Session epoch: changes on sign-in, sign-out, 401, CSRF failures and account changes. */

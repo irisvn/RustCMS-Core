@@ -233,3 +233,195 @@ db_test!(pruning_deletes_every_object_of_an_export, |db: TestDb| async move {
     assert!(storage.open(&published).await.is_err());
     assert!(object::Entity::find().all(db).await.unwrap().is_empty());
 });
+
+/// Tags as an exportable resource whose visibility is its permission alone
+/// (no per-record policy): only the export limit bounds it.
+struct LabelResource;
+
+impl rustcms_admin::Resource for LabelResource {
+    type Entity = support::tag::Entity;
+    const SLUG: &'static str = "labels";
+
+    fn meta() -> rustcms_admin::ResourceMeta {
+        rustcms_admin::ResourceMeta::new("Label").title("label").key(rustcms_admin::KeyStrategy::Natural).exportable()
+    }
+
+    fn fields() -> Vec<rustcms_admin::Field> {
+        use support::tag::Column;
+        vec![
+            rustcms_admin::Field::column(Column::Slug).required(),
+            rustcms_admin::Field::column(Column::Label).required(),
+        ]
+    }
+}
+
+fn build_with_labels(config: rustcms_core::Config) -> rustcms_core::AppBuilder {
+    support::app::build_extended(config, |admin| admin.resource::<LabelResource>())
+}
+
+/// `count` more posts of `author`, inserted in batches.
+async fn insert_posts(app: &TestApp, author: i64, from: usize, count: usize) {
+    use sea_orm::{ActiveValue::Set, EntityTrait};
+    use support::post;
+    for start in (from..from + count).step_by(500) {
+        let rows = (start..(start + 500).min(from + count)).map(|n| post::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            title: Set(format!("Post {n:05}")),
+            category_id: Set(None),
+            author_id: Set(author),
+            price: Set(None),
+            published: Set(false),
+            published_at: Set(None),
+            secret: Set(String::new()),
+        });
+        post::Entity::insert_many(rows).exec(app.state().db()).await.unwrap();
+    }
+}
+
+/// `count` more tags, inserted in batches.
+async fn insert_tags(app: &TestApp, from: usize, count: usize) {
+    use sea_orm::{ActiveValue::Set, EntityTrait};
+    use support::tag;
+    for start in (from..from + count).step_by(500) {
+        let rows = (start..(start + 500).min(from + count))
+            .map(|n| tag::ActiveModel { slug: Set(format!("t{n:05}")), label: Set(format!("Tag {n}")) });
+        tag::Entity::insert_many(rows).exec(app.state().db()).await.unwrap();
+    }
+}
+
+/// Asks for a background export of `path`, runs it, and returns it as listed.
+async fn export_later(client: &TestClient<'_>, app: &TestApp, path: &str) -> Value {
+    let created = client.post_json(&app.admin_api(path), &json!({})).await;
+    created.assert_status(StatusCode::CREATED);
+    let id = created.json()["id"].as_str().unwrap().to_owned();
+    work(app).await;
+    let listed: Value = client.get(&app.admin_api("exports")).await.json();
+    listed.as_array().unwrap().iter().find(|e| e["id"] == json!(id)).unwrap().clone()
+}
+
+/// A failed export: its reason listed, no file to download nor stored.
+async fn assert_refused(client: &TestClient<'_>, app: &TestApp, export: &Value, reason: &str) {
+    use rustcms_admin::exports::{entity, object};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    assert_eq!((export["status"].clone(), export["error"].clone()), (json!("failed"), json!(reason)), "{export}");
+    let id: uuid::Uuid = export["id"].as_str().unwrap().parse().unwrap();
+    let file = client.get(&app.admin_api(&format!("exports/{id}/file"))).await;
+    file.assert_status(StatusCode::CONFLICT);
+    assert_eq!(file.json()["code"], json!("export_not_ready"));
+    let row = entity::Entity::find_by_id(id).one(app.state().db()).await.unwrap().unwrap();
+    assert_eq!((row.storage_key, row.keys), (None, None));
+    let objects = object::Entity::find().filter(object::Column::ExportId.eq(id)).all(app.state().db()).await.unwrap();
+    assert!(objects.is_empty(), "{objects:?}");
+}
+
+db_test!(a_background_export_over_its_row_limit_says_so, |db: TestDb| async move {
+    let config = rustcms_testing::test_config(db.url());
+    let (app, _) = support::app::setup_built(db, config, build_with_labels).await;
+    let (exporter, _) = user_with(&app, "Exporter", &["labels.view_any", "labels.view", "labels.export"]).await;
+    let client = app.acting_as(&exporter).await;
+    let max = rustcms_admin::exports::MAX_ROWS;
+    // Exactly at the limit: the export is made.
+    insert_tags(&app, 0, max).await;
+    let done = export_later(&client, &app, "resources/labels/exports").await;
+    assert_eq!((done["status"].clone(), done["rows"].clone()), (json!("done"), json!(max)), "{done}");
+    // One more: refused as too many to export, not as revoked.
+    insert_tags(&app, max, 1).await;
+    let over = export_later(&client, &app, "resources/labels/exports").await;
+    assert_refused(&client, &app, &over, "too_many_to_export").await;
+});
+
+db_test!(a_background_export_over_the_scan_limit_says_so, |db: TestDb| async move {
+    // Posts have a per-record policy: every candidate is checked, at most 10,000.
+    let (app, _) = setup(db).await;
+    let (exporter, role) = user_with(&app, "Exporter", &EXPORTER).await;
+    let client = app.acting_as(&exporter).await;
+    let max = rustcms_admin::exports::MAX_ROWS;
+    insert_posts(&app, exporter.id, 0, max).await;
+    let done = export_later(&client, &app, "resources/posts/exports").await;
+    assert_eq!((done["status"].clone(), done["rows"].clone()), (json!("done"), json!(max)), "{done}");
+    insert_posts(&app, exporter.id, max, 1).await;
+    let over = export_later(&client, &app, "resources/posts/exports").await;
+    assert_refused(&client, &app, &over, "too_many_matches").await;
+    // Other refusals stay `revoked`, also over the limit (the permission withdrawn first).
+    let created = client.post_json(&app.admin_api("resources/posts/exports"), &json!({})).await;
+    let id = created.json()["id"].as_str().unwrap().to_owned();
+    set_permissions(&app, role, &["posts.view_any", "posts.view"]).await;
+    work(&app).await;
+    set_permissions(&app, role, &EXPORTER).await;
+    let client = app.acting_as(&exporter).await;
+    let listed: Value = client.get(&app.admin_api("exports")).await.json();
+    let revoked = listed.as_array().unwrap().iter().find(|e| e["id"] == json!(id)).unwrap().clone();
+    assert_refused(&client, &app, &revoked, "revoked").await;
+});
+
+db_test!(pruning_touches_only_its_own_disk, |db: TestDb| async move {
+    use rustcms_admin::exports::{entity, object, prune};
+    use rustcms_core::storage::{Storage, StorageKey};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
+    let (app, _) = setup(db).await;
+    let (exporter, _) = user_with(&app, "Exporter", &EXPORTER).await;
+    let client = app.acting_as(&exporter).await;
+    post(&client, &app, "First").await;
+    // On this app's disk (`local`).
+    let local_export = export_later(&client, &app, "resources/posts/exports").await;
+    let local_id: uuid::Uuid = local_export["id"].as_str().unwrap().parse().unwrap();
+    let db = app.state().db();
+    let local = app.state().service::<std::sync::Arc<dyn Storage>>().unwrap();
+    let local: &dyn Storage = local.as_ref().as_ref();
+    let other = support::OtherDisk::new();
+    let template = entity::Entity::find_by_id(local_id).one(db).await.unwrap().unwrap();
+    let past = chrono::Utc::now() - chrono::Duration::hours(2);
+    let record = |id, disk: &str, key: &StorageKey| object::ActiveModel {
+        storage_key: Set(key.as_str().to_owned()),
+        export_id: Set(id),
+        disk: Set(disk.to_owned()),
+        created_at: Set(past),
+    };
+    // An export of the other disk.
+    let theirs = uuid::Uuid::now_v7();
+    let their_key = other.put(b"title\r\n").await;
+    let mut row: entity::ActiveModel = template.clone().into();
+    row.id = Set(theirs);
+    row.disk = Set(Some("s3".into()));
+    row.storage_key = Set(Some(their_key.as_str().to_owned()));
+    row.insert(db).await.unwrap();
+    record(theirs, "s3", &their_key).insert(db).await.unwrap();
+    // An export of this disk with a run's object on the other (moved meanwhile).
+    let moved = uuid::Uuid::now_v7();
+    let moved_local = StorageKey::generate("csv").unwrap();
+    let moved_other = other.put(b"title\r\n").await;
+    let mut row: entity::ActiveModel = template.clone().into();
+    row.id = Set(moved);
+    row.storage_key = Set(Some(moved_local.as_str().to_owned()));
+    row.insert(db).await.unwrap();
+    record(moved, "local", &moved_local).insert(db).await.unwrap();
+    record(moved, "s3", &moved_other).insert(db).await.unwrap();
+    entity::Entity::update_many()
+        .col_expr(entity::Column::ExpiresAt, sea_orm::sea_query::Expr::value(past))
+        .exec(db)
+        .await
+        .unwrap();
+    let objects = |id: uuid::Uuid| async move {
+        let found = object::Entity::find().filter(object::Column::ExportId.eq(id)).all(db).await.unwrap();
+        found.into_iter().map(|o| o.disk).collect::<Vec<_>>()
+    };
+    let exists = |id| async move { entity::Entity::find_by_id(id).one(db).await.unwrap().is_some() };
+
+    // This disk: its export and its objects only.
+    assert_eq!(prune(db, local).await.unwrap(), 1);
+    assert!(!exists(local_id).await && objects(local_id).await.is_empty());
+    assert!(exists(theirs).await, "the other disk's export is kept");
+    assert_eq!(objects(theirs).await, ["s3"]);
+    assert!(other.exists(&their_key).await.unwrap());
+    assert!(exists(moved).await, "kept while an object of the other disk is left");
+    assert_eq!(objects(moved).await, ["s3"]);
+    assert!(other.exists(&moved_other).await.unwrap());
+    // The other disk: its export, and its object of the moved one.
+    assert_eq!(prune(db, &other).await.unwrap(), 1);
+    assert!(!exists(theirs).await && objects(theirs).await.is_empty());
+    assert!(!other.exists(&their_key).await.unwrap() && !other.exists(&moved_other).await.unwrap());
+    assert!(exists(moved).await && objects(moved).await.is_empty());
+    // This disk again: the moved export goes too.
+    assert_eq!(prune(db, local).await.unwrap(), 1);
+    assert!(!exists(moved).await);
+});

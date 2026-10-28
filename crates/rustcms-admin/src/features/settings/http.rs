@@ -16,7 +16,7 @@ use serde_json::{Map, Value, json};
 
 use super::{DynSettings, SettingField, SettingsRegistry};
 use crate::context::Ctx;
-use crate::engine::validate::{InputRule, check_input};
+use crate::engine::validate::{InputRule, Options, check_input};
 use crate::http::{AdminCtx, AdminPanel};
 use crate::schema::{ComponentSchema, FormSchema, InputSchema, LayoutSchema, Rule, SCHEMA_VERSION, VOCABULARY_VERSION};
 use crate::ui::{Component, SelectOption};
@@ -339,7 +339,8 @@ async fn update(
             continue;
         }
         let options = field.options();
-        let rule = InputRule { options: (!options.is_empty()).then_some(options.as_slice()), ..field.rule() };
+        let options = (!options.is_empty()).then_some(Options::One { values: &options, scale: None });
+        let rule = InputRule { options, ..field.rule() };
         if check_input(name, &rule, value, &mut errors)
             && let Some(media) = &field.media
         {

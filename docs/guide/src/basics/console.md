@@ -77,11 +77,11 @@ How each kind of command starts:
   from what the framework, the providers and the application described
   (`AppBuilder::describe_routes`). Plain Axum routes you add without
   describing them are missing ([Routing](routing.md#plain-axum-routes)).
-- Booting runs every provider's `boot`. `AuthProvider::boot` starts the hourly
-  clean-up of sessions, JWT sign-ins, reset links and old audit entries in
-  every process that boots, a console command included; its first run is one
-  hour after start, so a short command exits before it
-  ([Authentication](../security/authentication.md#admin-sessions)).
+- Booting runs every provider's `boot`. The hourly clean-up of sessions, JWT
+  sign-ins, reset links and old audit entries is a schedule
+  (`rustcms.auth-prune`), so a console command never runs it; `schedule:run
+  rustcms.auth-prune` runs it once
+  ([Authentication](../security/authentication.md#clean-up)).
 
 ## Generators
 

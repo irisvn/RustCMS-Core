@@ -24,8 +24,26 @@ pub(crate) struct InputRule<'a> {
     pub key_value: Option<(usize, usize)>,
     /// A rich text document.
     pub rich_text: bool,
-    /// The values allowed (a select).
-    pub options: Option<&'a [Value]>,
+    /// The values allowed (a select or a checkbox list).
+    pub options: Option<Options<'a>>,
+}
+
+/// The static options a value is checked against.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Options<'a> {
+    /// One of these values (a select). The value matches as sent or in its
+    /// canonical wire form (decoded, then encoded as stored: decimals at
+    /// `scale`), so declarations given in canonical form accept every
+    /// spelling of the same value (`"0012"` and `"12"` on an `i64`).
+    One {
+        /// The values allowed.
+        values: &'a [Value],
+        /// The column's decimal scale, if any.
+        scale: Option<u32>,
+    },
+    /// A list of these values (a checkbox list), each at most once; items are
+    /// compared as JSON values; `[]` is a value.
+    Many(&'a [Value]),
 }
 
 impl InputRule<'_> {
@@ -84,7 +102,26 @@ fn shape_problem(rule: &InputRule<'_>, value: &Value) -> Option<String> {
 }
 
 fn option_problem(rule: &InputRule<'_>, value: &Value) -> Option<String> {
-    rule.options.is_some_and(|options| !options.contains(value)).then(|| "is not one of the options".to_owned())
+    const NOT_OPTION: &str = "is not one of the options";
+    match rule.options? {
+        Options::One { values, scale } => {
+            let canonical = || super::wire::canonical(rule.kind, scale, value).ok();
+            (!values.contains(value) && !canonical().is_some_and(|c| values.contains(&c)))
+                .then(|| NOT_OPTION.to_owned())
+        }
+        Options::Many(values) => {
+            let Some(items) = value.as_array() else { return Some("is invalid".to_owned()) };
+            if items.iter().any(|item| !values.contains(item)) {
+                Some(NOT_OPTION.to_owned())
+            } else if items.len() > values.len() || items.iter().enumerate().any(|(i, item)| items[..i].contains(item))
+            {
+                // More items than options: one is repeated (and the search stays short).
+                Some("may only be given once".to_owned())
+            } else {
+                None
+            }
+        }
+    }
 }
 
 fn report(name: &str, problem: Option<String>, errors: &mut ValidationErrors) -> bool {
@@ -137,9 +174,11 @@ mod tests {
         assert!(first(&text, json!(5)).is_some(), "kind");
 
         let options = [json!("a"), json!("b")];
-        let select = InputRule { options: Some(&options), ..InputRule::of(FieldKind::String) };
+        let select = one(FieldKind::String, &options, None);
         assert_eq!(first(&select, json!("a")), None);
         assert_eq!(first(&select, json!("c")).as_deref(), Some("is not one of the options"));
+        assert_eq!(first(&select, Value::Null), None, "null is for nullable and required");
+        assert_eq!(first(&InputRule { required: true, ..select }, Value::Null).as_deref(), Some("is required"));
 
         let kv = InputRule { key_value: Some((1, 2)), ..InputRule::of(FieldKind::Json) };
         assert_eq!(first(&kv, json!({"a": "xy"})), None);
@@ -147,6 +186,56 @@ mod tests {
         assert_eq!(first(&kv, json!({" ": "x"})).as_deref(), Some("may not have an empty key"));
         assert_eq!(first(&kv, json!({"a": 1})).as_deref(), Some("must be an object of text values"));
         assert_eq!(first(&kv, json!({"a": "xyz"})).as_deref(), Some("may not have values longer than 2 characters"));
+    }
+
+    #[test]
+    fn many_options() {
+        let options = [json!("red"), json!("green"), json!(3)];
+        let list = InputRule { options: Some(Options::Many(&options)), ..InputRule::of(FieldKind::Json) };
+        assert_eq!(first(&list, json!([])), None);
+        assert_eq!(first(&list, json!(["red", "green", 3])), None);
+        assert_eq!(first(&list, json!(["green"])), None);
+        assert_eq!(first(&list, json!(["red", "pink"])).as_deref(), Some("is not one of the options"));
+        assert_eq!(first(&list, json!(["3"])).as_deref(), Some("is not one of the options"), "JSON values");
+        assert_eq!(first(&list, json!(["red", "red"])).as_deref(), Some("may only be given once"));
+        assert_eq!(first(&list, json!(["red", "green", 3, "green"])).as_deref(), Some("may only be given once"));
+        assert_eq!(first(&list, json!("red")).as_deref(), Some("is invalid"));
+        assert_eq!(first(&list, json!({"red": true})).as_deref(), Some("is invalid"));
+        assert_eq!(first(&list, Value::Null), None);
+    }
+
+    fn one(kind: FieldKind, values: &[Value], scale: Option<u32>) -> InputRule<'_> {
+        InputRule { options: Some(Options::One { values, scale }), ..InputRule::of(kind) }
+    }
+
+    #[test]
+    fn one_option_compares_canonical_values() {
+        let values = [json!("12")];
+        let rule = one(FieldKind::I64, &values, None);
+        assert_eq!(first(&rule, json!("12")), None);
+        assert_eq!(first(&rule, json!("0012")), None);
+        assert_eq!(first(&rule, json!("13")).as_deref(), Some("is not one of the options"));
+        // The wire types stay strict: a number is not an `i64` value.
+        assert_eq!(first(&rule, json!(12)).as_deref(), Some("must be a string"));
+
+        let values = [json!("10.50")];
+        let rule = one(FieldKind::Decimal, &values, Some(2));
+        assert_eq!(first(&rule, json!("10.5")), None);
+        assert_eq!(first(&rule, json!("10.500")), None);
+        assert_eq!(first(&rule, json!("10.51")).as_deref(), Some("is not one of the options"));
+
+        let values = [json!(7)];
+        let rule = one(FieldKind::I32, &values, None);
+        assert_eq!(first(&rule, json!(7)), None);
+        assert_eq!(first(&rule, json!("7")).as_deref(), Some("must be an integer"));
+
+        let values = [json!("2026-01-01T00:00:00Z")];
+        let rule = one(FieldKind::Instant, &values, None);
+        assert_eq!(first(&rule, json!("2026-01-01T02:00:00+02:00")), None);
+
+        let values = [json!("67e55044-10b1-426f-9247-bb680e5fe0c8")];
+        let rule = one(FieldKind::Uuid, &values, None);
+        assert_eq!(first(&rule, json!("67E55044-10B1-426F-9247-BB680E5FE0C8")), None);
     }
 
     #[test]

@@ -97,9 +97,10 @@ instances, Redis, S3 or mail. Each item links to the page that explains it.
       with `queue.enabled = false` on web instances); clocks synchronized
       (NTP); `queue:failed` watched; job payloads and error messages carry no
       secrets ([Queues](../digging-deeper/queues.md)).
-- [ ] Every process that boots the application (`serve`, `queue:work`, long
-      commands) also runs the hourly clean-up of sessions, sign-ins, links and
-      old audit entries ([Authentication](authentication.md#clean-up)).
+- [ ] The hourly clean-up of sessions, sign-ins, links and old audit entries
+      (`rustcms.auth-prune`) runs only in `serve` with `[schedule] enabled`:
+      keep the scheduler on at least one instance, or cron it
+      ([Authentication](authentication.md#clean-up)).
 
 ## Storage
 

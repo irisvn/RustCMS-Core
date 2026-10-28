@@ -236,8 +236,12 @@ impl AdminProvider {
     }
 }
 
+/// The framework schedule that deletes expired idempotency receipts.
+const IDEMPOTENCY_PRUNE: &str = "rustcms.idempotency-prune";
 /// How often expired idempotency receipts are deleted while serving.
 const PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(3_600);
+/// Longest run of that pass.
+const PRUNE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1_800);
 
 #[async_trait]
 impl ServiceProvider for AdminProvider {
@@ -394,6 +398,19 @@ impl ServiceProvider for AdminProvider {
             )
         });
         app.command(IdempotencyPrune);
+        // Only `serve` runs it (ADR 0031), once per slot across instances.
+        app.schedule(
+            rustcms_core::schedule::Schedule::every(IDEMPOTENCY_PRUNE, PRUNE_EVERY)
+                .framework()
+                .timeout(PRUNE_TIMEOUT)
+                .task(|ctx| async move {
+                    let pruned = crate::idempotency::prune(ctx.state.db()).await?;
+                    if pruned > 0 {
+                        tracing::info!(pruned, "expired idempotency keys deleted");
+                    }
+                    Ok(Some(format!("{pruned} expired keys")))
+                }),
+        );
         app.command(LangMissing);
         app.command(BrandingCheck);
     }
@@ -438,22 +455,6 @@ impl ServiceProvider for AdminProvider {
                 }
             });
         }
-        let app = state.clone();
-        tokio::spawn(async move {
-            let mut every = tokio::time::interval_at(tokio::time::Instant::now() + PRUNE_EVERY, PRUNE_EVERY);
-            loop {
-                every.tick().await;
-                let db = app.db().clone();
-                rustcms_core::jobs::exclusive(&app, "idempotency-prune", PRUNE_EVERY / 2, || async move {
-                    match crate::idempotency::prune(&db).await {
-                        Ok(n) if n > 0 => tracing::info!(pruned = n, "expired idempotency keys deleted"),
-                        Ok(_) => {}
-                        Err(err) => tracing::warn!(%err, "idempotency key pruning failed"),
-                    }
-                })
-                .await;
-            }
-        });
         Ok(())
     }
 }

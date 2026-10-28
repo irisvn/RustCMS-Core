@@ -95,4 +95,19 @@ impl Form {
         walk(&self.components, &mut out);
         out
     }
+
+    /// Every input, depth first, to change.
+    pub(crate) fn inputs_mut(&mut self) -> Vec<&mut Input> {
+        fn walk<'a>(components: &'a mut [Component], out: &mut Vec<&'a mut Input>) {
+            for component in components {
+                match component {
+                    Component::Input(input) => out.push(input),
+                    Component::Layout(layout) => walk(&mut layout.children, out),
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(&mut self.components, &mut out);
+        out
+    }
 }

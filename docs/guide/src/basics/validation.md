@@ -149,7 +149,8 @@ counted before the body is read and validated, so invalid requests count too.
 - Messages are sorted by field name in the response (`errors` is a map), and
   kept in the order you added them within a field.
 - Field rules here apply to your API routes only. Admin forms validate with
-  their own [field rules](../admin/forms.md).
+  their own [field rules](../admin/forms.md), including the static options
+  of selects and checkbox lists ([options](../admin/forms.md#options-are-not-validated)).
 
 ## Related pages
 

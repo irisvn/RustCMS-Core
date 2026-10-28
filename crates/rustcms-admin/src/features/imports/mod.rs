@@ -875,10 +875,11 @@ async fn write(job: &JobCtx, row: &entity::Model) -> Result<(), Result<Stopped, 
     Ok(())
 }
 
-/// Deletes expired imports (rows, receipts and files), and fails imports
-/// abandoned while running (a row being written holds its import, so this
-/// waits for it; later rows see the import failed and stop). Returns how
-/// many were deleted.
+/// Deletes expired imports of this disk (files, then receipts and rows),
+/// and fails imports abandoned while running (a row being written holds its
+/// import, so this waits for it; later rows see the import failed and stop).
+/// Imports stored on another disk are left to that disk's pruning. Returns
+/// how many were deleted.
 pub async fn prune(db: &sea_orm::DatabaseConnection, storage: &dyn Storage) -> AppResult<u64> {
     let now = Utc::now();
     entity::Entity::update_many()
@@ -888,12 +889,15 @@ pub async fn prune(db: &sea_orm::DatabaseConnection, storage: &dyn Storage) -> A
         .filter(entity::Column::StartedAt.lt(now - ABANDONED))
         .exec(db)
         .await?;
-    let expired = entity::Entity::find().filter(entity::Column::ExpiresAt.lte(now)).limit(500).all(db).await?;
+    let expired = entity::Entity::find()
+        .filter(entity::Column::ExpiresAt.lte(now))
+        .filter(entity::Column::Disk.eq(storage.disk()))
+        .limit(500)
+        .all(db)
+        .await?;
     let mut deleted = 0;
     for row in expired {
-        if row.disk == storage.disk() {
-            storage.delete(&StorageKey::parse(&row.storage_key)?).await?;
-        }
+        storage.delete(&StorageKey::parse(&row.storage_key)?).await?;
         receipt::Entity::delete_many().filter(receipt::Column::ImportId.eq(row.id)).exec(db).await?;
         entity::Entity::delete_by_id(row.id).exec(db).await?;
         deleted += 1;

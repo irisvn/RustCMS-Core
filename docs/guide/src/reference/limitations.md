@@ -38,17 +38,14 @@ does not surprise you in production.
 
 | Limit | Value | Where |
 |---|---|---|
-| Rows a list, export or dashboard count checks one by one (per-record policies, trashed lists, SQLite dated counts) | 10,000 | beyond: 422 `too_many_matches` for lists and exports at once, a `too_many` widget on the dashboard ([Admin API](admin-api.md#limits)) |
+| Rows a list, export or dashboard count checks one by one (per-record policies, trashed lists, SQLite dated counts) | 10,000 | beyond: 422 `too_many_matches` for lists and exports at once, a background export failed as `too_many_matches`, a `too_many` widget on the dashboard ([Admin API](admin-api.md#limits)) |
+| Rows of a background export | 10,000 | beyond: the export fails as `too_many_to_export` ([Import and export](../admin/import-export.md#at-once-or-in-the-background)) |
 | Keys per action or lookup | 500 (100 for a field's options lookup) | [Admin API](admin-api.md#limits) |
 | Keys per attach or detach | 100 | [Relationships](../admin/relationships.md) |
 | `per_page` | 100 | [Admin API](admin-api.md#lists) |
 | Recipients of one mail | 50 | [Mail](../digging-deeper/mail.md) |
 | An encrypted value (its JSON) | 32 KiB; never searched, sorted or filtered | [Encrypted columns](../digging-deeper/encryption.md#pitfalls-and-limits) |
 | Live idempotency keys per user | 1,000 (429 beyond) | [Admin API](admin-api.md#retrying-writes-safely) |
-
-A background export of more than 10,000 rows currently fails and is
-reported as `revoked` (as if access had changed) instead of a clear limit
-error: narrow the export with filters.
 
 ## Writes in flight
 
@@ -62,14 +59,15 @@ keeps the permissions it started with.
 
 - Schedules run only in `rustcms serve`, never in console commands,
   `queue:work` or tests ([Scheduling](../digging-deeper/scheduling.md)).
-- Some built-in clean-ups are not schedules yet: the hourly auth clean-up
-  (expired sessions, JWT sign-ins, reset links, old audit entries) runs in
-  every process that boots the application, including `db:seed` and other
-  console commands, and media, export and import pruning run in a loop of the
-  admin provider. With Redis, a lease keeps one instance running each
-  clean-up at a time; without Redis every instance runs them, and a run that
-  outlasts its lease can overlap the next. They are written to stay correct
-  when that happens.
+- The auth and idempotency clean-ups are framework schedules, run only by
+  `serve`: a deployment without `serve` runs them from cron
+  ([Data retention](../operations/retention.md#from-cron)). Media, export and
+  import pruning are not schedules yet: they run in a loop of the admin
+  provider in every process that boots the application, including `db:seed`
+  and other console commands. With Redis, a lease keeps one instance running
+  each clean-up at a time; without Redis every instance runs them, and a run
+  that outlasts its lease can overlap the next. They are written to stay
+  correct when that happens.
 
 ## Databases
 

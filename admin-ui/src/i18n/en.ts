@@ -573,6 +573,8 @@ export const en = {
   "export.reason.revoked": "You may no longer export these records.",
   "export.reason.account_changed": "Your account changed since the export was asked for.",
   "export.reason.fields_changed": "You may no longer read some of the exported fields.",
+  "export.reason.too_many_to_export": "Too many records for one export; narrow the search or filters.",
+  "export.reason.too_many_matches": "Too many matching records to check individually; narrow the search or filters.",
   "export.reason.too_large": "The file would be too large; narrow the search or filters.",
   "export.reason.unfinished": "The export did not finish.",
   "export.reason.failed": "The export failed.",

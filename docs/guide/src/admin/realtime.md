@@ -322,9 +322,11 @@ while mounted and returns `{ send }`.
     connections;
   - a refused handshake (seen as 1006) checks the session once.
 - Input is never queued for replay.
-- `send` refuses (returns `false`) a message over **64 KiB**. This browser
-  limit is fixed: raising `[realtime] max_message_bytes` raises what the
-  server accepts and sends, not what a page can send.
+- `send` refuses (returns `false`) a message larger than
+  `[realtime] max_message_bytes` (64 KiB by default), counted in bytes (UTF-8
+  for text). The server writes the limit into the panel's page, so the
+  browser and the server agree; a tab keeps the limit it loaded until it is
+  reloaded.
 - xterm.js injects `<style>` elements, which the panel's CSP blocks. A page
   that embeds it needs its own workaround in its script. The CSP stays as it
   is.

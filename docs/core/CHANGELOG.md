@@ -18,6 +18,44 @@ All notable changes are documented here. The format follows
   (`internal_error`), logged with a fixed message in the request's span, the
   payload never sent nor logged there (tower-http `catch-panic`); the
   connection was dropped before.
+- The auth cleanup (sessions, JWT sign-ins, reset and invitation links,
+  audit retention) and the idempotency cleanup are framework schedules
+  (`rustcms.auth-prune`, `rustcms.idempotency-prune`, hourly, timeout 30 min)
+  instead of `tokio::spawn` loops in `boot`: run only by `serve` with the
+  scheduler, slots claimed once (no Redis lease), listed on System → Schedules
+  with a summary; each part of the auth cleanup runs even when another fails
+  (`prune_failed`). `Schedule::framework()` (hidden) lets the framework use the
+  reserved `rustcms.` prefix. Media and exports/imports cleanups unchanged.
+- Static options of `SelectInput` and `CheckboxList` bound client writes to
+  resources (API create and update, relation creates, CSV imports): a select
+  takes one option (`not_option`), a checkbox list a JSON list of options,
+  each once (`invalid`, `not_option`, `given_twice`). Select values compare
+  in canonical wire form, column-aware (`"0012"`/`"12"` on `i64`, decimals at
+  the column's scale, instants in UTC, UUIDs lowercase), and the schema shows
+  the options canonical. Hooks, action handlers, pivot columns and
+  `belongs_to` keep their own rules; omitted fields keep stored values. Boot
+  refuses an option that is not a value of its column or would be stored as
+  another, a `CheckboxList` on a non-JSON column, and a field in inputs with
+  different options (or one without). Before, any value of the column's type
+  was stored.
+- A background export over its limits fails with its own reason,
+  `too_many_to_export` (more than 10,000 rows) or `too_many_matches` (more
+  than 10,000 candidates checked by a per-record policy), mapped from the form
+  issue codes of `export_keys`; it was `revoked`. Other refusals stay
+  `revoked`. `ExportView.error` documents the codes; the panel translates them.
+- The browser's socket send limit follows `[realtime] max_message_bytes`: the
+  panel page carries `realtime.maxMessageBytes` (the value as applied, 1 B to
+  1 MiB; static and runtime branding renders), the SPA's `ApiClient` keeps it
+  and `openSocket` uses it unless the caller passes `maxMessageBytes` (64 KiB
+  without either). `Realtime::max_message_bytes()` (read-only). A tab keeps the
+  limit it loaded.
+
+### Fixed
+- Export and import pruning only touches its own disk: it deleted the
+  metadata of expired exports and imports stored on another disk while their
+  files stayed. A pass now deletes this disk's files, then their records; an
+  export with a run's object on another disk keeps its row until that disk's
+  pass has deleted it.
 
 ## [0.10.3] — 2026-10-24
 

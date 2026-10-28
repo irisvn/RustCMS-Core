@@ -134,9 +134,12 @@ One `serve` process is the whole application:
 - **queue workers**: `queue.workers` of them (2) when `queue.enabled`
   (`true`); set `queue.enabled = false` and run `./blog queue:work` as a
   separate service to scale them apart ([Queues](../digging-deeper/queues.md));
-- **the scheduler**, when `schedule.enabled` (`true`) and the application has
-  schedules; with several instances, each slot runs once
-  ([Scheduling](../digging-deeper/scheduling.md)).
+- **the scheduler**, when `schedule.enabled` (`true`); with several
+  instances, each slot runs once
+  ([Scheduling](../digging-deeper/scheduling.md)). It also runs the
+  framework's hourly clean-ups (expired sessions, links, audit entries,
+  idempotency receipts): keep it enabled on at least one instance, or run them
+  from cron ([Data retention](../operations/retention.md#from-cron)).
 
 Other commands (`migrate`, `db:seed`, your own commands) do not start
 workers or the scheduler automatically. Two commands do that work on

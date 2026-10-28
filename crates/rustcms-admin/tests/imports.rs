@@ -302,3 +302,61 @@ db_test!(an_import_creates_nothing_once_create_is_withdrawn, |db: TestDb| async 
     let shown = client.get(&app.admin_api(&format!("imports/{id}"))).await.json();
     assert_eq!((shown["updated"].clone(), shown["failed"].clone()), (json!(1), json!(1)), "{shown}");
 });
+
+db_test!(pruning_touches_only_imports_of_its_own_disk, |db: TestDb| async move {
+    use rustcms_admin::imports::{entity, prune, receipt};
+    use rustcms_core::storage::{Storage, StorageKey};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    let (app, _) = setup(db).await;
+    let (importer, _) = user_with(&app, "Importer", &IMPORTER).await;
+    let client = app.acting_as(&importer).await;
+    let mine = upload(&client, &app, "notes", "title\r\nA\r\n").await.json()["id"].as_str().unwrap().to_owned();
+    let theirs = upload(&client, &app, "notes", "title\r\nB\r\n").await.json()["id"].as_str().unwrap().to_owned();
+    let (mine, theirs): (uuid::Uuid, uuid::Uuid) = (mine.parse().unwrap(), theirs.parse().unwrap());
+    let db = app.state().db();
+    let local = app.state().service::<std::sync::Arc<dyn Storage>>().unwrap();
+    let local: &dyn Storage = local.as_ref().as_ref();
+    let mine_key =
+        StorageKey::parse(&entity::Entity::find_by_id(mine).one(db).await.unwrap().unwrap().storage_key).unwrap();
+    // The second import as stored on the other disk.
+    let other = support::OtherDisk::new();
+    let their_key = other.put(b"title\r\nB\r\n").await;
+    let mut row: entity::ActiveModel = entity::Entity::find_by_id(theirs).one(db).await.unwrap().unwrap().into();
+    row.disk = Set("s3".into());
+    row.storage_key = Set(their_key.as_str().to_owned());
+    row.update(db).await.unwrap();
+    for id in [mine, theirs] {
+        receipt::ActiveModel {
+            import_id: Set(id),
+            row: Set(2),
+            outcome: Set("created".into()),
+            record_key: Set("1".into()),
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+    let past = chrono::Utc::now() - chrono::Duration::hours(1);
+    entity::Entity::update_many()
+        .col_expr(entity::Column::ExpiresAt, sea_orm::sea_query::Expr::value(past))
+        .exec(db)
+        .await
+        .unwrap();
+    let receipts = |id: uuid::Uuid| async move {
+        receipt::Entity::find().filter(receipt::Column::ImportId.eq(id)).count(db).await.unwrap()
+    };
+
+    assert_eq!(prune(db, local).await.unwrap(), 1);
+    assert!(entity::Entity::find_by_id(mine).one(db).await.unwrap().is_none());
+    assert_eq!(receipts(mine).await, 0);
+    assert!(!local.exists(&mine_key).await.unwrap());
+    // The other disk's import: row, receipts and file intact.
+    assert!(entity::Entity::find_by_id(theirs).one(db).await.unwrap().is_some());
+    assert_eq!(receipts(theirs).await, 1);
+    assert!(other.exists(&their_key).await.unwrap());
+    // Its own disk prunes it.
+    assert_eq!(prune(db, &other).await.unwrap(), 1);
+    assert!(entity::Entity::find_by_id(theirs).one(db).await.unwrap().is_none());
+    assert_eq!(receipts(theirs).await, 0);
+    assert!(!other.exists(&their_key).await.unwrap());
+});

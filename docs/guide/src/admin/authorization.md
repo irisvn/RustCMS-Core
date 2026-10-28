@@ -236,8 +236,8 @@ request's context:
   rules belong in the policy or a hook.
 - `requires_permission` and `admits` hide an action; `visible_when` hides it
   per record. None of them restrict what the handler writes.
-- Static options of a `SelectInput` or `CheckboxList` do not restrict the
-  value a client may store: validate it in a hook
+- Static options of a `SelectInput` or `CheckboxList` bound what a client
+  writes, not what hooks and action handlers write: validate those yourself
   ([forms](forms.md#options-are-not-validated)).
 
 ## Related pages

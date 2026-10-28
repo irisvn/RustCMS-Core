@@ -196,7 +196,7 @@ limits then fail closed (500). See [Several instances](../digging-deeper/instanc
 | `realtime.opens_per_ip_per_minute` | `300` | shared IPs (offices, proxies) share it |
 | `realtime.shutdown_grace_secs` | `5` | time given to open streams, sockets and connections when the server stops ([Stopping](../architecture/lifecycle.md#stopping)) |
 | `realtime.socket_revalidate_secs` | `10` | how often an open WebSocket rechecks (at least 1) |
-| `realtime.max_message_bytes` | `65536` | largest WebSocket message, either way (1009 beyond; at most 1 MiB) |
+| `realtime.max_message_bytes` | `65536` | largest WebSocket message, either way (1009 beyond; at most 1 MiB); the panel's pages refuse to send larger ones (a tab keeps the value it loaded). Keep it the same on every instance |
 | `realtime.send_timeout_secs` | `10` | longest wait of a WebSocket send for a slow client (then `lagging`; at least 1) |
 
 Values below the minimum, or above the maximum, are raised or lowered to it.

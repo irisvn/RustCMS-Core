@@ -137,13 +137,13 @@ struct Pages {
     locales: Locales,
     extension_timeout: std::time::Duration,
     branding: Arc<AdminBranding>,
-    /// Rendered once when the branding is static.
-    fixed: Option<Arc<str>>,
+    /// Rendered once, at the first page, when the branding is static.
+    fixed: Option<std::sync::OnceLock<Arc<str>>>,
     csp: HeaderValue,
 }
 
 impl Pages {
-    fn render(&self, look: &Resolved) -> String {
+    fn render(&self, app: &AppState, look: &Resolved) -> String {
         render_index(
             Assets::get("index.html").map(|f| f.data),
             &self.base,
@@ -151,15 +151,22 @@ impl Pages {
             &self.locales,
             look,
             self.extension_timeout,
+            socket_max_bytes(app),
         )
     }
 
     async fn index(&self, app: &AppState) -> Arc<str> {
         match &self.fixed {
-            Some(index) => index.clone(),
-            None => self.render(&*self.branding.current(app).await).into(),
+            Some(index) => index.get_or_init(|| self.render(app, &self.branding.fixed()).into()).clone(),
+            None => self.render(app, &*self.branding.current(app).await).into(),
         }
     }
+}
+
+/// `[realtime] max_message_bytes` as the auth provider applied it (the
+/// browser sends nothing larger on a socket).
+fn socket_max_bytes(app: &AppState) -> Option<usize> {
+    app.service::<rustcms_auth::realtime::Realtime>().map(|r| r.max_message_bytes())
 }
 
 pub(crate) fn router(
@@ -174,19 +181,16 @@ pub(crate) fn router(
     let csp = HeaderValue::from_str(csp).expect("a header-safe policy");
     // `admin_path` is normalized by the auth config (`/admin`, never `/`).
     let base = admin_path.trim_end_matches('/').to_owned();
-    let mut pages = Pages {
+    let fixed = (!branding.is_runtime()).then(std::sync::OnceLock::new);
+    let pages = Arc::new(Pages {
         base: base.clone(),
         extensions,
         locales: locales.clone(),
         extension_timeout,
         branding,
-        fixed: None,
+        fixed,
         csp,
-    };
-    if !pages.branding.is_runtime() {
-        pages.fixed = Some(pages.render(&pages.branding.fixed()).into());
-    }
-    let pages = Arc::new(pages);
+    });
     let (root, slash) = (pages.clone(), pages.clone());
     router
         .route(
@@ -318,6 +322,7 @@ fn render_index(
     locales: &Locales,
     look: &Resolved,
     extension_timeout: std::time::Duration,
+    socket_max_bytes: Option<usize>,
 ) -> String {
     let Some(template) = template else {
         return PLACEHOLDER.to_owned();
@@ -361,6 +366,9 @@ fn render_index(
     }
     config["brand"] = serde_json::json!(look.brand);
     config["theme"] = theme;
+    if let Some(bytes) = socket_max_bytes {
+        config["realtime"] = serde_json::json!({ "maxMessageBytes": bytes });
+    }
     let config = config.to_string();
     // Without a favicon of its own, an empty one: browsers would ask for
     // `/favicon.ico` on every page and log its 404 (`data:` is in `img-src`).
@@ -409,16 +417,26 @@ mod tests {
     #[test]
     fn index_gets_base_and_escaped_config() {
         let template = b"<head><!-- rustcms:config --><script src=\"./assets/a.js\"></script></head>";
-        let html = render_index(Some(template.as_slice().into()), "/back-office", &[], &en(), &look(), TEN);
+        let html = render_index(Some(template.as_slice().into()), "/back-office", &[], &en(), &look(), TEN, None);
         assert_eq!(
             html,
             "<head><base href=\"/back-office/\"><meta name=\"rustcms-admin\" \
              content=\"{&quot;basePath&quot;:&quot;/back-office&quot;,&quot;brand&quot;:&quot;rustcms&quot;,&quot;locale&quot;:&quot;en&quot;,&quot;locales&quot;:[&quot;en&quot;,&quot;vi&quot;],&quot;theme&quot;:{&quot;colorScheme&quot;:&quot;system&quot;}}\"><link rel=\"icon\" href=\"data:,\"><script src=\"./assets/a.js\"></script></head>"
         );
-        assert!(render_index(None, "/admin", &[], &en(), &look(), TEN).contains("not built"));
+        assert!(render_index(None, "/admin", &[], &en(), &look(), TEN, None).contains("not built"));
         let ext = [Extension::new("acme", "x", false), Extension::new("acme", "y", true)];
-        let html = render_index(Some(template.as_slice().into()), "/admin", &ext, &en(), &look(), TEN);
+        let html = render_index(Some(template.as_slice().into()), "/admin", &ext, &en(), &look(), TEN, None);
         assert!(html.contains("&quot;scripts&quot;:[&quot;assets/ext/acme.2d711642.js&quot;]"), "{html}");
         assert_eq!(escape_attr("\"'<&>"), "&quot;&#39;&lt;&amp;&gt;");
+    }
+
+    #[test]
+    fn index_carries_the_socket_message_limit() {
+        let template = b"<head><!-- rustcms:config --></head>";
+        let html = render_index(Some(template.as_slice().into()), "/admin", &[], &en(), &look(), TEN, Some(4096));
+        assert!(html.contains("&quot;realtime&quot;:{&quot;maxMessageBytes&quot;:4096}"), "{html}");
+        // Without the auth provider's realtime state: nothing (the panel keeps its default).
+        let html = render_index(Some(template.as_slice().into()), "/admin", &[], &en(), &look(), TEN, None);
+        assert!(!html.contains("realtime"), "{html}");
     }
 }

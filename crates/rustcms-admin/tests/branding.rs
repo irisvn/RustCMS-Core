@@ -324,3 +324,26 @@ fn bad_branding_settings_stop_the_boot() {
         assert!(failed.is_err(), "{key} = {value}");
     }
 }
+
+db_test!(the_index_carries_the_socket_message_limit, |db: TestDb| async move {
+    next(Next::Named("Acme"));
+    db.migrate::<rustcms_migration::Migrator>().await;
+    // Static branding (rendered once) and runtime branding (per request) alike.
+    for mode in ["static", "runtime"] {
+        let settings = rustcms_testing::test_config(db.url())
+            .with("admin.branding", mode)
+            .and_then(|c| c.with("realtime.max_message_bytes", 4096))
+            .unwrap();
+        let app = TestApp::with_config(build, settings, db.clone()).await;
+        for _ in 0..2 {
+            assert_eq!(config(&app).await["realtime"], serde_json::json!({"maxMessageBytes": 4096}), "{mode}");
+        }
+        let index = app.get("/admin").await;
+        let csp = index.headers["content-security-policy"].to_str().unwrap().to_owned();
+        assert!(csp.starts_with("default-src 'self'; script-src 'self';") && !csp.contains("unsafe"), "{csp}");
+    }
+    // Beyond 1 MiB: what the server applies.
+    let settings = rustcms_testing::test_config(db.url()).with("realtime.max_message_bytes", 1u64 << 30).unwrap();
+    let app = TestApp::with_config(build, settings, db.clone()).await;
+    assert_eq!(config(&app).await["realtime"], serde_json::json!({"maxMessageBytes": 1024 * 1024}));
+});

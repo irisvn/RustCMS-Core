@@ -79,15 +79,42 @@ placeholders, help and option labels are translated per resource
 A widget name is `vendor/name`: each part 1 to 32 characters of `a-z`, `0-9`
 and `-`.
 
-### Options are not validated
+### Options are validated {#options-are-not-validated}
 
-::: warning
-The static `.options(…)` of a `SelectInput` or a `CheckboxList` only shape the
-input. On resource writes the server checks the value's **type** (text for a
-text column), not that it is one of the options: a client may store any value
-of the column's type. Validate it in a hook, or with a database `CHECK`
-constraint. (Action forms and `BelongsToManySelect` do check their options.)
-:::
+The static `.options(…)` of a `SelectInput` or a `CheckboxList` bound what a
+client may write to the field, on every write path: API create and update,
+creates through a relation, and CSV imports (a row out of the options fails
+with its code). The value's **type** is checked first, as for any field.
+
+| Input | A client may write | Otherwise (422 code) |
+|---|---|---|
+| `SelectInput` | one of the option values | `not_option` |
+| `CheckboxList` | a list of option values, each at most once; `[]` is a value | `invalid` (not a list), `not_option`, `given_twice` |
+
+- `null` is checked as for any field (`required`, or a column that is not
+  nullable); it is never compared with the options.
+- Select values are compared in their canonical wire form, column-aware:
+  `"0012"` and `"12"` are the same `i64`, `"10.5"` and `"10.50"` the same
+  `Decimal(10, 2)`, an instant with an offset the same instant in UTC, a UUID
+  in any case the same UUID. Options are declared in any of these spellings;
+  the schema shows them canonical. Wire types stay strict: `12` (a number) is
+  not an `i64` value. Checkbox list items are compared as JSON values.
+- An update that leaves the field out keeps the stored value, even one outside
+  the options (stored before the check, or by a hook).
+- The guarantee covers values a **client** sends. Hooks
+  (`mutate_before_create`, `mutate_before_update`), action handlers and pivot
+  columns write what they decide; validate there, or with a database `CHECK`
+  constraint, if they must stay within the options too. Action forms and
+  `BelongsToManySelect` check their own options.
+- A `belongs_to` select is different: its value must be a record the user may
+  see, checked on every write; static options on it are not used.
+
+Declarations that cannot hold stop the application at boot: an option that is
+not a value of its column (`12` for an `i64` column), one that would be stored
+as another value (`"10.555"` on a column of scale 2), a `CheckboxList` on a
+column that is not JSON, or a field in several inputs that do not offer the
+same options (another set, a select and a checkbox list, or an input without
+options). The same options in another order or with other labels are allowed.
 
 The LMS offers two statuses in its enrollment form:
 
@@ -95,13 +122,13 @@ The LMS offers two statuses in its enrollment form:
 
 <<< @/../../../examples/lms/src/admin/resources/enrollment_resource.rs#form [src/admin/resources/enrollment_resource.rs]
 
-and refuses any other status in its write hooks, through the service they
-call (see [validating in a hook](resources.md#validating-in-a-hook)):
+The panel refuses any other status from a client. The write hooks still
+check it through the service they call (see
+[validating in a hook](resources.md#validating-in-a-hook)): the course's
+enroll action and the seeder write enrollments through that service, not
+through the form.
 
 <<< @/../../../examples/lms/src/services/enrollment_service.rs#check [src/services/enrollment_service.rs]
-
-A `belongs_to` select is different: its value must be a record the user may
-see, checked on every write.
 
 ## Layouts
 

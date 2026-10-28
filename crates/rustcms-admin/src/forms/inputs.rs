@@ -130,7 +130,11 @@ impl Input {
         self
     }
 
-    /// Static options (selects, checkbox lists).
+    /// Static options (selects, checkbox lists). On a resource they bound what
+    /// clients write: one of them for a select, a list of them (each once) for
+    /// a checkbox list, which needs a JSON column. Select values must be
+    /// values of the field's column; they are compared, and shown, in
+    /// canonical wire form. Not used for `belongs_to` fields.
     pub fn options<V: Into<Json>, L: Into<String>>(mut self, options: impl IntoIterator<Item = (V, L)>) -> Self {
         self.options = options.into_iter().map(|(v, l)| SelectOption { value: v.into(), label: l.into() }).collect();
         self

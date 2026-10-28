@@ -572,6 +572,8 @@ export const vi: Record<keyof typeof en, string> = {
   "export.reason.revoked": "Bạn không còn được xuất các bản ghi này.",
   "export.reason.account_changed": "Tài khoản của bạn đã thay đổi từ lúc yêu cầu xuất.",
   "export.reason.fields_changed": "Bạn không còn được đọc một số trường đã xuất.",
+  "export.reason.too_many_to_export": "Quá nhiều bản ghi cho một lần xuất; hãy thu hẹp tìm kiếm hoặc bộ lọc.",
+  "export.reason.too_many_matches": "Có quá nhiều bản ghi khớp để kiểm tra từng cái; hãy thu hẹp tìm kiếm hoặc bộ lọc.",
   "export.reason.too_large": "File sẽ quá lớn; hãy thu hẹp tìm kiếm hoặc bộ lọc.",
   "export.reason.unfinished": "Bản xuất không hoàn tất.",
   "export.reason.failed": "Xuất không thành công.",

@@ -221,14 +221,38 @@ pub fn encode(value: &Value) -> Json {
 /// SQLite stores decimals as REAL and loses trailing zeros (`10.50` → `10.5`);
 /// rescaling keeps the wire format identical across databases.
 pub fn encode_column(column_type: &ColumnType, value: &Value) -> Json {
-    match (column_type, value) {
-        (ColumnType::Decimal(Some((_, scale))) | ColumnType::Money(Some((_, scale))), Value::Decimal(Some(d))) => {
-            let mut d = d.round_dp(*scale);
-            d.rescale(*scale);
+    match (decimal_scale(column_type), value) {
+        (Some(scale), Value::Decimal(Some(d))) => {
+            let mut d = d.round_dp(scale);
+            d.rescale(scale);
             Json::String(d.to_string())
         }
         _ => encode(value),
     }
+}
+
+/// The declared scale of a decimal column (`None` for other columns).
+pub(crate) fn decimal_scale(column_type: &ColumnType) -> Option<u32> {
+    match column_type {
+        ColumnType::Decimal(Some((_, scale))) | ColumnType::Money(Some((_, scale))) => Some(*scale),
+        _ => None,
+    }
+}
+
+/// `json` of `kind` in canonical wire form: decoded, then encoded as a stored
+/// value is (decimals rounded and rescaled to `scale`, instants in UTC,
+/// UUIDs lowercase, `i64` without leading zeros). JSON values stay as given.
+pub(crate) fn canonical(kind: FieldKind, scale: Option<u32>, json: &Json) -> Result<Json, DecodeError> {
+    let candidates = kind.decode(json)?;
+    let Some(value) = candidates.first() else { return Ok(json.clone()) };
+    Ok(match (scale, value) {
+        (Some(scale), Value::Decimal(Some(d))) => {
+            let mut d = d.round_dp(scale);
+            d.rescale(scale);
+            Json::String(d.to_string())
+        }
+        _ => encode(value),
+    })
 }
 
 /// Encodes a primary key value as the string used in URLs and envelopes.

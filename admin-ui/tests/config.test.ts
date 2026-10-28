@@ -20,6 +20,29 @@ describe("runtime config", () => {
   });
 });
 
+describe("socket message limit", () => {
+  const meta = (realtime: unknown) => {
+    document.head.innerHTML = `<meta name="rustcms-admin" content='${JSON.stringify({ basePath: "/admin", realtime })}'>`;
+    return readConfig().realtime;
+  };
+
+  it("keeps an integer the server could have set", () => {
+    expect(meta({ maxMessageBytes: 4096 })).toEqual({ maxMessageBytes: 4096 });
+    expect(meta({ maxMessageBytes: 1 })).toEqual({ maxMessageBytes: 1 });
+    expect(meta({ maxMessageBytes: 1024 * 1024 })).toEqual({ maxMessageBytes: 1024 * 1024 });
+  });
+
+  it("ignores anything else (the socket keeps its default)", () => {
+    for (const bad of [0, -1, 1024 * 1024 + 1, 1.5, "4096", null, Number.MAX_SAFE_INTEGER]) {
+      expect(meta({ maxMessageBytes: bad })).toBeUndefined();
+    }
+    expect(meta(undefined)).toBeUndefined();
+    expect(meta("4096")).toBeUndefined();
+    document.head.innerHTML = `<meta name="rustcms-admin" content='{"basePath":"/admin"}'>`;
+    expect("realtime" in readConfig()).toBe(false);
+  });
+});
+
 describe("safeRedirect", () => {
   it("accepts paths inside the panel", () => {
     expect(safeRedirect("/admin/r/posts?page=2", "/admin")).toBe("/admin/r/posts?page=2");

@@ -36,7 +36,7 @@ use sea_orm::{
 use crate::Data;
 use crate::action::{Action, ActionOutcome};
 use crate::context::Ctx;
-use crate::engine::validate::{InputRule, check_input, check_written};
+use crate::engine::validate::{InputRule, Options, check_input, check_written};
 use crate::field::{Field, Operation};
 use crate::policy::{Policy, ability};
 use crate::registry::DynResource;
@@ -89,6 +89,8 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     key_values: HashMap<String, (usize, usize)>,
     /// Encrypted fields (`Field::encrypted*`).
     secrets: HashMap<String, secrets::SecretField>,
+    /// Static options of selects and checkbox lists, by field.
+    static_options: HashMap<String, input::FieldOptions>,
     table_ui: Table,
     limits: Limits,
     _resource: PhantomData<fn() -> R>,
@@ -212,7 +214,7 @@ impl<R: Resource> ResourceAdapter<R> {
 
         // A form without components is generated from the fields, keeping its options (width).
         let declared = R::form();
-        let form = if declared.components.is_empty() {
+        let mut form = if declared.components.is_empty() {
             Form { width: declared.width, ..auto_form(&fields, &columns) }
         } else {
             declared
@@ -270,6 +272,7 @@ impl<R: Resource> ResourceAdapter<R> {
             );
         }
         check_form_layout(&format!("resource `{slug}`"), &form);
+        let static_options = input::static_options(slug, &mut form, &fields, &columns);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();
             assert!(crate::ui::valid_widget(widget), "resource `{slug}`: invalid widget name `{widget}`");
@@ -387,6 +390,7 @@ impl<R: Resource> ResourceAdapter<R> {
             form,
             key_values,
             secrets,
+            static_options,
             table_ui,
             limits: Limits::default(),
             _resource: PhantomData,

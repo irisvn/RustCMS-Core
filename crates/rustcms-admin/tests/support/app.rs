@@ -210,6 +210,11 @@ pub fn check_dashboard(dashboard: rustcms_admin::dashboard::Dashboard) {
 }
 
 pub fn build(config: Config) -> AppBuilder {
+    build_extended(config, |admin| admin)
+}
+
+/// [`build`] with the panel extended by `extend` (more resources).
+pub fn build_extended(config: Config, extend: fn(AdminProvider) -> AdminProvider) -> AppBuilder {
     // Each app stores its uploads in its own temporary directory, with small limits.
     let root = std::env::temp_dir().join(format!("rustcms-media-{}", uuid::Uuid::now_v7()));
     let config = config
@@ -241,7 +246,7 @@ pub fn build(config: Config) -> AppBuilder {
                 ]),
             ),
     );
-    app.provider(
+    app.provider(extend(
         AdminProvider::new()
             .brand("Test CMS")
             .extension_script("test-widgets", "window.rustcmsTest = 1;")
@@ -256,7 +261,7 @@ pub fn build(config: Config) -> AppBuilder {
             .mail_settings()
             .dashboard(dashboard())
             .translations("vi", VI),
-    );
+    ));
     app
 }
 

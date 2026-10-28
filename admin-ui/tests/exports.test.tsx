@@ -91,3 +91,16 @@ it("offers a background export when there are too many records, then its file", 
   await userEvent.click(within(panel).getByRole("button", { name: /Download/ }));
   await waitFor(() => expect(saved).toHaveLength(1));
 });
+
+it("says why a background export failed, limits included, without a download", async () => {
+  const failed = (id: string, error: string) =>
+    ({ id, resource: "posts", status: "failed", rows: 0, error, createdAt: "2026-10-22T10:00:00Z", expiresAt: "2026-10-23T10:00:00Z" });
+  exports = [failed("e1", "too_many_to_export"), failed("e2", "too_many_matches"), failed("e3", "revoked"), failed("e4", "something_new")];
+  mount("/r/posts");
+  const panel = (await screen.findByText("Exports")).closest("div")!.parentElement!;
+  expect(await within(panel).findByText("Too many records for one export; narrow the search or filters.")).toBeInTheDocument();
+  expect(within(panel).getByText("Too many matching records to check individually; narrow the search or filters.")).toBeInTheDocument();
+  expect(within(panel).getByText("You may no longer export these records.")).toBeInTheDocument();
+  expect(within(panel).getByText("The export failed.")).toBeInTheDocument();
+  expect(within(panel).queryByRole("button", { name: /Download/ })).toBeNull();
+});

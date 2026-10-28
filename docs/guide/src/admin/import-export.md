@@ -89,7 +89,15 @@ see it:
   account, changed credentials (password, sign-out everywhere), a withdrawn
   `export` permission or a field they may no longer read stops it. The export
   is then `failed`, with a reason: `revoked`, `account_changed`,
-  `fields_changed`, `too_large`, `unfinished` or `failed`.
+  `fields_changed`, `too_many_to_export`, `too_many_matches`, `too_large`,
+  `unfinished` or `failed`.
+- The background route does not count rows before it queues the job. When
+  the query matches more than 10,000 rows, the job stops before writing
+  anything and the export fails as `too_many_to_export`; when a per-record
+  policy would have to check more than 10,000 candidates, as
+  `too_many_matches` (below). Narrow the list (filters, search) and export
+  again. Any other refusal of the query or of the user's access is
+  `revoked`.
 - The fields are fixed when it is asked for: the export fails rather than
   leaving one out silently.
 - Each run of the job writes its own file; the first run to finish
@@ -108,19 +116,12 @@ see it:
 Records found when the job ran are written as they were then; records deleted
 or hidden while it runs are left out.
 
-::: warning More than 10,000 rows in the background
-The background route does not count rows before it queues the job. When the
-query matches more than 10,000 rows, the job stops and the export shows as
-`failed` with the reason `revoked`, not as "too many rows". Narrow the list
-(filters, search) to 10,000 rows or fewer before exporting.
-:::
-
 ::: warning Policies that decide per record
 When the policy or the trash view decides per record, the server checks at
 most 10,000 candidate records before it counts the rows to export, even when
 fewer would be visible. Beyond that, an export at once answers 422 ("Too many
 matching records to check individually; narrow the search or filters."), and
-a background export fails as `revoked`.
+a background export fails as `too_many_matches`.
 :::
 
 ### Audit
@@ -193,6 +194,10 @@ start without one.
   one when there is none, and fails when several match. A row without a key
   value is created. A trashed record with the same key is not matched (the
   unique constraint then refuses the row).
+- Values are checked as in the forms, including the static options of a
+  select or checkbox list ([options](forms.md#options-are-not-validated)): a
+  row out of them fails (`not_option`, `given_twice`). A checkbox list cell is
+  a JSON list (`["red","blue"]`).
 - Encrypted fields are never offered for import.
 
 The job loads the user again at each batch of 100 rows (active, same
@@ -220,7 +225,11 @@ created or updated has its own entry as usual.
 
 A cleanup pass runs every 10 minutes in every process that boots the
 application (a loop the admin provider starts). It deletes the files of
-exports expired for more than an hour, and expired imports.
+exports expired for more than an hour, and expired imports. Each pass
+cleans one disk (`[storage] disk`): it deletes that disk's files, then their
+records; exports and imports stored on another disk (after a change of disk,
+or when two applications with different disks share a database) are left to
+a pass on that disk.
 
 ## Security notes
 

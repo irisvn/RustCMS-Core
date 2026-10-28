@@ -358,3 +358,57 @@ db_test!(queue_and_schedules_routes, |db: TestDb| async move {
     let editor = app.acting_as(&users.editor).await;
     editor.get(&app.admin_api("schedules")).await.assert_status(StatusCode::FORBIDDEN);
 });
+
+db_test!(framework_prune_schedules_are_listed_and_run_now_needs_view_and_manage, |db: TestDb| async move {
+    let (app, users) = app(db).await;
+    let conn = app.state().db();
+    let auth = app.state().service::<rustcms_auth::AuthState>().unwrap();
+    let rbac = rustcms_auth::RbacService::new(conn, &auth.resolver);
+    let role = |name: &'static str, permissions: &'static [&'static str]| {
+        let rbac = &rbac;
+        async move {
+            let permissions: Vec<String> = permissions.iter().map(|p| (*p).to_owned()).collect();
+            rbac.create_role(rustcms_auth::Actor::System, rustcms_auth::ADMIN_GUARD, name, &permissions).await.unwrap()
+        }
+    };
+    let viewer = role("schedule-viewer", &["schedules.view"]).await;
+    let manager_only = role("schedule-manager-only", &["schedules.manage"]).await;
+    rbac.assign_role(rustcms_auth::Actor::System, users.editor.id, viewer.id).await.unwrap();
+    rbac.assign_role(rustcms_auth::Actor::System, users.member.id, manager_only.id).await.unwrap();
+
+    let admin = app.acting_as(&users.admin).await;
+    let list = admin.get(&app.admin_api("schedules")).await.json();
+    for name in ["rustcms.auth-prune", "rustcms.idempotency-prune"] {
+        let schedule = list["data"].as_array().unwrap().iter().find(|s| s["name"] == name).expect(name).clone();
+        assert_eq!(
+            (schedule["rule"].clone(), schedule["action"].clone()),
+            (json!("every 3600s"), json!({"kind": "closure"}))
+        );
+    }
+    let run = |name: &str| app.admin_api(&format!("schedules/{name}/run"));
+    let audited = || async {
+        audit_log::Entity::find().filter(audit_log::Column::Event.eq("schedule.run")).count(conn).await.unwrap()
+    };
+    // View alone, or manage alone: no Run now, nothing recorded.
+    let viewer = app.acting_as(&users.editor).await;
+    viewer.get(&app.admin_api("schedules")).await.assert_status(StatusCode::OK);
+    viewer.post_json(&run("rustcms.auth-prune"), &json!({})).await.assert_status(StatusCode::FORBIDDEN);
+    let manager = app.acting_as(&users.member).await;
+    manager.post_json(&run("rustcms.auth-prune"), &json!({})).await.assert_status(StatusCode::FORBIDDEN);
+    assert_eq!(audited().await, 0);
+    assert_eq!(schedule_run::Entity::find().count(conn).await.unwrap(), 0);
+    // Both (the super admin): run through a worker, audited.
+    for name in ["rustcms.auth-prune", "rustcms.idempotency-prune"] {
+        admin.post_json(&run(name), &json!({})).await.assert_status(StatusCode::ACCEPTED);
+    }
+    assert_eq!(audited().await, 2);
+    work(&app).await;
+    let runs = schedule_run::Entity::find().order_by_asc(schedule_run::Column::Name).all(conn).await.unwrap();
+    let outcomes: Vec<(&str, &str, Option<&str>)> =
+        runs.iter().map(|r| (r.name.as_str(), r.status.as_str(), r.summary.as_deref())).collect();
+    assert_eq!(outcomes.len(), 2, "{outcomes:?}");
+    assert_eq!(outcomes[0].0, "rustcms.auth-prune");
+    assert_eq!(outcomes[0].1, "succeeded");
+    assert!(outcomes[0].2.unwrap().ends_with("JWT sign-ins, 0 links, 0 audit entries"), "{outcomes:?}");
+    assert_eq!(outcomes[1], ("rustcms.idempotency-prune", "succeeded", Some("0 expired keys")));
+});

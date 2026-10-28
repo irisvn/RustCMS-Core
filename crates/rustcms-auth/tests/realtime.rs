@@ -63,6 +63,8 @@ fn build(config: Config) -> AppBuilder {
         .and_then(|c| c.with("realtime.max_per_user", 2))
         .and_then(|c| c.with("realtime.shutdown_grace_secs", 2))
         .and_then(|c| c.with("http.timeout_secs", 1))
+        // Served instances: no scheduler (the framework's prune schedules).
+        .and_then(|c| c.with("schedule.enabled", false))
         .unwrap();
     let mut app = AppBuilder::new(config);
     let admin = routes();

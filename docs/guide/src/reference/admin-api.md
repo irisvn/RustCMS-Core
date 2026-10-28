@@ -31,7 +31,7 @@ values follow the [wire format](wire-format.md).
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | GET | `/resources/{slug}/actions/{action}/fields/{field}/options?search=&keys=` | the same, for a field of an action's form, see [Actions](../admin/actions.md#actions-with-a-form) |
-| GET | `/resources/{slug}/export?…`, `/exports`, `/exports/{id}/file`; POST `/resources/{slug}/exports?…` | CSV exports at once or in the background, see [Import and export](../admin/import-export.md#exporting) |
+| GET | `/resources/{slug}/export?…`, `/exports`, `/exports/{id}/file`; POST `/resources/{slug}/exports?…` | CSV exports at once or in the background, see [Import and export](../admin/import-export.md#exporting); a failed background export's `error` is `revoked`, `account_changed`, `fields_changed`, `too_many_to_export` (more than 10,000 rows), `too_many_matches` (more than 10,000 candidates checked one by one), `too_large`, `unfinished` or `failed` |
 | POST | `/resources/{slug}/imports`, `/imports/{id}/preview`, `/imports/{id}/run`; GET `/imports/{id}` | CSV imports, see [Import and export](../admin/import-export.md#importing) |
 | GET | `/dashboard`, `/dashboard/widgets/{name}` | the user's widgets and their values, see [Dashboard](../admin/dashboard.md#api) |
 | GET | `/resources/{slug}/records/{key}/relations/{relation}/options?search=&keys=` | `{data: [{value, label, attached}]}`: records to attach to a record (`attach_{relation}` on it) |
@@ -217,7 +217,7 @@ hourly). Updates and deletes take no key: repeating them converges.
   date ranges. Past 10,000 matching rows:
   - a list or an export at once answers 422 `too_many_matches`;
   - a dashboard widget answers 200 with `{"kind": "too_many"}`;
-  - a background export fails and is reported as `revoked`.
+  - a background export fails with the reason `too_many_matches`.
 
   Narrow the search or filters. Other lists and counts (a policy that decides
   once for every record, active records, row filtering done by `scope()`) are

@@ -59,7 +59,9 @@ seeder or a console command does not start them. Two commands do that work on
 purpose: `queue:work` runs workers alone, and `schedule:run <name>` runs one
 schedule by hand (a task runs in the command, a job is queued). A
 provider must not start its own background loop in `boot`; use
-[`AppBuilder::schedule`](../digging-deeper/scheduling.md) for periodic work.
+[`AppBuilder::schedule`](../digging-deeper/scheduling.md) for periodic work,
+as the framework's auth and idempotency clean-ups do
+([framework schedules](../digging-deeper/scheduling.md#framework-schedules)).
 
 In tests and tools, `AppBuilder::build_with_db(db)` does steps 4–7 on an
 existing connection (the testing kit uses it), `App::router()` returns the

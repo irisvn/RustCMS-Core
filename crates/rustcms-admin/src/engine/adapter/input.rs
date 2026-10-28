@@ -41,6 +41,18 @@ impl<R: Resource> ResourceAdapter<R> {
         }
     }
 
+    /// The static options client input of field `name` must match, if any.
+    pub(super) fn input_options(&self, name: &str) -> Option<Options<'_>> {
+        self.static_options.get(name).map(|options| {
+            if options.many {
+                Options::Many(&options.values)
+            } else {
+                let scale = crate::wire::decimal_scale(self.column(name).column.def().get_column_type());
+                Options::One { values: &options.values, scale }
+            }
+        })
+    }
+
     /// Validates client input against field permissions and types.
     pub(super) fn accept_input(&self, ctx: &Ctx, op: Operation, input: Data) -> AppResult<Data> {
         let mut errors = ValidationErrors::new();
@@ -57,7 +69,9 @@ impl<R: Resource> ResourceAdapter<R> {
                 secrets::check_operation(name, kind, op, nullable, value, &mut errors);
                 continue;
             }
-            check_input(name, &self.rule(name, field.required), value, &mut errors);
+            // Static options bound client input only: hooks may write any value.
+            let rule = InputRule { options: self.input_options(name), ..self.rule(name, field.required) };
+            check_input(name, &rule, value, &mut errors);
         }
         if op == Operation::Create {
             for field in self.fields.iter().filter(|f| f.required && f.can_write(op, ctx)) {
@@ -164,4 +178,92 @@ impl<R: Resource> ResourceAdapter<R> {
             _ => err.into(),
         }
     }
+}
+
+/// The static options of a field: one of them (a select) or a list of them
+/// (a checkbox list), in canonical wire form.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct FieldOptions {
+    pub(super) many: bool,
+    pub(super) values: Vec<serde_json::Value>,
+}
+
+impl FieldOptions {
+    /// The same choice, whatever the order of the options or their labels.
+    fn same(&self, other: &Self) -> bool {
+        self.many == other.many
+            && self.values.iter().all(|v| other.values.contains(v))
+            && other.values.iter().all(|v| self.values.contains(v))
+    }
+}
+
+/// The static options client writes must match, by field: from the selects
+/// and checkbox lists of `form` with options, canonicalised in place (the
+/// schema shows the values compared). Fields with `belongs_to` keep their
+/// relation's check. Panics on declarations that cannot hold: an option that
+/// is not a value of the column (or would be stored as another value), a
+/// checkbox list on a non-JSON column, or a field whose inputs disagree
+/// (other options, or an input without them).
+pub(super) fn static_options<C: ColumnTrait>(
+    slug: &str,
+    form: &mut Form,
+    fields: &[Field],
+    columns: &HashMap<String, ColumnInfo<C>>,
+) -> HashMap<String, FieldOptions> {
+    // Per field: the declarations of its inputs (`None`: an input without options).
+    let mut declared: HashMap<String, Vec<Option<FieldOptions>>> = HashMap::new();
+    for input in form.inputs_mut() {
+        let name = input.name.clone();
+        let Some(field) = fields.iter().find(|f| f.name == name) else { continue };
+        if field.belongs_to.is_some() || field.secret.is_some() {
+            continue;
+        }
+        let column = &columns[&name];
+        if input.kind == InputType::CheckboxList {
+            assert!(
+                column.kind == FieldKind::Json,
+                "resource `{slug}`: checkbox list `{name}` needs a JSON column (its value is a list)"
+            );
+        }
+        let options = match input.kind {
+            InputType::Select | InputType::CheckboxList if !input.options.is_empty() => input.options.as_mut_slice(),
+            _ => {
+                declared.entry(name).or_default().push(None);
+                continue;
+            }
+        };
+        let many = input.kind == InputType::CheckboxList;
+        if !many {
+            let scale = crate::wire::decimal_scale(column.column.def().get_column_type());
+            for option in options.iter_mut() {
+                let canonical = crate::wire::canonical(column.kind, scale, &option.value).unwrap_or_else(|e| {
+                    panic!(
+                        "resource `{slug}`: option {} of select `{name}` is not a value of its column ({}): {e}",
+                        option.value,
+                        column.kind.name()
+                    )
+                });
+                let same = column.kind.decode(&canonical).ok().and_then(|c| c.into_iter().next())
+                    == column.kind.decode(&option.value).ok().and_then(|c| c.into_iter().next());
+                assert!(
+                    same,
+                    "resource `{slug}`: option {} of select `{name}` would be stored as {canonical}",
+                    option.value
+                );
+                option.value = canonical;
+            }
+        }
+        let values = options.iter().map(|o| o.value.clone()).collect();
+        declared.entry(name).or_default().push(Some(FieldOptions { many, values }));
+    }
+    let mut out = HashMap::new();
+    for (name, inputs) in declared {
+        let Some(first) = inputs.iter().flatten().next().cloned() else { continue };
+        assert!(
+            inputs.iter().all(|i| i.as_ref().is_some_and(|i| i.same(&first))),
+            "resource `{slug}`: field `{name}` appears in several inputs that do not offer the same options"
+        );
+        out.insert(name, first);
+    }
+    out
 }

@@ -107,6 +107,8 @@ pub struct ExportView {
     /// Rows written (when done).
     pub rows: i32,
     /// Why it failed: `revoked`, `account_changed`, `fields_changed`,
+    /// `too_many_to_export` (more records than a background export holds),
+    /// `too_many_matches` (more candidates than a per-record policy checks),
     /// `too_large`, `unfinished` or `failed`.
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -447,6 +449,23 @@ fn refusal(err: AppError) -> Result<Refused, AppError> {
     }
 }
 
+/// Limit issues of `export_keys` (their stable codes) the export reports as such.
+const LIMITS: [&str; 2] = ["too_many_to_export", "too_many_matches"];
+
+/// A refusal of `export_keys`: over a limit, that limit's code; otherwise as [`refusal`].
+fn keys_refusal(err: AppError) -> Result<Refused, AppError> {
+    if let AppError::Validation(errors) = &err
+        && errors.errors.is_empty()
+        && let Some(code) = errors
+            .form_errors
+            .iter()
+            .find_map(|m| LIMITS.into_iter().find(|&code| rustcms_core::i18n::Issue::of(m).code == code))
+    {
+        return Ok(Refused(code));
+    }
+    refusal(err)
+}
+
 /// A temporary file removed when dropped (also when the run is cancelled).
 struct Staged(std::path::PathBuf);
 
@@ -490,7 +509,7 @@ async fn build(job: &JobCtx, row: &entity::Model) -> Result<(), Result<Refused, 
     let columns = fixed_columns(resource.as_ref(), &ctx, &fixed)?;
     let names: Vec<String> = columns.iter().map(|(n, _)| n.clone()).collect();
     let query: ListQuery = serde_json::from_value(row.query.clone()).map_err(internal)?;
-    let keys = resource.export_keys(&ctx, &query, MAX_ROWS).await.map_err(refusal)?;
+    let keys = resource.export_keys(&ctx, &query, MAX_ROWS).await.map_err(keys_refusal)?;
     entity::Entity::update_many()
         .col_expr(entity::Column::Status, Expr::value("running"))
         .filter(entity::Column::Id.eq(row.id))
@@ -558,11 +577,15 @@ async fn build(job: &JobCtx, row: &entity::Model) -> Result<(), Result<Refused, 
     Ok(())
 }
 
-/// Deletes expired exports (rows and every run's file), fails exports whose
-/// job never finished, and sweeps abandoned temporary files. Returns how many
-/// exports were deleted.
+/// Deletes expired exports of this disk (rows and every run's file), fails
+/// exports whose job never finished, and sweeps abandoned temporary files.
+/// Only this disk's files and their records are touched: an export with
+/// objects on another disk keeps its row until that disk's pruning has
+/// deleted them. Returns how many exports were deleted.
 pub async fn prune(db: &sea_orm::DatabaseConnection, storage: &dyn Storage) -> AppResult<u64> {
+    use sea_orm::sea_query::Query;
     let now = Utc::now();
+    let disk = storage.disk();
     // Longer than every run of the job with its backoff.
     entity::Entity::update_many()
         .col_expr(entity::Column::Status, Expr::value("failed"))
@@ -573,27 +596,103 @@ pub async fn prune(db: &sea_orm::DatabaseConnection, storage: &dyn Storage) -> A
         .await?;
     // An hour after expiry: longer than a run of the job (a late upload has
     // finished, or was stopped), so every object it wrote is recorded.
-    let expired =
-        entity::Entity::find().filter(entity::Column::ExpiresAt.lte(now - PRUNE_GRACE)).limit(500).all(db).await?;
+    let cutoff = now - PRUNE_GRACE;
+    let expired_ids = || {
+        Query::select()
+            .column(entity::Column::Id)
+            .from(entity::Entity)
+            .and_where(entity::Column::ExpiresAt.lte(cutoff))
+            .to_owned()
+    };
+    // Every run's object on this disk (recorded before its upload), whatever
+    // disk its export was asked on: the file first, then its record.
+    let objects = object::Entity::find()
+        .filter(object::Column::Disk.eq(disk))
+        .filter(object::Column::ExportId.in_subquery(expired_ids()))
+        .limit(500)
+        .all(db)
+        .await?;
+    for object in objects {
+        storage.delete(&StorageKey::parse(&object.storage_key)?).await?;
+        object::Entity::delete_by_id(object.storage_key).exec(db).await?;
+    }
+    // Expired exports of this disk without objects left on another disk.
+    let expired = entity::Entity::find()
+        .filter(entity::Column::ExpiresAt.lte(cutoff))
+        .filter(entity::Column::Disk.eq(disk))
+        .filter(
+            entity::Column::Id.not_in_subquery(
+                Query::select()
+                    .column(object::Column::ExportId)
+                    .from(object::Entity)
+                    .and_where(object::Column::Disk.ne(disk))
+                    .to_owned(),
+            ),
+        )
+        .limit(500)
+        .all(db)
+        .await?;
     let mut deleted = 0;
     for row in expired {
-        // The published object and every run's (recorded before its upload).
-        let objects = object::Entity::find().filter(object::Column::ExportId.eq(row.id)).all(db).await?;
-        let mut keys: Vec<String> =
-            objects.iter().filter(|o| o.disk == storage.disk()).map(|o| o.storage_key.clone()).collect();
-        if row.disk.as_deref() == Some(storage.disk())
-            && let Some(key) = &row.storage_key
-            && !keys.contains(key)
-        {
-            keys.push(key.clone());
+        // The published file, should it not be recorded as an object.
+        if let Some(key) = &row.storage_key {
+            storage.delete(&StorageKey::parse(key)?).await?;
         }
-        for key in keys {
-            storage.delete(&StorageKey::parse(&key)?).await?;
+        // Objects of this disk recorded since the sweep above, then the export.
+        let left = object::Entity::find()
+            .filter(object::Column::ExportId.eq(row.id))
+            .filter(object::Column::Disk.eq(disk))
+            .all(db)
+            .await?;
+        for object in left {
+            storage.delete(&StorageKey::parse(&object.storage_key)?).await?;
+            object::Entity::delete_by_id(object.storage_key).exec(db).await?;
         }
-        object::Entity::delete_many().filter(object::Column::ExportId.eq(row.id)).exec(db).await?;
         entity::Entity::delete_by_id(row.id).exec(db).await?;
         deleted += 1;
     }
     storage.sweep(std::time::Duration::from_secs(3_600)).await?;
     Ok(deleted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn code(result: Result<Refused, AppError>) -> Option<&'static str> {
+        result.ok().map(|r| r.0)
+    }
+
+    fn form(message: &str) -> AppError {
+        let mut errors = ValidationErrors::new();
+        errors.add_form(message);
+        errors.into()
+    }
+
+    #[test]
+    fn limits_of_the_keys_keep_their_code() {
+        let over = form("More than 10000 records to export; narrow the search or filters.");
+        assert_eq!(code(keys_refusal(over)), Some("too_many_to_export"));
+        let scan = form("Too many matching records to check individually; narrow the search or filters.");
+        assert_eq!(code(keys_refusal(scan)), Some("too_many_matches"));
+        // Any other refusal: revoked (a field error, another form error, 403, 404).
+        let mut both = ValidationErrors::field("secret", "cannot filter by `secret`");
+        both.add_form("Too many matching records to check individually; narrow the search or filters.");
+        for other in [
+            ValidationErrors::field("search", "is invalid").into(),
+            form("Something else."),
+            both.into(),
+            AppError::Forbidden,
+            AppError::NotFound,
+        ] {
+            assert_eq!(code(keys_refusal(other)), Some("revoked"));
+        }
+        // Other errors are retried.
+        assert!(keys_refusal(AppError::internal("db down")).is_err());
+        // The other steps never take the limit's code.
+        assert_eq!(
+            code(refusal(form("More than 5 records to export; narrow the search or filters."))),
+            Some("revoked")
+        );
+    }
 }

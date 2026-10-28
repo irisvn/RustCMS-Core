@@ -182,7 +182,10 @@ export interface SocketHandle {
 export interface SocketOptions {
   /** Reconnect after a drop (off: a new socket is a new session on the server). */
   reconnect?: boolean;
-  /** Largest message sent (`[realtime] max_message_bytes`). */
+  /**
+   * Largest message sent; by default the server's `[realtime] max_message_bytes`
+   * as the page loaded it, else 64 KiB.
+   */
   maxMessageBytes?: number;
   minDelay?: number;
   maxDelay?: number;
@@ -221,7 +224,7 @@ export function openSocket(
   const Socket = options.WebSocket ?? globalThis.WebSocket;
   const scheme = globalThis.location?.protocol === "https:" ? "wss" : "ws";
   const url = `${scheme}://${globalThis.location?.host ?? "localhost"}${pathname}`;
-  const maxBytes = options.maxMessageBytes ?? 64 * 1024;
+  const maxBytes = options.maxMessageBytes ?? api.socketMaxBytes ?? 64 * 1024;
   const minDelay = options.minDelay ?? 1000;
   const maxDelay = options.maxDelay ?? 30_000;
   const epoch = api.epoch;

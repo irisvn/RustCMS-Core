@@ -123,14 +123,13 @@ audit entries older than `audit.retention_days` are deleted once an hour.
 `idempotency:prune` does the same for idempotency receipts of admin writes.
 
 ::: warning Where the hourly clean-up runs
-The hourly clean-up is a background task that `AuthProvider` starts when the
-application boots. It starts in **every** process that boots the application:
-`serve`, but also `queue:work`, `db:seed` and your own commands. The first run
-is one hour after start, so short commands exit before it. With Redis
-configured, one instance runs each hour's clean-up (best effort); without it,
-every running process does, which is safe. It is not a
-[schedule](../digging-deeper/scheduling.md), so it does not appear on the
-Schedules page or in `schedule:list`.
+The hourly clean-up is the framework schedule `rustcms.auth-prune`
+([Scheduling](../digging-deeper/scheduling.md#framework-schedules)): only
+`serve` runs it, with `[schedule] enabled` (the default), once per hour across
+instances. `queue:work`, `db:seed`, your own commands and tests never prune.
+It shows on the Schedules page and in `schedule:list`. Without `serve`, run
+`schedule:run rustcms.auth-prune` (or `session:prune` and `audit:prune`) from
+cron.
 :::
 
 ## Password resets and invitations

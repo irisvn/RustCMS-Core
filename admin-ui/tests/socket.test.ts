@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiClient } from "@/api/client";
+import { QueryClient } from "@tanstack/react-query";
+import { createSession } from "@/app/session";
 import { openSocket } from "@/lib/realtime";
 
 /** A WebSocket the test drives. */
@@ -37,14 +39,14 @@ class FakeSocket {
 }
 
 /** A client whose `/auth/csrf` hands out `csrf-1`, `csrf-2`…; `/auth/me` answers `me`. */
-function client(me: () => Response = () => Response.json({ id: "1" })) {
+function client(me: () => Response = () => Response.json({ id: "1" }), socketMaxBytes?: number) {
   let n = 0;
   const fetch = vi.fn(async (url: RequestInfo | URL) => {
     if (String(url).endsWith("/auth/csrf")) return Response.json({ csrfToken: `csrf-${++n}` });
     if (String(url).endsWith("/auth/me")) return me();
     throw new TypeError("unexpected");
   });
-  const api = new ApiClient({ apiPath: "/admin/api", fetch: fetch as typeof globalThis.fetch, onUnauthenticated: () => api.resetCsrf() });
+  const api = new ApiClient({ apiPath: "/admin/api", fetch: fetch as typeof globalThis.fetch, onUnauthenticated: () => api.resetCsrf(), socketMaxBytes });
   return { api, fetch };
 }
 
@@ -89,6 +91,42 @@ describe("openSocket", () => {
     last().bufferedAmount = 1024 * 1024 - 5;
     expect(socket.send("123456")).toBe(false);
     expect(socket.send("12345")).toBe(true);
+  });
+
+  it("sends up to the server's limit: exact, over, UTF-8 bytes, binary", async () => {
+    const { api } = client(undefined, 8);
+    const socket = openSocket(api, "/t", { onMessage: () => {} }, options);
+    await vi.waitFor(() => expect(FakeSocket.all).toHaveLength(1));
+    last().open();
+    expect(socket.send("x".repeat(8))).toBe(true);
+    expect(socket.send("x".repeat(9))).toBe(false);
+    expect(socket.send("é".repeat(4))).toBe(true); // 8 bytes, 4 characters
+    expect(socket.send("xé".repeat(3))).toBe(false); // 9 bytes, 6 characters
+    expect(socket.send("€".repeat(3))).toBe(false); // 9 bytes, 3 characters
+    expect(socket.send(new Uint8Array(8))).toBe(true);
+    expect(socket.send(new Uint8Array(9).buffer)).toBe(false);
+    expect(socket.send(new DataView(new ArrayBuffer(9)))).toBe(false);
+    expect(last().sent).toHaveLength(3);
+  });
+
+  it("the session's client keeps the page's limit", () => {
+    const config = { basePath: "/admin", apiPath: "/admin/api" };
+    const session = createSession({ ...config, realtime: { maxMessageBytes: 10 } }, new QueryClient(), () => {});
+    expect(session.api.socketMaxBytes).toBe(10);
+    expect(createSession(config, new QueryClient(), () => {}).api.socketMaxBytes).toBeUndefined();
+  });
+
+  it("an explicit limit wins over the server's; without either, 64 KiB", async () => {
+    const socket = openSocket(client(undefined, 8).api, "/t", { onMessage: () => {} }, { ...options, maxMessageBytes: 16 });
+    await vi.waitFor(() => expect(FakeSocket.all).toHaveLength(1));
+    last().open();
+    expect(socket.send("x".repeat(16))).toBe(true);
+    expect(socket.send("x".repeat(17))).toBe(false);
+    const fallback = openSocket(client().api, "/t", { onMessage: () => {} }, options);
+    await vi.waitFor(() => expect(FakeSocket.all).toHaveLength(2));
+    last().open();
+    expect(fallback.send("x".repeat(64 * 1024))).toBe(true);
+    expect(fallback.send("x".repeat(64 * 1024 + 1))).toBe(false);
   });
 
   it("does not reconnect by default, and never after 4401 or 4403", async () => {
