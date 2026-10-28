@@ -1,7 +1,7 @@
 {# Course overview: seats of every course the user may see (instructors: theirs).
 Escaping is always on; the panel keeps only safe markup. #}
 <section class="rc-stack">
-    <p class="rc-muted">Haha: {{ t("Active enrollments against each course's capacity.") }}</p>
+    <p class="rc-muted">{{ t("Active enrollments against each course's capacity.") }}</p>
     <div class="rc-grid">
         {% for course in data.courses %}
         <article class="rc-card">
