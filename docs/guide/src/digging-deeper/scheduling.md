@@ -1,29 +1,64 @@
 # Scheduling
 
-Periodic work (reconcile every minute, prune every night) is declared on the
-application and run by `rustcms serve`:
+Periodic work (reconcile every minute, prune every night, a daily digest) is
+declared on the application with `app.schedule` and run by `rustcms serve`.
+Each slot runs once for the whole deployment, however many instances you
+run, without Redis or an external cron.
+
+## Quick start
+
+Declare schedules while the application is assembled: in a provider's
+`register`, or in a function the bootstrap calls. `register` returns `()`,
+so a `cron` expression is unwrapped with `.expect(..)`, not `?`: a typo then
+stops the boot with a clear message.
 
 ```rust
-// src/providers/app_service_provider.rs (register)
+use std::time::Duration;
 use rustcms::schedule::Schedule;
 
-app.schedule(Schedule::every("reconcile", Duration::from_secs(60)).job(|| Reconcile {}).without_overlapping());
-app.schedule(Schedule::cron("docker-prune", "0 3 * * *")?.job(|| Prune { until: "24h".into() }));
-app.schedule(Schedule::every("warm-cache", Duration::from_secs(300)).run(|state| async move { warm(&state).await }));
+// Every hour, as a queue job:
+app.schedule(Schedule::every("posts-ping", Duration::from_secs(3600)).job(|| PingPosts));
+// Every day at 03:00 UTC, in the process:
+app.schedule(
+    Schedule::cron("cleanup", "0 3 * * *")
+        .expect("a valid cron expression")
+        .run(|state| async move { cleanup(&state).await }),
+);
 ```
+
+## Full example
+
+The demo keeps its schedules next to their job, in `src/jobs/post_digest.rs`:
+
+<<< @/../../../examples/demo/src/jobs/post_digest.rs#schedule [src/jobs/post_digest.rs]
+
+The bootstrap calls it after the providers:
+
+<<< @/../../../examples/demo/src/bootstrap/mod.rs#build [src/bootstrap/mod.rs]
+
+- `posts-ping` enqueues the `PingPosts` [job](queues.md) every hour, and
+  skips a slot while the previous one's job is still pending or running.
+- `posts-digest` runs a task every day at 06:00 UTC, stopped after a minute,
+  and its summary ("12 posts") shows on the [Schedules page](#the-schedules-page).
+
+The job it enqueues:
+
+<<< @/../../../examples/demo/src/jobs/post_digest.rs#job [src/jobs/post_digest.rs]
 
 ## When it fires
 
-- `every(name, period)`: 10 s to 7 days, whole seconds, on the multiples of
-  the period since the Unix epoch. Every instance agrees on the times (a
-  minute schedule fires at :00 of every minute).
-- `cron(name, "m h dom mon dow")`: five fields in **UTC**, so there are no
-  time zones and no daylight saving time.
+- `Schedule::every(name, period)`: 10 s to 7 days, whole seconds, on the
+  multiples of the period since the Unix epoch. Every instance agrees on the
+  times (a minute schedule fires at :00 of every minute).
+- `Schedule::cron(name, "m h dom mon dow")`: five fields in **UTC**, so there
+  are no time zones and no daylight saving time.
   - Numbers, `*`, ranges, lists, steps and 3-letter names (`MON`, `JAN`) are
     accepted.
   - Day-of-month and day-of-week combine with OR, as in Vixie cron.
-  - No seconds, years, `L`, `W`, `#` or `@daily`. An expression that never
-    fires (`0 0 30 2 *`) is an error.
+  - No seconds, years, `L`, `W`, `#` or `@daily`.
+  - It returns `Result<Schedule, ScheduleError>`: `ScheduleError::Cron` for
+    an expression it cannot read, `ScheduleError::Never` for one that never
+    fires in the next five years (`0 0 30 2 *`).
 - A **missed slot is skipped, never caught up**: after a restart or a pause
   only the next slot runs. A slot is still taken up to
   `schedule.grace_secs` (30) late.
@@ -31,36 +66,41 @@ app.schedule(Schedule::every("warm-cache", Duration::from_secs(300)).run(|state|
 
 ## What it does
 
+Give each schedule exactly one action.
+
 - **`.job(make)`** (recommended) enqueues a [queue job](queues.md) for each
   slot. The job's retries, timeouts and leases apply, and the Queue page
   shows it.
   - It registers the job type; `app.job::<J>()` as well is fine.
   - Workers must serve its queue (`serve`, or `queue:work`).
-- **`.run(f)`** runs in the process. It is best effort: a crash during the
-  run loses it. Its error is recorded as "failed (see the logs)".
+- **`.run(f)`** runs `f(state)` in the process. It is best effort: a crash
+  during the run loses it. Its error is recorded as "failed (see the logs)".
 - **`.task(f)`** is `.run` with a context and a result the
-  [Schedules page](#the-schedules-page) shows:
-
-  ```rust
-  app.schedule(Schedule::cron("database-backups", "0 3 * * *")?.task(|ctx| async move {
-      let n = backup_all(&ctx.state).await?;
-      Ok(Some(format!("{n} databases backed up")))
-  }).timeout(Duration::from_secs(1800)));
-  ```
-
-  `Ok(Some(summary))` is kept (at most 200 characters). An error whose chain
-  holds a [`queue::Failure`](queues.md#failures) keeps its message; any other
-  error is kept as "failed (see the logs)". `schedules.view` holders see
-  both: never put secrets in them. `ctx` has `state`, `run_id` (stable, a key
-  for your own idempotency), `trigger` (`Schedule` or `Manual`) and
-  `initiated_by`. Moving from `.run`: `|state|` becomes `|ctx|`
-  (`ctx.state`), `Ok(())` becomes `Ok(None)`.
+  [Schedules page](#the-schedules-page) shows (the demo's `posts-digest`
+  above).
+  - `Ok(Some(summary))` is kept (at most 200 characters); `Ok(None)` keeps
+    none.
+  - An error whose chain holds a [`queue::Failure`](queues.md#failures)
+    keeps its message; any other error is kept as "failed (see the logs)".
+  - `schedules.view` holders see both: never put secrets in them.
+  - Moving from `.run`: `|state|` becomes `|ctx|` (`ctx.state`), `Ok(())`
+    becomes `Ok(None)`.
 - **`.timeout(d)`** bounds a `.run` or `.task` (default 1 hour, at most a
-  day): a longer run is stopped and recorded as failed.
+  day): a longer run is stopped and recorded as failed. A `.job` schedule
+  uses the job's own `timeout()`.
 - **Once per slot, whatever the number of instances.** Each slot is claimed in
   the database, in the same transaction as its job, so there is at most one
   job per slot (no Redis needed). Jobs are still at-least-once: make them
   idempotent.
+
+`TaskCtx`, what a `.task` receives:
+
+| Field | |
+|---|---|
+| `state` | the `AppState` |
+| `run_id` | this run (`schedule_runs.id`): stable, a key for your own idempotency |
+| `trigger` | `Trigger::Schedule` (its slot came) or `Trigger::Manual` (Run now, `schedule:run`) |
+| `initiated_by` | the user who ran it, for a manual run by a user |
 
 ## Overlapping runs
 
@@ -68,27 +108,11 @@ app.schedule(Schedule::every("warm-cache", Duration::from_secs(300)).run(|state|
   period, add **`.without_overlapping()`**: a slot is skipped while the
   previous slot's job is still pending or running. The queue's lease is the
   lock, so a dead worker's job is retried, then the schedule resumes.
-- A `.run` schedule never overlaps itself on one instance (slots are
-  skipped). On several instances two long runs can overlap: use `.job` +
+- A `.run` or `.task` schedule never overlaps itself on one instance (slots
+  are skipped). On several instances two long runs can overlap: use `.job` +
   `.without_overlapping()` instead.
 - Manual runs from the console (`schedule:run`) and `queue:retry` are not
   held back. The panel's Run now is (see below).
-
-```rust
-/// Converges containers to the declared state: safe to repeat.
-#[derive(Serialize, Deserialize)]
-pub struct Reconcile {}
-
-#[async_trait]
-impl Job for Reconcile {
-    const KIND: &'static str = "reconcile";
-    fn timeout() -> Duration { Duration::from_secs(50) }
-    async fn handle(self, ctx: JobCtx) -> anyhow::Result<()> {
-        let docker = ctx.state.service::<Docker>().unwrap();
-        docker.converge().await // idempotent: a retry repeats part of it harmlessly
-    }
-}
-```
 
 ## Where it runs
 
@@ -98,14 +122,26 @@ impl Job for Reconcile {
   instances that only serve requests).
 - Instances' clocks must agree within about a second (NTP). A clock running
   fast can start a slot that much early; it never runs a slot twice.
-- On shutdown nothing new starts, and `.run` actions get
-  `[realtime] shutdown_grace_secs`.
+- On shutdown nothing new starts, and `.run` and `.task` actions get
+  `[realtime] shutdown_grace_secs`, then are stopped.
+
+## Configuration
+
+`[schedule]` (`config/schedule.toml`, or `RUSTCMS_SCHEDULE__<KEY>`):
+
+| Key | Default | Range | |
+|---|---|---|---|
+| `enabled` | `true` | | run the schedules in `serve` on this instance |
+| `grace_secs` | `30` | 1 to 300 | how late a slot may still be claimed |
+| `history_retention_days` | `7` | 1 to 3,650 | how long runs are kept in `schedule_runs` |
+
+Boot fails on a value out of range.
 
 ## Commands
 
 ```sh
-rustcms schedule:list            # each schedule, its next slot, its last claimed slot (and job)
-rustcms schedule:run reconcile   # run it now: a job is enqueued, a run runs in the command
+rustcms schedule:list              # each schedule, its next slot, its last claimed slot (and job)
+rustcms schedule:run posts-digest  # run it now: a job is enqueued, a task runs in the command
 ```
 
 A manual run is not a slot: there is no claim, no grace and no
@@ -113,6 +149,9 @@ A manual run is not a slot: there is no claim, no grace and no
 run.
 
 ## The Schedules page
+
+![The Schedules page: each schedule's rule, action, next run and last run](/img/digging-deeper/schedules-page.webp)
+*The demo application: System → Schedules, with `posts-ping` and `posts-digest`.*
 
 **System → Schedules** lists every schedule to users with `schedules.view`:
 its rule, what it does (a job kind or a task), its next run, and its last
@@ -140,7 +179,8 @@ a manual run, after a confirmation; it is recorded in the audit log
   `without_overlapping` it is refused (409) while the previous job is
   pending or running;
 - a `.run` or `.task` schedule enqueues the framework's job
-  `rustcms.schedule.run`, which runs the closure once in a worker: never
+  `rustcms.schedule.run`, which runs the closure once in a worker, within
+  the schedule's timeout and at most `queue.max_timeout_secs`: never
   retried, and a run stopped by a shutdown or a crash is recorded as failed,
   not run again. It is refused (409) while another run of the schedule is
   unfinished: a Run now whose job is still waiting or running, or a
@@ -149,7 +189,37 @@ a manual run, after a confirmation; it is recorded in the audit log
   scheduled runs of adjacent slots may still overlap each other, as before.
 
 The next scheduled run is unchanged. Both permissions are declared by the
-admin panel (group `schedules`).
+admin panel (group `schedules`); grant them through roles.
 
-The framework's own cleanups (media, exports, idempotency keys) still run as
-provider loops; they will move to schedules later.
+## Reference
+
+| Item | |
+|---|---|
+| `Schedule::every(name, period)` | a period schedule; panics on a period out of range or with a fraction of a second |
+| `Schedule::cron(name, expr)` | `Result<Schedule, ScheduleError>` |
+| `.job(make)`, `.run(f)`, `.task(f)` | the action |
+| `.timeout(d)` | for `.run`/`.task`; panics on 0 or more than a day |
+| `.without_overlapping()` | for `.job` |
+| `.name()`, `.describe()`, `.next_after(t)`, `.action()`, `.run_timeout()` | read a schedule (`action()` is `ScheduleAction::Job(kind)` or `Closure`) |
+| `schedule::MIN_PERIOD`, `MAX_PERIOD`, `DEFAULT_TIMEOUT` | 10 s, 7 days, 1 hour |
+
+`app.schedule` panics at boot on an invalid, reserved or repeated name, a
+schedule without an action, or `without_overlapping` on a `.run` or `.task`
+schedule.
+
+## Pitfalls
+
+- `Schedule::cron(..)?` does not compile in `register` (it returns `()`): use
+  `.expect("a valid cron expression")`.
+- Cron times are UTC: `0 6 * * *` is 06:00 UTC, not local time.
+- Run now needs a queue worker even for a `.task` schedule.
+- The framework's own cleanups (sessions, JWT sign-ins, reset and invitation
+  links, audit entries, idempotency keys, media, exports and imports) are not
+  schedules: they are background loops started when the application boots,
+  and do not appear on this page. See [Data retention](../operations/retention.md).
+
+## Related
+
+- [Queues](queues.md)
+- [Several instances](instances.md)
+- [Data retention](../operations/retention.md)

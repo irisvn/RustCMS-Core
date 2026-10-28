@@ -22,7 +22,9 @@ auditors, and each record's history to those who may view the record
 | Sign-ins | `auth.signed_in`, `auth.signed_out`, `auth.sign_in_failed`, `auth.sign_in_failed_burst`, `jwt.signed_in`, `jwt.signed_out`, `jwt.reuse_detected` | `user` (`session` for failures) |
 
 A change that changes nothing (saving an unchanged form, assigning a role the
-user already has) records nothing. A refused or failed write records nothing.
+user already has) records nothing. Actions are the exception: an action
+records `action:<name>` for every record it processed, even when it changed
+no field (the entry then has no `changes`). A refused or failed write records nothing.
 Role and permission changes record the user's whole set before and after
 (`{"roles": [[1], [1, 4]]}`), not only the difference. If a hook deletes the
 record it just saved, or moves it to the trash, a `deleted` or `trashed`
@@ -106,7 +108,8 @@ fn fields() -> Vec<Field> {
 
 Values are bounded so an entry never makes a valid write fail: a text over
 1,000 characters is kept as `{truncated, length, sha256}`, a rich text
-document as `{document, bytes, sha256}`, long lists and deep values are cut.
+document as `{document, bytes, sha256}`; lists and objects keep their first
+100 items, and values nested deeper than 8 levels are summarized.
 An entry holds at most 64 KiB of `changes` and `meta` together (meta at most
 16 KiB); beyond, only the names of the changed fields are kept.
 
@@ -124,8 +127,13 @@ fn meta() -> ResourceMeta {
 
 ## Recording your own events
 
-Inside a hook or an action, `ctx.audit` records an entry in the same
-transaction, with the same actor and request:
+Record what your code changes beyond what the engine recorded, in the same
+transaction as the change, so the entry commits or rolls back with it.
+
+### In hooks and actions
+
+Inside a hook or an action, `ctx.audit(txn, entry)` records an entry in the
+same transaction, with the same actor and request:
 
 ```rust
 use rustcms::audit::AuditEntry;
@@ -141,8 +149,20 @@ Action::<order::Entity>::new("refund", |ctx, txn, orders, _data| {
 })
 ```
 
+The LMS's *Move up* / *Move down* actions renumber the other lessons of the
+course too. The engine records only an `action:<name>` entry for the lesson
+the action was given, so the helper records an `updated` entry for every
+lesson whose position changes (the selected lesson included, which then has
+both), with the action's own context (`ctx.audit_context`, a public field)
+and on the lesson resource, so each lesson's **History** shows it:
+
+<<< @/../../../examples/lms/src/admin/resources/lesson_resource.rs#reorder [src/admin/resources/lesson_resource.rs]
+
+### In your own routes
+
 In your own routes, build the context from the signed-in user and the
-request, and record in your transaction:
+request (`RequestMeta` is an extractor: client address, user agent, request
+id), and record in your transaction:
 
 ```rust
 use rustcms::audit::{self, AuditActor, AuditContext, AuditEntry, RequestMeta};
@@ -150,7 +170,7 @@ use rustcms::audit::{self, AuditActor, AuditContext, AuditEntry, RequestMeta};
 async fn close_course(auth: Auth, request: RequestMeta, State(app): State<AppState>) -> AppResult<StatusCode> {
     let txn = rustcms::db::begin_write(app.db()).await?;
     // … the change …
-    let context = AuditContext::new(AuditActor::user(&auth.0.principal), request);
+    let context = AuditContext::new(AuditActor::user(auth.principal()), request);
     audit::record(&txn, &context, AuditEntry::new("course.closed", "courses").key(42)).await?;
     txn.commit().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -162,6 +182,31 @@ async fn close_course(auth: Auth, request: RequestMeta, State(app): State<AppSta
 serializable struct; both are bounded like the built-in entries. Do not put
 secrets in them.
 
+In a [queued job](queues.md), use the job's context:
+`audit::record(&txn, &ctx.audit_context(), entry)` records actor `job`, on
+behalf of the user who dispatched it.
+
+### Reference
+
+`rustcms::audit`:
+
+| Item | |
+|---|---|
+| `record(&txn, &context, entry)` | one entry, in the change's transaction |
+| `record_all(&txn, &context, entries)` | several entries, inserted in batches |
+| `record_detached(&db, &context, entry)` | an event that is not a data change (a sign-in): on its own, best effort; a failure is logged, never returned |
+| `AuditEntry::new(event, subject_type)` | then `.key(k)`, `.changes(v)`, `.meta(m)` |
+| `AuditActor::user(&principal)` | the user behind a principal, with the request's credential |
+| `AuditActor::signed_in(user_id, guard, credential)` | a user who just proved their credentials |
+| `AuditActor::job(kind, initiated_by)` | a queued job (`queue:<kind>`) |
+| `AuditActor::system(Some("command"))` | a console command (`console:<command>`), or the application (`None`) |
+| `AuditActor::guest()` | nobody signed in |
+| `AuditContext::new(actor, request)`, `AuditContext::system(command)` | the actor and request of an operation |
+| `diff(before, after, &redact)`, `changes_of(&[(field, old, new)])` | build `changes` |
+| `bounded(value)`, `summary(text)` | the bounding the log applies |
+| `subject_key(key)` | how a key is stored in `subject_key` (to look entries up) |
+| `MAX_TEXT`, `MAX_DEPTH`, `MAX_ITEMS`, `MAX_BYTES` | 1,000 characters, 8 levels, 100 items, 64 KiB |
+
 ## Viewing the log
 
 | Permission | Shows |
@@ -170,10 +215,18 @@ secrets in them.
 | `audit.view_auth` | with `audit.view_all`: also sign-in, sign-out, token and JWT entries (`auth.*`, `jwt.*`, `token.*`), and the client address and browser of every entry |
 | `audit.view` | **History** on a record's page, for records the user may view (scope and policy, as the page itself) |
 
+![The audit log with its filters](/img/digging-deeper/audit-log.webp)
+*The LMS example: System → Audit log, with the entries of lesson moves.*
+
+![A lesson's History tab](/img/digging-deeper/audit-history.webp)
+*The LMS example: a lesson's History tab.*
+
 A record's history lists what the engine recorded about that record
 (`created`, `updated`, `trashed`, `deleted`, `restored`, `force_deleted`,
-`attached`, `detached`, `pivot_updated`, `action:<name>`), with only the fields the user may read now; entries your
-code wrote with `ctx.audit` are not in it (they are in the full log).
+`attached`, `detached`, `pivot_updated`, `action:<name>`), with only the fields the user may read now. An entry
+your code writes appears there too when it uses the resource's slug as
+subject type, the record's key and one of those events (as the LMS's
+`reorder` above); any other entry is only in the full log.
 Actors appear by name to users who may list users (`users.view_any`),
 otherwise by id; credentials appear by kind only (`session`, `token`, `jwt`,
 `console`). Every filter runs in the database, so pages are always full and
@@ -203,13 +256,15 @@ rest are counted and recorded as one `auth.sign_in_failed_burst` entry
 ## Retention
 
 Entries older than `audit.retention_days` (default 365) are deleted every
-hour by `serve`, and by `rustcms audit:prune`.
+hour by a background pass that starts when the application boots (`serve`,
+`queue:work`), and by `rustcms audit:prune`
+([Data retention](../operations/retention.md)).
 
 `[audit]` (`config/audit.toml`):
 
 | Key | Default | |
 |---|---|---|
-| `retention_days` | `365` | 1 to 36,500 |
+| `retention_days` | `365` | 1 to 36,500 (boot fails outside) |
 | `sign_in_failures_per_minute` | `600` | per instance |
 
 ## Personal data
@@ -227,3 +282,10 @@ DELETE FROM audit_logs WHERE actor_user_id = 42 OR (subject_type = 'user' AND su
 The log is append-only for the application (nothing in RustCMS updates an
 entry), not tamper-proof: anyone with write access to the database can change
 it. Ship it to external storage if you need that.
+
+## Related
+
+- [Authorization](../admin/authorization.md)
+- [Queues](queues.md)
+- [Data retention](../operations/retention.md)
+- [Revocation](../security/revocation.md)
