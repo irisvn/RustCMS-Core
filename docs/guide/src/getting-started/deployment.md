@@ -1,10 +1,28 @@
 # Deployment
 
 An application builds into **one binary** holding the HTTP server, every
-console command, the admin panel and your translations. The server needs no
-Rust, Node or source code.
+console command, the admin panel, queue workers, the scheduler and your
+translations. The server needs no Rust, Node or source code: copy the binary
+and `config/`, set the environment, run `migrate`, then `serve`.
 
 In this page the binary is called `blog`.
+
+## Quick start
+
+```sh
+cargo build --release                      # → target/release/blog
+# on the server, in /opt/blog with config/ and the binary:
+./blog key:generate --show                 # once: store it as APP_KEY
+./blog migrate
+./blog permission:sync
+./blog serve                               # app.listen, 127.0.0.1:8000 by default
+```
+
+In another terminal:
+
+```sh
+curl http://127.0.0.1:8000/health          # {"status":"ok","database":"ok"}
+```
 
 ## Building
 
@@ -33,7 +51,8 @@ Build for the server's platform: on a Linux CI runner, or in Docker (below).
 
 ## What the binary reads
 
-Everything is relative to the working directory:
+Everything is relative to the working directory (`.env` is also looked for
+in its parents):
 
 | What | Where | Notes |
 |---|---|---|
@@ -41,6 +60,9 @@ Everything is relative to the working directory:
 | Environment | `.env`, or the process environment | the environment always wins over `.env` |
 | Uploads (`local` disk) | `storage/app` (`storage.root`) | keep it across deploys, and back it up |
 | SQLite database | `DATABASE_URL` | use an absolute path |
+
+The page templates, scripts, styles and translations of the panel are compiled
+into the binary: `resources/` and `lang/` are not needed on the server.
 
 A typical layout:
 
@@ -57,16 +79,29 @@ Main variables:
 | Variable | Required | Example |
 |---|---|---|
 | `APP_KEY` | yes | `base64:…` — generate once with `./blog key:generate --show`, store as a secret |
-| `DATABASE_URL` | yes | `postgres://user:pass@db:5432/blog`, `mysql://…`, `sqlite:///opt/blog/data/app.sqlite?mode=rwc` |
+| `DATABASE_URL` | yes | `postgres://user:pass@db.example.com:5432/blog`, `mysql://…`, `sqlite:///opt/blog/data/app.sqlite?mode=rwc` |
 | `APP_URL` | yes | `https://blog.example.com` — the origin allowed to sign in and write in the admin |
 | `APP_ENV` | recommended | `production` (also the default) |
-| `APP_DEBUG` | no | `false` in production |
-| `REDIS_URL` | several instances | `redis://redis:6379/0` |
+| `REDIS_URL` | several instances | `redis://redis.example.com:6379/0` |
 | `RUST_LOG` | no | `info` (overrides `log.filter`) |
 | `RUSTCMS_<SECTION>__<KEY>` | no | `RUSTCMS_APP__LISTEN=0.0.0.0:8000` |
 
-Rotating `APP_KEY` signs every admin out and ends every JWT sign-in (API
-tokens stay valid). Never commit it.
+Every one of them can come from a file instead (`APP_KEY_FILE=/run/secrets/app_key`):
+see [secrets from files](configuration.md#from-files-docker-and-kubernetes-secrets).
+`APP_DEBUG` changes nothing in the framework
+([The environment](configuration.md#the-environment)); keep it `false`.
+
+::: warning `APP_KEY`
+Never commit it, and keep it stable. Replacing it signs every admin out, ends
+every JWT sign-in (API tokens stay valid) and needs the old key in
+`APP_PREVIOUS_KEYS` until your encrypted values are moved to the new one: see
+[Rotating `APP_KEY`](../operations/app-key.md).
+:::
+
+With MySQL, `migrate` and `serve` refuse a database whose character set,
+collation, engine, `sql_mode` or connection time zone would make RustCMS
+behave unlike on PostgreSQL; the error lists the SQL that fixes it
+([MySQL](../basics/database.md#mysql)).
 
 ## First run
 
@@ -76,14 +111,57 @@ cd /opt/blog
 ./blog migrate
 ./blog permission:sync
 ./blog make:user --email you@example.com --name You --super-admin   # prints a generated password
-./blog serve                      # app.listen, 127.0.0.1:8000 by default
+./blog serve                      # app.listen, 127.0.0.1:8000 by default; --listen 0.0.0.0:8000 overrides
 ```
 
 Do not pass `--password` to `make:user` on a server: it would stay in the
 shell history.
 
-Check `curl http://127.0.0.1:8000/health` → `{"status":"ok","database":"ok"}`
-(use it as the load balancer's health check), then sign in at `APP_URL/admin`.
+Check `curl http://127.0.0.1:8000/health` → `{"status":"ok","database":"ok"}`,
+then sign in at `APP_URL/admin`. When the database does not answer, `/health`
+returns 503 with `{"status":"degraded","database":"unavailable"}`: use it as
+the load balancer's health check.
+
+In production (`APP_ENV=production`, the default), commands that drop or
+overwrite data refuse to run without `--force`: `migrate:fresh`,
+`migrate:refresh` and `db:seed`.
+
+## What `serve` runs
+
+One `serve` process is the whole application:
+
+- the HTTP server on `app.listen`;
+- **queue workers**: `queue.workers` of them (2) when `queue.enabled`
+  (`true`); set `queue.enabled = false` and run `./blog queue:work` as a
+  separate service to scale them apart ([Queues](../digging-deeper/queues.md));
+- **the scheduler**, when `schedule.enabled` (`true`) and the application has
+  schedules; with several instances, each slot runs once
+  ([Scheduling](../digging-deeper/scheduling.md)).
+
+Other commands (`migrate`, `db:seed`, your own commands) do not start
+workers or the scheduler automatically. Two commands do that work on
+purpose: `queue:work` runs workers, and `schedule:run <name>` runs one
+schedule by hand (a task runs in the command, a job is queued). See [Request lifecycle](../architecture/lifecycle.md) for what
+each command loads.
+
+### Stopping
+
+`serve` stops on Ctrl-C or SIGTERM:
+
+1. it stops accepting connections, and the workers stop claiming jobs;
+2. open event streams and WebSockets are told to close and get
+   `realtime.shutdown_grace_secs` (5 s), then are aborted; the server waits
+   the same grace for requests in progress, then stops waiting (a request
+   still running ends when it finishes or when the process exits);
+3. running jobs get up to `queue.shutdown_secs` (30 s) to finish; a job still
+   running then is stopped and given back to the queue to run again, except
+   a job with `AT_MOST_ONCE`, which is marked failed instead. Scheduled runs
+   get `realtime.shutdown_grace_secs`.
+
+Stopping a job and recording it can take up to 20 s more. Give the service
+manager a stop timeout above both `queue.shutdown_secs` + 20 s and
+`realtime.shutdown_grace_secs` + 1 s, with a margin: 60 s with the defaults
+(`TimeoutStopSec=`, `stop_grace_period:`, `terminationGracePeriodSeconds`).
 
 ## Upgrading
 
@@ -92,6 +170,8 @@ Check `curl http://127.0.0.1:8000/health` → `{"status":"ok","database":"ok"}`
 3. `./blog.new migrate`, then `./blog.new permission:sync`.
 4. Replace the binary and restart the service.
 5. Check `/health` and sign in.
+
+Read the version's section of the [upgrade guide](../upgrade.md) first.
 
 To go back, roll back with the **new** binary first (only it knows its
 migrations): `./blog.new migrate:rollback --step N`, then start the old one.
@@ -128,8 +208,6 @@ Two things it does not do:
 a warning in your panel). `migrate:rollback` still needs the binary that knows
 a migration.
 
-`serve` stops gracefully on Ctrl-C or SIGTERM: requests in progress finish.
-
 ## systemd
 
 ```ini
@@ -143,6 +221,7 @@ WorkingDirectory=/opt/blog
 EnvironmentFile=/opt/blog/.env
 ExecStart=/opt/blog/blog serve
 Restart=on-failure
+TimeoutStopSec=60
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/opt/blog/storage /opt/blog/data
@@ -174,6 +253,16 @@ EXPOSE 8000
 CMD ["/app/blog", "serve"]
 ```
 
+Keep the build context small and free of secrets with a `.dockerignore`:
+
+```text
+target
+.env
+*.sqlite
+*.sqlite-*
+storage
+```
+
 ```sh
 docker build -t blog .
 docker run --rm --env-file .env -v blog-storage:/app/storage blog /app/blog migrate
@@ -181,7 +270,9 @@ docker run -d -p 8000:8000 --env-file .env -v blog-storage:/app/storage blog
 ```
 
 In `.env` for Docker, leave `DATABASE_URL` out (to use the image's SQLite in
-the volume) or point it to your database server.
+the volume) or point it to your database server. `docker stop` waits 10 s by
+default: pass `--stop-timeout 60` (or `stop_grace_period: 60s` in Compose) to
+let jobs finish.
 
 ## Behind a reverse proxy
 
@@ -196,7 +287,28 @@ blog.example.com {
 - `APP_URL` is the public https URL (cookies get `Secure`).
 - List the proxy in `http.trusted_proxies` (`["127.0.0.1/32"]`), so rate
   limits see client addresses. Without it, every client shares the proxy's
-  address and its limits.
+  address and its limits ([Client IP](../architecture/lifecycle.md#client-ip-and-proxies)).
 - Keep `http.body_limit` and the upload limit at or below the proxy's.
 
+## Pitfalls
+
+- **Signed out after every deploy**: `APP_KEY` changed. Generate it once and
+  keep it in your secret store.
+- **Sign-in answers 403**: `APP_URL` is not the address in the browser (or
+  `auth.admin_origins` does not list it).
+- **Every client is rate-limited together**: the proxy is not in
+  `http.trusted_proxies`.
+- **Heavy jobs slow down requests**: every `serve` runs workers. Set
+  `queue.enabled = false` on the web instances and run `queue:work` as its own
+  service.
+- **Several instances** need Redis for shared rate limits, and one `migrate`
+  per deployment: see [Several instances](../digging-deeper/instances.md).
+
 Before going live, work through the [production checklist](../security/production.md).
+
+## Related pages
+
+- [Configuration](configuration.md)
+- [Production checklist](../security/production.md)
+- [Backup and restore](../operations/backup-restore.md)
+- [Running the queue](../operations/queue.md)

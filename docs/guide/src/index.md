@@ -21,13 +21,13 @@ features:
     details: Declare fields once; RustCMS renders the panel, validates input and serves the API.
     link: /admin/resources
   - title: Deny by default
-    details: Roles and permissions, field rules and record scopes are enforced on the server for every path.
+    details: Roles and permissions, record scopes and the field restrictions you configure are enforced on the server for every panel operation.
     link: /admin/authorization
   - title: Media and rich text
     details: Uploads, a media library and a validated rich-text document model.
     link: /admin/media
   - title: Queues, schedules and mail
-    details: Background jobs, periodic work claimed once per slot, and mail over SMTP.
+    details: Background jobs and periodic work run by the server itself, each slot claimed once across instances, and mail over SMTP.
     link: /digging-deeper/queues
   - title: Extend the panel
     details: Custom pages, slots, React extensions, admin routes, events and WebSockets.
