@@ -185,6 +185,7 @@ Start the HTTP server
 |---|---|
 | `--listen` | Address to listen on (default: `app.listen`) |
 | `--api-only` | Serve the application API only, without the admin panel (`app.mode = "api"`) |
+| `--watch` | With `rustcms` only (macOS, Linux): rebuild and replace the server when the application's files change; a failed build keeps the running server |
 
 ### `migrate`
 

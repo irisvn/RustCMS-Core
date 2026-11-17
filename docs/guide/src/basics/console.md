@@ -45,7 +45,7 @@ commands (the CLI reference is generated from it).
 
 | Group | Commands | Added by |
 |---|---|---|
-| Server | `serve [--listen <addr>]` | the console |
+| Server | `serve [--listen <addr>]` (`rustcms serve --watch` rebuilds on changes, see [Installation](../getting-started/installation.md#rebuilding-on-changes)) | the console |
 | Database | `migrate`, `migrate:status`, `migrate:rollback`, `migrate:refresh`, `migrate:fresh`, `db:seed` ([Database](database.md#commands)) | the console |
 | Routes | `route:list` | the console |
 | Key | `key:generate [--show] [--force]` | the console |

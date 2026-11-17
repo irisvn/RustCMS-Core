@@ -43,8 +43,11 @@ binary. Start with [Installation](getting-started/installation.md).
 ## What you get
 
 - **Admin panel**: [resources](admin/resources.md) with lists (search, filters,
-  sorting, [row and bulk actions](admin/actions.md)) and forms (sections, tabs,
-  relationships, file uploads, rich text, key/value inputs); soft deletes;
+  sorting, [row and bulk actions](admin/actions.md), count columns) and forms
+  (sections, tabs, relationships, file uploads, rich text, key/value inputs,
+  number bounds, inputs [shown under conditions](admin/forms.md#showing-inputs-under-conditions),
+  [repeaters](admin/forms.md#repeaters) of JSON rows or of a relation's records);
+  view pages with [infolists](admin/infolists.md) and computed values; soft deletes;
   has-many and belongs-to-many [relationships](admin/relationships.md);
   [custom field widgets](admin/custom-fields.md);
   [dashboard widgets](admin/dashboard.md);
@@ -80,7 +83,8 @@ binary. Start with [Installation](getting-started/installation.md).
   are recorded when your code records them); and
   [encrypted columns](digging-deeper/encryption.md) for your secrets.
 - **Tooling**: `rustcms new`, generators (`make:model`, `make:resource`,
-  `make:api`, `make:page`, …), migrations, and a [testing kit](basics/testing.md)
+  `make:api`, `make:page`, …), `rustcms serve --watch`
+  ([rebuilds on changes](getting-started/installation.md#rebuilding-on-changes)), migrations, and a [testing kit](basics/testing.md)
   that runs every database test on SQLite, and on PostgreSQL and MySQL when
   `RUSTCMS_TEST_PG` / `RUSTCMS_TEST_MYSQL` name a server.
 
@@ -101,6 +105,8 @@ binary. Start with [Installation](getting-started/installation.md).
 | Gates, policies, Spatie permissions | `Gate`, `Policy`, roles and permissions per guard |
 | Filament resources, forms, tables, actions | `Resource`, `Form`, `Table`, `Action` |
 | Filament relation managers | `Relation::has_many`, `Relation::belongs_to_many` (and `BelongsToManySelect`) |
+| Filament `->visible(fn …)`, `Repeater`, infolists | `.shown_when(when(…))`, `Repeater::make(…)` (`.relationship(…)`), `infolist()` |
+| `php artisan serve` with a file watcher | `rustcms serve --watch` |
 | Filament custom pages | `make:page`: an HTML template, a script or a React component |
 | Scheduler (`schedule:run`) | `AppBuilder::schedule`, run by `serve` |
 | `Illuminate\Testing` | `rustcms-testing` (`TestApp`, `db_test!`, factories) |
