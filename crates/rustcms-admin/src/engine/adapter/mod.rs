@@ -163,6 +163,11 @@ impl<R: Resource> ResourceAdapter<R> {
                 "resource `{slug}`: field `{}` accepts rich text nodes but is not `rich_text()`",
                 field.name
             );
+            assert!(
+                field.collection.is_none() || field.media.is_some() || field.rich_text,
+                "resource `{slug}`: field `{}` names a media collection but is not a media or rich text field",
+                field.name
+            );
             let unique: HashSet<_> = field.rich_nodes.iter().collect();
             assert!(
                 unique.len() == field.rich_nodes.len(),
@@ -497,6 +502,15 @@ impl<R: Resource> ResourceAdapter<R> {
             assert!(
                 field(&filter.name).is_some_and(|f| f.filterable),
                 "resource `{slug}`: filter `{}` needs a `.filterable()` field",
+                filter.name
+            );
+            assert!(
+                filter.none.is_none()
+                    || filter.kind == crate::ui::FilterType::Select
+                        && columns.get(&filter.name).is_some_and(|c| c.nullable)
+                        && field(&filter.name).is_some_and(|f| f.belongs_to.is_none()),
+                "resource `{slug}`: filter `{}` has a `none` option but is not a select filter with options on a \
+                 nullable column (a `belongs_to` filter picks records)",
                 filter.name
             );
         }

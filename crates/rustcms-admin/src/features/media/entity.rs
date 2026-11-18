@@ -26,6 +26,9 @@ pub struct Model {
     pub height: Option<i32>,
     /// Alternative text (images), edited on the media record.
     pub alt: Option<String>,
+    /// Collection (`AdminProvider::media_collection`), set by the upload
+    /// and changed on the media record; `None`: no collection.
+    pub collection: Option<String>,
     /// Uploader.
     pub owner_id: i64,
     /// Upload time.

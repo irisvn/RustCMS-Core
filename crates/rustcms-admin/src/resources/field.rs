@@ -42,6 +42,8 @@ pub struct Field {
     pub(crate) rich_text: bool,
     /// Application nodes a rich text field accepts (`app.*`).
     pub(crate) rich_nodes: Vec<String>,
+    /// Media collection of the files uploaded through this field.
+    pub(crate) collection: Option<String>,
     pub(crate) label: Option<String>,
     pub(crate) audit_redact: bool,
     pub(crate) secret: Option<SecretKind>,
@@ -76,6 +78,7 @@ impl Field {
             media: None,
             rich_text: false,
             rich_nodes: Vec::new(),
+            collection: None,
             label: None,
             audit_redact: false,
             secret: None,
@@ -236,6 +239,21 @@ impl Field {
     /// declared.
     pub fn nodes<S: Into<String>>(mut self, names: impl IntoIterator<Item = S>) -> Self {
         self.rich_nodes.extend(names.into_iter().map(Into::into));
+        self
+    }
+
+    /// Files uploaded through this media or rich text field go into the media
+    /// collection `name` (declared with
+    /// [`crate::AdminProvider::media_collection`]; several fields may share
+    /// one), and its picker opens on that collection. Collections sort and
+    /// filter the library: the field still references files of any
+    /// collection the user may see.
+    ///
+    /// # Panics
+    /// At boot, on a field that is not media or rich text, or a collection
+    /// that is not declared.
+    pub fn collection(mut self, name: impl Into<String>) -> Self {
+        self.collection = Some(name.into());
         self
     }
 

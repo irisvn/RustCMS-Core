@@ -48,6 +48,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let _ = self.rich_nodes.set(nodes.clone());
     }
 
+    fn media_collections(&self) -> Vec<(String, String)> {
+        self.fields.iter().filter_map(|f| Some((f.name.clone(), f.collection.clone()?))).collect()
+    }
+
     fn field_link(&self, name: &str) -> Option<(Option<&'static str>, &'static str)> {
         self.field(name).map(|f| (f.belongs_to, self.column(name).kind.name()))
     }

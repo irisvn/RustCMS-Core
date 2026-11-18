@@ -6,7 +6,7 @@ import { FileText, LayoutGrid, List, Upload, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { usePanelConfig, useSession } from "@/api/context";
 import { invalidateAfterWrite } from "@/api/queries";
-import type { Envelope } from "@/api/types";
+import { type Envelope, NONE_OPTION } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { useImageViewer, viewerImageOf } from "@/components/lightbox";
 import { mediaUrl } from "@/lib/rich-text";
@@ -143,11 +143,23 @@ export function MediaGrid({ rows, generation, select, actions, badge }: {
 }
 
 /**
+ * The collection uploads from the Media page go into: the one its list is
+ * filtered on, when exactly one and declared by the panel (none for
+ * "Unassigned", several, or a name no longer declared: the server refuses it).
+ */
+export function uploadCollection(search: Record<string, unknown>, declared: readonly string[]): string | undefined {
+  const value = search["filter[collection][in]"];
+  if (typeof value !== "string" || value === NONE_OPTION || !declared.includes(value)) return undefined;
+  return value;
+}
+
+/**
  * "Upload files": the media library's queue ({@link useUploads}: the server's
  * size limit checked first, two at a time at most, a busy server waited for,
  * a retry only when it may succeed), the list refreshed after each file.
+ * Files go into `collection` (the one the list is filtered on, if just one).
  */
-export function MediaUploader({ disabled }: { disabled?: boolean }) {
+export function MediaUploader({ disabled, collection }: { disabled?: boolean; collection?: string }) {
   const t = useT();
   const client = useQueryClient();
   const picker = useRef<HTMLInputElement>(null);
@@ -158,6 +170,7 @@ export function MediaUploader({ disabled }: { disabled?: boolean }) {
       setUploaded((n) => n + 1);
       void invalidateAfterWrite(client, MEDIA_SLUG);
     },
+    collection,
   });
   const pending = uploads.uploads.filter((u) => u.status === "queued" || u.status === "uploading").length;
   const clear = () => {

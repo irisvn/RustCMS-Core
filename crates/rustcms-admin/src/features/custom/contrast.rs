@@ -268,7 +268,8 @@ mod tests {
         let none = Palette::default();
         for (name, defaults) in [("light", LIGHT), ("dark", DARK)] {
             for (text, background) in PAIRS {
-                let (Some(a), Some(b)) = (color(defaults, &none, text, 0), color(defaults, &none, background, 0)) else {
+                let (Some(a), Some(b)) = (color(defaults, &none, text, 0), color(defaults, &none, background, 0))
+                else {
                     continue;
                 };
                 let r = ratio(a, b);

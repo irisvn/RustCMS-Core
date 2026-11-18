@@ -253,7 +253,11 @@ inline: boolean,
 /**
  * Alternative text, when given (edited on the media record).
  */
-alt?: string, };
+alt?: string, 
+/**
+ * Collection, when it is in one.
+ */
+collection?: string, };
 
 export type InputSchema = { 
 /**
@@ -332,6 +336,12 @@ props?: JsonValue,
  * Media references (`file_upload` inputs).
  */
 media?: MediaSchema, 
+/**
+ * Media collection of the files uploaded through the input, and the
+ * collection its picker opens on (`file_upload` and `rich_text` inputs,
+ * vocabulary 23).
+ */
+collection?: string, 
 /**
  * What the user may change (`belongs_to_many` inputs, vocabulary 9).
  */
@@ -956,7 +966,12 @@ options?: Array<SelectOption>,
 /**
  * Related resource (options endpoint).
  */
-relationship?: Relationship, };
+relationship?: Relationship, 
+/**
+ * Label of the option for records without a value (select filters),
+ * sent as `~none` in the `in` list (vocabulary 23).
+ */
+none?: string, };
 
 export type ActionSchema = { 
 /**
@@ -2297,7 +2312,13 @@ permissions: Array<string>,
  * Upload limits, when the media library is enabled and the user may
  * upload (`media.create`).
  */
-uploads?: PanelUploads, };
+uploads?: PanelUploads, 
+/**
+ * The media library's collections, in declaration order, labels
+ * translated: when the panel declares some and the user may list or
+ * upload files (vocabulary 23).
+ */
+mediaCollections?: Array<SelectOption>, };
 
 export type DataResponse<T> = { 
 /**

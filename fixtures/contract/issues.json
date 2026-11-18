@@ -218,6 +218,9 @@
   "max_value": [
     "may not be greater than {max}"
   ],
+  "media_collection": [
+    "is not a media collection"
+  ],
   "min_items": [
     "must have at least {min} items"
   ],
@@ -373,6 +376,9 @@
   ],
   "unsupported_key": [
     "unsupported key type"
+  ],
+  "upload_parts": [
+    "must be one part named `file`, with at most one `collection`"
   ],
   "uuid": [
     "must be a UUID"

@@ -18,7 +18,7 @@ import { Input, NativeSelect } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Cell, FilterControl, KNOWN_FILTERS, columnClass, type FilterParams } from "@/renderers/table";
 import { cn } from "@/lib/utils";
-import { GRID_PER_PAGE, MEDIA_SLUG, MediaGrid, MediaUploader, MediaViewToggle, gridPageSizes, useMediaView } from "@/renderers/media-library";
+import { GRID_PER_PAGE, MEDIA_SLUG, MediaGrid, MediaUploader, MediaViewToggle, gridPageSizes, uploadCollection, useMediaView } from "@/renderers/media-library";
 import { errorText, formatCount, later, t as translate, useT } from "@/i18n";
 
 export type ListSearch = Record<string, string>;
@@ -301,7 +301,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
       <PageHeader title={s.resource.pluralLabel} description={t("list.description", { resource: s.resource.pluralLabel.toLocaleLowerCase() })} actions={
         <div className="flex flex-wrap items-start gap-2">
           {media && <MediaViewToggle view={mediaView} onChange={setMediaView} />}
-          {media && s.abilities.upload && !readOnly && <MediaUploader />}
+          {media && s.abilities.upload && !readOnly && <MediaUploader collection={uploadCollection(search, (table.filters.find((f) => f.name === "collection")?.options ?? []).map((o) => String(o.value)))} />}
           {s.abilities.export && <ExportButton slug={slug} query={exportQuery} />}
           {s.abilities.import && !readOnly && (
             <Link to="/r/$slug/import" params={{ slug }} className={buttonVariants({ variant: "outline" })}>

@@ -9,11 +9,11 @@ import { ChevronLeft, ChevronRight, FileText, Upload as UploadIcon, ZoomIn } fro
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePanelConfig } from "@/api/context";
 import { keys, usePanel, useRecords } from "@/api/queries";
-import type { Envelope, MediaItem } from "@/api/types";
+import { type Envelope, type MediaItem, NONE_OPTION } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { useImageViewer, viewerImageOf } from "@/components/lightbox";
 import { Dialog } from "@/components/ui/dialog";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, NativeSelect } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { mediaUrl } from "@/lib/rich-text";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,7 @@ export function mediaItemOf(record: Envelope): MediaItem {
     inline: isInlineImage(mime),
     // Its alternative text, when the record has one.
     ...(typeof d.alt === "string" && d.alt !== "" ? { alt: d.alt } : {}),
+    ...(typeof d.collection === "string" && d.collection !== "" ? { collection: d.collection } : {}),
   };
 }
 
@@ -71,6 +72,8 @@ export interface PickerRules {
   maxSize?: number;
   /** Items already used (shown as such, not chosen again). */
   exclude?: string[];
+  /** The field's media collection: uploads go into it, the library opens on it. */
+  collection?: string;
 }
 
 /** Whether the user may open the library or upload (else the picker has nothing to show). */
@@ -133,6 +136,7 @@ function PickerBody({ onClose, onPick, action, rules }: {
       void client.invalidateQueries({ queryKey: keys.records("media") });
     },
     check,
+    collection: rules.collection,
   });
   // How many more files may be uploaded: what is still free, less every file the
   // queue still holds (on its way, in but waiting for the ones before it, or a
@@ -177,6 +181,12 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState(1);
+  // The panel's collections: opens on the field's (when declared), else every
+  // file; until the user chooses, it follows the panel as it loads.
+  const collections = usePanel().data?.mediaCollections ?? [];
+  const [chosenCollection, setCollection] = useState<string | null>(null);
+  const collection = chosenCollection
+    ?? (rules.collection && collections.some((c) => c.value === rules.collection) ? rules.collection : "");
   useEffect(() => {
     const next = search.trim();
     // Back to the first page only when the search changes (not on opening:
@@ -193,8 +203,9 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
     if (debounced) q.set("search", debounced);
     const mime = mimeFilter(rules.accept);
     if (mime) q.set("filter[mime][in]", mime);
+    if (collection) q.set("filter[collection][in]", collection);
     return q;
-  }, [page, debounced, rules.accept]);
+  }, [page, debounced, rules.accept, collection]);
   const records = useRecords("media", query);
   // Rows of the previous query, still shown while the next loads: not actionable.
   const stale = records.isPlaceholderData || records.isFetching && !records.data;
@@ -205,13 +216,28 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
   const viewer = useImageViewer(images.map(viewerImageOf));
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`${id}-search`}>{t("picker.search")}</Label>
-        <Input id={`${id}-search`} type="search" autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => {
-            // The picker sits inside the record's form: Enter never submits it.
-            if (e.key === "Enter") e.preventDefault();
-          }} />
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <Label htmlFor={`${id}-search`}>{t("picker.search")}</Label>
+          <Input id={`${id}-search`} type="search" autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              // The picker sits inside the record's form: Enter never submits it.
+              if (e.key === "Enter") e.preventDefault();
+            }} />
+        </div>
+        {collections.length > 0 && (
+          <div className="flex flex-col gap-2 sm:w-56">
+            <Label htmlFor={`${id}-collection`}>{t("picker.collection")}</Label>
+            <NativeSelect id={`${id}-collection`} value={collection} onChange={(e) => {
+              setCollection(e.target.value);
+              setPage(1);
+            }}>
+              <option value="">{t("picker.allCollections")}</option>
+              {collections.map((c) => <option key={String(c.value)} value={String(c.value)}>{c.label}</option>)}
+              <option value={NONE_OPTION}>{t("media.unassigned")}</option>
+            </NativeSelect>
+          </div>
+        )}
       </div>
       {/* The first page only: later ones keep the previous rows (marked busy) while they load. */}
       {records.isLoading && <p role="status" className="text-sm text-muted-foreground">{t("picker.loading")}</p>}

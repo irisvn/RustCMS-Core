@@ -94,7 +94,8 @@ for them takes precedence.
 ## Uploads
 
 `POST {admin}/api/media`, `multipart/form-data` with exactly one part named
-`file`. It needs `media.create`, the CSRF token and an allowed `Origin`, and
+`file`, and optionally one part named `collection` (a declared
+[collection](#collections), before or after the file; empty means none). It needs `media.create`, the CSRF token and an allowed `Origin`, and
 may carry an `Idempotency-Key`.
 
 - The type is detected from the content (magic bytes), never from the name or
@@ -102,7 +103,7 @@ may carry an `Idempotency-Key`.
   by `allowed_types`, see [storage](../digging-deeper/storage.md)); SVG, HTML,
   XML and scripts never are.
 - Images must be readable, with dimensions within `max_pixels`.
-- Answer: `201 {data: {id, name, mime, size, width?, height?, inline, alt?}}`
+- Answer: `201 {data: {id, name, mime, size, width?, height?, inline, alt?, collection?}}`
   (`rustcms::admin::media::MediaItem`). Storage paths are never sent.
 - An upload is recorded before its file is stored and committed with its row.
   A crash in between is cleaned by `media:prune` and by the
@@ -115,7 +116,8 @@ may carry an `Idempotency-Key`.
 | 413 | the file is larger than `max_upload_bytes`, or the whole body larger than that plus 64 KiB of multipart framing |
 | 429, `Retry-After: 5` | `max_concurrent_uploads` uploads are already being received on this instance |
 | 429 | more than 60 uploads in a minute by the same user |
-| 422 `file` | "is not an accepted file type", "is not a complete file of its type", "is not a valid image", "has too many pixels", "must be the only part, named `file`" |
+| 422 `file` | "is not an accepted file type", "is not a complete file of its type", "is not a valid image", "has too many pixels", "must be one part named `file`, with at most one `collection`" |
+| 422 `collection` | "is not a media collection": a name the panel does not declare |
 | 409 `write_conflict` (reason `upload_expired`) | the file was stored, but pruning reclaimed it before its row committed (stored files not yet committed become reclaimable after an hour): send it again |
 
 ## The Media page
@@ -143,7 +145,8 @@ refused: files enter the library only by upload).
 ## Names and alternative text
 
 A file's record page shows the file and what was detected (type, size,
-dimensions). Its edit form changes exactly two fields:
+dimensions). Its edit form changes its name and alternative text (and its
+[collection](#collections), when the panel declares some):
 
 - `name`: a rename, cleaned as uploaded names are, at most 255 characters,
   never empty. Downloads use the new name.
@@ -162,6 +165,58 @@ files have none). Code that reads media rows itself uses
 
 ![A media record: the file, its details, and the name and alt text form](/img/admin/media-record.webp)
 *A RustCMS demo application: a media record page.*
+
+## Collections
+
+Collections sort the library into named groups: the covers of posts, the
+images in their content, the site's logo. A file is in one collection at
+most. Declare them on the panel, with the label the panel shows (translated
+like any label), then name one on the media fields and settings whose uploads
+go into it:
+
+<<< @/../../../examples/demo/src/providers/admin_panel_provider.rs#media-collections [src/providers/admin_panel_provider.rs]
+
+```rust
+Field::column(post::Column::Cover).media().accept(&["image/*"]).collection("post-covers"),
+Field::column(post::Column::Content).rich_text().collection("post-content"),
+SettingField::media("logo").accept(&["image/*"]).collection("branding"),
+```
+
+| Builder | Effect |
+|---|---|
+| `AdminProvider::media_collection(name, label)` | declares a collection; `name` is 1 to 64 of `a-z`, `0-9`, `.`, `_`, `-`, declared once; needs `media()` |
+| `Field::collection(name)` | on a `media()`, `media_list()` or `rich_text()` field: its uploads go into `name`, its picker opens on it; several fields may share one |
+| `SettingField::collection(name)` | the same on `SettingField::media` / `media_list` |
+
+A field that names a collection that is not declared, or a field that is not
+media or rich text, stops the boot. Fields without `.collection(..)` upload
+files without one, as before.
+
+- **Uploads.** The panel sends the input's collection as a `collection` part
+  next to the file (see [Uploads](#uploads)); the server stores it on the
+  file. A name the panel does not declare is refused (422 `collection`).
+- **The Media page** gets a **Collection** column and filter (with
+  **Unassigned** for files without one). Uploading while the list is filtered
+  on exactly one collection puts the new files into it.
+- **The picker** opens on the field's collection, with a choice of every
+  file, each collection, or the unassigned files; its uploads always go into
+  the field's collection.
+- **The media record**'s edit form moves a file to another collection, or to
+  none, with the same rights as a rename (`media.update`, and
+  `media.manage_all` for another user's file). Media hooks see the change.
+
+Collections only sort and filter. They never limit access: who sees a file
+and who may reference it is decided by the [scope](#whose-files-a-user-sees)
+alone, and a field accepts files of any collection (choosing one from
+another collection leaves it where it is).
+
+Files uploaded before collections existed, or through fields without one,
+have none (`collection` is `NULL`). A collection that is no longer declared
+stays on its files: it shows as its name, is kept when other fields of the
+record are edited, and is no longer offered. Without any declared collection
+the panel shows no column, filter or choice at all. The column comes with the
+framework migration `m20261202_000023_add_collection_to_media` (nullable,
+indexed with the upload time).
 
 ## The image viewer
 
@@ -472,7 +527,11 @@ form made from the attribute kinds. A React extension can draw and edit it
   already in the field are shown but cannot be chosen; a list field offers
   as many as it has room for.
 - **Upload** (with `media.create`): drop or choose files; they upload as
-  above and are chosen once stored.
+  above (into the field's [collection](#collections)) and are chosen once
+  stored.
+- **Collection** (when the panel declares collections): the library opens on
+  the field's collection; every file, another collection or the unassigned
+  files are a choice away.
 
 The server checks every chosen reference again on save (scope, trash,
 `accept`, `max_size`), as it does for any write.

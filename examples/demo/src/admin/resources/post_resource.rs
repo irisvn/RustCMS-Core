@@ -43,9 +43,12 @@ impl Resource for PostResource {
             Field::column(post::Column::AuthorId).guarded().readable(|_| true),
             Field::column(post::Column::Published).filterable().sortable(),
             Field::column(post::Column::PublishedAt).sortable().filterable(),
-            Field::column(post::Column::Cover).media().accept(&["image/*"]),
+            Field::column(post::Column::Cover).media().accept(&["image/*"]).collection("post-covers"),
             // Rich text that may hold the elements declared in the admin provider.
-            Field::column(post::Column::Content).rich_text().nodes(["app.kbd", "app.note_ref"]),
+            Field::column(post::Column::Content)
+                .rich_text()
+                .nodes(["app.kbd", "app.note_ref"])
+                .collection("post-content"),
             Field::column(post::Column::Attributes).key_value().max_items(20).max_length(200),
         ]
     }

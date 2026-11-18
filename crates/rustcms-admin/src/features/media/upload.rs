@@ -13,7 +13,8 @@ impl Drop for Staged {
     }
 }
 
-/// `POST {admin}/api/media` (multipart, one `file` part).
+/// `POST {admin}/api/media` (multipart: one `file` part, and an optional
+/// `collection` part naming a declared media collection).
 pub(crate) async fn upload(
     State(app): State<AppState>,
     AdminCtx(ctx): AdminCtx,
@@ -32,7 +33,13 @@ pub(crate) async fn upload(
         .await
         .map_err(|_| ValidationErrors::field("file", "must be sent as multipart/form-data"))?;
 
-    let (staged, name, sha256, size, head) = receive(&media, &mut multipart).await?;
+    let Received { staged, name, sha256, size, head, collection } = receive(&media, &mut multipart).await?;
+    // Collections sort the library: a name the panel does not declare is refused.
+    if let Some(collection) = &collection
+        && ctx.registry.media_collection_named(collection).is_none()
+    {
+        return Err(ValidationErrors::field("collection", "is not a media collection").into());
+    }
     let mut errors = ValidationErrors::new();
     let Some((mime, ext)) = detect(&head, &media.config.allowed_types) else {
         errors.add("file", "is not an accepted file type");
@@ -56,7 +63,11 @@ pub(crate) async fn upload(
     };
 
     let claim = key.as_deref().map(|key| {
-        let request = serde_json::json!({ "sha256": sha256, "size": size, "name": name });
+        let mut request = serde_json::json!({ "sha256": sha256, "size": size, "name": name });
+        // The collection is part of the request: the same key with another one is another request.
+        if let Some(collection) = &collection {
+            request["collection"] = serde_json::Value::String(collection.clone());
+        }
         crate::idempotency::Claim::new(&ctx.principal, SLUG, "upload", key, &request)
     });
     // A retry of a committed upload: answer with it, store nothing.
@@ -107,6 +118,7 @@ pub(crate) async fn upload(
         width: Set(width),
         height: Set(height),
         alt: Set(None),
+        collection: Set(collection),
         owner_id: Set(owner),
         created_at: Set(Utc::now()),
         deleted_at: Set(None),
@@ -166,21 +178,64 @@ pub(super) async fn replay(ctx: &Ctx, claim: &crate::idempotency::Claim) -> AppR
     Ok(Some(MediaItem::from(&model)))
 }
 
-/// Reads the one `file` part into a staged file: its clean name, SHA-256, size
-/// and first bytes. Any other part, or more than one file, is refused.
-pub(super) async fn receive(
-    media: &MediaState,
-    multipart: &mut Multipart,
-) -> AppResult<(Staged, String, String, u64, Vec<u8>)> {
+/// What an upload sends besides its file.
+pub(super) struct Received {
+    pub(super) staged: Staged,
+    pub(super) name: String,
+    pub(super) sha256: String,
+    pub(super) size: u64,
+    pub(super) head: Vec<u8>,
+    /// The `collection` part, when sent and not empty (checked by the caller).
+    pub(super) collection: Option<String>,
+}
+
+/// Reads the one `file` part into a staged file (its clean name, SHA-256,
+/// size and first bytes) and the optional `collection` part, in any order.
+/// Any other part, or either part twice, is refused.
+pub(super) async fn receive(media: &MediaState, multipart: &mut Multipart) -> AppResult<Received> {
+    const PARTS: &str = "must be one part named `file`, with at most one `collection`";
     let bad = |message: &str| AppError::from(ValidationErrors::field("file", message));
     // Over the body limit is a 413 wherever the parser notices it.
     let read_error = |e: axum::extract::multipart::MultipartError| {
         if e.status() == StatusCode::PAYLOAD_TOO_LARGE { AppError::PayloadTooLarge } else { bad("could not be read") }
     };
-    let mut field = multipart.next_field().await.map_err(read_error)?.ok_or_else(|| bad("is required"))?;
-    if field.name() != Some("file") {
-        return Err(bad("must be the only part, named `file`"));
+    let mut file = None;
+    let mut collection: Option<Option<String>> = None;
+    while let Some(mut field) = multipart.next_field().await.map_err(read_error)? {
+        match field.name() {
+            Some("file") if file.is_none() => file = Some(stage(media, &mut field, &bad, &read_error).await?),
+            Some("collection") if collection.is_none() => {
+                // A name, never more than its longest (plus a byte to notice it).
+                let mut bytes = Vec::new();
+                while let Some(chunk) = field.chunk().await.map_err(read_error)? {
+                    bytes.extend_from_slice(&chunk);
+                    if bytes.len() > MAX_COLLECTION {
+                        return Err(ValidationErrors::field("collection", "is not a media collection").into());
+                    }
+                }
+                let text = String::from_utf8(bytes)
+                    .map_err(|_| AppError::from(ValidationErrors::field("collection", "is not a media collection")))?;
+                collection = Some(Some(text).filter(|t| !t.is_empty()));
+            }
+            // A second collection is the collection's problem; anything else, the file's.
+            Some("collection") => return Err(ValidationErrors::field("collection", PARTS).into()),
+            _ => return Err(bad(PARTS)),
+        }
     }
+    let (staged, name, sha256, size, head) = file.ok_or_else(|| bad("is required"))?;
+    if size == 0 {
+        return Err(bad("is empty"));
+    }
+    Ok(Received { staged, name, sha256, size, head, collection: collection.flatten() })
+}
+
+/// Streams the `file` part to a staged file.
+async fn stage(
+    media: &MediaState,
+    field: &mut axum::extract::multipart::Field<'_>,
+    bad: &impl Fn(&str) -> AppError,
+    read_error: &impl Fn(axum::extract::multipart::MultipartError) -> AppError,
+) -> AppResult<(Staged, String, String, u64, Vec<u8>)> {
     let original = field.file_name().unwrap_or("file");
     if original.chars().count() > MAX_NAME {
         return Err(bad("has a name longer than 255 characters"));
@@ -204,13 +259,6 @@ pub(super) async fn receive(
         out.write_all(&chunk).await.map_err(AppError::internal)?;
     }
     out.flush().await.map_err(AppError::internal)?;
-    drop(field);
-    if multipart.next_field().await.map_err(read_error)?.is_some() {
-        return Err(bad("must be the only part, named `file`"));
-    }
-    if size == 0 {
-        return Err(bad("is empty"));
-    }
     Ok((staged, name, hex::encode(hasher.finalize()), size, head))
 }
 

@@ -26,6 +26,7 @@ pub fn provider() -> AdminProvider {
         )
         // #endregion theme
         .media()
+        .media_collection("news-covers", "News covers")
         .resource::<CourseResource>()
         .resource::<LessonResource>()
         .resource::<LearnerResource>()

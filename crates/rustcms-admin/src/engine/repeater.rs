@@ -439,6 +439,7 @@ pub(crate) fn rows_schema(
                         widget: input.widget.clone(),
                         props: input.props.clone(),
                         media: None,
+                        collection: None,
                         links: None,
                         prefix: input.prefix.clone(),
                         suffix: input.suffix.clone(),

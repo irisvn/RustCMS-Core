@@ -52,7 +52,7 @@ interface ImageDetails {
   size: ImageWidth;
 }
 
-export function RichEditorWidget({ id, label, value, onChange, disabled, invalid, describedBy, nullable, onBusy, nodes = NO_NODES }: {
+export function RichEditorWidget({ id, label, value, onChange, disabled, invalid, describedBy, nullable, onBusy, nodes = NO_NODES, collection }: {
   id: string;
   label: string;
   value: string;
@@ -64,6 +64,8 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   onBusy?: (busy: boolean) => void;
   /** The application nodes the field accepts (version 3). */
   nodes?: RichNodeSchema[];
+  /** The media collection its images are uploaded into and its picker opens on. */
+  collection?: string;
 }) {
   const t = useT();
   const { apiPath } = usePanelConfig();
@@ -86,6 +88,7 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   const uploads = useUploads({
     onUploaded: (item) => insertImages.current([item], true),
     check: (file) => (file.type.startsWith("image/") ? null : later("rich.imagesOnlyFile", { file: file.name })),
+    collection,
   });
   // Files still queued or uploading (failures left in the list do not count).
   const sending = uploads.uploads.some((u) => u.status === "queued" || u.status === "uploading");
@@ -416,7 +419,7 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         open={picking}
         title={t("rich.imageTitle")}
         action={t("picker.insert")}
-        rules={{ multiple: true, max: PICK_MAX, accept: ["image/*"] }}
+        rules={{ multiple: true, max: PICK_MAX, accept: ["image/*"], collection }}
         onClose={() => {
           setPicking(false);
           editor?.commands.focus();

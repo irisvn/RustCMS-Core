@@ -17,25 +17,31 @@ const API = "http://localhost/admin/api";
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const idOf = (n: number) => `0199d3a4-1b2c-7d3e-8f40-${String(n).padStart(12, "0")}`;
 
-interface Row { n: number; name: string; mime: string; size: number; alt?: string }
+interface Row { n: number; name: string; mime: string; size: number; alt?: string; collection?: string }
 
 /**
  * The library: `rows` in scope, 24 a page; records every list query (answered
  * once `hold` resolves) and every upload (stored at once, or refused with
  * 429 the first `busy[name]` times).
  */
-function library(rows: Row[], { permissions = ["media.view_any", "media.view", "media.create"], uploads = true, hold = Promise.resolve(), busy = {} as Record<string, number> } = {}) {
+function library(rows: Row[], { permissions = ["media.view_any", "media.view", "media.create"], uploads = true, hold = Promise.resolve(), busy = {} as Record<string, number>, collections = [] as { value: string; label: string }[] } = {}) {
   const queries: URLSearchParams[] = [];
   const sent: string[] = [];
+  /** The `collection` part of each upload (null: none). */
+  const into: (string | null)[] = [];
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     const u = new URL(url, "http://localhost");
     if (u.pathname.endsWith("/panel")) {
-      return json({ brand: "x", user: { id: "1", name: "a", email: "a@b.c" }, navigation: [], system: {}, settings: [], pages: [], permissions, ...(uploads ? { uploads: { maxBytes: 1000, maxConcurrent: 2 } } : {}) });
+      return json({ brand: "x", user: { id: "1", name: "a", email: "a@b.c" }, navigation: [], system: {}, settings: [], pages: [], permissions, ...(uploads ? { uploads: { maxBytes: 1000, maxConcurrent: 2 } } : {}), ...(collections.length ? { mediaCollections: collections } : {}) });
     }
     if (u.pathname.endsWith("/auth/csrf")) return json({ csrfToken: "t", userId: "1" });
     if (u.pathname.endsWith("/media") && init?.method === "POST") {
-      const file = (init.body as FormData).get("file") as File;
+      const form = init.body as FormData;
+      const file = form.get("file") as File;
       sent.push(file.name);
+      into.push(form.get("collection") as string | null);
+      // Sent before the file (read by the server first).
+      if (form.has("collection")) expect([...form.keys()]).toEqual(["collection", "file"]);
       // The server's upload limit is reached: try again in a second.
       if ((busy[file.name] ?? 0) > 0) {
         busy[file.name]! -= 1;
@@ -48,8 +54,10 @@ function library(rows: Row[], { permissions = ["media.view_any", "media.view", "
       await hold;
       const search = u.searchParams.get("search") ?? "";
       const mimes = u.searchParams.get("filter[mime][in]")?.split(",");
+      const wanted = u.searchParams.get("filter[collection][in]")?.split(",");
       const page = Number(u.searchParams.get("page"));
-      const found = rows.filter((r) => r.name.includes(search) && (!mimes || mimes.includes(r.mime)));
+      const found = rows.filter((r) => r.name.includes(search) && (!mimes || mimes.includes(r.mime))
+        && (!wanted || wanted.includes(r.collection ?? "~none")));
       const data = found.slice((page - 1) * 24, page * 24).map((r) => ({
         key: idOf(r.n), title: r.name, abilities: {},
         // i64 columns are strings on the wire.
@@ -59,21 +67,22 @@ function library(rows: Row[], { permissions = ["media.view_any", "media.view", "
     }
     throw new Error(`unexpected ${url}`);
   });
-  return { queries, sent };
+  return { queries, sent, into };
 }
 
-const input = (media: InputSchema["media"]): InputSchema => ({
+const input = (media: InputSchema["media"], collection?: string): InputSchema => ({
   name: "gallery", label: "Gallery", type: "file_upload", valueType: "json", nullable: true, disabled: false, rules: [], columnSpan: 1, media,
+  ...(collection ? { collection } : {}),
 });
 
-function Field({ media, initial }: { media: InputSchema["media"]; initial: string | string[] }) {
+function Field({ media, initial, collection }: { media: InputSchema["media"]; initial: string | string[]; collection?: string }) {
   const [value, setValue] = useState<string | string[]>(initial);
   const client = new QueryClient();
   const session = createSession({ basePath: "/admin", apiPath: API }, client, () => {});
   return (
     <SessionContext.Provider value={session}>
       <QueryClientProvider client={client}>
-        <FileUploadWidget id="field-gallery" input={input(media)} value={value} onChange={setValue} invalid={false} />
+        <FileUploadWidget id="field-gallery" input={input(media, collection)} value={value} onChange={setValue} invalid={false} />
         <output data-testid="value">{JSON.stringify(value)}</output>
       </QueryClientProvider>
     </SessionContext.Provider>
@@ -88,6 +97,54 @@ afterEach(() => {
 });
 
 describe("media library picker", () => {
+  it("opens on the field's collection, browses the others and uploads into it", async () => {
+    const rows: Row[] = [
+      { n: 1, name: "cover.png", mime: "image/png", size: 100, collection: "covers" },
+      { n: 2, name: "doc.png", mime: "image/png", size: 100, collection: "docs" },
+      { n: 3, name: "loose.png", mime: "image/png", size: 100 },
+    ];
+    const collections = [{ value: "covers", label: "Covers" }, { value: "docs", label: "Documents" }];
+    const { queries, into } = library(rows, { collections });
+    render(<Field media={{ multiple: true, maxItems: 5, accept: ["image/*"] }} initial={[]} collection="covers" />);
+    const open = await screen.findByRole("button", { name: "Media library" });
+    await waitFor(() => expect(open).toBeEnabled());
+    await userEvent.click(open);
+    const dialog = await screen.findByRole("dialog", { name: "Gallery" });
+    const select = within(dialog).getByLabelText("Collection");
+    expect(select).toHaveValue("covers");
+    expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual(["All files", "Covers", "Documents", "Unassigned"]);
+    const names = async () => within(await within(dialog).findByRole("list", { name: "Files" })).getAllByRole("button", { pressed: false }).map((b) => b.textContent);
+    await waitFor(async () => expect(await names()).toEqual(["cover.png"]));
+    expect(queries.at(-1)!.get("filter[collection][in]")).toBe("covers");
+    // Every file, then the files without a collection: back to the first page each time.
+    await userEvent.selectOptions(select, "All files");
+    await waitFor(async () => expect(await names()).toHaveLength(3));
+    expect(queries.at(-1)!.has("filter[collection][in]")).toBe(false);
+    await userEvent.selectOptions(select, "Unassigned");
+    await waitFor(async () => expect(await names()).toEqual(["loose.png"]));
+    expect([queries.at(-1)!.get("filter[collection][in]"), queries.at(-1)!.get("page")]).toEqual(["~none", "1"]);
+    // An upload goes into the field's collection, whatever is browsed.
+    await userEvent.click(within(dialog).getByRole("tab", { name: "Upload" }));
+    await userEvent.upload(within(dialog).getByLabelText("Choose files"), new File(["x"], "new.png", { type: "image/png" }));
+    await waitFor(() => expect(into).toEqual(["covers"]));
+  });
+
+  it("has no collection choice when the panel declares none, and uploads without one", async () => {
+    const { into, queries } = library([{ n: 1, name: "a.png", mime: "image/png", size: 100 }]);
+    render(<Field media={{ multiple: false, maxItems: 1, accept: ["image/*"] }} initial="" collection="covers" />);
+    const open = await screen.findByRole("button", { name: "Media library" });
+    await waitFor(() => expect(open).toBeEnabled());
+    await userEvent.click(open);
+    const dialog = await screen.findByRole("dialog", { name: "Gallery" });
+    await within(dialog).findByRole("list", { name: "Files" });
+    expect(within(dialog).queryByLabelText("Collection")).toBeNull();
+    expect(queries.at(-1)!.has("filter[collection][in]")).toBe(false);
+    await userEvent.click(within(dialog).getByRole("tab", { name: "Upload" }));
+    await userEvent.upload(within(dialog).getByLabelText("Choose files"), new File(["x"], "b.png", { type: "image/png" }));
+    // The input names a collection the panel does not list: still sent (the server decides).
+    await waitFor(() => expect(into).toEqual(["covers"]));
+  });
+
   it("lists the accepted files in scope with thumbnails, searches and pages", async () => {
     const rows: Row[] = [
       ...Array.from({ length: 30 }, (_, i) => ({ n: i + 1, name: `cat-${i + 1}.png`, mime: "image/png", size: 100 })),

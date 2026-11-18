@@ -172,7 +172,7 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
     setBusy(true);
     setError(null);
     try {
-      const item = await uploadMedia(session.api, file, key);
+      const item = await uploadMedia(session.api, file, key, input.collection);
       if (!mounted.current) return;
       setRetry(null);
       setItems((all) => ({ ...all, [item.id]: item }));
@@ -255,7 +255,7 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
         open={picking}
         title={input.label}
         action={t("picker.use")}
-        rules={{ multiple: rules.multiple, max: rules.multiple ? rules.maxItems - ids.length : 1, accept: rules.accept, maxSize: rules.maxSize, exclude: ids }}
+        rules={{ multiple: rules.multiple, max: rules.multiple ? rules.maxItems - ids.length : 1, accept: rules.accept, maxSize: rules.maxSize, exclude: ids, collection: input.collection }}
         onClose={() => setPicking(false)}
         onPick={(picked) => {
           setPicking(false);

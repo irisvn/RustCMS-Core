@@ -17,10 +17,13 @@ import { later, show, type Text, t, useT } from "@/i18n";
 
 /**
  * Uploads `file` with the idempotency `key` (the same key on a retry: the
- * server stores it once). Returns the stored item.
+ * server stores it once), into the media `collection` when given. Returns the
+ * stored item.
  */
-export async function uploadMedia(api: ReturnType<typeof useSession>["api"], file: File, key: string): Promise<MediaItem> {
+export async function uploadMedia(api: ReturnType<typeof useSession>["api"], file: File, key: string, collection?: string): Promise<MediaItem> {
   const form = new FormData();
+  // Before the file: the server reads it without waiting for the file's bytes.
+  if (collection) form.append("collection", collection);
   form.append("file", file, file.name);
   const response = await api.request<DataResponse<MediaItem>>("POST", "/media", form, { "Idempotency-Key": key });
   return response.data;
@@ -52,6 +55,8 @@ export interface Upload {
   item?: MediaItem;
   /** The session epoch it was added in: never sent in another one. */
   epoch: number;
+  /** The media collection it goes into (the queue's when it was added). */
+  collection?: string;
 }
 
 /** Most files sent at once by one queue, whatever the server allows (its limit is shared). */
@@ -69,8 +74,13 @@ const retryable = (e: unknown) => !(e instanceof ApiError) || e.maybeApplied || 
  * files were added (a file still uploading holds back the ones after it; a
  * failed one does not), only while the component is mounted.
  * `check` may refuse a file before it is sent (returns the message).
+ * Files go into the media `collection` the queue has when they are added.
  */
-export function useUploads({ onUploaded, check }: { onUploaded: (item: MediaItem, file: File) => void; check?: (file: File) => Text | null }) {
+export function useUploads({ onUploaded, check, collection }: {
+  onUploaded: (item: MediaItem, file: File) => void;
+  check?: (file: File) => Text | null;
+  collection?: string;
+}) {
   const session = useSession();
   const panel = usePanel();
   const limits = panel.data?.uploads;
@@ -124,7 +134,7 @@ export function useUploads({ onUploaded, check }: { onUploaded: (item: MediaItem
         continue;
       }
       patch(upload.id, { status: "uploading", error: undefined });
-      uploadMedia(session.api, upload.file, upload.key).then(
+      uploadMedia(session.api, upload.file, upload.key, upload.collection).then(
         (item) => patch(upload.id, { status: "done", item, retryable: false, uncertain: false }),
         (e: unknown) => {
           // Gone meanwhile: nothing to show, nothing to send again.
@@ -162,12 +172,12 @@ export function useUploads({ onUploaded, check }: { onUploaded: (item: MediaItem
   const add = useCallback((files: Iterable<File>) => {
     const added: Upload[] = [];
     for (const file of files) {
-      const base = { id: crypto.randomUUID(), file, key: crypto.randomUUID(), retryable: false, uncertain: false, autoRetries: 0, epoch: session.api.epoch };
+      const base = { id: crypto.randomUUID(), file, key: crypto.randomUUID(), retryable: false, uncertain: false, autoRetries: 0, epoch: session.api.epoch, collection };
       const refused = check?.(file) ?? (maxBytes !== undefined && file.size > maxBytes ? later("media.tooLarge", { file: file.name }) : null);
       added.push(refused ? { ...base, status: "failed", error: refused } : { ...base, status: "queued" });
     }
     if (added.length) setUploads((all) => [...all, ...added]);
-  }, [check, maxBytes, session.api]);
+  }, [check, maxBytes, session.api, collection]);
   // A retry belongs to the current session (the same key: the server stores it once).
   const retry = useCallback((id: string) => patch(id, { status: "queued", error: undefined, autoRetries: 0, epoch: session.api.epoch }), [patch, session.api]);
   const dismiss = useCallback((id: string) => setUploads((all) => all.filter((u) => u.id !== id)), []);

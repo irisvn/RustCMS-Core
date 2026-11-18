@@ -50,7 +50,7 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | POST | `/imports/{id}/run` `{mapping}` | `ImportView` (running); once, then 409 `import_started` |
 | GET | `/exports/{id}/file` | `text/csv`; owner only (else 404), 409 `export_not_ready` / `export_stale` (credentials, permission, fields or any record no longer visible) |
 | GET | `/resources/{slug}/actions/{action}/fields/{field}/options?search=&keys=` | `{data: [SelectOption]}` of a form's `belongs_to` field (keys as text) |
-| POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (with `alt`, its alternative text; media library enabled; the media schema's `upload` ability says whether the user may); 429 with `Retry-After` when every upload slot of the process is busy (before the body is read) or beyond 60 uploads a minute per user |
+| POST | `/media` (multipart: one `file` part, and an optional `collection` part naming a declared collection, in any order; 422 `collection` for another name) | 201 `{data: MediaItem}` (with `alt`, its alternative text, and `collection`; media library enabled; the media schema's `upload` ability says whether the user may); 429 with `Retry-After` when every upload slot of the process is busy (before the body is read) or beyond 60 uploads a minute per user |
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../guide/src/admin/users-roles.md) |
@@ -204,6 +204,15 @@ older documents (`document_needs_version`) and more than 500 nodes
 (`max_app_nodes`). Clients of vocabulary 17 and below show version 3 documents
 read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
 with `registerRichTextNode` (host `ui` 4).
+
+Vocabulary 23 adds media collections. `GET /panel` may carry
+`mediaCollections` (`[{value, label}]`, declaration order, labels translated)
+for users who may list or upload files. A `file_upload` or `rich_text` input
+may carry `collection`: its uploads send it as a `collection` part, and its
+picker opens on it. A select filter may carry `none`, the label of a last
+choice for records without a value, sent as `~none` in its `in` list (matched
+as `IS NULL`; `~none,a` matches either). Older clients never send the part
+(files without a collection) and show no such choice.
 
 Vocabulary 22 adds the image viewer's switch: a media entry and an input's
 `media` may carry `preview: false` (sent only then): its images do not open

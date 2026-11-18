@@ -141,6 +141,7 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 
     pub(super) fn filter_condition(&self, ctx: &Ctx, query: &ListQuery, errors: &mut ValidationErrors) -> Condition {
+        use sea_orm::sea_query::IntoCondition;
         let mut condition = Condition::all();
         // Children of one record (relation lists): an internal condition, not a client filter.
         if let Some((field, key)) = &query.parent {
@@ -199,8 +200,16 @@ impl<R: Resource> ResourceAdapter<R> {
                     errors.add(name, format!("must be a list of 1 to {} items", self.limits.in_items));
                     continue;
                 }
-                match items.iter().map(decode).collect::<Result<Vec<_>, _>>() {
-                    Ok(values) => column.column.is_in(values),
+                // A select filter with a "none" option (`SelectFilter::none`) reads its token as no value.
+                let none = self.table_ui.filters.iter().any(|f| f.name == name && f.none.is_some());
+                let is_none = |v: &serde_json::Value| none && v.as_str() == Some(crate::ui::NONE_OPTION);
+                let wants_null = items.iter().any(is_none);
+                match items.iter().filter(|v| !is_none(v)).map(decode).collect::<Result<Vec<_>, _>>() {
+                    Ok(values) if wants_null && values.is_empty() => column.column.is_null().into_condition(),
+                    Ok(values) if wants_null => {
+                        Condition::any().add(column.column.is_null()).add(column.column.is_in(values)).into_condition()
+                    }
+                    Ok(values) => column.column.is_in(values).into_condition(),
                     Err(e) => {
                         errors.add(name, e.0);
                         continue;
@@ -222,6 +231,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     FilterOp::Lte => column.column.lte(value),
                     FilterOp::In => unreachable!(),
                 }
+                .into_condition()
             };
             condition = condition.add(expr);
         }

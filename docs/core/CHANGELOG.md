@@ -51,6 +51,20 @@ All notable changes are documented here. The format follows
   the SDK's `Badge`, whose `color` prop is now typed). A theme or runtime branding that brings a text pair under
   4.5:1 logs a warning (pair, mode, ratio; once per change for the branding); the boot never stops for it.
 
+- Media collections (vocabulary 23): `AdminProvider::media_collection(name, label)` declares a collection of the
+  media library, `Field::collection(name)` (media, media list and rich text fields) and
+  `SettingField::collection(name)` (media settings) put the files uploaded through them into it. Uploads take an
+  optional `collection` part (a declared name, else 422); the Media page gains a Collection column and filter
+  (with Unassigned) and uploads into the collection it is filtered on; the picker opens on the field's
+  collection, with every file, each collection and the unassigned files a choice away; the media record's form
+  moves a file to another collection (rights of a rename; media hooks see it). Collections only sort and filter:
+  scope and references ignore them. Without a declared collection nothing changes. `InputSchema` gains
+  `collection`, `PanelResponse` `mediaCollections`, `MediaItem` `collection`. Framework migration
+  `m20261202_000023_add_collection_to_media` (nullable `media.collection` and an index on it with `created_at`;
+  its `down` drops both). Demo: post covers, post content and branding collections; LMS: news covers.
+- `SelectFilter::none(label)`: a last choice for records without a value (nullable columns), sent as `~none`
+  in the `in` list and matched as `IS NULL` (`FilterSchema.none`).
+
 ### Changed
 - Panel colors (dark mode first): every text pair reaches WCAG AA and input borders and focus rings 3:1, in both
   modes (checked by the E2E suite). Dark: main buttons light grey instead of white, menus and dialogs lighter
@@ -64,6 +78,8 @@ All notable changes are documented here. The format follows
   checkboxes and outline buttons now use the new `input` token (darker than `border`, for 3:1): a theme that set
   `border` for them sets `input` too. Demo: tags of kind topic are `info`.
 - The exports list shows times in the panel's language (it used the browser's).
+- An upload with a part other than `file` and `collection` is refused with "must be one part named `file`,
+  with at most one `collection`" (code `upload_parts`; it was `file_part`). New code `media_collection`.
 - Table columns whose field has a select or checkbox list with options in the form now show its labels instead
   of the values; `.raw()` keeps the values.
 - Values of `TableColumn::color` are compared in canonical wire form, as a select's options, on every column:

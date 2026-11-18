@@ -1,6 +1,6 @@
 // Table cells and filters from the table schema.
 import { Check, X } from "lucide-react";
-import type { ColumnSchema, Envelope, FilterSchema, JsonValue } from "@/api/types";
+import { type ColumnSchema, type Envelope, type FilterSchema, type JsonValue, NONE_OPTION } from "@/api/types";
 import { Badge, badgeColor } from "@/components/ui/badge";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { colorOf, display, isDateKind, optionLabel } from "@/lib/wire";
@@ -203,6 +203,8 @@ export function FilterControl({
                 {o.label}
               </option>
             ))}
+            {/* Records without a value (vocabulary 23). */}
+            {filter.none !== undefined && <option value={NONE_OPTION}>{filter.none}</option>}
           </NativeSelect>
         </label>
       );

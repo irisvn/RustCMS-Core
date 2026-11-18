@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 22;
+pub const VOCABULARY_VERSION: u32 = 23;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -170,6 +170,12 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media: Option<MediaSchema>,
+    /// Media collection of the files uploaded through the input, and the
+    /// collection its picker opens on (`file_upload` and `rich_text` inputs,
+    /// vocabulary 23).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collection: Option<String>,
     /// What the user may change (`belongs_to_many` inputs, vocabulary 9).
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -760,6 +766,11 @@ pub struct FilterSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship: Option<Relationship>,
+    /// Label of the option for records without a value (select filters),
+    /// sent as `~none` in the `in` list (vocabulary 23).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub none: Option<String>,
 }
 
 /// An action the user may run (per-record permission is in each envelope's `abilities`).

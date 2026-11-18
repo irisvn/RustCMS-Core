@@ -4,7 +4,10 @@ export type * from "./types.gen";
 
 /** Schema and vocabulary versions this bundle understands. */
 export const SCHEMA_VERSION = 2;
-export const VOCABULARY_VERSION = 22;
+export const VOCABULARY_VERSION = 23;
+
+/** A select filter's "no value" choice in `in` lists (`FilterSchema.none`, vocabulary 23). */
+export const NONE_OPTION = "~none";
 
 export interface Me {
   user: { id: string; name: string; email: string };

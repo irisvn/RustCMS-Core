@@ -276,6 +276,7 @@
                         "valueType": "json"
                       },
                       {
+                        "collection": "gadget-photos",
                         "columnSpan": 1,
                         "disabled": false,
                         "label": "Photo",
@@ -667,5 +668,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 22
+  "vocabularyVersion": 23
 }

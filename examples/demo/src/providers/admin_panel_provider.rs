@@ -20,6 +20,13 @@ pub fn provider() -> AdminProvider {
         // #region media
         .media()
         .media_hook(crate::admin::media_hooks::MediaChanges)
+        // #region media-collections
+        // Collections sort the library: files uploaded through a field that
+        // names one go into it (`Field::collection`).
+        .media_collection("post-covers", "Post covers")
+        .media_collection("post-content", "Post content")
+        .media_collection("branding", "Branding")
+        // #endregion media-collections
         // #endregion media
         // #region rich-text-nodes
         // Elements a post's content may hold (rich text version 3): a keyboard

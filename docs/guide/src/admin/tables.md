@@ -151,6 +151,12 @@ Filters take `.label("…")`. The panel's select sends one value; an API client
 may send several (`filter[status][in]=active,withdrawn`). Several filters
 combine with AND.
 
+On a nullable column, `SelectFilter::make("collection").none("Unassigned")`
+adds a last choice for records without a value. It is sent as `~none` in the
+list (`filter[collection][in]=~none`, or `~none,covers` for either) and
+matched as `IS NULL` (in a JSON list too). Without
+`.none(..)`, `~none` is compared as any other value.
+
 ## Search, sorting and pages
 
 Search covers the `.searchable()` fields the user may read (case-insensitive;
@@ -214,6 +220,8 @@ The boot stops when:
 
 - a column is not a field, or is an encrypted field;
 - a filter's field is not `.filterable()`;
+- a filter with `.none(..)` is not a `SelectFilter` on a nullable column, or is
+  on a `belongs_to` field;
 - the default sort's field is not `.sortable()`;
 - a cell name is not `vendor/name` (each part 1 to 32 characters of `a-z`,
   `0-9` and `-`), or its props exceed 4 KiB;

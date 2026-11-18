@@ -33,6 +33,8 @@ pub trait DynResource: Send + Sync {
     /// # Panics
     /// When a field accepts a node that is not declared.
     fn attach_rich_nodes(&self, nodes: &Arc<crate::rich_text::AppNodes>);
+    /// `(field, collection)` of the fields that name a media collection.
+    fn media_collections(&self) -> Vec<(String, String)>;
     /// `belongs_to` slug and wire kind of field `name`, if it is a field.
     fn field_link(&self, name: &str) -> Option<(Option<&'static str>, &'static str)>;
     /// Whether field `name` references media (a media field, or rich text
@@ -280,6 +282,9 @@ pub struct Registry {
     rich_nodes: crate::rich_text::AppNodes,
     /// The same, shared with the resources (set by [`Registry::finish`]).
     rich_table: Arc<crate::rich_text::AppNodes>,
+    /// The media library's collections, in declaration order
+    /// ([`crate::AdminProvider::media_collection`]).
+    media_collections: Vec<crate::media::MediaCollection>,
 }
 
 impl Registry {
@@ -292,6 +297,33 @@ impl Registry {
     pub fn media_hook(mut self, hook: impl crate::media::MediaHook) -> Self {
         self.media_hooks.push(Arc::new(hook));
         self
+    }
+
+    /// Declares a collection of the media library.
+    ///
+    /// # Panics
+    /// On a name other than 1 to 64 of `a-z`, `0-9`, `.`, `_`, `-`, an empty
+    /// label, or a name declared twice.
+    pub fn media_collection(mut self, name: &str, label: impl Into<String>) -> Self {
+        let label = label.into();
+        assert!(
+            crate::media::valid_collection(name),
+            "media collection `{name}`: names are 1 to 64 of a-z, 0-9, `.`, `_`, `-`"
+        );
+        assert!(!label.trim().is_empty(), "media collection `{name}`: the label is empty");
+        assert!(self.media_collection_named(name).is_none(), "media collection `{name}` is declared twice");
+        self.media_collections.push(crate::media::MediaCollection { name: name.to_owned(), label });
+        self
+    }
+
+    /// The media library's collections, in declaration order.
+    pub fn media_collections(&self) -> &[crate::media::MediaCollection] {
+        &self.media_collections
+    }
+
+    /// The declared collection `name`, if any.
+    pub fn media_collection_named(&self, name: &str) -> Option<&crate::media::MediaCollection> {
+        self.media_collections.iter().find(|c| c.name == name)
     }
 
     /// Declares a rich text node (see [`crate::rich_text::RichTextNode`]).
@@ -357,6 +389,14 @@ impl Registry {
         // Pivot tables already used by a relation (one relation per pivot).
         let mut pivots = HashMap::new();
         for resource in self.resources.values() {
+            for (field, collection) in resource.media_collections() {
+                assert!(
+                    self.media_collection_named(&collection).is_some(),
+                    "resource `{}`: field `{field}` uses the media collection `{collection}`, which is not \
+                     declared (`AdminProvider::media_collection`)",
+                    resource.slug()
+                );
+            }
             for target in resource.targets() {
                 assert!(self.resources.contains_key(target), "unknown belongs_to target `{target}`");
             }

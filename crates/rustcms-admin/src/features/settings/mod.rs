@@ -98,6 +98,8 @@ pub struct SettingField {
     pub(crate) audit_redact: bool,
     pub(crate) kept_while: Vec<String>,
     pub(crate) media: Option<crate::field::MediaRule>,
+    /// Media collection of the files uploaded through this setting.
+    pub(crate) collection: Option<String>,
     /// Repeaters: their rows, checked when declared.
     pub(crate) rows: Option<Box<crate::engine::repeater::Rows>>,
 }
@@ -125,6 +127,7 @@ impl SettingField {
             audit_redact: false,
             kept_while: Vec::new(),
             media: None,
+            collection: None,
             rows: None,
         }
     }
@@ -205,6 +208,19 @@ impl SettingField {
         if let Some(rule) = &mut self.media {
             rule.accept = types.iter().map(|t| (*t).to_owned()).collect();
         }
+        self
+    }
+
+    /// Files uploaded through this media setting go into the media collection
+    /// `name` (declared with [`crate::AdminProvider::media_collection`]), and
+    /// its picker opens on that collection; see [`crate::Field::collection`].
+    ///
+    /// # Panics
+    /// On a setting that is not [`Self::media`] or [`Self::media_list`]; at
+    /// boot, on a collection that is not declared.
+    pub fn collection(mut self, name: impl Into<String>) -> Self {
+        assert!(self.media.is_some(), "settings field `{}`: only media settings have a collection", self.name);
+        self.collection = Some(name.into());
         self
     }
 

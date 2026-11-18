@@ -8,7 +8,7 @@ import { SessionContext } from "@/api/context";
 import type { ResourceSchema } from "@/api/types";
 import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
-import { GRID_PER_PAGE, GridThumb, MediaGrid } from "@/renderers/media-library";
+import { GRID_PER_PAGE, GridThumb, MediaGrid, uploadCollection } from "@/renderers/media-library";
 import posts from "../../fixtures/contract/posts.schema.json";
 
 const API = "http://localhost/admin/api";
@@ -256,4 +256,16 @@ it("shows a trashed file as unavailable, without a download link", async () => {
   expect(screen.getByRole("img", { name: "File unavailable" })).toBeInTheDocument();
   expect(screen.queryByRole("img", { name: "A cat" })).toBeNull();
   expect(screen.queryByRole("link", { name: /cat\.png/ })).toBeNull();
+});
+
+describe("uploads from the Media page", () => {
+  it("go into the one declared collection the list is filtered on", () => {
+    const declared = ["covers", "docs"];
+    const filter = (value?: string) => (value === undefined ? {} : { "filter[collection][in]": value });
+    expect(uploadCollection(filter("covers"), declared)).toBe("covers");
+    // None, several, unassigned, or a collection no longer declared (the server would refuse it).
+    for (const value of [undefined, "", "covers,docs", "~none", "retired"]) {
+      expect(uploadCollection(filter(value), declared)).toBeUndefined();
+    }
+  });
 });

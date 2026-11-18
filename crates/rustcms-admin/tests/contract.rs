@@ -91,7 +91,7 @@ impl Resource for GadgetResource {
             Field::column(C::Specs).max_items(5).max_length(40),
             // Rich text with an application node (document version 3, vocabulary 18).
             Field::column(C::Body).rich_text().nodes(["app.kbd"]),
-            Field::column(C::Photo).media().accept(&["image/*"]).max_size(1_000_000),
+            Field::column(C::Photo).media().accept(&["image/*"]).max_size(1_000_000).collection("gadget-photos"),
             Field::column(C::Accent).max_length(7),
             Field::column(C::ApiToken).encrypted(),
             Field::column(C::Env).encrypted_map().max_items(10),
@@ -220,6 +220,7 @@ async fn registry(db: &TestDb) -> Arc<Registry> {
         db.conn().execute(&statement).await.unwrap();
     }
     Registry::new()
+        .media_collection("gadget-photos", "Gadget photos")
         .rich_text_node(
             rustcms_admin::rich_text::RichTextNode::inline_atom("app.kbd")
                 .label("Shortcut")

@@ -563,7 +563,7 @@ export function Widget({ id, input, ctx, value, onChange, onBlur, disabled, inva
     case "file_upload":
       return <FileUploadWidget id={id} input={input} value={value} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} onBusy={(busy) => ctx.onBusy?.(input.name, busy)} />;
     case "rich_editor":
-      return <RichEditorWidget id={id} label={input.label} value={text} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} nullable={input.nullable} onBusy={(busy) => ctx.onBusy?.(input.name, busy)} nodes={input.richNodes} />;
+      return <RichEditorWidget id={id} label={input.label} value={text} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} nullable={input.nullable} onBusy={(busy) => ctx.onBusy?.(input.name, busy)} nodes={input.richNodes} collection={input.collection} />;
     case "custom":
       return <CustomField id={id} input={input} value={text} onChange={onChange} disabled={disabled} invalid={invalid} describedBy={describedBy} />;
     case "secret":

@@ -118,13 +118,15 @@ keeps it complete.
 | `duplicate_file` | `may not list the same file twice` |
 | `file_types` | `does not accept {types} files` |
 | `multipart` | `must be sent as multipart/form-data` |
-| `file_part` | must be the only part, named `file` |
+| `file_part` | must be the only part, named `file` (up to 0.13; now `upload_parts`) |
 | `file_name_length` | `has a name longer than 255 characters` |
 | `unreadable` | `could not be read` |
 | `file_type` | `is not an accepted file type` |
 | `incomplete_file` | `is not a complete file of its type` |
 | `image` | `is not a valid image` |
 | `too_many_pixels` | `has too many pixels` |
+| `upload_parts` | must be one part named `file`, with at most one `collection` |
+| `media_collection` | `is not a media collection` |
 | `document` | `is not a document` |
 | `document_invalid` | `is not a valid document` |
 | `document_version` | `is not a valid document (version 1 to 3)` |

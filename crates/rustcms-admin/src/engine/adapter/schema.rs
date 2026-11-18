@@ -135,6 +135,7 @@ impl<R: Resource> ResourceAdapter<R> {
         for filter in &self.table_ui.filters {
             out.extend(filter.label.clone().or_else(|| field_label(&filter.name)));
             out.extend(filter.options.iter().map(|o| o.label.clone()));
+            out.extend(filter.none.clone());
         }
         // Messages of declared unique constraints (translated when they fire).
         out.extend(self.meta.constraints.iter().map(|c| c.message.clone()));
@@ -199,8 +200,35 @@ impl<R: Resource> ResourceAdapter<R> {
         }
     }
 
+    /// The options of select `name`: declared, or the panel's media
+    /// collections for the media library's `collection`.
+    fn options_of(
+        &self,
+        ctx: &Ctx,
+        name: &str,
+        declared: &[crate::forms::SelectOption],
+    ) -> Vec<crate::forms::SelectOption> {
+        if self.is_media_collection(name) {
+            return crate::media::collection_options(ctx);
+        }
+        translated_options(ctx, R::SLUG, declared)
+    }
+
+    /// Whether `name` is the media library's `collection`.
+    fn is_media_collection(&self, name: &str) -> bool {
+        R::SLUG == crate::media::SLUG && name == "collection"
+    }
+
+    /// The media library's `collection` is shown only when the panel declares collections.
+    fn shown_here(&self, ctx: &Ctx, name: &str) -> bool {
+        !self.is_media_collection(name) || !ctx.registry.media_collections().is_empty()
+    }
+
     pub(super) fn input_schema(&self, ctx: &Ctx, input: &Input, op: SchemaOperation) -> Option<InputSchema> {
         let field = self.field(&input.name)?;
+        if !self.shown_here(ctx, &input.name) {
+            return None;
+        }
         let is_key = input.name == self.pk_name;
         let (include, disabled) = match op {
             SchemaOperation::Create => {
@@ -258,7 +286,7 @@ impl<R: Resource> ResourceAdapter<R> {
             placeholder: input.placeholder.as_deref().map(|p| ctx.t_in(R::SLUG, p)),
             help: input.help.as_deref().map(|h| ctx.t_in(R::SLUG, h)),
             mode: input.mode,
-            options: translated_options(ctx, R::SLUG, &input.options),
+            options: self.options_of(ctx, &input.name, &input.options),
             relationship: field.belongs_to.map(|resource| Relationship { resource }),
             widget: input.widget.clone(),
             props: input.props.clone(),
@@ -269,6 +297,8 @@ impl<R: Resource> ResourceAdapter<R> {
                 max_size: rule.max_size,
                 preview: input.preview,
             }),
+            // Where its uploads go and its picker opens: for inputs the user may change.
+            collection: field.collection.clone().filter(|_| !disabled),
             links: None,
             // Shown as written (`/posts/`, `.html`): not translated.
             prefix: input.prefix.clone(),
@@ -357,6 +387,7 @@ impl<R: Resource> ResourceAdapter<R> {
             widget: None,
             props: None,
             media: None,
+            collection: None,
             links: None,
             prefix: None,
             suffix: None,
@@ -491,6 +522,7 @@ impl<R: Resource> ResourceAdapter<R> {
             widget: None,
             props: None,
             media: None,
+            collection: None,
             links: Some(links),
             prefix: None,
             suffix: None,
@@ -539,7 +571,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let mut columns = Vec::new();
         for c in &self.table_ui.columns {
             let Some(name) = c.counts else {
-                if readable(&c.name) {
+                if readable(&c.name) && self.shown_here(ctx, &c.name) {
                     columns.push(c);
                 }
                 continue;
@@ -589,7 +621,7 @@ impl<R: Resource> ResourceAdapter<R> {
                         .iter()
                         .map(|(value, color)| BadgeColor { value: value.clone(), color: color.clone() })
                         .collect(),
-                    options: translated_options(ctx, R::SLUG, &c.options),
+                    options: self.options_of(ctx, &c.name, &c.options),
                     format: c.date_format.clone(),
                     relationship: field.belongs_to.map(|resource| Relationship { resource }),
                     cell: c.cell.clone(),
@@ -604,7 +636,7 @@ impl<R: Resource> ResourceAdapter<R> {
             .table_ui
             .filters
             .iter()
-            .filter(|f| readable(&f.name))
+            .filter(|f| readable(&f.name) && self.shown_here(ctx, &f.name))
             .map(|f| {
                 let field = self.field(&f.name).expect("validated at registration");
                 FilterSchema {
@@ -612,8 +644,9 @@ impl<R: Resource> ResourceAdapter<R> {
                     name: f.name.clone(),
                     label: ctx.t_in(R::SLUG, &f.label.clone().unwrap_or_else(|| field.display_label())),
                     value_type: self.column(&f.name).kind.name(),
-                    options: translated_options(ctx, R::SLUG, &f.options),
+                    options: self.options_of(ctx, &f.name, &f.options),
                     relationship: field.belongs_to.map(|resource| Relationship { resource }),
+                    none: f.none.as_deref().map(|label| ctx.t_in(R::SLUG, label)),
                 }
             })
             .collect();
@@ -722,6 +755,7 @@ fn pivot_input_schema(
         widget: None,
         props: None,
         media: None,
+        collection: None,
         links: None,
         prefix: None,
         suffix: None,

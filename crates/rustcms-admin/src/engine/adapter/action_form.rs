@@ -146,6 +146,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     widget: None,
                     props: None,
                     media: None,
+                    collection: None,
                     links: None,
                     prefix: None,
                     suffix: None,

@@ -268,6 +268,25 @@ impl AdminProvider {
         self
     }
 
+    /// Declares a collection of the media library: `name` is stored on the
+    /// files uploaded through the fields and settings that name it
+    /// ([`crate::Field::collection`], [`crate::settings::SettingField::collection`]);
+    /// `label` is shown (translated) by the Media page's filter, the media
+    /// record and the picker, in declaration order. Collections sort and
+    /// filter; they never limit access. Needs [`media`](Self::media).
+    ///
+    /// # Panics
+    /// On a name other than 1 to 64 of `a-z`, `0-9`, `.`, `_`, `-`, an empty
+    /// label, or a name declared twice; at boot, without the media library.
+    pub fn media_collection(self, name: &str, label: impl Into<String>) -> Self {
+        {
+            let mut registry = self.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let current = registry.take().unwrap_or_default();
+            *registry = Some(current.media_collection(name, label));
+        }
+        self
+    }
+
     /// Declares a node rich text documents may hold (document version 3),
     /// for the fields that accept it ([`crate::Field::nodes`]).
     ///
@@ -331,6 +350,10 @@ impl ServiceProvider for AdminProvider {
         for permission in self.dashboard.permissions() {
             auth.permissions.declare(ADMIN_GUARD, &permission, Some("dashboard"));
         }
+        assert!(
+            self.media || registry.media_collections().is_empty(),
+            "media collections need the media library (`AdminProvider::media`)"
+        );
         for page in self.settings.all() {
             if let Some(field) = page.fields().iter().find(|f| f.media.is_some()) {
                 assert!(
@@ -339,6 +362,17 @@ impl ServiceProvider for AdminProvider {
                     page.group(),
                     field.name
                 );
+            }
+            for field in page.fields() {
+                if let Some(collection) = &field.collection {
+                    assert!(
+                        registry.media_collection_named(collection).is_some(),
+                        "settings `{}`: setting `{}` uses the media collection `{collection}`, which is not \
+                         declared (`AdminProvider::media_collection`)",
+                        page.group(),
+                        field.name
+                    );
+                }
             }
             for permission in crate::settings::permissions(page.group()) {
                 auth.permissions.declare(ADMIN_GUARD, &permission, Some("settings"));
@@ -706,6 +740,8 @@ fn missing_translations(panel: &AdminPanel, locale: &str, permission_groups: &[S
     missing.extend(panel.settings.display_strings().into_iter().filter(|s| !translated(None, s)));
     missing.extend(panel.custom.display_strings().into_iter().filter(|s| !translated(None, s)));
     missing.extend(panel.dashboard.display_strings().into_iter().filter(|s| !translated(None, s)));
+    // Media collections are shown by their label everywhere (filter, record, picker).
+    missing.extend(panel.registry.media_collections().iter().map(|c| c.label.clone()).filter(|s| !translated(None, s)));
     // Permission groups that are not resources are shown in words (`users` → "Users").
     for group in permission_groups {
         let source = crate::system::roles::group_source(group);

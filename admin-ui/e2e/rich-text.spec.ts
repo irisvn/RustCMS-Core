@@ -69,9 +69,11 @@ test("the editor's v2 nodes, multi-image upload and the media library picker", a
   await expect(editor.locator("figure[data-embed]")).toContainText("YouTube · dQw4w9WgXcQ");
   await expect(editor.locator("aside[data-tone=warn]")).toContainText("Careful");
 
-  // The cover from the library: one of the images just uploaded.
+  // The cover from the library: one of the images just uploaded (into the
+  // content's collection: the cover's picker opens on the covers).
   await page.getByRole("button", { name: "Media library" }).click();
   const library = page.getByRole("dialog", { name: "Cover" });
+  await library.getByLabel("Collection").selectOption({ label: "Post content" });
   await library.getByRole("button", { name: /^two\.png/ }).first().click();
   await library.getByRole("button", { name: "Use" }).click();
   await expect(page.getByLabel("Cover").getByRole("img", { name: "two.png" })).toBeVisible();

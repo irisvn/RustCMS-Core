@@ -58,7 +58,7 @@ impl Resource for NewsResource {
             Field::column(news::Column::Title).required().searchable().sortable().max_length(200),
             Field::column(news::Column::Slug).searchable().max_length(200),
             Field::column(news::Column::Body).rich_text(),
-            Field::column(news::Column::Cover).media().accept(&["image/*"]),
+            Field::column(news::Column::Cover).media().accept(&["image/*"]).collection("news-covers"),
             Field::column(news::Column::CategoryId).belongs_to("categories").filterable(),
             Field::column(news::Column::AuthorId).guarded(),
             Field::column(news::Column::PublishedAt).sortable().filterable().label("Published at"),

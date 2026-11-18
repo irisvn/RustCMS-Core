@@ -24,11 +24,17 @@ pub struct TableFilter {
     pub(crate) kind: FilterType,
     pub(crate) label: Option<String>,
     pub(crate) options: Vec<SelectOption>,
+    /// Label of the "no value" option (select filters on a nullable column).
+    pub(crate) none: Option<String>,
 }
+
+/// The value of a select filter's "no value" option in `in` lists
+/// ([`TableFilter::none`]): `filter[collection][in]=~none,covers`.
+pub const NONE_OPTION: &str = "~none";
 
 impl TableFilter {
     fn new(name: impl Into<String>, kind: FilterType) -> Self {
-        Self { name: name.into(), kind, label: None, options: Vec::new() }
+        Self { name: name.into(), kind, label: None, options: Vec::new(), none: None }
     }
 
     /// Label (default: the field name, humanized).
@@ -40,6 +46,19 @@ impl TableFilter {
     /// Options of a select filter.
     pub fn options<V: Into<Json>, L: Into<String>>(mut self, options: impl IntoIterator<Item = (V, L)>) -> Self {
         self.options = options.into_iter().map(|(v, l)| SelectOption { value: v.into(), label: l.into() }).collect();
+        self
+    }
+
+    /// Adds an option, shown last with `label`, for records without a value
+    /// (a select filter on a nullable column): its value is [`NONE_OPTION`]
+    /// in `in` lists, matched as `IS NULL` (with the other values chosen, any
+    /// of them). Without it, `~none` is compared as any other value.
+    ///
+    /// # Panics
+    /// At boot, on a filter that is not a select filter, a column that is not
+    /// nullable, or a `belongs_to` field (its filter picks records).
+    pub fn none(mut self, label: impl Into<String>) -> Self {
+        self.none = Some(label.into());
         self
     }
 }
