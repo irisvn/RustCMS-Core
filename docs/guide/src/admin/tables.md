@@ -42,8 +42,8 @@ The LMS's enrollments draw their progress with a
 
 | Column | Shows |
 |---|---|
-| `TextColumn` | text, numbers, related records by title (`belongs_to` fields) |
-| `BadgeColumn` | a badge, `.color(value, color)` per value (`primary`, `success`, `warning`, `danger`, `gray`; any other name shows gray) |
+| `TextColumn` | text, numbers, related records by title (`belongs_to` fields), [option labels](#option-labels) |
+| `BadgeColumn` | a badge, `.color(value, color)` per value (`primary`, `success`, `warning`, `danger`, `gray`; any other name shows gray), [option labels](#option-labels); a list (a checkbox list's values) as one badge per value |
 | `BooleanColumn` | a check mark |
 | `DateColumn` | dates and times: instants in the user's language and time zone; dates as `YYYY-MM-DD`, local date-times as `YYYY-MM-DD HH:MM` |
 
@@ -56,6 +56,29 @@ application ([custom cells](customizing.md#custom-cells)).
 // A sketch: a `status` text field.
 BadgeColumn::make("status").color("published", "success").color("draft", "gray")
 ```
+
+Values in `.color(…)` are compared as the API sends them: an `i64` or a
+decimal column's values are strings (`.color("2", "danger")`), as a select's
+options. A value the column cannot hold refuses to boot.
+
+### Option labels
+
+A text or badge column shows the label of each value instead of the value
+(`Draft` for `draft`). Without labels of its own, the column takes the options
+of the form's select or checkbox list of the same field. The demo's tags show
+their kind this way, colored by value:
+
+<<< @/../../../examples/demo/src/admin/resources/tag_resource.rs#table [src/admin/resources/tag_resource.rs]
+
+`.options([(value, label), …])` gives a column its own labels, over the
+form's: `BadgeColumn::make("level").options([("1", "Minor"), ("2", "Major")])`
+for an `i64` field (its values are strings on the wire). `.raw()` keeps the
+values: `TextColumn::make("code").raw()`.
+
+Labels are translated as other labels. Colors, sorting, search, filters and
+exports still use the values, and a value without a label is shown as it is.
+A `belongs_to` field's column shows the related record's title and takes no
+options.
 
 ### Counts
 

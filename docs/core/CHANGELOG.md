@@ -15,6 +15,23 @@ All notable changes are documented here. The format follows
   RUSTSEC-2026-0543 (chrono is unmaintained; no vulnerability, needed by
   SeaORM).
 
+### Added
+- Option labels in table columns (vocabulary 20): `TextColumn`/`BadgeColumn` show the label of each value,
+  declared with `TableColumn::options([(value, label), …])` or taken from the form's select or checkbox list of
+  the same field (never for `belongs_to` fields); `.raw()` keeps the values. Labels are translated (and listed
+  by missing translations); colors, sorting, search, filters and exports still use the values. `ColumnSchema`
+  gains `options`. A badge column holding a list draws one badge per value. The dashboard's recent records use
+  the column's labels.
+
+### Changed
+- Table columns whose field has a select or checkbox list with options in the form now show its labels instead
+  of the values; `.raw()` keeps the values.
+- Values of `TableColumn::color` are compared in canonical wire form, as a select's options, on every column:
+  on an `i64` or a decimal column they are strings (`.color("2", …)`, `"02"` is read as `"2"`), UUIDs lowercase,
+  instants in UTC. A value the column cannot hold refuses to boot: a number on an `i64`, decimal or text column,
+  a string on an `i32` or boolean column, a value finer than the column keeps. Such colors never matched; write
+  them as the API sends the values.
+
 ## [0.13.1] — 2026-11-17
 
 ### Added

@@ -20,7 +20,11 @@ impl Seeder for TagSeeder {
         let db = state.db();
         for name in TAGS {
             if tag::Entity::find().filter(tag::Column::Name.eq(name)).one(db).await?.is_none() {
-                tag::ActiveModel { name: Set(name.into()), ..Default::default() }.insert(db).await?;
+                // One series among the topics, to show the kinds' labels and colors.
+                let kind = if name == "Security" { "series" } else { "topic" };
+                tag::ActiveModel { name: Set(name.into()), kind: Set(Some(kind.into())), ..Default::default() }
+                    .insert(db)
+                    .await?;
             }
         }
         Ok(())

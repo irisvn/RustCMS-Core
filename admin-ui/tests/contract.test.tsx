@@ -124,7 +124,9 @@ it("renders every table column of the contract", async () => {
     </table>,
   );
   expect(screen.getByText("Widget")).toBeInTheDocument();
-  expect(screen.getByText("live")).toBeInTheDocument();
+  // Option labels (the form select's), the colors' badges as values.
+  expect(screen.getByText("Live")).toBeInTheDocument();
+  expect(screen.getByText("Red, Blue")).toBeInTheDocument();
   expect(screen.getByText("Tools")).toBeInTheDocument();
   expect(screen.getByText("10.50")).toBeInTheDocument();
   expect(screen.getByText("9007199254740993")).toBeInTheDocument();

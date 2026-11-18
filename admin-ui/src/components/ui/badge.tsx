@@ -10,6 +10,12 @@ const COLORS: Record<string, string> = {
   info: "border border-border bg-card text-foreground",
 };
 
+/** The badge colors `BadgeColumn::color` and `TextEntry::color` document; others show gray. */
+const BADGE_COLORS: ReadonlySet<string> = new Set(["primary", "success", "warning", "danger", "gray"]);
+
+/** `color` if it is a documented badge color, else gray. */
+export const badgeColor = (color: string | undefined): string => (color && BADGE_COLORS.has(color) ? color : "gray");
+
 export function Badge({ color = "gray", className, ...props }: React.ComponentProps<"span"> & { color?: string }) {
   return (
     <span

@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 19;
+pub const VOCABULARY_VERSION: u32 = 20;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -671,6 +671,11 @@ pub struct ColumnSchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<BadgeColor>>", optional))]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub colors: Vec<BadgeColor>,
+    /// Labels shown for values of a text or badge column, in the user's
+    /// language (the column's own, or its form select's; vocabulary 20).
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<SelectOption>>", optional))]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<SelectOption>,
     /// Related resource (display `labels[name]`).
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]

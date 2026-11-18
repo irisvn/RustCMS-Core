@@ -205,6 +205,14 @@ older documents (`document_needs_version`) and more than 500 nodes
 read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
 with `registerRichTextNode` (host `ui` 4).
 
+Vocabulary 20 adds option labels to table columns: a text or badge column may
+carry `options` (`[{value, label}]`, labels in the user's language, values in
+canonical wire form like its `colors`), declared by the column or taken from
+the form's select or checkbox list of the field. Clients show the label of the
+option holding a cell's value (each item's, for a list; one badge per item in
+a badge column) and the value itself when no option holds it; colors still
+follow the values. Older clients show the values.
+
 Vocabulary 19 adds form reactions (ADR 0043): inputs of create and edit
 forms may carry `reacts: true` (never on view schemas or repeater rows). After such an input
 changes and typing pauses (about 400 ms), clients post `form/react` with the

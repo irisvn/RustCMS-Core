@@ -2,6 +2,7 @@
 // inside forms: i64 and decimal are strings and never pass through `Number`.
 
 import { formatDateTime, t } from "@/i18n";
+import type { JsonValue } from "@/api/types";
 
 export type WireKind =
   | "string"
@@ -18,6 +19,19 @@ export type WireKind =
 
 /** Whether values of `kind` are dates or times (shown in the user's language). */
 export const isDateKind = (kind: string | undefined): kind is "date" | "local_datetime" | "instant" => kind === "date" || kind === "local_datetime" || kind === "instant";
+
+/** Whether two wire values are the same (options and colors are sent in canonical wire form). */
+export const sameValue = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** The label of the option holding `value`, if any. */
+export function optionLabel(options: readonly { value: JsonValue; label: string }[] | undefined, value: unknown): string | undefined {
+  return options?.find((o) => sameValue(o.value, value))?.label;
+}
+
+/** The badge color given to `value`, if any. */
+export function colorOf(colors: readonly { value: JsonValue; color: string }[] | undefined, value: unknown): string | undefined {
+  return colors?.find((c) => sameValue(c.value, value))?.color;
+}
 
 const I64 = /^-?\d{1,19}$/;
 const DECIMAL = /^-?\d+(\.\d+)?$/;

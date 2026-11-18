@@ -873,6 +873,11 @@ searchable: boolean,
  */
 colors?: Array<BadgeColor>, 
 /**
+ * Labels shown for values of a text or badge column, in the user's
+ * language (the column's own, or its form select's; vocabulary 20).
+ */
+options?: Array<SelectOption>, 
+/**
  * Related resource (display `labels[name]`).
  */
 relationship?: Relationship, 

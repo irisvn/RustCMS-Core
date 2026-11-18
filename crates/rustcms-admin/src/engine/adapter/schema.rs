@@ -130,6 +130,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 None => field_label(&column.name),
             };
             out.extend(column.label.clone().or_else(default));
+            out.extend(column.options.iter().map(|o| o.label.clone()));
         }
         for filter in &self.table_ui.filters {
             out.extend(filter.label.clone().or_else(|| field_label(&filter.name)));
@@ -563,6 +564,7 @@ impl<R: Resource> ResourceAdapter<R> {
                         sortable: false,
                         searchable: false,
                         colors: Vec::new(),
+                        options: Vec::new(),
                         relationship: None,
                         cell: None,
                         props: c.props.clone(),
@@ -585,6 +587,7 @@ impl<R: Resource> ResourceAdapter<R> {
                         .iter()
                         .map(|(value, color)| BadgeColor { value: value.clone(), color: color.clone() })
                         .collect(),
+                    options: translated_options(ctx, R::SLUG, &c.options),
                     relationship: field.belongs_to.map(|resource| Relationship { resource }),
                     cell: c.cell.clone(),
                     props: c.props.clone(),

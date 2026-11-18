@@ -597,6 +597,16 @@
       {
         "label": "Level",
         "name": "level",
+        "options": [
+          {
+            "label": "Easy",
+            "value": "easy"
+          },
+          {
+            "label": "Hard",
+            "value": "hard"
+          }
+        ],
         "searchable": false,
         "sortable": false,
         "type": "text",
@@ -631,5 +641,5 @@
     ],
     "searchable": false
   },
-  "vocabularyVersion": 19
+  "vocabularyVersion": 20
 }

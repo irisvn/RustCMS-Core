@@ -543,11 +543,16 @@ fn recent_column(
         })
     }
     let column = schema.and_then(|s| s.table.columns.iter().find(|c| c.name == name)).cloned();
-    let options = schema
-        .and_then(|s| input(&s.form.components, name))
-        .filter(|i| i.relationship.is_none())
-        .map(|i| i.options.clone())
-        .unwrap_or_default();
+    // The table column's labels (its own, its form select's, none when `raw()`),
+    // else, for a field without a column, the form select's.
+    let options = match &column {
+        Some(c) => c.options.clone(),
+        None => schema
+            .and_then(|s| input(&s.form.components, name))
+            .filter(|i| i.relationship.is_none())
+            .map(|i| i.options.clone())
+            .unwrap_or_default(),
+    };
     RecentColumn {
         name: name.to_owned(),
         label: resource.field_label(ctx, name),

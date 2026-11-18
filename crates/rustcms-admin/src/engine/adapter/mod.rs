@@ -424,6 +424,63 @@ impl<R: Resource> ResourceAdapter<R> {
                 column.name
             );
         }
+        let owner = format!("resource `{slug}`");
+        for column in &mut table_ui.columns {
+            let name = column.name.clone();
+            let declared = !column.options.is_empty();
+            if column.counts.is_some() {
+                assert!(!declared && !column.raw, "{owner}: count column `{name}` takes no options");
+                continue;
+            }
+            let field = field(&name).expect("checked above");
+            let info = &columns[&name];
+            assert!(!(column.count && (declared || column.raw)), "{owner}: count column `{name}` takes no options");
+            let labelled =
+                matches!(column.kind, crate::ui::ColumnType::Text | crate::ui::ColumnType::Badge) && !column.count;
+            assert!(!declared || labelled, "{owner}: column `{name}`: options need a text or badge column");
+            assert!(!column.raw || labelled, "{owner}: column `{name}`: raw() needs a text or badge column");
+            assert!(!(declared && column.raw), "{owner}: column `{name}` takes options or raw(), not both");
+            assert!(
+                !declared || field.belongs_to.is_none(),
+                "{owner}: column `{name}` shows related records by their title and takes no options"
+            );
+            // Values compared as the wire sends them (an `i64` as a string).
+            let what = format!("column `{name}`");
+            for (value, _) in &mut column.colors {
+                *value = input::canonical_option(&owner, &what, info, value);
+            }
+            for option in &mut column.options {
+                option.value = input::canonical_option(&owner, &what, info, &option.value);
+            }
+            for (i, option) in column.options.iter().enumerate() {
+                assert!(
+                    !column.options[..i].iter().any(|o| o.value == option.value),
+                    "{owner}: column `{name}` has option {} twice",
+                    option.value
+                );
+            }
+            // Declared labels name every colored value; the form's may not (a
+            // color for a value only hooks write is kept).
+            if declared {
+                for (value, _) in &column.colors {
+                    assert!(
+                        column.options.iter().any(|o| o.value == *value),
+                        "{owner}: column `{name}` colors {value}, which is not one of its options"
+                    );
+                }
+            }
+            // Without its own, the labels of the form's select or checkbox list.
+            if labelled && !declared && !column.raw && field.belongs_to.is_none() {
+                let input = form.inputs().into_iter().find(|i| {
+                    i.name == name
+                        && matches!(i.kind, InputType::Select | InputType::CheckboxList)
+                        && !i.options.is_empty()
+                });
+                if let Some(input) = input {
+                    column.options = input.options.clone();
+                }
+            }
+        }
         for filter in &table_ui.filters {
             assert!(
                 field(&filter.name).is_some_and(|f| f.filterable),

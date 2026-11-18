@@ -183,7 +183,11 @@ impl Resource for GadgetResource {
                 DateColumn::make("happened_at"),
                 TextColumn::make("category_id"),
                 TextColumn::make("price").cell("acme/money").props(serde_json::json!({"currency": "VND"})),
-                TextColumn::make("serial"),
+                // Option labels (vocabulary 20): declared, values and colors in
+                // canonical wire form (an i64 as a string, "07" as "7"); taken from the form's
+                // checkbox list.
+                BadgeColumn::make("serial").options([("7", "Lucky")]).color("07", "primary"),
+                TextColumn::make("colors"),
             ])
             .filters(vec![
                 TernaryFilter::make("active"),

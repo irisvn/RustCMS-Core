@@ -511,6 +511,16 @@
         ],
         "label": "Status",
         "name": "status",
+        "options": [
+          {
+            "label": "Draft",
+            "value": "draft"
+          },
+          {
+            "label": "Live",
+            "value": "live"
+          }
+        ],
         "searchable": false,
         "sortable": false,
         "type": "badge",
@@ -564,12 +574,46 @@
         "valueType": "decimal"
       },
       {
+        "colors": [
+          {
+            "color": "primary",
+            "value": "7"
+          }
+        ],
         "label": "Serial",
         "name": "serial",
+        "options": [
+          {
+            "label": "Lucky",
+            "value": "7"
+          }
+        ],
+        "searchable": false,
+        "sortable": false,
+        "type": "badge",
+        "valueType": "i64"
+      },
+      {
+        "label": "Colors",
+        "name": "colors",
+        "options": [
+          {
+            "label": "Red",
+            "value": "red"
+          },
+          {
+            "label": "Green",
+            "value": "green"
+          },
+          {
+            "label": "Blue",
+            "value": "blue"
+          }
+        ],
         "searchable": false,
         "sortable": false,
         "type": "text",
-        "valueType": "i64"
+        "valueType": "json"
       }
     ],
     "defaultSort": "name",
@@ -621,5 +665,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 19
+  "vocabularyVersion": 20
 }

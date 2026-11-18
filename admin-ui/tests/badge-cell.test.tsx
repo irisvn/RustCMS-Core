@@ -36,3 +36,49 @@ it("draws each of the five colors, and gray for an unknown one", () => {
     view.unmount();
   }
 });
+
+// Option labels (vocabulary 20): the column's options name the values; colors
+// still follow the values; a value without a label is shown as it is.
+const labelled = {
+  name: "status",
+  type: "badge",
+  label: "Status",
+  valueType: "string",
+  options: [
+    { value: "draft", label: "Draft copy" },
+    { value: "published", label: "Live" },
+  ],
+  colors: [{ value: "published", color: "success" }],
+} as unknown as ColumnSchema;
+
+const show = (column: ColumnSchema, value: unknown) =>
+  render(<Cell column={column} record={{ key: "1", data: { [column.name]: value } } as unknown as Envelope} />);
+
+it("shows the label of a value's option, colored by the value", () => {
+  const view = show(labelled, "published");
+  expect(screen.getByText("Live").className).toContain("text-success");
+  expect(screen.queryByText("published")).toBeNull();
+  view.unmount();
+  show(labelled, "archived");
+  expect(screen.getByText("archived").className).toContain("bg-muted");
+});
+
+it("draws one badge per value of a list", () => {
+  const { container } = show({ ...labelled, valueType: "json" } as ColumnSchema, ["draft", "published", "odd"]);
+  expect([...container.querySelectorAll("span > span")].map((b) => b.textContent)).toEqual(["Draft copy", "Live", "odd"]);
+  expect(screen.getByText("Live").className).toContain("text-success");
+});
+
+it("shows labels in text columns, a list's joined", () => {
+  const text = { ...labelled, type: "text" } as ColumnSchema;
+  const one = show(text, "draft");
+  expect(screen.getByText("Draft copy")).toBeTruthy();
+  one.unmount();
+  show({ ...text, valueType: "json" } as ColumnSchema, ["published", "draft"]);
+  expect(screen.getByText("Live, Draft copy")).toBeTruthy();
+});
+
+it("shows values as they are without options", () => {
+  show({ ...labelled, type: "text", options: undefined } as ColumnSchema, "draft");
+  expect(screen.getByText("draft")).toBeTruthy();
+});

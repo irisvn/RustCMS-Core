@@ -6,13 +6,13 @@ import { useMemo, useState } from "react";
 import type * as React from "react";
 import { Link } from "@tanstack/react-router";
 import type { ComponentSchema, Condition, Data, EntrySchema, InfolistSchema, JsonValue } from "@/api/types";
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeColor } from "@/components/ui/badge";
 import { ScriptView } from "@/components/custom";
 import { cn } from "@/lib/utils";
 import { asShownDocument } from "@/lib/rich-text";
 import type { DocNode } from "@/lib/rich-text";
 import { formatWireDate, useLocale, useT } from "@/i18n";
-import { isDateKind } from "@/lib/wire";
+import { colorOf, isDateKind, optionLabel } from "@/lib/wire";
 import { formConditions, hasConditions, hiddenFields } from "@/schema/conditions";
 import { defaultValues, inputsOf, isEntry, isLayout, isTextObject, wireValues } from "@/schema/form";
 import { SchemaLayout, SplitLayout, TabsLayout, always, gridCols, readOnlyText, shownWith, span, withShownChildren } from "./form";
@@ -30,10 +30,6 @@ export const KNOWN_ENTRIES = new Set([
   "custom_entry",
   "repeatable_entry",
 ]);
-
-/** The colors `Entry::color` documents; anything else (newer) is gray. */
-const BADGE_COLORS = new Set(["primary", "success", "warning", "danger", "gray"]);
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** Computed values of a view page: loading, or the server's answer. */
 export type ComputedState = { status: "loading" } | { status: "error" } | { status: "ready"; data: Data; failed: string[] };
@@ -219,9 +215,9 @@ function BooleanValue({ entry, value }: { entry: EntrySchema; value: JsonValue }
   const t = useT();
   if (typeof value !== "boolean") return <Raw value={value} />;
   const label = entry.labels ? entry.labels[value ? 0 : 1] : value ? t("value.yes") : t("value.no");
-  const color = entry.colors?.find((c) => same(c.value, value))?.color;
+  const color = colorOf(entry.colors, value);
   if (!color) return <>{label}</>;
-  return <Badge color={BADGE_COLORS.has(color) ? color : "gray"}>{label}</Badge>;
+  return <Badge color={badgeColor(color)}>{label}</Badge>;
 }
 
 function KeyValues({ value }: { value: Record<string, string> }) {
@@ -261,8 +257,8 @@ function TextValue({ entry, value }: { entry: EntrySchema; value: JsonValue }) {
   if (value === "") return <Muted>{t("value.emptyString")}</Muted>;
   if (entry.password) return <span aria-label={t("value.hidden")}>••••••••</span>;
   const label = (item: JsonValue): string => {
-    const option = entry.options?.find((o) => same(o.value, item));
-    if (option) return option.label;
+    const option = optionLabel(entry.options, item);
+    if (option !== undefined) return option;
     if (typeof item === "boolean") return item ? t("value.yes") : t("value.no");
     if (typeof item === "string" && isDateKind(entry.valueType)) {
       return formatWireDate(entry.valueType, item) ?? item;
@@ -298,8 +294,8 @@ function Item({ entry, item, text }: { entry: EntrySchema; item: JsonValue; text
   const shown = typeof item === "string" && isDateKind(entry.valueType) ? <time dateTime={item}>{limited}</time> : limited;
   let content: React.ReactNode = shown;
   if (entry.badge) {
-    const color = entry.colors?.find((c) => same(c.value, item))?.color ?? "gray";
-    content = <Badge color={BADGE_COLORS.has(color) ? color : "gray"}>{shown}</Badge>;
+    const color = colorOf(entry.colors, item);
+    content = <Badge color={badgeColor(color)}>{shown}</Badge>;
   } else if (entry.url && typeof item === "string" && /^https?:\/\//i.test(item)) {
     content = <a href={item} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-4 hover:underline">{limited}</a>;
   }

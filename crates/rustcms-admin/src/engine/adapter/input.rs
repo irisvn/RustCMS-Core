@@ -448,26 +448,9 @@ pub(super) fn static_options<C: ColumnTrait>(
         };
         let many = input.kind == InputType::CheckboxList;
         if !many {
-            let scale = crate::wire::decimal_scale(column.column.def().get_column_type());
             for option in options.iter_mut() {
-                let canonical = crate::wire::canonical(column.kind, scale, &option.value).unwrap_or_else(|e| {
-                    panic!(
-                        "resource `{slug}`: option {} of select `{name}` is not a value of its column ({}): {e}",
-                        option.value,
-                        column.kind.name()
-                    )
-                });
-                let same = column.kind.decode(&canonical).ok().and_then(|c| c.into_iter().next())
-                    == column.kind.decode(&option.value).ok().and_then(|c| c.into_iter().next());
-                assert!(
-                    same,
-                    "resource `{slug}`: option {} of select `{name}` would be stored as {canonical}",
-                    option.value
-                );
-                if let Err(problem) = storable(column.column.def().get_column_type(), column.kind, &canonical) {
-                    panic!("resource `{slug}`: option {} of select `{name}` {problem}", option.value);
-                }
-                option.value = canonical;
+                option.value =
+                    canonical_option(&format!("resource `{slug}`"), &format!("select `{name}`"), column, &option.value);
             }
         }
         let values = options.iter().map(|o| o.value.clone()).collect();
@@ -483,6 +466,29 @@ pub(super) fn static_options<C: ColumnTrait>(
         out.insert(name, first);
     }
     out
+}
+
+/// `value`, an option (or a badge color's value) of `what` on `column`, in
+/// canonical wire form: the form clients write and schemas show. Panics when
+/// the column cannot hold it as it is (not a value of its kind, stored as
+/// another value, or finer than the column keeps).
+pub(super) fn canonical_option<C: ColumnTrait>(
+    owner: &str,
+    what: &str,
+    column: &ColumnInfo<C>,
+    value: &serde_json::Value,
+) -> serde_json::Value {
+    let scale = crate::wire::decimal_scale(column.column.def().get_column_type());
+    let canonical = crate::wire::canonical(column.kind, scale, value).unwrap_or_else(|e| {
+        panic!("{owner}: option {value} of {what} is not a value of its column ({}): {e}", column.kind.name())
+    });
+    let same = column.kind.decode(&canonical).ok().and_then(|c| c.into_iter().next())
+        == column.kind.decode(value).ok().and_then(|c| c.into_iter().next());
+    assert!(same, "{owner}: option {value} of {what} would be stored as {canonical}");
+    if let Err(problem) = storable(column.column.def().get_column_type(), column.kind, &canonical) {
+        panic!("{owner}: option {value} of {what} {problem}");
+    }
+    canonical
 }
 
 /// The bounds client writes must respect, by field: from the number inputs of
