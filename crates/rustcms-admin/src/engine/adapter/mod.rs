@@ -722,6 +722,13 @@ pub(crate) fn check_form_layout(owner: &str, form: &Form) {
             input.name
         );
     }
+    for input in form.inputs().into_iter().filter(|i| !i.preview) {
+        assert!(
+            input.kind == InputType::FileUpload,
+            "{owner}: input `{}`: only file uploads take `preview`",
+            input.name
+        );
+    }
 }
 
 /// Whether `components` hold an entry, at any depth.

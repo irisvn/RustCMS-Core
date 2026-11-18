@@ -184,6 +184,9 @@ fn form_entry(input: &Input, field: Option<(&Field, FieldKind)>) -> Option<Entry
             d.suffix = input.suffix.clone();
         }
     }
+    if kind == EntryType::MediaEntry && !input.preview {
+        entry.display.preview = Some(false);
+    }
     if kind == EntryType::RepeatableEntry {
         let spec = input.repeater.as_deref()?;
         entry.components = entries_of(&spec.components, &|input| form_entry(input, None));
@@ -297,7 +300,7 @@ fn check_options(owner: &str, entry: &Entry, kind: Option<FieldKind>) {
     refuse("options", d.options.is_empty() || text);
     refuse("labels", d.labels.is_none() || entry.kind == EntryType::BooleanEntry);
     refuse("size", d.size.is_none() || entry.kind == EntryType::MediaEntry);
-    refuse("gallery", !d.gallery || entry.kind == EntryType::MediaEntry);
+    refuse("preview", d.preview.is_none() || entry.kind == EntryType::MediaEntry);
     refuse("date_format", d.date_format.is_none() || entry.kind == EntryType::TextEntry);
     if let Some(pattern) = &d.date_format {
         // Computed values and row keys have no declared kind: a date format needs a field's.
@@ -521,7 +524,7 @@ fn entry_schema(
         options: d.options.iter().map(|o| SelectOption { value: o.value.clone(), label: t(&o.label) }).collect(),
         labels: d.labels.as_ref().map(|(yes, no)| [t(yes), t(no)]),
         size: d.size,
-        gallery: d.gallery,
+        preview: d.preview.unwrap_or(true),
         format: d.date_format.clone(),
         outline: d.outline,
         rich_nodes: Vec::new(),

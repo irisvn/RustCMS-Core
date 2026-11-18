@@ -124,6 +124,8 @@ The Media resource is shown as a grid of thumbnails. Each image is its
 download URL (so the same authorization applies), scaled by the browser;
 other files show an icon. A toggle switches to the usual table; the choice is
 kept per user in the browser. The grid shows at most 24 thumbnails a page.
+Clicking an image opens the [image viewer](#the-image-viewer) over the page's
+images.
 
 Users with `media.create` get an **Upload files** button. Several files go
 through the panel's upload queue:
@@ -160,6 +162,29 @@ files have none). Code that reads media rows itself uses
 
 ![A media record: the file, its details, and the name and alt text form](/img/admin/media-record.webp)
 *A RustCMS demo application: a media record page.*
+
+## The image viewer
+
+A click on an image opens it over the page, wherever the panel shows one: the
+fields of a form, `MediaEntry` on a view page, images in rich text read on a
+view page, the Media page and its records, and the picker's magnifier. The
+viewer:
+
+- shows the image fitted to the screen; it zooms in with the buttons, the
+  mouse wheel, a double click or two fingers, and pans when zoomed;
+- goes through the other images of the same place (a field's or an entry's
+  files, a document's images, the Media page shown) with the arrows and the
+  ← and → keys, and counts them (`2 / 5`);
+- shows the file's name, alternative text, dimensions and size (looked up in
+  the media library when the place knows only the id) and a **Download**
+  button;
+- closes with Escape, the close button or a click beside the image, and
+  gives the focus back.
+
+Other files (a PDF) still open in a new tab. The viewer loads the same
+authorized URL as the thumbnail. `MediaEntry::make("cover").preview(false)`
+and `FileUpload::make("cover").preview(false)` keep a field's images still;
+images in rich text and on the Media page always open.
 
 ## Media hooks
 
@@ -224,7 +249,8 @@ FileUpload::make("cover"),
 | `Field::media_list(max)` | up to `max` files in order; the column holds a JSON array of ids |
 | `.accept(&["image/*", "application/pdf"])` | MIME types (or `type/*`) the field takes |
 | `.max_size(bytes)` | largest file the field takes |
-| `FileUpload::make(name)` | the form input for both: upload or pick from the library, remove, reorder |
+| `FileUpload::make(name)` | the form input for both: upload or pick from the library, remove, reorder, view |
+| `.preview(false)` | on `FileUpload`: images do not open the [image viewer](#the-image-viewer), in the form and on the default view page |
 
 On every write (hooks included, checked after them, and on restore) each id
 must exist, not be trashed, be visible to the user (`media.view` and scope),
@@ -450,6 +476,10 @@ form made from the attribute kinds. A React extension can draw and edit it
 
 The server checks every chosen reference again on save (scope, trash,
 `accept`, `max_size`), as it does for any write.
+
+Clicking a file chooses it. The magnifier on an image's corner opens the
+[image viewer](#the-image-viewer) over the dialog instead; Escape closes the
+viewer, not the dialog.
 
 ![The media library picker with its Library and Upload tabs](/img/admin/media-picker.webp)
 *A RustCMS demo application: choosing a cover image.*

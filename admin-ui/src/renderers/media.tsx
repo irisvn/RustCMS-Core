@@ -6,6 +6,7 @@ import { ApiError } from "@/api/client";
 import { usePanelConfig, useSession } from "@/api/context";
 import type { InputSchema, MediaItem } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { type ViewerImage, useImageViewer, viewerImageOf } from "@/components/lightbox";
 import { mediaUrl } from "@/lib/rich-text";
 import { later, show, type Text, useT } from "@/i18n";
 import { MediaPicker, accepts, usePickerAccess } from "./media-picker";
@@ -24,17 +25,44 @@ export function MediaUnavailable() {
   );
 }
 
-/** An image of the media library (`src`: its panel URL), or the "unavailable" chip when it cannot be loaded. */
-export function MediaImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
+/**
+ * An image of the media library (`src`: its panel URL), or the "unavailable"
+ * chip when it cannot be loaded; with `onOpen`, a button (named `label`) that
+ * opens the viewer, while the image can be shown.
+ */
+export function MediaImage({ src, alt, className, onOpen, label, buttonClassName }: {
+  src: string;
+  alt: string;
+  className?: string;
+  onOpen?: () => void;
+  label?: string;
+  buttonClassName?: string;
+}) {
   // Failed for this source only: another source is tried again.
   const [failed, setFailed] = useState<string | null>(null);
   if (failed === src) return <MediaUnavailable />;
-  return <img src={src} alt={alt} className={className} onError={() => setFailed(src)} />;
+  const image = <img src={src} alt={alt} className={className} onError={() => setFailed(src)} />;
+  if (!onOpen) return image;
+  return (
+    <button type="button" onClick={onOpen} aria-label={label}
+      className={buttonClassName ?? "block w-full cursor-zoom-in rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"}>
+      {image}
+    </button>
+  );
 }
 
-/** A stored media item: an image preview, or a file link ("unavailable" when it cannot be fetched). */
-/** A media file's thumbnail; `size` in pixels (default 80), `link`: opens the file in a new tab. */
-export function MediaThumb({ id, item, size, link }: { id: string; item?: MediaItem; size?: number; link?: boolean }) {
+/**
+ * A media file's thumbnail; `size` in pixels (default 80). An image opens the
+ * viewer with `onOpen`; another file is a link (`onNotImage` tells the caller,
+ * which leaves it out of the viewer), an unavailable one a chip.
+ */
+export function MediaThumb({ id, item, size, onOpen, onNotImage }: {
+  id: string;
+  item?: MediaItem;
+  size?: number;
+  onOpen?: () => void;
+  onNotImage?: () => void;
+}) {
   const t = useT();
   const { apiPath } = usePanelConfig();
   const url = mediaUrl(apiPath, id);
@@ -46,6 +74,14 @@ export function MediaThumb({ id, item, size, link }: { id: string; item?: MediaI
       .then((r) => setState({ url, kind: r.ok ? "file" : "unavailable" }))
       .catch(() => setState({ url, kind: "unavailable" }));
   };
+  const notImage = (item && !item.inline) || shown !== null;
+  const told = useRef(false);
+  useEffect(() => {
+    if (notImage && !told.current) {
+      told.current = true;
+      onNotImage?.();
+    }
+  }, [notImage, onNotImage]);
   if (shown === "unavailable") return <MediaUnavailable />;
   if ((item && !item.inline) || shown === "file") {
     return (
@@ -59,7 +95,37 @@ export function MediaThumb({ id, item, size, link }: { id: string; item?: MediaI
     <img src={url} alt={item?.name ?? ""} className="size-20 rounded-md border border-border object-cover" onError={probe}
       style={size ? { width: size, height: size } : undefined} />
   );
-  return link ? <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block rounded-md focus-visible:outline-2 focus-visible:outline-ring">{image}</a> : image;
+  if (!onOpen) return image;
+  return (
+    <button type="button" onClick={onOpen} aria-label={t("viewer.open", { name: item?.name ?? t("viewer.image") })}
+      className="inline-block cursor-zoom-in rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      {image}
+    </button>
+  );
+}
+
+/**
+ * The viewer over the images among `ids` (`items`: what is known of them),
+ * when `enabled`: `open(id)` shows one; `notImage(id)` leaves out a file its
+ * thumbnail found is not an image.
+ */
+export function useMediaViewer(ids: string[], items: Record<string, MediaItem | undefined>, enabled: boolean) {
+  const [files, setFiles] = useState<ReadonlySet<string>>(new Set());
+  const images: ViewerImage[] = enabled
+    ? ids.filter((id) => !files.has(id) && items[id]?.inline !== false).map((id) => {
+      const item = items[id];
+      return item ? viewerImageOf(item) : { id };
+    })
+    : [];
+  const { open, viewer } = useImageViewer(images);
+  return {
+    viewer,
+    open: enabled ? (id: string) => {
+      const index = images.findIndex((image) => image.id === id);
+      if (index >= 0) open(index);
+    } : undefined,
+    notImage: (id: string) => setFiles((all) => (all.has(id) ? all : new Set(all).add(id))),
+  };
 }
 
 export function FileUploadWidget({ id, input, value, onChange, disabled, invalid, describedBy, onBusy }: {
@@ -133,13 +199,15 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
     void send(file, crypto.randomUUID());
   };
   const full = ids.length >= rules.maxItems;
+  const viewer = useMediaViewer(ids, items, rules.preview !== false);
   return (
     <div id={id} tabIndex={-1} role="group" aria-label={input.label} aria-invalid={invalid || undefined} aria-describedby={describedBy} className="flex flex-col gap-3 focus-visible:outline-none">
       {ids.length > 0 && (
         <ul className="flex flex-wrap gap-3">
           {ids.map((mediaId, index) => (
             <li key={mediaId} className="flex items-start gap-1">
-              <MediaThumb id={mediaId} item={items[mediaId]} />
+              <MediaThumb id={mediaId} item={items[mediaId]} onOpen={viewer.open && (() => viewer.open?.(mediaId))}
+                onNotImage={() => viewer.notImage(mediaId)} />
               {!disabled && !busy && (
                 <div className="flex flex-col">
                   <Button size="icon" variant="ghost" aria-label={t("media.remove", { n: index + 1 })} onClick={() => set(ids.filter((i) => i !== mediaId))}>
@@ -161,6 +229,7 @@ export function FileUploadWidget({ id, input, value, onChange, disabled, invalid
           ))}
         </ul>
       )}
+      {viewer.viewer}
       {ids.length === 0 && <p className="text-sm text-muted-foreground">{t("media.none")}</p>}
       <input ref={picker} type="file" hidden accept={rules.accept.join(",") || undefined} onChange={(e) => {
         pick(e.target.files?.[0]);

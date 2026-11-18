@@ -141,7 +141,7 @@ impl Resource for GadgetResource {
                         Tab::make("Specs").schema(components![
                             KeyValue::make("specs"),
                             RichEditor::make("body"),
-                            FileUpload::make("photo"),
+                            FileUpload::make("photo").preview(false),
                             CustomInput::make("accent", "acme/color").props(json!({"palette": ["#ff0000", "#00ff00"]})),
                         ]),
                     ]),

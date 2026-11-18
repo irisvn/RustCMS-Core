@@ -267,6 +267,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 max_items: rule.max_items,
                 accept: rule.accept.clone(),
                 max_size: rule.max_size,
+                preview: input.preview,
             }),
             links: None,
             // Shown as written (`/posts/`, `.html`): not translated.

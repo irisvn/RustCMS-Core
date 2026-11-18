@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 21;
+pub const VOCABULARY_VERSION: u32 = 22;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -370,6 +370,17 @@ pub struct MediaSchema {
     #[cfg_attr(feature = "ts", ts(optional, type = "number"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u64>,
+    /// Images open in the panel's viewer when clicked; sent only when `false`
+    /// (vocabulary 22).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "is_true")]
+    pub preview: bool,
+}
+
+/// Whether `value` is `true` (fields sent only when `false`).
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 /// A layout.
@@ -506,10 +517,11 @@ pub struct EntrySchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<u16>,
-    /// Images open in a viewer.
+    /// Media entries: images open in the panel's viewer when clicked; sent
+    /// only when `false` (vocabulary 22, which dropped `gallery`).
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub gallery: bool,
+    #[serde(skip_serializing_if = "is_true")]
+    pub preview: bool,
     /// How dates or times are shown (a pattern, as `ColumnSchema::format`;
     /// vocabulary 21). Absent: the panel's.
     #[cfg_attr(feature = "ts", ts(optional))]

@@ -205,6 +205,13 @@ older documents (`document_needs_version`) and more than 500 nodes
 read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
 with `registerRichTextNode` (host `ui` 4).
 
+Vocabulary 22 adds the image viewer's switch: a media entry and an input's
+`media` may carry `preview: false` (sent only then): its images do not open
+the viewer when clicked. Clients open images in a viewer otherwise (media
+entries, file uploads, images of stored documents, the media library), going
+through the images of the same place. The media entry's `gallery` (vocabulary
+14) is no longer sent: older clients show such entries' images without a link.
+
 Vocabulary 21 adds date formats: a column or an entry may carry `format`, a
 pattern (`yyyy yy MMMM MMM MM M dd d EEEE EEE HH H hh h mm ss a z`, text
 between single quotes, `''` a quote; at most 64 characters) the server checked

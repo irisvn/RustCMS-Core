@@ -26,6 +26,7 @@ import {
 } from "@/lib/rich-text";
 import { AppNode, AppNodeFields, RichSubscript, RichSuperscript, appNodeExtensions } from "./rich-text-app";
 import { MediaImage } from "./media";
+import { useImageViewer } from "@/components/lightbox";
 import { MediaPicker, usePickerAccess } from "./media-picker";
 import { UploadList, useUploads } from "./uploads";
 import { RichCallout, RichEmbed, RichImage, RichTable, RichTableCell, RichTableHeader, RichTableRow } from "./rich-text-nodes";
@@ -625,17 +626,31 @@ function EmbedCard({ embed, link = false }: { embed: Embed; link?: boolean }) {
  */
 export function RichTextView({ doc, nodes: declared = NO_NODES }: { doc: RichDocument; nodes?: RichNodeSchema[] }) {
   const { apiPath } = usePanelConfig();
+  // Its images, in order: each opens the viewer over all of them.
+  const images: DocNode[] = [];
+  // As drawn: application nodes show no content of theirs.
+  const collect = (list: DocNode[] | undefined) => {
+    for (const n of list ?? []) {
+      if (n.type === "image" && typeof n.attrs?.media === "string") images.push(n);
+      if (!isAppNode(n.type)) collect(n.content);
+    }
+  };
+  collect(doc.content);
+  const viewer = useImageViewer(images.map((n) => ({ id: String(n.attrs?.media), alt: String(n.attrs?.alt ?? "") || undefined })));
+  const view = (node: DocNode) => viewer.open(images.indexOf(node));
   const nodes = (list: DocNode[] | undefined): React.ReactNode =>
-    (list ?? []).map((n, i) => <RichNode key={i} node={n} nodes={nodes} apiPath={apiPath} declared={declared} />);
-  return <div className="rich-text">{nodes(doc.content)}</div>;
+    (list ?? []).map((n, i) => <RichNode key={i} node={n} nodes={nodes} apiPath={apiPath} declared={declared} view={view} />);
+  return <div className="rich-text">{nodes(doc.content)}{viewer.viewer}</div>;
 }
 
-function RichNode({ node, nodes, apiPath, declared }: {
+function RichNode({ node, nodes, apiPath, declared, view }: {
   node: DocNode;
   nodes: (list?: DocNode[]) => React.ReactNode;
   apiPath: string;
   declared: RichNodeSchema[];
+  view: (node: DocNode) => void;
 }) {
+  const t = useT();
   if (isAppNode(node.type)) {
     const decl = declared.find((d) => d.name === node.type);
     const attrs = decl ? checkAttrs(decl, node.attrs) : null;
@@ -669,7 +684,9 @@ function RichNode({ node, nodes, apiPath, declared }: {
       const width = IMAGE_WIDTHS.includes(node.attrs?.width as ImageWidth) ? String(node.attrs?.width) : "normal";
       return (
         <figure className="rich-figure" data-width={width}>
-          <MediaImage src={mediaUrl(apiPath, String(node.attrs?.media))} alt={String(node.attrs?.alt ?? "")} />
+          <MediaImage src={mediaUrl(apiPath, String(node.attrs?.media))} alt={String(node.attrs?.alt ?? "")}
+            onOpen={typeof node.attrs?.media === "string" ? () => view(node) : undefined} buttonClassName="rich-image-open"
+            label={t("viewer.open", { name: String(node.attrs?.alt ?? "") || t("viewer.image") })} />
           {caption && <figcaption>{caption}</figcaption>}
         </figure>
       );

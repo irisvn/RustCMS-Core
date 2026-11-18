@@ -234,7 +234,7 @@ db_test!(the_schema_describes_the_rows, |db: TestDb| async move {
         // Shared with the SPA tests.
         support::contract("repeater.schema.create.json", &schema);
     }
-    assert_eq!(schema["vocabularyVersion"], json!(21));
+    assert_eq!(schema["vocabularyVersion"], json!(22));
     let input = schema["form"]["components"].as_array().unwrap().iter().find(|c| c["name"] == "faq").unwrap().clone();
     assert_eq!(input["type"], json!("repeater"));
     assert_eq!(input["valueType"], json!("json"));

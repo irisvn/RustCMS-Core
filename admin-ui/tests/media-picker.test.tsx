@@ -103,7 +103,7 @@ describe("media library picker", () => {
     // The search box has the focus.
     expect(within(dialog).getByLabelText("Search by name")).toHaveFocus();
     const items = await within(dialog).findByRole("list", { name: "Files" });
-    expect(within(items).getAllByRole("button")).toHaveLength(24);
+    expect(within(items).getAllByRole("button", { pressed: false })).toHaveLength(24);
     // Thumbnails: the authorized file URL, scaled by the browser.
     const img = items.querySelector("img")!;
     expect(img.getAttribute("src")).toBe(`${API}/media/${idOf(1)}/file`);
@@ -116,12 +116,12 @@ describe("media library picker", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
     await within(dialog).findByText("Page 2 of 2");
     // The previous page stays shown until the next one is in.
-    await waitFor(() => expect(within(within(dialog).getByRole("list", { name: "Files" })).getAllByRole("button")).toHaveLength(6));
+    await waitFor(() => expect(within(within(dialog).getByRole("list", { name: "Files" })).getAllByRole("button", { pressed: false })).toHaveLength(6));
     // Search by name: back to the first page.
     await userEvent.type(within(dialog).getByLabelText("Search by name"), "cat-3");
     await waitFor(() => expect(queries.at(-1)!.get("search")).toBe("cat-3"));
     expect(queries.at(-1)!.get("page")).toBe("1");
-    await waitFor(() => expect(within(within(dialog).getByRole("list", { name: "Files" })).getAllByRole("button")).toHaveLength(2));
+    await waitFor(() => expect(within(within(dialog).getByRole("list", { name: "Files" })).getAllByRole("button", { pressed: false })).toHaveLength(2));
   });
 
   it("chooses with the keyboard within the field's rules and adds to the value", async () => {
@@ -148,6 +148,9 @@ describe("media library picker", () => {
     button("a.png").focus();
     await userEvent.keyboard(" ");
     expect(button("a.png")).toHaveAttribute("aria-pressed", "true");
+    // Each image has a magnifier after it (it views, never chooses).
+    await userEvent.tab();
+    expect(within(items).getByRole("button", { name: "View a.png" })).toHaveFocus();
     await userEvent.tab();
     expect(button("b.png")).toHaveFocus();
     await userEvent.keyboard("{Enter}");
@@ -171,11 +174,29 @@ describe("media library picker", () => {
     const items = await within(dialog).findByRole("list", { name: "Tệp" });
     // Any type: the PDF is offered, as an icon (no image request for it).
     expect(items.querySelectorAll("img")).toHaveLength(1);
-    await userEvent.click(within(items).getByRole("button", { name: /b\.pdf/ }));
-    await userEvent.click(within(items).getByRole("button", { name: /a\.png/ }));
-    expect(within(items).getByRole("button", { name: /b\.pdf/ })).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(within(items).getByRole("button", { name: /^b\.pdf/ }));
+    await userEvent.click(within(items).getByRole("button", { name: /^a\.png/ }));
+    expect(within(items).getByRole("button", { name: /^b\.pdf/ })).toHaveAttribute("aria-pressed", "false");
     await userEvent.click(within(dialog).getByRole("button", { name: "Dùng" }));
     await waitFor(() => expect(value()).toBe(idOf(1)));
+  });
+
+  it("views an image with its magnifier, never choosing it", async () => {
+    library([{ n: 1, name: "a.png", mime: "image/png", size: 100 }, { n: 2, name: "b.pdf", mime: "application/pdf", size: 100 }]);
+    render(<Field media={{ multiple: true, maxItems: 3, accept: [] }} initial={[]} />);
+    const open = await screen.findByRole("button", { name: "Media library" });
+    await waitFor(() => expect(open).toBeEnabled());
+    await userEvent.click(open);
+    const dialog = await screen.findByRole("dialog", { name: "Gallery" });
+    const items = await within(dialog).findByRole("list", { name: "Files" });
+    // Images only: a PDF has no magnifier.
+    expect(within(items).queryByRole("button", { name: "View b.pdf" })).toBeNull();
+    await userEvent.click(within(items).getByRole("button", { name: "View a.png" }));
+    // Drawn inside the picker's dialog (the top layer), over it.
+    await waitFor(() => expect(within(dialog).getByLabelText("Image viewer")).toBeInTheDocument());
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(within(dialog).queryByLabelText("Image viewer")).toBeNull());
+    expect(within(items).getByRole("button", { name: /^a\.png/ })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("says the library is loading until its first page is in", async () => {
@@ -290,8 +311,8 @@ describe("editor image picker", () => {
     const dialog = await screen.findByRole("dialog", { name: "Insert images" });
     const items = await within(dialog).findByRole("list", { name: "Files" });
     expect(queries[0]!.get("filter[mime][in]")).toBe("image/png,image/jpeg,image/gif,image/webp");
-    await userEvent.click(within(items).getByRole("button", { name: /b\.png/ }));
-    await userEvent.click(within(items).getByRole("button", { name: /a\.png/ }));
+    await userEvent.click(within(items).getByRole("button", { name: /^b\.png/ }));
+    await userEvent.click(within(items).getByRole("button", { name: /^a\.png/ }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Insert" }));
     await waitFor(() => expect(emitted).not.toBe(""));
     const content = JSON.parse(emitted).content as { type: string; attrs?: { media?: string } }[];
@@ -317,7 +338,7 @@ describe("editor image picker", () => {
     await userEvent.click(button);
     const dialog = await screen.findByRole("dialog", { name: "Insert images" });
     const items = await within(dialog).findByRole("list", { name: "Files" });
-    for (const name of [/cat\.png/, /dog\.png/, /x\.png/]) await userEvent.click(within(items).getByRole("button", { name }));
+    for (const name of [/^cat\.png/, /^dog\.png/, /^x\.png/]) await userEvent.click(within(items).getByRole("button", { name }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Insert" }));
     await waitFor(() => expect(emitted).not.toBe(""));
     const content = JSON.parse(emitted).content as { type: string; attrs?: { media?: string; alt?: string } }[];

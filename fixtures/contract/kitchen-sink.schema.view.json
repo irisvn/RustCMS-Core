@@ -281,7 +281,8 @@
                           ],
                           "maxItems": 1,
                           "maxSize": 1000000,
-                          "multiple": false
+                          "multiple": false,
+                          "preview": false
                         },
                         "name": "photo",
                         "nullable": true,
@@ -645,5 +646,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 21
+  "vocabularyVersion": 22
 }

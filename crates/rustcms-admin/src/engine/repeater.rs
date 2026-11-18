@@ -89,6 +89,7 @@ impl Rows {
             let input_name = input.name.as_str();
             assert!(names.insert(input_name), "{here}: input `{input_name}` appears twice in a row");
             assert!(!input.clear_when_hidden, "{here}: `clear_when_hidden` does not apply inside rows");
+            assert!(input.preview, "{here}: input `{input_name}`: only file uploads take `preview`");
             let rule = match input.kind {
                 InputType::FileUpload | InputType::RichEditor => {
                     panic!("{here}: `{input_name}`: media and rich text inputs are not supported in JSON rows")

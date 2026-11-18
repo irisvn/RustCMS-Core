@@ -32,6 +32,16 @@ All notable changes are documented here. The format follows
   `format`; the panel's configuration `dateFormat`/`dateTimeFormat`. Without any pattern, nothing changes.
   Demo: the posts list writes publication times with a pattern.
 
+- Image viewer (vocabulary 22): a click on an image opens it over the page, in forms (file uploads), view pages
+  (`MediaEntry`, rich text images), the Media page and its records, and the media picker (a magnifier beside
+  each image: a click still chooses). Zoom (buttons, wheel, double click, pinch, pan), the place's other images
+  (arrows, ← →, a counter), the file's name, alt text, dimensions and size (looked up in the media library when
+  only the id is known) and a download; Escape, the close button or a click outside close it, Escape never
+  closing the dialog under it. `MediaEntry::preview(false)` and `FileUpload` `.preview(false)` keep a field's
+  images still; `EntrySchema` and `MediaSchema` gain `preview` (sent only when `false`). New admin-ui dependency
+  `yet-another-react-lightbox` 3.33.0 (MIT; static stylesheets, styles set through the CSSOM: the CSP is unchanged),
+  loaded with its styles the first time a viewer opens.
+
 ### Changed
 - The exports list shows times in the panel's language (it used the browser's).
 - Table columns whose field has a select or checkbox list with options in the form now show its labels instead
@@ -41,6 +51,10 @@ All notable changes are documented here. The format follows
   instants in UTC. A value the column cannot hold refuses to boot: a number on an `i64`, decimal or text column,
   a string on an `i32` or boolean column, a value finer than the column keeps. Such colors never matched; write
   them as the API sends the values.
+
+### Deprecated
+- `MediaEntry::gallery()`: images open in the viewer by default (`.preview(false)` turns it off); the schema no
+  longer sends `gallery`.
 
 ## [0.13.1] — 2026-11-17
 

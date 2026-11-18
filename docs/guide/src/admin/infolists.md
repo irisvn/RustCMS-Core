@@ -57,7 +57,7 @@ a [computed value](#computed-values). Every entry takes `label`, `help`,
 | `RelationEntry` | `belongs_to` fields | none |
 | `BooleanEntry` | boolean columns | `labels(yes, no)`, `color(true, color)` |
 | `KeyValueEntry` | key/value fields | none |
-| `MediaEntry` | media fields | `size(pixels)`, `gallery()` |
+| `MediaEntry` | media fields | `size(pixels)`, `preview(false)` (images do not open the [image viewer](media.md#the-image-viewer)); `gallery()` is deprecated: images open in the viewer by default |
 | `RichTextEntry` | rich text fields | `outline()` |
 | `ComputedEntry` | a computed value | the display options of `TextEntry` |
 | `CustomEntry` | any field or computed value | `props(json)` |

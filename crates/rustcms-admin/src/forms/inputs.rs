@@ -108,6 +108,8 @@ pub struct Input {
     pub(crate) required: bool,
     pub(crate) max_length: Option<usize>,
     pub(crate) integer: bool,
+    /// File uploads: images open in the panel's viewer (the default).
+    pub(crate) preview: bool,
 }
 
 impl Input {
@@ -137,6 +139,7 @@ impl Input {
             required: false,
             max_length: None,
             integer: false,
+            preview: true,
         }
     }
 
@@ -180,6 +183,14 @@ impl Input {
     /// canonical wire form. Not used for `belongs_to` fields.
     pub fn options<V: Into<Json>, L: Into<String>>(mut self, options: impl IntoIterator<Item = (V, L)>) -> Self {
         self.options = options.into_iter().map(|(v, l)| SelectOption { value: v.into(), label: l.into() }).collect();
+        self
+    }
+
+    /// Whether the images of a file upload open in the panel's viewer when
+    /// clicked (default: `true`); also the entry its default view page shows.
+    /// Other inputs refuse it at boot.
+    pub fn preview(mut self, preview: bool) -> Self {
+        self.preview = preview;
         self
     }
 

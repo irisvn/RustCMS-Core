@@ -263,6 +263,7 @@ fn input_schema(ctx: &Ctx, field: &SettingField, input: &crate::ui::Input, disab
             max_items: rule.max_items,
             accept: rule.accept.clone(),
             max_size: rule.max_size,
+            preview: input.preview,
         }),
         links: None,
         prefix: input.prefix.clone(),

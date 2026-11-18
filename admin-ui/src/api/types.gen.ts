@@ -155,7 +155,12 @@ accept: Array<string>,
 /**
  * Largest accepted file, in bytes.
  */
-maxSize?: number, };
+maxSize?: number, 
+/**
+ * Images open in the panel's viewer when clicked; sent only when `false`
+ * (vocabulary 22).
+ */
+preview?: boolean, };
 
 export type LinksSchema = { 
 /**
@@ -496,9 +501,10 @@ labels?: [string, string],
  */
 size?: number, 
 /**
- * Images open in a viewer.
+ * Media entries: images open in the panel's viewer when clicked; sent
+ * only when `false` (vocabulary 22, which dropped `gallery`).
  */
-gallery?: boolean, 
+preview?: boolean, 
 /**
  * How dates or times are shown (a pattern, as `ColumnSchema::format`;
  * vocabulary 21). Absent: the panel's.

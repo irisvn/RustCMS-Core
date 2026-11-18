@@ -284,7 +284,8 @@
                           ],
                           "maxItems": 1,
                           "maxSize": 1000000,
-                          "multiple": false
+                          "multiple": false,
+                          "preview": false
                         },
                         "name": "photo",
                         "nullable": true,
@@ -632,6 +633,7 @@
                         "columnSpan": 1,
                         "label": "Photo",
                         "name": "photo",
+                        "preview": false,
                         "type": "media_entry",
                         "valueType": "uuid"
                       },
@@ -931,5 +933,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 21
+  "vocabularyVersion": 22
 }

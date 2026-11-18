@@ -641,6 +641,7 @@ pub(super) fn row_repeaters(slug: &str, form: &Form, relations: &[Relation]) -> 
                 row.options.is_empty() && row.number.is_none(),
                 "{here}: `{row_name}`: in relationship rows the child's form decides options and number bounds"
             );
+            assert!(row.preview, "{here}: input `{row_name}`: only file uploads take `preview`");
             assert!(!inputs.iter().any(|n| n == row_name), "{here}: input `{row_name}` appears twice in a row");
             inputs.push(row_name.to_owned());
         }

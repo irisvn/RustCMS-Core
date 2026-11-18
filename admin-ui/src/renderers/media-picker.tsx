@@ -5,12 +5,13 @@
 // reference again on save. Thumbnails are the authorized file URL, scaled by
 // the browser (no server resizing); nothing is loaded from elsewhere.
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, FileText, Upload as UploadIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Upload as UploadIcon, ZoomIn } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePanelConfig } from "@/api/context";
 import { keys, usePanel, useRecords } from "@/api/queries";
 import type { Envelope, MediaItem } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { useImageViewer, viewerImageOf } from "@/components/lightbox";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -41,7 +42,7 @@ export function mimeFilter(accept: string[]): string | null {
 }
 
 /** A media record of the library list as an item. */
-function itemOf(record: Envelope): MediaItem {
+export function mediaItemOf(record: Envelope): MediaItem {
   const d = record.data;
   const mime = String(d.mime ?? "");
   const number = (v: unknown) => (v === null || v === undefined || v === "" ? undefined : Number(v));
@@ -197,8 +198,11 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
   const records = useRecords("media", query);
   // Rows of the previous query, still shown while the next loads: not actionable.
   const stale = records.isPlaceholderData || records.isFetching && !records.data;
-  const items = (records.data?.data ?? []).map(itemOf);
+  const items = (records.data?.data ?? []).map(mediaItemOf);
   const meta = records.data?.meta;
+  // A click on a file chooses it; the magnifier beside it views the page's images.
+  const images = items.filter((item) => item.inline);
+  const viewer = useImageViewer(images.map(viewerImageOf));
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">
@@ -213,6 +217,7 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
       {records.isLoading && <p role="status" className="text-sm text-muted-foreground">{t("picker.loading")}</p>}
       {records.isError && <p role="alert" className="text-sm text-destructive">{t("picker.failed")}</p>}
       {records.data && items.length === 0 && <p className="text-sm text-muted-foreground">{t("picker.empty")}</p>}
+      {viewer.viewer}
       {items.length > 0 && (
         <ul aria-label={t("picker.items")} aria-busy={stale || undefined} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {items.map((item) => {
@@ -222,7 +227,7 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
             const why: Text | null = used ? later("picker.used") : tooLarge ? later("picker.tooLarge") : null;
             const off = stale || used || tooLarge || (!selected && full && rules.multiple);
             return (
-              <li key={item.id}>
+              <li key={item.id} className="relative">
                 <button
                   type="button"
                   aria-pressed={selected}
@@ -240,6 +245,12 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
                   <span className="truncate font-medium">{item.name}</span>
                   {why && <span id={`${id}-${item.id}-why`} className="text-muted-foreground">{typeof why === "function" ? why() : why}</span>}
                 </button>
+                {item.inline && (
+                  <button type="button" aria-label={t("viewer.open", { name: item.name })} onClick={() => viewer.open(images.indexOf(item))}
+                    className="absolute right-2 top-2 inline-flex size-7 items-center justify-center rounded-md border border-border bg-card/90 text-foreground shadow-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <ZoomIn className="size-4" aria-hidden="true" />
+                  </button>
+                )}
               </li>
             );
           })}

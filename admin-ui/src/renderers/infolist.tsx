@@ -16,7 +16,7 @@ import { colorOf, isDateKind, optionLabel } from "@/lib/wire";
 import { formConditions, hasConditions, hiddenFields } from "@/schema/conditions";
 import { defaultValues, inputsOf, isEntry, isLayout, isTextObject, wireValues } from "@/schema/form";
 import { SchemaLayout, SplitLayout, TabsLayout, always, gridCols, readOnlyText, shownWith, span, withShownChildren } from "./form";
-import { MediaThumb } from "./media";
+import { MediaThumb, useMediaViewer } from "./media";
 import { RichTextView } from "./rich-text";
 
 export const KNOWN_ENTRIES = new Set([
@@ -164,7 +164,7 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
       return isTextObject(value) ? <KeyValues value={value} /> : <Raw value={value} />;
     case "media_entry": {
       const ids = (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === "string");
-      return <div className="flex flex-wrap gap-3">{ids.map((id) => <MediaThumb key={id} id={id} size={entry.size} link={entry.gallery} />)}</div>;
+      return <MediaValue ids={ids} size={entry.size} preview={entry.preview !== false} />;
     }
     case "repeatable_entry": {
       // Each row shown by the entry's own entries, over the row's values.
@@ -246,6 +246,19 @@ function Outline({ nodes }: { nodes?: DocNode[] }) {
         {headings.map((h, i) => <li key={i} style={{ paddingInlineStart: `${(Math.min(h.level, 4) - 1) * 0.75}rem` }}>{h.text}</li>)}
       </ul>
     </nav>
+  );
+}
+
+/** A media entry's files: images open the viewer over the entry's images (unless `preview` is off). */
+function MediaValue({ ids, size, preview }: { ids: string[]; size?: number; preview: boolean }) {
+  const viewer = useMediaViewer(ids, {}, preview);
+  return (
+    <div className="flex flex-wrap gap-3">
+      {ids.map((id) => (
+        <MediaThumb key={id} id={id} size={size} onOpen={viewer.open && (() => viewer.open?.(id))} onNotImage={() => viewer.notImage(id)} />
+      ))}
+      {viewer.viewer}
+    </div>
   );
 }
 

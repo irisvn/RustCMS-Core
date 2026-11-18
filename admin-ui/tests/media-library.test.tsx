@@ -207,6 +207,20 @@ it("never shows more than a grid page, whatever rows it is given (a table's page
   expect(screen.getAllByRole("listitem")).toHaveLength(GRID_PER_PAGE);
 });
 
+it("opens the viewer over the page's images from the grid", async () => {
+  const client = new QueryClient();
+  const session = createSession({ basePath: "", apiPath: API }, client, () => {});
+  const rows = [record(IMAGE, "cat.png", "image/png", "A cat"), record(PDF, "doc.pdf", "application/pdf", "")];
+  render(<SessionContext.Provider value={session}><QueryClientProvider client={client}>
+    <MediaGrid rows={rows} actions={() => null} badge={() => null} />
+  </QueryClientProvider></SessionContext.Provider>);
+  // The PDF is an icon, not a button.
+  expect(screen.getAllByRole("button", { name: /^View / })).toHaveLength(1);
+  await userEvent.click(screen.getByRole("button", { name: "View cat.png" }));
+  await waitFor(() => expect(screen.getByLabelText("Image viewer")).toBeInTheDocument());
+  expect(screen.getByText("1 / 1")).toBeInTheDocument();
+});
+
 it("tries a thumbnail that failed again after the next fetch, even unchanged", async () => {
   const session = createSession({ basePath: "", apiPath: API }, new QueryClient(), () => {});
   const cat = record(IMAGE, "cat.png", "image/png", "A cat");

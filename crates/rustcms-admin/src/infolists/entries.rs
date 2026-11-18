@@ -66,7 +66,8 @@ pub(crate) struct Display {
     pub(crate) options: Vec<SelectOption>,
     pub(crate) labels: Option<(String, String)>,
     pub(crate) size: Option<u16>,
-    pub(crate) gallery: bool,
+    /// `Some(false)`: images do not open in the viewer (media entries).
+    pub(crate) preview: Option<bool>,
     pub(crate) date_format: Option<String>,
     pub(crate) outline: bool,
     pub(crate) widget: Option<String>,
@@ -203,9 +204,17 @@ impl Entry {
         self
     }
 
-    /// Links each image to its file, opened in a new tab (media entries).
-    pub fn gallery(mut self) -> Self {
-        self.display.gallery = true;
+    /// Images of a media entry open in the panel's viewer when clicked
+    /// (default: `true`; zoom, the entry's other images, download).
+    pub fn preview(mut self, preview: bool) -> Self {
+        self.display.preview = Some(preview);
+        self
+    }
+
+    /// Images open when clicked (media entries): now the default, in the
+    /// panel's viewer; kept for applications written before it.
+    #[deprecated(note = "images open in the panel's viewer by default; `.preview(false)` turns it off")]
+    pub fn gallery(self) -> Self {
         self
     }
 
