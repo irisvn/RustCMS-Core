@@ -68,7 +68,7 @@ a [computed value](#computed-values). Every entry takes `label`, `help`,
   date field, or the panel's pattern, writes them as a
   [date format](tables.md#date-formats) says (not on computed values, row
   keys or panel pages' data, which have no declared kind).
-- **Colors** are `primary`, `success`, `warning`, `danger` and `gray` (the
+- **Colors** are `primary`, `info`, `success`, `warning`, `danger` and `gray` (the
   default), as in [tables](tables.md).
 - **`url()`** links only `http` and `https` values; anything else (a
   `javascript:` text a user typed) is shown as text. Links open in a new tab.

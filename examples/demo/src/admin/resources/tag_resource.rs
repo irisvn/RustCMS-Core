@@ -43,7 +43,7 @@ impl Resource for TagResource {
         // `kind` shows the labels of the form's select ("Series", not `series`).
         Table::new().columns(vec![
             TextColumn::make("name"),
-            BadgeColumn::make("kind").color("series", "primary").color("event", "warning"),
+            BadgeColumn::make("kind").color("topic", "info").color("series", "primary").color("event", "warning"),
         ])
     }
     // #endregion table

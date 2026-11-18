@@ -438,10 +438,10 @@ export function Widget({ id, input, ctx, value, onChange, onBlur, disabled, inva
       return (
         <div className={cn(
           "flex h-10 min-w-0 w-full items-stretch overflow-hidden rounded-md border border-input bg-card shadow-xs focus-within:ring-2 focus-within:ring-ring",
-          invalid && "border-destructive", disabled && "opacity-60",
+          invalid && "border-destructive", disabled && "bg-muted text-subtle-foreground",
         )}>
           {input.prefix && affix(input.prefix, "prefix")}
-          {field(cn("h-auto rounded-none border-0 shadow-none focus-visible:ring-0 disabled:opacity-100", input.prefix && "pl-0", input.suffix && "pr-0"), described)}
+          {field(cn("h-auto rounded-none border-0 shadow-none focus-visible:ring-0", input.prefix && "pl-0", input.suffix && "pr-0"), described)}
           {input.suffix && affix(input.suffix, "suffix")}
         </div>
       );

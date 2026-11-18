@@ -429,7 +429,7 @@ export function ListPage({ slug, search }: { slug: string; search: ListSearch })
                   </tr>
                 )}
                 {rows.map((record) => (
-                  <TableRow key={record.key} data-selected={selected.has(record.key) || undefined} className="data-[selected=true]:bg-muted/60">
+                  <TableRow key={record.key} data-selected={selected.has(record.key) || undefined} className="data-[selected=true]:bg-selected data-[selected=true]:hover:bg-selected">
                     {bulkActions.length > 0 && (
                       <td className="p-3">{selectOf(record)}</td>
                     )}

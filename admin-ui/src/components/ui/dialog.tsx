@@ -59,7 +59,7 @@ export function Dialog({
         if (!closeDisabled) onClose();
       }}
       className={cn(
-        "m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-xl border border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/50",
+        "m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-xl border border-border bg-popover p-0 text-foreground shadow-xl backdrop:bg-overlay",
         className,
       )}
     >
@@ -74,7 +74,7 @@ export function Dialog({
                 aria-label={t("action.close")}
                 disabled={closeDisabled}
                 onClick={onClose}
-                className="absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                className="absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:text-subtle-foreground"
               >
                 <X className="size-4" aria-hidden="true" />
               </button>

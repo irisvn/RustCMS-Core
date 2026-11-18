@@ -105,7 +105,7 @@ export function DropdownMenu({
               role="menu"
               aria-label={label}
               onKeyDown={onKeyDown}
-              className="fixed left-0 top-0 z-50 min-w-40 overflow-y-auto rounded-lg border border-border bg-card p-1 text-sm text-foreground shadow-lg"
+              className="fixed left-0 top-0 z-50 min-w-40 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-sm text-foreground shadow-lg"
             >
               {children}
             </div>
@@ -151,8 +151,8 @@ export function DropdownMenuItem({
       }}
       className={cn(
         "flex min-h-8 cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 outline-none focus:bg-muted",
-        destructive && "text-destructive",
-        disabled && "opacity-50",
+        destructive && "text-destructive focus:bg-destructive-soft",
+        disabled && "text-subtle-foreground",
       )}
     >
       {children}

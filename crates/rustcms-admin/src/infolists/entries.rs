@@ -122,7 +122,7 @@ impl Entry {
     }
 
     /// The color of the badge (text entries) or of the value (boolean
-    /// entries) for `value`: `primary`, `success`, `warning`, `danger` or
+    /// entries) for `value`: `primary`, `info`, `success`, `warning`, `danger` or
     /// `gray` (the default).
     pub fn color(mut self, value: impl Into<Json>, color: impl Into<String>) -> Self {
         self.display.colors.push((value.into(), color.into()));

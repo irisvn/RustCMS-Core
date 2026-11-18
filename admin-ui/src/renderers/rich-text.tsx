@@ -554,7 +554,7 @@ function ImageFields({ initial, onClose, onApply }: { initial: ImageDetails; onC
         <div className="flex flex-wrap gap-4">
           {IMAGE_WIDTHS.map((w) => (
             <label key={w} className="inline-flex items-center gap-2 text-sm">
-              <input type="radio" name={`${id}-size`} value={w} checked={size === w} onChange={() => setSize(w)} />
+              <input type="radio" className="admin-radio size-4 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" name={`${id}-size`} value={w} checked={size === w} onChange={() => setSize(w)} />
               {t(`rich.width.${w}`)}
             </label>
           ))}

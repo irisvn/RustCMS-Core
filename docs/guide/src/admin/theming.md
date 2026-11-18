@@ -45,11 +45,31 @@ and a favicon.
 | Token | Used for |
 |---|---|
 | `background`, `foreground` | page background and text |
-| `card`, `muted`, `muted-foreground`, `border`, `ring` | panels, secondary text, borders, focus rings |
-| `primary`, `primary-foreground` | buttons, active links, the default logo mark |
-| `secondary`, `destructive`, `destructive-foreground`, `success`, `warning` | other buttons and states |
+| `card`, `popover`, `muted`, `selected`, `overlay` | panels; menus and dialogs; quiet backgrounds and hovered rows; selected rows; the dimmed page behind a dialog |
+| `muted-foreground`, `subtle-foreground` | secondary text; the text of disabled controls |
+| `border`, `input`, `ring` | dividers; borders of inputs, checkboxes and outline buttons; focus rings |
+| `primary`, `primary-foreground`, `primary-hover` | main buttons, active links, checked boxes and switches, `primary` badges, the default logo mark |
+| `secondary`, `secondary-foreground`, `secondary-hover` | secondary buttons |
+| `destructive`, `destructive-foreground`, `destructive-hover` | delete buttons, errors, `danger` badges |
+| `success`, `success-foreground`, `warning`, `warning-foreground`, `info`, `info-foreground` | states: text on the page, and text on a solid background of that color |
+| `destructive-soft`, `success-soft`, `warning-soft`, `info-soft`, `gray-soft`, each with `-soft-foreground` | badges, notices and callouts: a pale background and its text |
 
-The list is `rustcms::admin::custom::TOKENS`.
+The list is `rustcms::admin::custom::TOKENS`. Each token has a light and a
+dark value; the dark ones come from `dark(…)` only (a light value never
+shows in dark mode).
+
+- **Hover and soft colors follow their color.** Left out, `primary-hover`
+  is `primary` moved away from the text on it (darker in light mode, lighter
+  in dark mode, so hovering never lowers contrast), `destructive-soft` is a pale
+  `destructive`, and so on, so a theme that sets only `primary` gets
+  matching hover colors. Set them to choose your own. `popover` follows
+  `card` (a step lighter in dark mode) and `secondary-foreground` follows
+  `foreground`.
+- **Contrast.** The panel's own colors reach WCAG AA in both modes: 4.5:1
+  for text, 3:1 for input borders and focus rings. When a theme or a
+  runtime branding sets a color that brings text under 4.5:1 (`primary-foreground`
+  on `primary`, `muted-foreground` on `card`, …), the panel logs a warning
+  naming the pair, the mode and the ratio. The boot never stops for it.
 
 - Colors are hex (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`).
 - Font names are letters, digits, spaces and dashes. Each name is quoted in
@@ -90,8 +110,8 @@ use the theme through CSS variables, so they follow light and dark mode:
 
 | Variable | |
 |---|---|
-| `--background`, `--foreground`, `--card`, `--muted`, `--muted-foreground`, `--border`, `--ring` | the tokens above |
-| `--primary`, `--primary-foreground`, `--secondary`, `--destructive`, `--destructive-foreground`, `--success`, `--warning` | the tokens above |
+| `--background`, `--foreground`, `--card`, `--popover`, `--muted`, `--muted-foreground`, `--subtle-foreground`, `--border`, `--input`, `--ring`, `--selected`, `--overlay` | the tokens above |
+| `--primary`, `--secondary`, `--destructive`, `--success`, `--warning`, `--info` and their `-foreground`; `--primary-hover`, `--secondary-hover`, `--destructive-hover`; `--*-soft` and `--*-soft-foreground` | the tokens above |
 | `--radius` | the theme's radius; `--radius-sm`, `--radius-md`, `--radius-lg` (= `--radius`) and `--radius-xl` derive from it |
 | `--font-sans` | the theme's font stack |
 

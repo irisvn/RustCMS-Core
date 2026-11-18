@@ -5,22 +5,47 @@
 
 use std::fmt::Write;
 
-/// Color tokens an application may set (the panel's stable theme API, version 1).
+/// Color tokens an application may set (the panel's stable theme API, version 1:
+/// names are only ever added). Hover and soft tokens follow their color when
+/// left out (`color-mix` in the panel's stylesheet).
 pub const TOKENS: &[&str] = &[
     "background",
     "foreground",
     "card",
+    "popover",
     "muted",
     "muted-foreground",
+    "subtle-foreground",
     "border",
+    "input",
     "ring",
+    "overlay",
+    "selected",
     "primary",
     "primary-foreground",
+    "primary-hover",
     "secondary",
+    "secondary-foreground",
+    "secondary-hover",
     "destructive",
     "destructive-foreground",
+    "destructive-hover",
+    "destructive-soft",
+    "destructive-soft-foreground",
     "success",
+    "success-foreground",
+    "success-soft",
+    "success-soft-foreground",
     "warning",
+    "warning-foreground",
+    "warning-soft",
+    "warning-soft-foreground",
+    "info",
+    "info-foreground",
+    "info-soft",
+    "info-soft-foreground",
+    "gray-soft",
+    "gray-soft-foreground",
 ];
 
 /// Largest logo or favicon.

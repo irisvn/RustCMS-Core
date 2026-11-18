@@ -41,7 +41,7 @@ function ToastItem({ toast }: { toast: Toast }) {
     <div
       role={toast.kind === "error" ? "alert" : "status"}
       className={cn(
-        "pointer-events-auto flex items-start gap-3 rounded-lg border bg-card p-3 text-sm text-foreground shadow-lg",
+        "pointer-events-auto flex items-start gap-3 rounded-lg border bg-popover p-3 text-sm text-foreground shadow-lg",
         toast.kind === "error" ? "border-destructive" : "border-border",
       )}
     >

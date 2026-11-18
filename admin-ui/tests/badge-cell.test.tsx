@@ -13,6 +13,7 @@ const column = {
     { value: "published", color: "success" },
     { value: "featured", color: "primary" },
     { value: "removed", color: "danger" },
+    { value: "notice", color: "info" },
     { value: "odd", color: "neon" },
   ],
 } as unknown as ColumnSchema;
@@ -20,15 +21,18 @@ const column = {
 const cell = (status: string) =>
   render(<Cell column={column} record={{ key: "1", data: { status } } as unknown as Envelope} />);
 
-it("draws each of the five colors, and gray for an unknown one", () => {
+// Soft pairs from the color tokens; primary is solid (the default primary is
+// neutral, a soft one would read as gray).
+it("draws each of the six colors, and gray for an unknown one", () => {
   const classes: Record<string, string> = {
-    draft: "bg-muted",
-    review: "text-warning",
-    published: "text-success",
-    featured: "text-primary",
-    removed: "text-destructive",
-    odd: "bg-muted",
-    unlisted: "bg-muted",
+    draft: "bg-gray-soft text-gray-soft-foreground",
+    review: "bg-warning-soft text-warning-soft-foreground",
+    published: "bg-success-soft text-success-soft-foreground",
+    featured: "bg-primary text-primary-foreground",
+    removed: "bg-destructive-soft text-destructive-soft-foreground",
+    notice: "bg-info-soft text-info-soft-foreground",
+    odd: "bg-gray-soft",
+    unlisted: "bg-gray-soft",
   };
   for (const [status, cls] of Object.entries(classes)) {
     const view = cell(status);
@@ -60,7 +64,7 @@ it("shows the label of a value's option, colored by the value", () => {
   expect(screen.queryByText("published")).toBeNull();
   view.unmount();
   show(labelled, "archived");
-  expect(screen.getByText("archived").className).toContain("bg-muted");
+  expect(screen.getByText("archived").className).toContain("bg-gray-soft");
 });
 
 it("draws one badge per value of a list", () => {

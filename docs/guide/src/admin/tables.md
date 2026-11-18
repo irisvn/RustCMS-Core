@@ -43,7 +43,7 @@ The LMS's enrollments draw their progress with a
 | Column | Shows |
 |---|---|
 | `TextColumn` | text, numbers, related records by title (`belongs_to` fields), [option labels](#option-labels) |
-| `BadgeColumn` | a badge, `.color(value, color)` per value (`primary`, `success`, `warning`, `danger`, `gray`; any other name shows gray), [option labels](#option-labels); a list (a checkbox list's values) as one badge per value |
+| `BadgeColumn` | a badge, `.color(value, color)` per value (`primary`, `info`, `success`, `warning`, `danger`, `gray`; any other name shows gray), [option labels](#option-labels); a list (a checkbox list's values) as one badge per value |
 | `BooleanColumn` | a check mark |
 | `DateColumn` | dates and times: instants in the user's language and time zone; dates as `YYYY-MM-DD`, local date-times as `YYYY-MM-DD HH:MM`; or with a [date format](#date-formats) |
 

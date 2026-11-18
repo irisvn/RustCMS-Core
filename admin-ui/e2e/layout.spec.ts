@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { type Page } from "@playwright/test";
 import type { PanelResponse } from "../src/api/types";
-import { expect, signIn, test } from "./fixtures";
+import { contrast, expect, signIn, srgb, test } from "./fixtures";
 
 const screenshotDirectory = process.env.RUSTCMS_UI_SCREENSHOTS;
 const viewports = [320, 390, 768, 1440];
@@ -21,36 +21,34 @@ async function fitsViewport(page: Page) {
   for (const scroller of layout.scrollers) expect(scroller.containsTable, `${scroller.tag} horizontal scroll is local to a table`).toBe(true);
 }
 
+// Every text pair of the color tokens reaches WCAG AA (4.5:1); input borders
+// and the focus ring 3:1 (WCAG 1.4.11); disabled text stays apart from text.
+// Tokens are resolved by the browser (hover and soft ones are color-mix()).
+const TEXT_PAIRS = [
+  ["foreground", "background"], ["foreground", "card"], ["foreground", "popover"], ["foreground", "muted"], ["foreground", "selected"],
+  ["muted-foreground", "background"], ["muted-foreground", "card"], ["muted-foreground", "muted"], ["muted-foreground", "popover"],
+  ["primary", "card"], ["primary-foreground", "primary"], ["primary-foreground", "primary-hover"],
+  ["secondary-foreground", "secondary"], ["secondary-foreground", "secondary-hover"],
+  ["destructive", "card"], ["destructive", "background"], ["destructive", "popover"],
+  ["destructive-foreground", "destructive"], ["destructive-foreground", "destructive-hover"],
+  ["success", "card"], ["success-foreground", "success"],
+  ["warning", "card"], ["warning-foreground", "warning"],
+  ["info", "card"], ["info-foreground", "info"],
+  ["destructive-soft-foreground", "destructive-soft"], ["success-soft-foreground", "success-soft"],
+  ["warning-soft-foreground", "warning-soft"], ["info-soft-foreground", "info-soft"], ["gray-soft-foreground", "gray-soft"],
+] as const;
+const UI_PAIRS = [
+  ["input", "card"], ["input", "background"], ["input", "popover"],
+  ["ring", "card"], ["ring", "background"], ["ring", "muted"], ["ring", "popover"],
+  ["subtle-foreground", "foreground"],
+] as const;
+
 async function expectContrast(page: Page) {
-  const ratios = await page.evaluate(() => {
-    const styles = getComputedStyle(document.documentElement);
-    const context = document.createElement("canvas").getContext("2d")!;
-    const luminance = (token: string) => {
-      context.fillStyle = styles.getPropertyValue(token).trim();
-      context.fillRect(0, 0, 1, 1);
-      const channels = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map((channel) => {
-        const value = channel / 255;
-        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-      });
-      return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722;
-    };
-    const contrast = (first: string, second: string) => {
-      const a = luminance(first), b = luminance(second);
-      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-    };
-    return {
-      destructiveTextOnCard: contrast("--destructive", "--card"),
-      destructiveTextOnBackground: contrast("--destructive", "--background"),
-      destructiveButton: contrast("--destructive-foreground", "--destructive"),
-      successTextOnCard: contrast("--success", "--card"),
-      warningTextOnCard: contrast("--warning", "--card"),
-      focusRingOnCard: contrast("--ring", "--card"),
-      focusRingOnBackground: contrast("--ring", "--background"),
-    };
-  });
-  for (const [name, ratio] of Object.entries(ratios)) {
-    expect(ratio, `${name} WCAG contrast ratio`).toBeGreaterThanOrEqual(name.startsWith("focusRing") ? 3 : 4.5);
-  }
+  const tokens = [...new Set([...TEXT_PAIRS, ...UI_PAIRS].flat())];
+  const colors = new Map<string, number[]>((await srgb(page, tokens.map((t) => `--${t}`))).map((rgb, i): [string, number[]] => [tokens[i]!, rgb]));
+  const ratio = ([a, b]: readonly [string, string]) => contrast(colors.get(a)!, colors.get(b)!);
+  for (const pair of TEXT_PAIRS) expect.soft(ratio(pair), `${pair.join(" on ")}: WCAG contrast`).toBeGreaterThanOrEqual(4.5);
+  for (const pair of UI_PAIRS) expect.soft(ratio(pair), `${pair.join(" on ")}: WCAG contrast`).toBeGreaterThanOrEqual(3);
 }
 
 async function capture(page: Page, name: string, width: number, theme: string) {

@@ -110,7 +110,7 @@ impl TableColumn {
         self
     }
 
-    /// Badge color for `value` (`primary`, `success`, `warning`, `danger`, `gray`).
+    /// Badge color for `value` (`primary`, `info`, `success`, `warning`, `danger`, `gray`).
     /// The value is compared in canonical wire form, as a select's options
     /// (an `i64` or a decimal as a string); a value the column cannot hold
     /// refuses to boot.

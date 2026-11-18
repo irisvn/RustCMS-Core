@@ -8,7 +8,7 @@ test("the tags list shows each kind by its label", async ({ page, watch: _ }) =>
   const row = page.getByRole("row", { name: /Security/ });
   await expect(row.getByText("Series", { exact: true })).toBeVisible();
   await expect(row.getByText("series", { exact: true })).toHaveCount(0);
-  await expect(row.getByText("Series", { exact: true })).toHaveClass(/text-primary/);
+  await expect(row.getByText("Series", { exact: true })).toHaveClass(/\bbg-primary\b/);
 
   await page.goto("/admin/r/tags?search=Rust");
   await expect(page.getByRole("row", { name: /Rust/ }).getByText("Topic", { exact: true })).toBeVisible();

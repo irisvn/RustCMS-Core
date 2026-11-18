@@ -235,7 +235,7 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
                   aria-describedby={why ? `${id}-${item.id}-why` : undefined}
                   onClick={() => onToggle(item)}
                   className={cn(
-                    "flex w-full flex-col gap-1 rounded-md border p-1 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+                    "flex w-full flex-col gap-1 rounded-md border p-1 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:bg-muted disabled:text-subtle-foreground [&:disabled_img]:opacity-50",
                     selected ? "border-ring bg-muted ring-2 ring-ring" : "border-border hover:bg-muted",
                   )}
                 >

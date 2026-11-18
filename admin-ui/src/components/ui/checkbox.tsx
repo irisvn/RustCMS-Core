@@ -7,7 +7,7 @@ export function Checkbox({ className, indeterminate = false, ...props }: Omit<Re
       type="checkbox"
       ref={(node) => { if (node) node.indeterminate = indeterminate; }}
       aria-checked={indeterminate ? "mixed" : undefined}
-      className={cn("size-4 shrink-0 rounded border-input accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-60", className)}
+      className={cn("admin-checkbox size-4 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background", className)}
       {...props}
     />
   );
@@ -31,8 +31,8 @@ export function Switch({
       disabled={disabled}
       onClick={() => onCheckedChange(!checked)}
       className={cn(
-        "inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
-        checked ? "bg-primary" : "bg-secondary",
+        "inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed",
+        checked ? "bg-primary disabled:bg-input" : "bg-input disabled:bg-muted",
         className,
       )}
       {...props}

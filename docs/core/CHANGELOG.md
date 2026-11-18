@@ -42,7 +42,27 @@ All notable changes are documented here. The format follows
   `yet-another-react-lightbox` 3.33.0 (MIT; static stylesheets, styles set through the CSSOM: the CSP is unchanged),
   loaded with its styles the first time a viewer opens.
 
+- Color tokens (theme API version 1, names only added): `popover`, `selected`, `overlay`, `input`,
+  `subtle-foreground`, `secondary-foreground`, `success-foreground`, `warning-foreground`, `info` and
+  `info-foreground`, hover colors (`primary-hover`, `secondary-hover`, `destructive-hover`) and soft pairs
+  (`destructive`/`success`/`warning`/`info`/`gray` `-soft` and `-soft-foreground`); hover and soft colors follow
+  their color through `color-mix` unless set (hover darker in light mode and lighter in dark mode, away from
+  the text on it, so it never lowers contrast; solid buttons also show a faint ring on hover). The badge color `info` (`BadgeColumn::color`, `TextEntry::color`,
+  the SDK's `Badge`, whose `color` prop is now typed). A theme or runtime branding that brings a text pair under
+  4.5:1 logs a warning (pair, mode, ratio; once per change for the branding); the boot never stops for it.
+
 ### Changed
+- Panel colors (dark mode first): every text pair reaches WCAG AA and input borders and focus rings 3:1, in both
+  modes (checked by the E2E suite). Dark: main buttons light grey instead of white, menus and dialogs lighter
+  than the page and a darker backdrop. Both modes: secondary buttons and switches stand apart from cards, darker
+  input borders and focus ring, selected table rows marked, visible hover colors. Disabled buttons, inputs,
+  menu items and tabs change color instead of fading (opacity). Checkboxes and radios are drawn by the panel
+  (the browser's ignored dark mode). Badges and notices use soft pairs; `primary` badges are solid (the
+  default primary is neutral: a pale one read as gray). A row's primary action is an outline button. The dark
+  tokens are written once in `admin-ui/src/index.css`. `popover` follows `card` (a step lighter in dark mode) and
+  `secondary-foreground` follows `foreground`, so existing themes keep their look there; borders of inputs,
+  checkboxes and outline buttons now use the new `input` token (darker than `border`, for 3:1): a theme that set
+  `border` for them sets `input` too. Demo: tags of kind topic are `info`.
 - The exports list shows times in the panel's language (it used the browser's).
 - Table columns whose field has a select or checkbox list with options in the form now show its labels instead
   of the values; `.raw()` keeps the values.

@@ -3,6 +3,7 @@
 //! custom table cells (`ColumnSchema::cell`, drawn by scripts).
 
 pub(crate) mod branding;
+mod contrast;
 mod html;
 mod http;
 mod page;

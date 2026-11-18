@@ -11,8 +11,8 @@ export function Alert({
       role="alert"
       className={cn(
         "rounded-md border px-4 py-3 text-sm",
-        variant === "destructive" && "border-destructive/40 bg-destructive/10 text-destructive",
-        variant === "warning" && "border-warning/40 bg-warning/10 text-warning",
+        variant === "destructive" && "border-destructive/40 bg-destructive-soft text-destructive-soft-foreground",
+        variant === "warning" && "border-warning/40 bg-warning-soft text-warning-soft-foreground",
         variant === "default" && "border-border bg-card",
         className,
       )}

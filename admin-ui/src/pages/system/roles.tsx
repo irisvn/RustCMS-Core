@@ -351,7 +351,7 @@ function AreaPermissions({
                     <td className="p-3">
                       <div className="flex flex-wrap gap-x-4 gap-y-2">
                         {row.other.map((p) => (
-                          <label key={p.name} className="flex items-center gap-2 has-disabled:opacity-60">
+                          <label key={p.name} className="flex items-center gap-2 has-disabled:text-subtle-foreground">
                             {box(p, t("roles.matrixCell", { resource: row.label, ability: p.label ?? p.ability ?? p.name }))}
                             <span className="break-all text-xs" title={p.name}>{p.label ?? p.ability}</span>
                           </label>
@@ -387,7 +387,7 @@ function AreaPermissions({
                   const hint = hintOf(p);
                   return (
                     <label key={p.name}
-                      className="flex min-w-0 items-start gap-3 rounded-md px-2 py-2.5 text-sm transition-colors hover:bg-muted/40 has-disabled:cursor-not-allowed has-disabled:opacity-60"
+                      className="flex min-w-0 items-start gap-3 rounded-md px-2 py-2.5 text-sm transition-colors hover:bg-muted/40 has-disabled:cursor-not-allowed has-disabled:text-subtle-foreground"
                       title={p.grantable ? undefined : t("roles.notHeld")}>
                       <Checkbox
                         className="mt-0.5 shrink-0"
