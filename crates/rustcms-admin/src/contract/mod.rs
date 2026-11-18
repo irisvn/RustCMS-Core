@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 20;
+pub const VOCABULARY_VERSION: u32 = 21;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -510,6 +510,11 @@ pub struct EntrySchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub gallery: bool,
+    /// How dates or times are shown (a pattern, as `ColumnSchema::format`;
+    /// vocabulary 21). Absent: the panel's.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
     /// The document's headings as an outline.
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -676,6 +681,12 @@ pub struct ColumnSchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<SelectOption>>", optional))]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<SelectOption>,
+    /// How dates or times are shown, a pattern such as `HH:mm dd/MM/yyyy`
+    /// (`yyyy yy MMMM MMM MM M dd d EEEE EEE HH H hh h mm ss a z`, text in
+    /// single quotes; vocabulary 21). Absent: the panel's.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
     /// Related resource (display `labels[name]`).
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]

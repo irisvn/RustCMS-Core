@@ -130,6 +130,7 @@ it("renders every table column of the contract", async () => {
   expect(screen.getByText("Tools")).toBeInTheDocument();
   expect(screen.getByText("10.50")).toBeInTheDocument();
   expect(screen.getByText("9007199254740993")).toBeInTheDocument();
-  expect(screen.getByText("2026-10-12")).toBeInTheDocument();
+  // The column's date format (vocabulary 21).
+  expect(screen.getByText("12/10/2026")).toBeInTheDocument();
   expect(screen.getByLabelText("Yes")).toBeInTheDocument();
 });

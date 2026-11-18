@@ -83,7 +83,8 @@ impl Resource for PostResource {
                 TextColumn::make("title"),
                 TextColumn::make("category_id").hide_below(Breakpoint::Md),
                 BooleanColumn::make("published"),
-                DateColumn::make("published_at"),
+                // In the user's time zone; month names in their language.
+                DateColumn::make("published_at").date_format("MMM d, yyyy, h:mm a"),
             ])
             .filters(vec![
                 TernaryFilter::make("published"),

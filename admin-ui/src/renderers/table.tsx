@@ -3,8 +3,8 @@ import { Check, X } from "lucide-react";
 import type { ColumnSchema, Envelope, FilterSchema, JsonValue } from "@/api/types";
 import { Badge, badgeColor } from "@/components/ui/badge";
 import { Input, NativeSelect } from "@/components/ui/input";
-import { colorOf, display, optionLabel } from "@/lib/wire";
-import { t, useT } from "@/i18n";
+import { colorOf, display, isDateKind, optionLabel } from "@/lib/wire";
+import { formatWireDate, hasDateFormat, t, useT } from "@/i18n";
 import { RelationSelect } from "./relation-select";
 import { ScriptView } from "@/components/custom";
 
@@ -72,10 +72,14 @@ function DefaultCell({ column, record, value }: { column: ColumnSchema; record: 
         <X className="size-4 text-muted-foreground" aria-label={t("value.no")} />
       );
     case "date":
-      return <span className="whitespace-nowrap">{formatDate(column.valueType, value)}</span>;
+      return <span className="whitespace-nowrap"><DateValue column={column} value={value} /></span>;
     default:
       // "text" and unknown (newer) column types; a list with labels as its labels.
       if (value === null || value === undefined) return <span className="line-clamp-2" />;
+      // A date with a pattern (the column's or the panel's), as a date column shows it.
+      if (typeof value === "string" && isDateKind(column.valueType) && hasDateFormat(column.valueType, column.format)) {
+        return <span className="line-clamp-2"><DateValue column={column} value={value} /></span>;
+      }
       if (Array.isArray(value) && column.options?.length) {
         return <span className="line-clamp-2">{value.map((item) => shown(column, item)).join(", ")}</span>;
       }
@@ -83,11 +87,20 @@ function DefaultCell({ column, record, value }: { column: ColumnSchema; record: 
   }
 }
 
-function formatDate(kind: string, value: unknown): string {
-  if (typeof value !== "string") return "";
-  if (kind === "instant") return display(kind, value);
-  if (kind === "local_datetime") return value.replace("T", " ").slice(0, 16);
-  return value;
+/**
+ * A date or time: with the column's pattern, else the panel's; without any,
+ * instants in the user's language, local date-times as `yyyy-MM-dd HH:mm` and
+ * dates as written.
+ */
+function DateValue({ column, value }: { column: ColumnSchema; value: unknown }) {
+  if (typeof value !== "string") return null;
+  const kind = column.valueType;
+  let text: string;
+  if (hasDateFormat(kind, column.format)) text = formatWireDate(kind, value, column.format) ?? value;
+  else if (kind === "instant") text = display(kind, value);
+  else if (kind === "local_datetime") text = value.replace("T", " ").slice(0, 16);
+  else text = value;
+  return <time dateTime={value}>{text}</time>;
 }
 
 /** Query-string parameters of a filter, as `filter[field][op]` → value. */

@@ -23,7 +23,17 @@ All notable changes are documented here. The format follows
   gains `options`. A badge column holding a list draws one badge per value. The dashboard's recent records use
   the column's labels.
 
+- Date formats (vocabulary 21): `TableColumn::date_format(pattern)` and `Entry::date_format(pattern)` (text
+  entries) show dates and times with a pattern (`yyyy yy MMMM MMM MM M dd d EEEE EEE HH H hh h mm ss a z`, text
+  in single quotes, at most 64 characters), in the user's language and, for instants, time zone;
+  `AdminProvider::date_format`/`datetime_format` set the panel's patterns for date and date-time fields without
+  one, and for history, queue, schedule and export times. Patterns are checked at boot (fields, a time on a
+  date, a zone on a local date-time, computed values and rows). `ColumnSchema` and `EntrySchema` gain
+  `format`; the panel's configuration `dateFormat`/`dateTimeFormat`. Without any pattern, nothing changes.
+  Demo: the posts list writes publication times with a pattern.
+
 ### Changed
+- The exports list shows times in the panel's language (it used the browser's).
 - Table columns whose field has a select or checkbox list with options in the form now show its labels instead
   of the values; `.raw()` keeps the values.
 - Values of `TableColumn::color` are compared in canonical wire form, as a select's options, on every column:

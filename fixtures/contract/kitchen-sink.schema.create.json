@@ -535,6 +535,7 @@
         "valueType": "bool"
       },
       {
+        "format": "dd/MM/yyyy",
         "label": "Day",
         "name": "day",
         "searchable": false,
@@ -665,5 +666,5 @@
     "searchable": true,
     "softDeletes": true
   },
-  "vocabularyVersion": 20
+  "vocabularyVersion": 21
 }

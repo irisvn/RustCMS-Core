@@ -67,6 +67,7 @@ pub(crate) struct Display {
     pub(crate) labels: Option<(String, String)>,
     pub(crate) size: Option<u16>,
     pub(crate) gallery: bool,
+    pub(crate) date_format: Option<String>,
     pub(crate) outline: bool,
     pub(crate) widget: Option<String>,
     pub(crate) props: Option<Json>,
@@ -208,6 +209,14 @@ impl Entry {
         self
     }
 
+    /// Shows the dates or times of the field with `pattern` (text entries of a
+    /// date, local date-time or instant field), as
+    /// [`crate::ui::TableColumn::date_format`].
+    pub fn date_format(mut self, pattern: impl Into<String>) -> Self {
+        self.display.date_format = Some(pattern.into());
+        self
+    }
+
     /// Shows the document's headings as an outline (rich text entries).
     pub fn outline(mut self) -> Self {
         self.display.outline = true;
@@ -258,8 +267,8 @@ macro_rules! entry_types {
 }
 
 entry_types! {
-    /// Text: numbers, dates (in the user's language and time zone), option
-    /// labels, lists.
+    /// Text: numbers, dates (in the user's language and time zone, or with
+    /// [`Entry::date_format`]), option labels, lists.
     TextEntry => TextEntry,
     /// The title of the related record of a `belongs_to` field, linked to
     /// its page when the user may list the related resource.

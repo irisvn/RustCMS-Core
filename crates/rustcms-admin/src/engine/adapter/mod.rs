@@ -430,11 +430,23 @@ impl<R: Resource> ResourceAdapter<R> {
             let declared = !column.options.is_empty();
             if column.counts.is_some() {
                 assert!(!declared && !column.raw, "{owner}: count column `{name}` takes no options");
+                assert!(column.date_format.is_none(), "{owner}: count column `{name}` takes no date format");
                 continue;
             }
             let field = field(&name).expect("checked above");
             let info = &columns[&name];
             assert!(!(column.count && (declared || column.raw)), "{owner}: count column `{name}` takes no options");
+            if let Some(pattern) = &column.date_format {
+                assert!(
+                    matches!(column.kind, crate::ui::ColumnType::Text | crate::ui::ColumnType::Date) && !column.count,
+                    "{owner}: column `{name}`: a date format needs a date or text column"
+                );
+                assert!(
+                    column.cell.is_none(),
+                    "{owner}: column `{name}`: a custom cell draws the value itself and takes no date format"
+                );
+                crate::engine::date_format::check(&format!("{owner}: column `{name}`"), pattern, Some(info.kind));
+            }
             let labelled =
                 matches!(column.kind, crate::ui::ColumnType::Text | crate::ui::ColumnType::Badge) && !column.count;
             assert!(!declared || labelled, "{owner}: column `{name}`: options need a text or badge column");

@@ -41,6 +41,7 @@ pub struct TableColumn {
     pub(crate) colors: Vec<(Json, String)>,
     pub(crate) options: Vec<SelectOption>,
     pub(crate) raw: bool,
+    pub(crate) date_format: Option<String>,
     pub(crate) cell: Option<String>,
     pub(crate) props: Option<Json>,
     pub(crate) hide_below: Option<Breakpoint>,
@@ -57,6 +58,7 @@ impl TableColumn {
             colors: Vec::new(),
             options: Vec::new(),
             raw: false,
+            date_format: None,
             cell: None,
             props: None,
             hide_below: None,
@@ -127,6 +129,20 @@ impl TableColumn {
         self
     }
 
+    /// Shows the dates or times of the field (a date, local date-time or
+    /// instant) with `pattern`, e.g. `"HH:mm dd/MM/yyyy"`: `yyyy` `yy`, `MMMM`
+    /// `MMM` `MM` `M` (month names in the user's language), `dd` `d`, `EEEE`
+    /// `EEE` (weekday), `HH` `H` (0–23), `hh` `h` (1–12), `mm`, `ss`, `a`
+    /// (AM/PM), `z` (time zone); text between single quotes. Instants are
+    /// shown in the user's time zone, dates and local date-times as they are.
+    /// A pattern that does not fit the field (a time on a date, `z` on a local
+    /// date-time) refuses to boot. Default: the panel's
+    /// ([`crate::AdminProvider::date_format`]).
+    pub fn date_format(mut self, pattern: impl Into<String>) -> Self {
+        self.date_format = Some(pattern.into());
+        self
+    }
+
     /// Shows the values themselves, never the labels of the form's options.
     pub fn raw(mut self) -> Self {
         self.raw = true;
@@ -157,6 +173,7 @@ column_types! {
     BadgeColumn => Badge,
     /// Boolean column.
     BooleanColumn => Boolean,
-    /// Date column.
+    /// Date column: instants in the user's time zone, dates and local
+    /// date-times as they are ([`TableColumn::date_format`]).
     DateColumn => Date,
 }

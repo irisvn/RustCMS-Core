@@ -37,6 +37,8 @@ pub struct AdminProvider {
     branding: Option<std::sync::Arc<dyn crate::custom::BrandingSource>>,
     dashboard: crate::dashboard::Dashboard,
     home: Option<String>,
+    date_format: Option<String>,
+    datetime_format: Option<String>,
 }
 
 /// Locales the panel's interface is written in (`admin-ui/src/i18n`).
@@ -62,6 +64,8 @@ impl Default for AdminProvider {
             branding: None,
             dashboard: crate::dashboard::Dashboard::default(),
             home: None,
+            date_format: None,
+            datetime_format: None,
         }
     }
 }
@@ -177,6 +181,35 @@ impl AdminProvider {
     /// The panel's look: colors, radius, fonts, logo, favicon, color scheme.
     pub fn theme(mut self, theme: crate::custom::Theme) -> Self {
         self.theme = Some(theme);
+        self
+    }
+
+    /// How the panel shows dates (date fields) without a pattern of their own,
+    /// in the grammar of [`crate::ui::TableColumn::date_format`] without
+    /// times, e.g. `"dd/MM/yyyy"`. Default: the user's language's medium
+    /// style.
+    ///
+    /// # Panics
+    /// On a pattern that is not one, or shows a time.
+    pub fn date_format(mut self, pattern: impl Into<String>) -> Self {
+        let pattern = pattern.into();
+        crate::engine::date_format::check("admin panel", &pattern, Some(crate::wire::FieldKind::Date));
+        self.date_format = Some(pattern);
+        self
+    }
+
+    /// How the panel shows date-times (local date-time and instant fields,
+    /// history, queue and schedule times) without a pattern of their own, e.g.
+    /// `"HH:mm:ss dd/MM/yyyy"` ([`crate::ui::TableColumn::date_format`]).
+    /// Default: the user's language's medium style.
+    ///
+    /// # Panics
+    /// On a pattern that is not one, or shows the time zone (`z`): local
+    /// date-times have none (a column or entry of an instant may show it).
+    pub fn datetime_format(mut self, pattern: impl Into<String>) -> Self {
+        let pattern = pattern.into();
+        crate::engine::date_format::check("admin panel", &pattern, Some(crate::wire::FieldKind::LocalDateTime));
+        self.datetime_format = Some(pattern);
         self
     }
 
@@ -426,6 +459,8 @@ impl ServiceProvider for AdminProvider {
             all: app.config().app.locales.clone(),
             password_reset: auth.config.password_reset,
             remember: auth.config.remember_days > 0,
+            date_format: self.date_format.clone(),
+            datetime_format: self.datetime_format.clone(),
         };
         if serves_panel {
             // Same-origin sockets, also for browsers whose `'self'` misses `ws:`/`wss:`.

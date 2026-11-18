@@ -130,6 +130,10 @@ pub(crate) struct Locales {
     pub(crate) password_reset: bool,
     /// The sign-in page offers "Remember me" (`[auth] remember_days` > 0).
     pub(crate) remember: bool,
+    /// How dates are shown without a pattern of their own (`AdminProvider::date_format`).
+    pub(crate) date_format: Option<String>,
+    /// How date-times are shown without a pattern of their own (`AdminProvider::datetime_format`).
+    pub(crate) datetime_format: Option<String>,
 }
 
 /// What every page response needs.
@@ -366,6 +370,12 @@ fn render_index(
             theme[key] = serde_json::json!(path);
         }
     }
+    if let Some(pattern) = &locales.date_format {
+        config["dateFormat"] = serde_json::json!(pattern);
+    }
+    if let Some(pattern) = &locales.datetime_format {
+        config["dateTimeFormat"] = serde_json::json!(pattern);
+    }
     config["brand"] = serde_json::json!(look.brand);
     config["theme"] = theme;
     if let Some(bytes) = socket_max_bytes {
@@ -398,7 +408,14 @@ mod tests {
     }
 
     fn en() -> Locales {
-        Locales { default: "en".into(), all: vec!["en".into(), "vi".into()], password_reset: false, remember: false }
+        Locales {
+            default: "en".into(),
+            all: vec!["en".into(), "vi".into()],
+            password_reset: false,
+            remember: false,
+            date_format: None,
+            datetime_format: None,
+        }
     }
 
     #[test]
@@ -440,5 +457,20 @@ mod tests {
         // Without the auth provider's realtime state: nothing (the panel keeps its default).
         let html = render_index(Some(template.as_slice().into()), "/admin", &[], &en(), &look(), TEN, None);
         assert!(!html.contains("realtime"), "{html}");
+    }
+
+    #[test]
+    fn index_carries_the_date_formats_declared() {
+        let template = b"<head><!-- rustcms:config --></head>";
+        let html = render_index(Some(template.as_slice().into()), "/admin", &[], &en(), &look(), TEN, None);
+        assert!(!html.contains("ateFormat"), "{html}");
+        let locales = Locales {
+            date_format: Some("dd/MM/yyyy".into()),
+            datetime_format: Some("HH:mm 'on' dd/MM/yyyy".into()),
+            ..en()
+        };
+        let html = render_index(Some(template.as_slice().into()), "/admin", &[], &locales, &look(), TEN, None);
+        assert!(html.contains("&quot;dateFormat&quot;:&quot;dd/MM/yyyy&quot;"), "{html}");
+        assert!(html.contains("&quot;dateTimeFormat&quot;:&quot;HH:mm &#39;on&#39; dd/MM/yyyy&quot;"), "{html}");
     }
 }

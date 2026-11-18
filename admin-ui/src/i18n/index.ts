@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from "react";
 import { en } from "./en";
 import { vi } from "./vi";
+import { type DateToken, formatPattern, parsePattern } from "./dates";
 
 /** Languages the panel is written in. */
 export const LOCALES = ["en", "vi"] as const;
@@ -99,25 +100,60 @@ export function issueText(issue: { code: string; params?: Record<string, string>
   return has(key) ? t(key, issue.params) : fallback;
 }
 
-/** An instant in the current language and the browser's time zone. */
+/** The panel's patterns (`AdminProvider::date_format`, `datetime_format`), if declared. */
+let panelFormats: { date: DateToken[] | null; dateTime: DateToken[] | null } = { date: null, dateTime: null };
+
+/** Sets the panel's patterns (from its configuration); one that is not a pattern is ignored. */
+export function setDateFormats(date: string | undefined, dateTime: string | undefined) {
+  panelFormats = { date: date ? parsePattern(date) : null, dateTime: dateTime ? parsePattern(dateTime) : null };
+}
+
+/** Patterns read so far (they come from schemas: a few, shown in many cells). */
+const parsed = new Map<string, DateToken[] | null>();
+
+function parsedPattern(pattern: string): DateToken[] | null {
+  let tokens = parsed.get(pattern);
+  if (tokens === undefined) {
+    tokens = parsePattern(pattern);
+    if (parsed.size < 256) parsed.set(pattern, tokens);
+  }
+  return tokens;
+}
+
+/** The tokens values of `kind` are shown with: `pattern`'s, else the panel's, else none (the default style). */
+function tokensFor(kind: string, pattern?: string | null): DateToken[] | null {
+  const own = pattern ? parsedPattern(pattern) : null;
+  return own ?? (kind === "date" ? panelFormats.date : panelFormats.dateTime);
+}
+
+/** Whether values of `kind` have a pattern (`pattern`, or the panel's). */
+export function hasDateFormat(kind: string, pattern?: string | null): boolean {
+  return tokensFor(kind, pattern) !== null;
+}
+
+/** An instant in the current language and the browser's time zone (the panel's date-time pattern if any). */
 export function formatDateTime(date: Date): string {
+  if (panelFormats.dateTime) return formatPattern(date, panelFormats.dateTime, { locale: current });
   return new Intl.DateTimeFormat(current, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 /**
  * A date or time value of the wire (`instant`, `local_datetime`, `date`) in
  * the current language: instants in the browser's time zone, which is named;
- * local date-times and dates as they are (no zone). `null` when unreadable.
+ * local date-times and dates as they are (no zone). With `pattern` (a column's
+ * or entry's), or the panel's, as it says. `null` when unreadable.
  */
 const INSTANT: Intl.DateTimeFormatOptions = {
   year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short",
 };
 
-export function formatWireDate(kind: string, value: string): string | null {
+export function formatWireDate(kind: string, value: string, pattern?: string | null): string | null {
+  const tokens = tokensFor(kind, pattern);
   try {
     if (kind === "instant") {
       const d = new Date(value);
       if (Number.isNaN(d.getTime())) return null;
+      if (tokens) return formatPattern(d, tokens, { locale: current });
       // `dateStyle`/`timeStyle` cannot name the zone: spelled out.
       return new Intl.DateTimeFormat(current, INSTANT).format(d);
     }
@@ -128,6 +164,8 @@ export function formatWireDate(kind: string, value: string): string | null {
     // Years 0–99 as they are (`Date.UTC` would read them as 1900–1999).
     utc.setUTCFullYear(Number(y));
     if (Number.isNaN(utc.getTime())) return null;
+    // As written (no zone): read in UTC, where it was built.
+    if (tokens) return formatPattern(utc, tokens, { locale: current, timeZone: "UTC", zone: false });
     const options: Intl.DateTimeFormatOptions = kind === "date" || h === undefined
       ? { dateStyle: "medium", timeZone: "UTC" }
       : { dateStyle: "medium", timeStyle: se === undefined ? "short" : "medium", timeZone: "UTC" };

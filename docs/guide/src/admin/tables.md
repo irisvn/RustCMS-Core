@@ -45,7 +45,7 @@ The LMS's enrollments draw their progress with a
 | `TextColumn` | text, numbers, related records by title (`belongs_to` fields), [option labels](#option-labels) |
 | `BadgeColumn` | a badge, `.color(value, color)` per value (`primary`, `success`, `warning`, `danger`, `gray`; any other name shows gray), [option labels](#option-labels); a list (a checkbox list's values) as one badge per value |
 | `BooleanColumn` | a check mark |
-| `DateColumn` | dates and times: instants in the user's language and time zone; dates as `YYYY-MM-DD`, local date-times as `YYYY-MM-DD HH:MM` |
+| `DateColumn` | dates and times: instants in the user's language and time zone; dates as `YYYY-MM-DD`, local date-times as `YYYY-MM-DD HH:MM`; or with a [date format](#date-formats) |
 
 Every column takes `.label("…")` (default: the field's label, or its name in
 words), `.hide_below(…)` ([narrow screens](#narrow-screens)), and
@@ -79,6 +79,46 @@ Labels are translated as other labels. Colors, sorting, search, filters and
 exports still use the values, and a value without a label is shown as it is.
 A `belongs_to` field's column shows the related record's title and takes no
 options.
+
+### Date formats
+
+`.date_format(pattern)` on the column of a date, local date-time or instant
+field shows its values with `pattern`; the demo's posts above use
+`"MMM d, yyyy, h:mm a"`. Instants are shown in the user's time zone, dates and
+local date-times as they are; month and weekday names, and AM/PM, are in the
+user's language.
+
+| Pattern | Shows | Example |
+|---|---|---|
+| `yyyy`, `yy` | the year | `2026`, `26` |
+| `MMMM`, `MMM`, `MM`, `M` | the month: name, short name, two digits, digits | `November`, `Nov`, `11`, `11` |
+| `dd`, `d` | the day | `08`, `8` |
+| `EEEE`, `EEE` | the weekday | `Wednesday`, `Wed` |
+| `HH`, `H` | the hour, 0 to 23 | `09`, `9` |
+| `hh`, `h` | the hour, 1 to 12 | `09`, `9` |
+| `mm`, `ss` | minutes, seconds | `05`, `07` |
+| `a` | AM or PM | `PM` |
+| `z` | the time zone (instants only) | `GMT+7` |
+| `'text'` | the text as it is (`''` is a quote) | `'at'` |
+
+Other letters must be quoted; other characters (`/`, `-`, `:`, `,`, spaces)
+are kept. A pattern holds at most 64 characters. A pattern that is not one,
+a time on a date field, or `z` on a local date-time refuses to boot.
+
+Without a pattern of its own, a column uses the panel's, set once for the
+whole panel; history, queue and schedule times use the date-time one too:
+
+```rust
+AdminProvider::new()
+    .date_format("dd/MM/yyyy")                // date fields
+    .datetime_format("HH:mm:ss dd/MM/yyyy")   // local date-times and instants
+```
+
+The panel's date-time pattern also writes local date-times, which have no
+time zone: it may not hold `z` (a column or entry of an instant may).
+
+Without either, dates show as in the table above. Entries of the view page
+take the same patterns ([infolists](infolists.md#entries)).
 
 ### Counts
 
@@ -176,7 +216,13 @@ The boot stops when:
 - a filter's field is not `.filterable()`;
 - the default sort's field is not `.sortable()`;
 - a cell name is not `vendor/name` (each part 1 to 32 characters of `a-z`,
-  `0-9` and `-`), or its props exceed 4 KiB.
+  `0-9` and `-`), or its props exceed 4 KiB;
+- [option labels](#option-labels) are given to a column that takes none
+  (boolean, date, count, related records), together with `.raw()`, twice for a
+  value, in values the column cannot hold, or miss a colored value;
+- a [date format](#date-formats) is not a pattern, does not fit the field
+  (not a date, a time on a date, a zone on a local date-time), or is given to a
+  boolean, count or [custom cell](customizing.md#custom-cells) column.
 
 ## Related pages
 

@@ -179,7 +179,7 @@ impl Resource for GadgetResource {
                 TextColumn::make("name"),
                 BadgeColumn::make("status").color("draft", "gray").color("live", "success"),
                 BooleanColumn::make("active"),
-                DateColumn::make("day"),
+                DateColumn::make("day").date_format("dd/MM/yyyy"),
                 DateColumn::make("happened_at"),
                 TextColumn::make("category_id"),
                 TextColumn::make("price").cell("acme/money").props(serde_json::json!({"currency": "VND"})),

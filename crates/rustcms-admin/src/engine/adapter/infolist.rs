@@ -298,6 +298,14 @@ fn check_options(owner: &str, entry: &Entry, kind: Option<FieldKind>) {
     refuse("labels", d.labels.is_none() || entry.kind == EntryType::BooleanEntry);
     refuse("size", d.size.is_none() || entry.kind == EntryType::MediaEntry);
     refuse("gallery", !d.gallery || entry.kind == EntryType::MediaEntry);
+    refuse("date_format", d.date_format.is_none() || entry.kind == EntryType::TextEntry);
+    if let Some(pattern) = &d.date_format {
+        // Computed values and row keys have no declared kind: a date format needs a field's.
+        let kind = kind.unwrap_or_else(|| {
+            panic!("{owner}: entry `{name}`: a date format needs a date field (computed values, rows and page data have no kind)")
+        });
+        crate::engine::date_format::check(&format!("{owner}: entry `{name}`"), pattern, Some(kind));
+    }
     refuse("outline", !d.outline || entry.kind == EntryType::RichTextEntry);
     refuse("props", d.props.is_none() || entry.kind == EntryType::CustomEntry);
     refuse("schema", entry.components.is_empty() || entry.kind == EntryType::RepeatableEntry);
@@ -514,6 +522,7 @@ fn entry_schema(
         labels: d.labels.as_ref().map(|(yes, no)| [t(yes), t(no)]),
         size: d.size,
         gallery: d.gallery,
+        format: d.date_format.clone(),
         outline: d.outline,
         rich_nodes: Vec::new(),
         relationship: relationship.map(|resource| Relationship { resource }),

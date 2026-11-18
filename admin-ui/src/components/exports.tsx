@@ -9,7 +9,7 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { errorText, show, type Text, useT } from "@/i18n";
+import { errorText, formatDateTime, show, type Text, useT } from "@/i18n";
 
 /** Export button of a list; `query` is the list's query string without its page. */
 export function ExportButton({ slug, query }: { slug: string; query: URLSearchParams }) {
@@ -104,7 +104,7 @@ export function ExportsPanel({ slug }: { slug: string }) {
             <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
               <span className="flex flex-wrap items-center gap-2">
                 <Badge color={item.status === "done" ? "success" : item.status === "failed" ? "danger" : "gray"}>{status(t, item)}</Badge>
-                <span className="tabular-nums text-muted-foreground">{new Date(item.createdAt).toLocaleString()}</span>
+                <span className="tabular-nums text-muted-foreground">{formatDateTime(new Date(item.createdAt))}</span>
                 {item.status === "done" && <span>{t("export.rows", { count: item.rows })}</span>}
                 {item.error && <span className="text-destructive">{reason(t, item.error)}</span>}
               </span>

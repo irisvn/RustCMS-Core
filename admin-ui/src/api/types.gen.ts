@@ -500,6 +500,11 @@ size?: number,
  */
 gallery?: boolean, 
 /**
+ * How dates or times are shown (a pattern, as `ColumnSchema::format`;
+ * vocabulary 21). Absent: the panel's.
+ */
+format?: string, 
+/**
  * The document's headings as an outline.
  */
 outline?: boolean, 
@@ -877,6 +882,12 @@ colors?: Array<BadgeColor>,
  * language (the column's own, or its form select's; vocabulary 20).
  */
 options?: Array<SelectOption>, 
+/**
+ * How dates or times are shown, a pattern such as `HH:mm dd/MM/yyyy`
+ * (`yyyy yy MMMM MMM MM M dd d EEEE EEE HH H hh h mm ss a z`, text in
+ * single quotes; vocabulary 21). Absent: the panel's.
+ */
+format?: string, 
 /**
  * Related resource (display `labels[name]`).
  */

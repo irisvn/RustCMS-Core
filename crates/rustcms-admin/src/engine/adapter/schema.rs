@@ -565,6 +565,7 @@ impl<R: Resource> ResourceAdapter<R> {
                         searchable: false,
                         colors: Vec::new(),
                         options: Vec::new(),
+                        format: None,
                         relationship: None,
                         cell: None,
                         props: c.props.clone(),
@@ -588,6 +589,7 @@ impl<R: Resource> ResourceAdapter<R> {
                         .map(|(value, color)| BadgeColor { value: value.clone(), color: color.clone() })
                         .collect(),
                     options: translated_options(ctx, R::SLUG, &c.options),
+                    format: c.date_format.clone(),
                     relationship: field.belongs_to.map(|resource| Relationship { resource }),
                     cell: c.cell.clone(),
                     props: c.props.clone(),

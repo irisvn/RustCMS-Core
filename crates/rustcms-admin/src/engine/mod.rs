@@ -4,6 +4,7 @@
 pub(crate) mod adapter;
 pub(crate) mod conditions;
 pub mod context;
+pub(crate) mod date_format;
 pub mod idempotency;
 pub mod registry;
 pub(crate) mod repeater;

@@ -53,7 +53,7 @@ a [computed value](#computed-values). Every entry takes `label`, `help`,
 
 | Entry | For | Options |
 |---|---|---|
-| `TextEntry` | text, numbers, dates, JSON lists | `badge()` with `color(value, color)`, `copyable()`, `limit(chars)`, `url()`, `number(decimals)`, `list()`, `multiline()`, `password()`, `prefix()`, `suffix()`, `options([(value, label)])` |
+| `TextEntry` | text, numbers, dates, JSON lists | `badge()` with `color(value, color)`, `copyable()`, `limit(chars)`, `url()`, `number(decimals)`, `list()`, `multiline()`, `password()`, `prefix()`, `suffix()`, `options([(value, label)])`, `date_format(pattern)` |
 | `RelationEntry` | `belongs_to` fields | none |
 | `BooleanEntry` | boolean columns | `labels(yes, no)`, `color(true, color)` |
 | `KeyValueEntry` | key/value fields | none |
@@ -64,7 +64,10 @@ a [computed value](#computed-values). Every entry takes `label`, `help`,
 | `RepeatableEntry` | a JSON field holding rows ([repeaters](forms.md#repeaters)) | `schema(components![…])`: the entries of each row |
 
 - **Dates and times** follow the field's kind: dates in the user's language,
-  instants in their time zone.
+  instants in their time zone. `date_format("d MMMM yyyy")` on the entry of a
+  date field, or the panel's pattern, writes them as a
+  [date format](tables.md#date-formats) says (not on computed values, row
+  keys or panel pages' data, which have no declared kind).
 - **Colors** are `primary`, `success`, `warning`, `danger` and `gray` (the
   default), as in [tables](tables.md).
 - **`url()`** links only `http` and `https` values; anything else (a
@@ -223,7 +226,8 @@ with the SDK's `Infolist` component.
 The application refuses to start when an entry names no field (or, for a
 `ComputedEntry`, no computed value); an entry does not fit its field (a
 `RelationEntry` on a field without `belongs_to`, a `BooleanEntry` on text);
-an option does not fit the entry (`badge` on a boolean, `number` on text, `color` on text without `badge`);
+an option does not fit the entry (`badge` on a boolean, `number` on text, `color` on text without `badge`,
+`date_format` on another entry than `TextEntry`, or on a field that is not a date);
 the field is encrypted; an entry appears twice; a custom entry's name is not
 `vendor/name` or its props exceed 4 KiB; a condition breaks the rules of
 forms; an infolist holds an input or a form holds an entry; a computed value

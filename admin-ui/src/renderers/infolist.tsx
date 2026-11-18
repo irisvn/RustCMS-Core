@@ -261,7 +261,7 @@ function TextValue({ entry, value }: { entry: EntrySchema; value: JsonValue }) {
     if (option !== undefined) return option;
     if (typeof item === "boolean") return item ? t("value.yes") : t("value.no");
     if (typeof item === "string" && isDateKind(entry.valueType)) {
-      return formatWireDate(entry.valueType, item) ?? item;
+      return formatWireDate(entry.valueType, item, entry.format) ?? item;
     }
     if (entry.decimals !== undefined && (typeof item === "number" || typeof item === "string")) {
       const n = Number(item);
