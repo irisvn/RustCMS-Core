@@ -91,7 +91,7 @@ impl<R: Resource> ResourceAdapter<R> {
             if !target.allows(ctx, ability::VIEW_ANY).await {
                 continue;
             }
-            match target.counted_by(ctx, relation.field, &parents).await {
+            match target.counted_by(ctx, relation.field, &relation.query_filters(), &parents).await {
                 Ok(counts) => {
                     for envelope in envelopes.iter_mut() {
                         if let Some(count) = counts.get(&envelope.key) {
@@ -140,7 +140,21 @@ impl<R: Resource> ResourceAdapter<R> {
         Ok(out)
     }
 
+    /// What a filtered relation requires of `field` (ADR 0044); `None` for a
+    /// value the field does not read (refused at boot) or an unknown field.
+    pub(super) fn relation_filter_condition(&self, field: &str, filter: &RelationFilter) -> Option<Condition> {
+        let column = self.columns.get(field)?;
+        Some(match filter {
+            RelationFilter::Null => Condition::all().add(column.column.is_null()),
+            RelationFilter::Eq(value) => {
+                let decoded = column.kind.decode(value).ok()?.into_iter().next()?;
+                Condition::all().add(column.column.eq(decoded))
+            }
+        })
+    }
+
     pub(super) fn filter_condition(&self, ctx: &Ctx, query: &ListQuery, errors: &mut ValidationErrors) -> Condition {
+        use sea_orm::sea_query::IntoCondition;
         let mut condition = Condition::all();
         // Children of one record (relation lists): an internal condition, not a client filter.
         if let Some((field, key)) = &query.parent {
@@ -148,6 +162,13 @@ impl<R: Resource> ResourceAdapter<R> {
             match column.kind.decode(&column.kind.from_query(&serde_json::Value::String(key.clone()))) {
                 Ok(values) if !values.is_empty() => condition = condition.add(column.column.eq(values[0].clone())),
                 _ => errors.add_form("invalid parent key"),
+            }
+        }
+        // A filtered relation's records (ADR 0044): checked at boot to decode.
+        for (field, filter) in &query.relation_filters {
+            match self.relation_filter_condition(field, filter) {
+                Some(filter) => condition = condition.add(filter),
+                None => errors.add_form("invalid parent key"),
             }
         }
         if let Some(through) = &query.through {
@@ -199,8 +220,16 @@ impl<R: Resource> ResourceAdapter<R> {
                     errors.add(name, format!("must be a list of 1 to {} items", self.limits.in_items));
                     continue;
                 }
-                match items.iter().map(decode).collect::<Result<Vec<_>, _>>() {
-                    Ok(values) => column.column.is_in(values),
+                // A select filter with a "none" option (`SelectFilter::none`) reads its token as no value.
+                let none = self.table_ui.filters.iter().any(|f| f.name == name && f.none.is_some());
+                let is_none = |v: &serde_json::Value| none && v.as_str() == Some(crate::ui::NONE_OPTION);
+                let wants_null = items.iter().any(is_none);
+                match items.iter().filter(|v| !is_none(v)).map(decode).collect::<Result<Vec<_>, _>>() {
+                    Ok(values) if wants_null && values.is_empty() => column.column.is_null().into_condition(),
+                    Ok(values) if wants_null => {
+                        Condition::any().add(column.column.is_null()).add(column.column.is_in(values)).into_condition()
+                    }
+                    Ok(values) => column.column.is_in(values).into_condition(),
                     Err(e) => {
                         errors.add(name, e.0);
                         continue;
@@ -222,6 +251,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     FilterOp::Lte => column.column.lte(value),
                     FilterOp::In => unreachable!(),
                 }
+                .into_condition()
             };
             condition = condition.add(expr);
         }

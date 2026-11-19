@@ -9,10 +9,28 @@ use serde_json::Value;
 
 use super::wire::{self, FieldKind};
 use crate::Data;
-use crate::ui::{Component, Condition, InputType};
+use crate::ui::{Component, Condition, InputType, Scope};
 
 /// How a condition reads a field's value: its kind and decimal scale.
 pub(crate) type KindOf<'a> = &'a dyn Fn(&str) -> Option<(FieldKind, Option<u32>)>;
+
+/// What a repeater row's conditions may read outside the row (ADR 0044):
+/// the kinds of the enclosing row's inputs and of the record's form's; `None`
+/// where there is no such level. `kind_of` answers `None` for a name that is
+/// not an input there.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Outer<'a> {
+    pub(crate) parent: Option<KindOf<'a>>,
+    pub(crate) root: Option<KindOf<'a>>,
+}
+
+/// The values of the levels a row's conditions read: each as its own
+/// conditions leave it (hidden inputs `null`, see [`FormConditions::shown_values`]).
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct OuterValues<'a> {
+    pub(crate) parent: Option<&'a Data>,
+    pub(crate) root: Option<&'a Data>,
+}
 
 /// The conditions of a form, checked at boot.
 #[derive(Debug, Clone, Default)]
@@ -20,8 +38,8 @@ pub(crate) struct FormConditions {
     /// Fields whose every input is under a condition, dependencies first:
     /// the field is shown when one of the conditions holds.
     fields: Vec<ConditionalField>,
-    /// The kind of each field a condition reads.
-    kinds: HashMap<String, (FieldKind, Option<u32>)>,
+    /// The kind of each field a condition reads, by where it is.
+    kinds: HashMap<(Scope, String), (FieldKind, Option<u32>)>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +58,13 @@ impl FormConditions {
     /// other in a cycle, a condition on a `belongs_to_many` input, or
     /// `clear_when_hidden` on an input without a condition.
     pub(crate) fn new(context: &str, components: &[Component], kind_of: KindOf<'_>) -> Self {
+        Self::new_in(context, components, kind_of, Outer::default())
+    }
+
+    /// The conditions of a repeater's row `components`, which may also read
+    /// the levels of `outer` (`when_parent`, `when_root`); as [`Self::new`]
+    /// otherwise. A condition reading a level that is not there panics.
+    pub(crate) fn new_in(context: &str, components: &[Component], kind_of: KindOf<'_>, outer: Outer<'_>) -> Self {
         // Every input with its effective condition (its layouts' and its own).
         let mut inputs: Vec<(String, bool, Option<Condition>, bool)> = Vec::new();
         walk(components, None, &mut inputs);
@@ -60,7 +85,7 @@ impl FormConditions {
                 continue;
             };
             assert!(!*links, "{context}: input `{name}`: conditions on belongs-to-many inputs are not supported");
-            entry.0.push(check(context, name, condition, &names, kind_of, &mut kinds));
+            entry.0.push(check(context, name, condition, &names, kind_of, outer, &mut kinds));
         }
         let mut fields: Vec<ConditionalField> = by_field
             .into_iter()
@@ -81,13 +106,50 @@ impl FormConditions {
         self.fields.iter().map(|f| (f.name.as_str(), f.clear_when_hidden))
     }
 
+    /// Whether the conditions of field `name` read outside its level.
+    pub(crate) fn reads_outside_for(&self, name: &str) -> bool {
+        fn outside(condition: &Condition) -> bool {
+            match condition {
+                Condition::Eq { scope, .. }
+                | Condition::Ne { scope, .. }
+                | Condition::IsIn { scope, .. }
+                | Condition::Filled { scope, .. }
+                | Condition::IsTrue { scope, .. } => *scope != Scope::Row,
+                Condition::All { conditions } | Condition::Any { conditions } => conditions.iter().any(outside),
+            }
+        }
+        self.fields.iter().filter(|f| f.name == name).any(|f| f.conditions.iter().any(outside))
+    }
+
+    /// Whether a condition reads input `name` of level `scope`.
+    pub(crate) fn reads(&self, scope: Scope, name: &str) -> bool {
+        self.kinds.contains_key(&(scope, name.to_owned()))
+    }
+
+    /// Whether a condition reads outside its level (`when_parent`, `when_root`).
+    pub(crate) fn reads_outside(&self) -> bool {
+        self.kinds.keys().any(|(scope, _)| *scope != Scope::Row)
+    }
+
     /// The fields hidden for `values` (missing values count as `null`; a
     /// hidden field's value counts as `null` for the conditions after it).
     pub(crate) fn hidden(&self, values: &Data) -> BTreeSet<String> {
+        self.hidden_in(values, OuterValues::default())
+    }
+
+    /// As [`Self::hidden`], for a row whose conditions may read `outer`
+    /// (missing levels and values count as `null`).
+    pub(crate) fn hidden_in(&self, values: &Data, outer: OuterValues<'_>) -> BTreeSet<String> {
         let mut hidden = BTreeSet::new();
         for field in &self.fields {
-            let value = |name: &str| -> Value {
-                if hidden.contains(name) { Value::Null } else { values.get(name).cloned().unwrap_or(Value::Null) }
+            let value = |scope: Scope, name: &str| -> Value {
+                let level = match scope {
+                    Scope::Row if hidden.contains(name) => return Value::Null,
+                    Scope::Row => Some(values),
+                    Scope::Parent => outer.parent,
+                    Scope::Root => outer.root,
+                };
+                level.and_then(|l| l.get(name)).cloned().unwrap_or(Value::Null)
             };
             if !field.conditions.iter().any(|c| self.holds(c, &value)) {
                 hidden.insert(field.name.clone());
@@ -96,22 +158,33 @@ impl FormConditions {
         hidden
     }
 
-    fn holds(&self, condition: &Condition, value: &dyn Fn(&str) -> Value) -> bool {
+    /// `values` with the fields hidden by these conditions set to `null`: what
+    /// the conditions of the rows below read from this level.
+    pub(crate) fn shown_values(&self, values: &Data, outer: OuterValues<'_>) -> Data {
+        let mut out = values.clone();
+        for name in self.hidden_in(values, outer) {
+            out.insert(name, Value::Null);
+        }
+        out
+    }
+
+    fn holds(&self, condition: &Condition, value: &dyn Fn(Scope, &str) -> Value) -> bool {
+        let compared = |scope: Scope, name: &str| self.canonical(scope, name, &value(scope, name));
         match condition {
-            Condition::Eq { name, value: expected } => self.canonical(name, &value(name)) == *expected,
-            Condition::Ne { name, value: expected } => self.canonical(name, &value(name)) != *expected,
-            Condition::IsIn { name, values } => values.contains(&self.canonical(name, &value(name))),
-            Condition::Filled { name } => filled(&value(name)),
-            Condition::IsTrue { name } => value(name) == Value::Bool(true),
+            Condition::Eq { name, scope, value: expected } => compared(*scope, name) == *expected,
+            Condition::Ne { name, scope, value: expected } => compared(*scope, name) != *expected,
+            Condition::IsIn { name, scope, values } => values.contains(&compared(*scope, name)),
+            Condition::Filled { name, scope } => filled(&value(*scope, name)),
+            Condition::IsTrue { name, scope } => value(*scope, name) == Value::Bool(true),
             Condition::All { conditions } => conditions.iter().all(|c| self.holds(c, value)),
             Condition::Any { conditions } => conditions.iter().any(|c| self.holds(c, value)),
         }
     }
 
-    /// `value` as compared for field `name` (as is when it does not decode:
-    /// it then equals no declared value).
-    fn canonical(&self, name: &str, value: &Value) -> Value {
-        match self.kinds.get(name) {
+    /// `value` as compared for field `name` of level `scope` (as is when it
+    /// does not decode: it then equals no declared value).
+    fn canonical(&self, scope: Scope, name: &str, value: &Value) -> Value {
+        match self.kinds.get(&(scope, name.to_owned())) {
             Some((kind, _)) if !value.is_null() => comparable(*kind, value).unwrap_or(value.clone()),
             _ => value.clone(),
         }
@@ -148,19 +221,37 @@ fn filled(value: &Value) -> bool {
 /// so that schemas send the panel what the server compares. Run after
 /// [`FormConditions::new`] checked them: a value that does not read as its
 /// field's kind is left as written.
+/// The conditions of a JSON repeater's rows (at any depth) that read the
+/// record's form are rewritten too (`when_root`, with `kind_of`); the others
+/// are left as written.
 pub(crate) fn canonicalize(components: &mut [Component], kind_of: KindOf<'_>) {
+    canonicalize_with(components, &|scope, name| if scope == Scope::Row { kind_of(name) } else { None }, kind_of);
+}
+
+/// How a level's conditions read the kinds of the inputs they name, by where
+/// they are (`None`: left as written).
+pub(crate) type ScopedKindOf<'a> = &'a dyn Fn(Scope, &str) -> Option<(FieldKind, Option<u32>)>;
+
+/// Rewrites the conditions of `components` (one level, read through
+/// `kind_of`) with their values in canonical form, and in the rows of the
+/// JSON repeaters among them those reading the record's form (`form`).
+pub(crate) fn canonicalize_with(components: &mut [Component], kind_of: ScopedKindOf<'_>, form: KindOf<'_>) {
     for component in components {
         match component {
             Component::Input(input) => {
                 if let Some(condition) = input.shown_when.as_deref_mut() {
                     *condition = canonical_condition(condition, kind_of);
                 }
+                if let Some(spec) = input.repeater.as_deref_mut().filter(|s| !s.relationship) {
+                    let rows = |scope: Scope, name: &str| if scope == Scope::Root { form(name) } else { None };
+                    canonicalize_with(&mut spec.components, &rows, form);
+                }
             }
             Component::Layout(layout) => {
                 if let Some(condition) = layout.shown_when.as_deref_mut() {
                     *condition = canonical_condition(condition, kind_of);
                 }
-                canonicalize(&mut layout.children, kind_of);
+                canonicalize_with(&mut layout.children, kind_of, form);
             }
             Component::Entry(entry) => {
                 if let Some(condition) = entry.shown_when.as_deref_mut() {
@@ -171,19 +262,25 @@ pub(crate) fn canonicalize(components: &mut [Component], kind_of: KindOf<'_>) {
     }
 }
 
-fn canonical_condition(condition: &Condition, kind_of: KindOf<'_>) -> Condition {
-    let value_of = |name: &str, value: &Value| -> Value {
-        match kind_of(name) {
+fn canonical_condition(condition: &Condition, kind_of: ScopedKindOf<'_>) -> Condition {
+    let value_of = |name: &str, scope: Scope, value: &Value| -> Value {
+        match kind_of(scope, name) {
             Some((kind, _)) if !value.is_null() => comparable(kind, value).unwrap_or_else(|_| value.clone()),
             _ => value.clone(),
         }
     };
     match condition {
-        Condition::Eq { name, value } => Condition::Eq { name: name.clone(), value: value_of(name, value) },
-        Condition::Ne { name, value } => Condition::Ne { name: name.clone(), value: value_of(name, value) },
-        Condition::IsIn { name, values } => {
-            Condition::IsIn { name: name.clone(), values: values.iter().map(|v| value_of(name, v)).collect() }
+        Condition::Eq { name, scope, value } => {
+            Condition::Eq { name: name.clone(), scope: *scope, value: value_of(name, *scope, value) }
         }
+        Condition::Ne { name, scope, value } => {
+            Condition::Ne { name: name.clone(), scope: *scope, value: value_of(name, *scope, value) }
+        }
+        Condition::IsIn { name, scope, values } => Condition::IsIn {
+            name: name.clone(),
+            scope: *scope,
+            values: values.iter().map(|v| value_of(name, *scope, v)).collect(),
+        },
         Condition::All { conditions } => {
             Condition::All { conditions: conditions.iter().map(|c| canonical_condition(c, kind_of)).collect() }
         }
@@ -230,21 +327,47 @@ fn check(
     condition: &Condition,
     names: &BTreeSet<&str>,
     kind_of: KindOf<'_>,
-    kinds: &mut HashMap<String, (FieldKind, Option<u32>)>,
+    outer: Outer<'_>,
+    kinds: &mut HashMap<(Scope, String), (FieldKind, Option<u32>)>,
 ) -> Condition {
-    let mut kind = |name: &str| -> (FieldKind, Option<u32>) {
-        assert!(
-            names.contains(name),
-            "{context}: the condition of `{input}` names `{name}`, which is not an input (or entry) of the form"
-        );
-        let found = kind_of(name).unwrap_or_else(|| {
-            panic!("{context}: the condition of `{input}` names `{name}`, whose value conditions cannot read")
-        });
-        kinds.insert(name.to_owned(), found);
+    let mut kind = |scope: Scope, name: &str| -> (FieldKind, Option<u32>) {
+        let found = match scope {
+            Scope::Row => {
+                assert!(
+                    names.contains(name),
+                    "{context}: the condition of `{input}` names `{name}`, which is not an input (or entry) of the \
+                     form"
+                );
+                kind_of(name).unwrap_or_else(|| {
+                    panic!("{context}: the condition of `{input}` names `{name}`, whose value conditions cannot read")
+                })
+            }
+            Scope::Parent | Scope::Root => {
+                let (level, starter) = match scope {
+                    Scope::Parent => (outer.parent, "when_parent"),
+                    _ => (outer.root, "when_root"),
+                };
+                let level = level.unwrap_or_else(|| {
+                    panic!(
+                        "{context}: the condition of `{input}` uses `{starter}(\"{name}\")`, which reads {} (only in \
+                         {})",
+                        if scope == Scope::Parent { "the enclosing row" } else { "the record's form" },
+                        if scope == Scope::Parent { "rows of a repeater nested in a row" } else { "repeater rows" },
+                    )
+                });
+                level(name).unwrap_or_else(|| {
+                    panic!(
+                        "{context}: the condition of `{input}` uses `{starter}(\"{name}\")`, which is not an input \
+                         of that level whose value conditions can read"
+                    )
+                })
+            }
+        };
+        kinds.insert((scope, name.to_owned()), found);
         found
     };
-    let mut value_of = |name: &str, value: &Value| -> Value {
-        let (field_kind, _) = kind(name);
+    let mut value_of = |scope: Scope, name: &str, value: &Value| -> Value {
+        let (field_kind, _) = kind(scope, name);
         assert!(
             matches!(
                 field_kind,
@@ -268,18 +391,26 @@ fn check(
         })
     };
     match condition {
-        Condition::Eq { name, value } => Condition::Eq { name: name.clone(), value: value_of(name, value) },
-        Condition::Ne { name, value } => Condition::Ne { name: name.clone(), value: value_of(name, value) },
-        Condition::IsIn { name, values } => {
-            assert!(!values.is_empty(), "{context}: the condition of `{input}` lists no values for `{name}`");
-            Condition::IsIn { name: name.clone(), values: values.iter().map(|v| value_of(name, v)).collect() }
+        Condition::Eq { name, scope, value } => {
+            Condition::Eq { name: name.clone(), scope: *scope, value: value_of(*scope, name, value) }
         }
-        Condition::Filled { name } => {
-            kind(name);
+        Condition::Ne { name, scope, value } => {
+            Condition::Ne { name: name.clone(), scope: *scope, value: value_of(*scope, name, value) }
+        }
+        Condition::IsIn { name, scope, values } => {
+            assert!(!values.is_empty(), "{context}: the condition of `{input}` lists no values for `{name}`");
+            Condition::IsIn {
+                name: name.clone(),
+                scope: *scope,
+                values: values.iter().map(|v| value_of(*scope, name, v)).collect(),
+            }
+        }
+        Condition::Filled { name, scope } => {
+            kind(*scope, name);
             condition.clone()
         }
-        Condition::IsTrue { name } => {
-            let (field_kind, _) = kind(name);
+        Condition::IsTrue { name, scope } => {
+            let (field_kind, _) = kind(*scope, name);
             assert!(
                 field_kind == FieldKind::Bool,
                 "{context}: the condition of `{input}` uses `is_true` on `{name}`, which is not a boolean"
@@ -288,7 +419,7 @@ fn check(
         }
         Condition::All { conditions } | Condition::Any { conditions } => {
             assert!(!conditions.is_empty(), "{context}: the condition of `{input}` combines no conditions");
-            let checked = conditions.iter().map(|c| check(context, input, c, names, kind_of, kinds)).collect();
+            let checked = conditions.iter().map(|c| check(context, input, c, names, kind_of, outer, kinds)).collect();
             match condition {
                 Condition::All { .. } => Condition::All { conditions: checked },
                 _ => Condition::Any { conditions: checked },
@@ -305,7 +436,13 @@ fn order(context: &str, fields: &mut Vec<ConditionalField>) {
         .iter()
         .map(|f| {
             let mut deps: Vec<usize> =
-                f.conditions.iter().flat_map(|c| c.names()).filter_map(|n| index.get(n).copied()).collect();
+            // Only the same level orders: the levels around a row never read it.
+                f.conditions
+                    .iter()
+                    .flat_map(|c| c.names())
+                    .filter(|(scope, _)| *scope == Scope::Row)
+                    .filter_map(|(_, n)| index.get(n).copied())
+                    .collect();
             deps.sort_unstable();
             deps.dedup();
             deps
@@ -473,19 +610,27 @@ mod tests {
         for form in cases["forms"].as_array().unwrap() {
             let mut kinds = HashMap::new();
             let components = components(&form["components"], &mut kinds);
-            let kind_of = |name: &str| -> Option<(FieldKind, Option<u32>)> {
-                Some(match kinds.get(name)?.as_str() {
+            let kind = |name: &str| -> (FieldKind, Option<u32>) {
+                match name {
                     "bool" => (FieldKind::Bool, None),
                     "i32" => (FieldKind::I32, None),
                     "i64" => (FieldKind::I64, None),
                     "decimal" => (FieldKind::Decimal, Some(2)),
                     "uuid" => (FieldKind::Uuid, None),
                     _ => (FieldKind::String, None),
-                })
+                }
             };
-            let conditions = FormConditions::new("t", &components, &kind_of);
+            let kind_of = |name: &str| kinds.get(name).map(|k| kind(k));
+            // A repeater's row reading the record's form (ADR 0044).
+            let root_kinds = form["root"]["kinds"].as_object().cloned();
+            let root_of = |name: &str| root_kinds.as_ref()?.get(name)?.as_str().map(kind);
+            let outer = Outer { parent: None, root: root_kinds.is_some().then_some(&root_of as KindOf<'_>) };
+            let conditions = FormConditions::new_in("t", &components, &kind_of, outer);
             for case in form["cases"].as_array().unwrap() {
-                let hidden: Vec<String> = conditions.hidden(&data(case["values"].clone())).into_iter().collect();
+                let root = case.get("root").map(|r| data(r.clone()));
+                let outer = OuterValues { parent: None, root: root.as_ref() };
+                let hidden: Vec<String> =
+                    conditions.hidden_in(&data(case["values"].clone()), outer).into_iter().collect();
                 let expected: Vec<String> = serde_json::from_value(case["hidden"].clone()).unwrap();
                 assert_eq!(hidden, expected, "{}: {}", form["name"], case["values"]);
             }

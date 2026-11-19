@@ -76,6 +76,16 @@ pub async fn create_index(
     manager.create_index(statement).await
 }
 
+/// Drops the (named) index if `table` still has it (before dropping a column
+/// it uses: SQLite refuses otherwise).
+pub async fn drop_index(manager: &SchemaManager<'_>, table: impl IntoIden, name: &str) -> Result<(), DbErr> {
+    let table = table.into_iden();
+    if !manager.has_index(table.to_string(), name).await? {
+        return Ok(());
+    }
+    manager.drop_index(Index::drop().name(name).table(table).to_owned()).await
+}
+
 /// Adds the column unless `table` already has it.
 pub async fn add_column(
     manager: &SchemaManager<'_>,

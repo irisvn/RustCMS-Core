@@ -7,6 +7,7 @@ import type { Me } from "@/api/types";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input, Label } from "@/components/ui/input";
 import { LanguageSelect } from "@/components/language";
 import { useT } from "@/i18n";
@@ -90,7 +91,7 @@ export function LoginPage({ redirect, done }: { redirect?: string; done?: string
               <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                 {offers.remember ? (
                   <label className="flex items-center gap-2">
-                    <input type="checkbox" className="size-4 accent-primary" checked={remember}
+                    <Checkbox checked={remember}
                       onChange={(e) => setRemember(e.target.checked)} />
                     {t("login.remember")}
                   </label>

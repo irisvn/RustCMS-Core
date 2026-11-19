@@ -1,0 +1,182 @@
+{
+  "abilities": {
+    "create": true,
+    "history": true,
+    "viewAny": true
+  },
+  "form": {
+    "columns": 1,
+    "components": [
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Name",
+        "name": "name",
+        "nullable": false,
+        "rules": [
+          {
+            "rule": "required"
+          }
+        ],
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Country",
+        "name": "country",
+        "nullable": true,
+        "rules": [],
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Tax",
+        "name": "tax_id",
+        "nullable": true,
+        "rules": [],
+        "serverRules": {
+          "dependsOn": [
+            "country"
+          ],
+          "required": false
+        },
+        "shownWhen": {
+          "name": "name",
+          "op": "ne",
+          "value": "hide"
+        },
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Note",
+        "name": "note",
+        "nullable": true,
+        "rules": [
+          {
+            "rule": "required"
+          }
+        ],
+        "serverRules": {
+          "dependsOn": [
+            "country"
+          ],
+          "shown": false
+        },
+        "shownWhen": {
+          "name": "name",
+          "op": "filled"
+        },
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Subject",
+        "name": "subject",
+        "nullable": true,
+        "rules": [],
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Topic",
+        "name": "topic",
+        "nullable": true,
+        "options": [
+          {
+            "label": "POETRY",
+            "value": "poetry"
+          }
+        ],
+        "rules": [],
+        "serverRules": {
+          "dependsOn": [
+            "subject"
+          ]
+        },
+        "type": "select",
+        "valueType": "string"
+      }
+    ]
+  },
+  "operation": "create",
+  "resource": {
+    "label": "Account",
+    "pluralLabel": "Accounts",
+    "slug": "accounts",
+    "titleField": "name"
+  },
+  "schemaVersion": 2,
+  "table": {
+    "actions": [],
+    "columns": [
+      {
+        "label": "Name",
+        "name": "name",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Country",
+        "name": "country",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Tax",
+        "name": "tax_id",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Note",
+        "name": "note",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Subject",
+        "name": "subject",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Topic",
+        "name": "topic",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      }
+    ],
+    "filters": [],
+    "perPageOptions": [
+      10,
+      25,
+      50,
+      100
+    ],
+    "searchable": false
+  },
+  "vocabularyVersion": 28
+}

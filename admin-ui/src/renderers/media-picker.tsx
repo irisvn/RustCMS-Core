@@ -5,14 +5,15 @@
 // reference again on save. Thumbnails are the authorized file URL, scaled by
 // the browser (no server resizing); nothing is loaded from elsewhere.
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, FileText, Upload as UploadIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Upload as UploadIcon, ZoomIn } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePanelConfig } from "@/api/context";
 import { keys, usePanel, useRecords } from "@/api/queries";
-import type { Envelope, MediaItem } from "@/api/types";
+import { type Envelope, type MediaItem, NONE_OPTION } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { useImageViewer, viewerImageOf } from "@/components/lightbox";
 import { Dialog } from "@/components/ui/dialog";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, NativeSelect } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { mediaUrl } from "@/lib/rich-text";
 import { cn } from "@/lib/utils";
@@ -41,7 +42,7 @@ export function mimeFilter(accept: string[]): string | null {
 }
 
 /** A media record of the library list as an item. */
-function itemOf(record: Envelope): MediaItem {
+export function mediaItemOf(record: Envelope): MediaItem {
   const d = record.data;
   const mime = String(d.mime ?? "");
   const number = (v: unknown) => (v === null || v === undefined || v === "" ? undefined : Number(v));
@@ -56,6 +57,7 @@ function itemOf(record: Envelope): MediaItem {
     inline: isInlineImage(mime),
     // Its alternative text, when the record has one.
     ...(typeof d.alt === "string" && d.alt !== "" ? { alt: d.alt } : {}),
+    ...(typeof d.collection === "string" && d.collection !== "" ? { collection: d.collection } : {}),
   };
 }
 
@@ -70,6 +72,8 @@ export interface PickerRules {
   maxSize?: number;
   /** Items already used (shown as such, not chosen again). */
   exclude?: string[];
+  /** The field's media collection: uploads go into it, the library opens on it. */
+  collection?: string;
 }
 
 /** Whether the user may open the library or upload (else the picker has nothing to show). */
@@ -132,6 +136,7 @@ function PickerBody({ onClose, onPick, action, rules }: {
       void client.invalidateQueries({ queryKey: keys.records("media") });
     },
     check,
+    collection: rules.collection,
   });
   // How many more files may be uploaded: what is still free, less every file the
   // queue still holds (on its way, in but waiting for the ones before it, or a
@@ -176,6 +181,12 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState(1);
+  // The panel's collections: opens on the field's (when declared), else every
+  // file; until the user chooses, it follows the panel as it loads.
+  const collections = usePanel().data?.mediaCollections ?? [];
+  const [chosenCollection, setCollection] = useState<string | null>(null);
+  const collection = chosenCollection
+    ?? (rules.collection && collections.some((c) => c.value === rules.collection) ? rules.collection : "");
   useEffect(() => {
     const next = search.trim();
     // Back to the first page only when the search changes (not on opening:
@@ -192,27 +203,47 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
     if (debounced) q.set("search", debounced);
     const mime = mimeFilter(rules.accept);
     if (mime) q.set("filter[mime][in]", mime);
+    if (collection) q.set("filter[collection][in]", collection);
     return q;
-  }, [page, debounced, rules.accept]);
+  }, [page, debounced, rules.accept, collection]);
   const records = useRecords("media", query);
   // Rows of the previous query, still shown while the next loads: not actionable.
   const stale = records.isPlaceholderData || records.isFetching && !records.data;
-  const items = (records.data?.data ?? []).map(itemOf);
+  const items = (records.data?.data ?? []).map(mediaItemOf);
   const meta = records.data?.meta;
+  // A click on a file chooses it; the magnifier beside it views the page's images.
+  const images = items.filter((item) => item.inline);
+  const viewer = useImageViewer(images.map(viewerImageOf));
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`${id}-search`}>{t("picker.search")}</Label>
-        <Input id={`${id}-search`} type="search" autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => {
-            // The picker sits inside the record's form: Enter never submits it.
-            if (e.key === "Enter") e.preventDefault();
-          }} />
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <Label htmlFor={`${id}-search`}>{t("picker.search")}</Label>
+          <Input id={`${id}-search`} type="search" autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              // The picker sits inside the record's form: Enter never submits it.
+              if (e.key === "Enter") e.preventDefault();
+            }} />
+        </div>
+        {collections.length > 0 && (
+          <div className="flex flex-col gap-2 sm:w-56">
+            <Label htmlFor={`${id}-collection`}>{t("picker.collection")}</Label>
+            <NativeSelect id={`${id}-collection`} value={collection} onChange={(e) => {
+              setCollection(e.target.value);
+              setPage(1);
+            }}>
+              <option value="">{t("picker.allCollections")}</option>
+              {collections.map((c) => <option key={String(c.value)} value={String(c.value)}>{c.label}</option>)}
+              <option value={NONE_OPTION}>{t("media.unassigned")}</option>
+            </NativeSelect>
+          </div>
+        )}
       </div>
       {/* The first page only: later ones keep the previous rows (marked busy) while they load. */}
       {records.isLoading && <p role="status" className="text-sm text-muted-foreground">{t("picker.loading")}</p>}
       {records.isError && <p role="alert" className="text-sm text-destructive">{t("picker.failed")}</p>}
       {records.data && items.length === 0 && <p className="text-sm text-muted-foreground">{t("picker.empty")}</p>}
+      {viewer.viewer}
       {items.length > 0 && (
         <ul aria-label={t("picker.items")} aria-busy={stale || undefined} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {items.map((item) => {
@@ -222,7 +253,7 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
             const why: Text | null = used ? later("picker.used") : tooLarge ? later("picker.tooLarge") : null;
             const off = stale || used || tooLarge || (!selected && full && rules.multiple);
             return (
-              <li key={item.id}>
+              <li key={item.id} className="relative">
                 <button
                   type="button"
                   aria-pressed={selected}
@@ -230,7 +261,7 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
                   aria-describedby={why ? `${id}-${item.id}-why` : undefined}
                   onClick={() => onToggle(item)}
                   className={cn(
-                    "flex w-full flex-col gap-1 rounded-md border p-1 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+                    "flex w-full flex-col gap-1 rounded-md border p-1 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:bg-muted disabled:text-subtle-foreground [&:disabled_img]:opacity-50",
                     selected ? "border-ring bg-muted ring-2 ring-ring" : "border-border hover:bg-muted",
                   )}
                 >
@@ -240,6 +271,12 @@ function Library({ rules, chosen, onToggle, full }: { rules: PickerRules; chosen
                   <span className="truncate font-medium">{item.name}</span>
                   {why && <span id={`${id}-${item.id}-why`} className="text-muted-foreground">{typeof why === "function" ? why() : why}</span>}
                 </button>
+                {item.inline && (
+                  <button type="button" aria-label={t("viewer.open", { name: item.name })} onClick={() => viewer.open(images.indexOf(item))}
+                    className="absolute right-2 top-2 inline-flex size-7 items-center justify-center rounded-md border border-border bg-card/90 text-foreground shadow-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <ZoomIn className="size-4" aria-hidden="true" />
+                  </button>
+                )}
               </li>
             );
           })}

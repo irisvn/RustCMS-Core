@@ -18,7 +18,8 @@ function entryOf(input: InputSchema): EntrySchema | null {
   // The server falls back to text for an upload on a field that is not a media field
   // (no `media` in the input's schema). A rich editor on a field that is not rich text
   // falls back too, which an input's schema does not tell: tests use rich text fields.
-  if (input.type === "file_upload" && input.media) return as("media_entry");
+  // The upload's viewer switch goes with it (vocabulary 22).
+  if (input.type === "file_upload" && input.media) return as("media_entry", input.media.preview === false ? { preview: false } : {});
   if (input.type === "rich_editor") return as("rich_text_entry", { richNodes: input.richNodes });
   const options = input.options?.length ? input.options : undefined;
   const text = input.type === "text_input";

@@ -1,10 +1,10 @@
 // Table cells and filters from the table schema.
 import { Check, X } from "lucide-react";
-import type { ColumnSchema, Envelope, FilterSchema, JsonValue } from "@/api/types";
-import { Badge } from "@/components/ui/badge";
+import { type ColumnSchema, type Envelope, type FilterSchema, type JsonValue, NONE_OPTION } from "@/api/types";
+import { Badge, badgeColor } from "@/components/ui/badge";
 import { Input, NativeSelect } from "@/components/ui/input";
-import { display } from "@/lib/wire";
-import { t, useT } from "@/i18n";
+import { colorOf, display, isDateKind, optionLabel } from "@/lib/wire";
+import { formatWireDate, hasDateFormat, t, useT } from "@/i18n";
 import { RelationSelect } from "./relation-select";
 import { ScriptView } from "@/components/custom";
 
@@ -18,8 +18,6 @@ export function columnClass(column: Pick<ColumnSchema, "hideBelow">): string {
 }
 
 export const KNOWN_FILTERS = new Set(["select", "ternary", "date_range"]);
-
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** The number a count column shows: the items of a JSON list, or the server's count of a relation. */
 function countOf(column: ColumnSchema, record: Envelope): number | undefined {
@@ -48,7 +46,8 @@ export function Cell({ column, record }: { column: ColumnSchema; record: Envelop
   return <DefaultCell column={column} record={record} value={value} />;
 }
 
-const BADGE_COLORS = new Set(["primary", "success", "warning", "danger", "gray"]);
+/** A value of a cell: its option's label, else the value itself. */
+const shown = (column: ColumnSchema, value: JsonValue) => optionLabel(column.options, value) ?? display(column.valueType, value);
 
 function DefaultCell({ column, record, value }: { column: ColumnSchema; record: Envelope; value: JsonValue | undefined }) {
   if (column.relationship) {
@@ -58,9 +57,12 @@ function DefaultCell({ column, record, value }: { column: ColumnSchema; record: 
   switch (column.type) {
     case "badge": {
       if (value === null || value === undefined) return null;
-      const color = column.colors?.find((c) => same(c.value, value))?.color ?? "gray";
       // The colors `BadgeColumn::color` documents; anything else (newer) is gray.
-      return <Badge color={BADGE_COLORS.has(color) ? color : "gray"}>{display(column.valueType, value)}</Badge>;
+      const badge = (item: JsonValue, key?: number) => (
+        <Badge key={key} color={badgeColor(colorOf(column.colors, item))}>{shown(column, item)}</Badge>
+      );
+      // A list (a checkbox list's values): one badge each.
+      return Array.isArray(value) ? <span className="flex flex-wrap gap-1">{value.map((item, i) => badge(item, i))}</span> : badge(value);
     }
     case "boolean":
       if (value === null || value === undefined) return null;
@@ -70,18 +72,35 @@ function DefaultCell({ column, record, value }: { column: ColumnSchema; record: 
         <X className="size-4 text-muted-foreground" aria-label={t("value.no")} />
       );
     case "date":
-      return <span className="whitespace-nowrap">{formatDate(column.valueType, value)}</span>;
+      return <span className="whitespace-nowrap"><DateValue column={column} value={value} /></span>;
     default:
-      // "text" and unknown (newer) column types.
-      return <span className="line-clamp-2">{display(column.valueType, value)}</span>;
+      // "text" and unknown (newer) column types; a list with labels as its labels.
+      if (value === null || value === undefined) return <span className="line-clamp-2" />;
+      // A date with a pattern (the column's or the panel's), as a date column shows it.
+      if (typeof value === "string" && isDateKind(column.valueType) && hasDateFormat(column.valueType, column.format)) {
+        return <span className="line-clamp-2"><DateValue column={column} value={value} /></span>;
+      }
+      if (Array.isArray(value) && column.options?.length) {
+        return <span className="line-clamp-2">{value.map((item) => shown(column, item)).join(", ")}</span>;
+      }
+      return <span className="line-clamp-2">{Array.isArray(value) ? display(column.valueType, value) : shown(column, value)}</span>;
   }
 }
 
-function formatDate(kind: string, value: unknown): string {
-  if (typeof value !== "string") return "";
-  if (kind === "instant") return display(kind, value);
-  if (kind === "local_datetime") return value.replace("T", " ").slice(0, 16);
-  return value;
+/**
+ * A date or time: with the column's pattern, else the panel's; without any,
+ * instants in the user's language, local date-times as `yyyy-MM-dd HH:mm` and
+ * dates as written.
+ */
+function DateValue({ column, value }: { column: ColumnSchema; value: unknown }) {
+  if (typeof value !== "string") return null;
+  const kind = column.valueType;
+  let text: string;
+  if (hasDateFormat(kind, column.format)) text = formatWireDate(kind, value, column.format) ?? value;
+  else if (kind === "instant") text = display(kind, value);
+  else if (kind === "local_datetime") text = value.replace("T", " ").slice(0, 16);
+  else text = value;
+  return <time dateTime={value}>{text}</time>;
 }
 
 /** Query-string parameters of a filter, as `filter[field][op]` → value. */
@@ -184,6 +203,8 @@ export function FilterControl({
                 {o.label}
               </option>
             ))}
+            {/* Records without a value (vocabulary 23). */}
+            {filter.none !== undefined && <option value={NONE_OPTION}>{filter.none}</option>}
           </NativeSelect>
         </label>
       );

@@ -91,7 +91,7 @@ impl Resource for GadgetResource {
             Field::column(C::Specs).max_items(5).max_length(40),
             // Rich text with an application node (document version 3, vocabulary 18).
             Field::column(C::Body).rich_text().nodes(["app.kbd"]),
-            Field::column(C::Photo).media().accept(&["image/*"]).max_size(1_000_000),
+            Field::column(C::Photo).media().accept(&["image/*"]).max_size(1_000_000).collection("gadget-photos"),
             Field::column(C::Accent).max_length(7),
             Field::column(C::ApiToken).encrypted(),
             Field::column(C::Env).encrypted_map().max_items(10),
@@ -141,7 +141,7 @@ impl Resource for GadgetResource {
                         Tab::make("Specs").schema(components![
                             KeyValue::make("specs"),
                             RichEditor::make("body"),
-                            FileUpload::make("photo"),
+                            FileUpload::make("photo").preview(false),
                             CustomInput::make("accent", "acme/color").props(json!({"palette": ["#ff0000", "#00ff00"]})),
                         ]),
                     ]),
@@ -179,11 +179,15 @@ impl Resource for GadgetResource {
                 TextColumn::make("name"),
                 BadgeColumn::make("status").color("draft", "gray").color("live", "success"),
                 BooleanColumn::make("active"),
-                DateColumn::make("day"),
+                DateColumn::make("day").date_format("dd/MM/yyyy"),
                 DateColumn::make("happened_at"),
                 TextColumn::make("category_id"),
                 TextColumn::make("price").cell("acme/money").props(serde_json::json!({"currency": "VND"})),
-                TextColumn::make("serial"),
+                // Option labels (vocabulary 20): declared, values and colors in
+                // canonical wire form (an i64 as a string, "07" as "7"); taken from the form's
+                // checkbox list.
+                BadgeColumn::make("serial").options([("7", "Lucky")]).color("07", "primary"),
+                TextColumn::make("colors"),
             ])
             .filters(vec![
                 TernaryFilter::make("active"),
@@ -216,6 +220,7 @@ async fn registry(db: &TestDb) -> Arc<Registry> {
         db.conn().execute(&statement).await.unwrap();
     }
     Registry::new()
+        .media_collection("gadget-photos", "Gadget photos")
         .rich_text_node(
             rustcms_admin::rich_text::RichTextNode::inline_atom("app.kbd")
                 .label("Shortcut")

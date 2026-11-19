@@ -3,7 +3,7 @@
 use lms::database::factories::learner_factory::LearnerFactory;
 use lms::database::migrations::Migrator;
 use lms::database::seeders::{self, DatabaseSeeder};
-use lms::models::{course, enrollment, learner, lesson};
+use lms::models::{course, enrollment, learner, lesson, quiz_option, quiz_question};
 use lms::services::enrollment_service;
 use rustcms::database::Seeder;
 use rustcms_testing::{Factory, TestApp, TestDb, db_test};
@@ -20,10 +20,13 @@ db_test!(seeding_twice_changes_nothing, migrate = Migrator, |db: TestDb| async m
             lesson::Entity::find().count(db).await.unwrap(),
             learner::Entity::find().count(db).await.unwrap(),
             enrollment::Entity::find().count(db).await.unwrap(),
+            quiz_question::Entity::find().count(db).await.unwrap(),
+            quiz_option::Entity::find().count(db).await.unwrap(),
         ]
     };
     let before = counts().await;
-    assert_eq!(before, vec![3, 9, 10, 10]);
+    // The quiz: two questions, three options and four choices.
+    assert_eq!(before, vec![3, 9, 10, 10, 2, 7]);
     DatabaseSeeder.run(app.state()).await.unwrap();
     assert_eq!(counts().await, before);
 });

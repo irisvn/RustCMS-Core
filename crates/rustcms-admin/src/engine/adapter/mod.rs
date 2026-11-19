@@ -15,7 +15,8 @@ mod react;
 mod read;
 mod references;
 pub(crate) mod rows;
-mod schema;
+mod rules;
+pub(crate) mod schema;
 mod secrets;
 mod write;
 
@@ -44,7 +45,8 @@ use crate::field::{Field, Operation};
 use crate::policy::{Policy, ability};
 use crate::registry::DynResource;
 use crate::resource::{
-    Envelope, FilterOp, KeyStrategy, Limits, ListQuery, Page, PageMeta, Relation, Resource, ResourceMeta, Trashed,
+    Envelope, FilterOp, KeyStrategy, Limits, ListQuery, Page, PageMeta, Relation, RelationFilter, Resource,
+    ResourceMeta, Trashed,
 };
 use crate::schema::{
     ActionSchema, BadgeColor, ColumnSchema, ComponentSchema, FilterSchema, FormSchema, InputSchema, LayoutSchema,
@@ -106,6 +108,8 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     row_repeaters: Vec<rows::RowRepeater>,
     /// Inputs that react, in form order (ADR 0043).
     reactions: Vec<react::InputReaction>,
+    /// Inputs with rules computed on the server, in form order (ADR 0044, part E).
+    input_rules: Vec<rules::InputRuleSet>,
     /// The record title (ADR 0038).
     title: Option<crate::engine::title::TitleTemplate>,
     /// The view page's entries, when declared (ADR 0039).
@@ -161,6 +165,11 @@ impl<R: Resource> ResourceAdapter<R> {
             assert!(
                 field.rich_nodes.is_empty() || field.rich_text,
                 "resource `{slug}`: field `{}` accepts rich text nodes but is not `rich_text()`",
+                field.name
+            );
+            assert!(
+                field.collection.is_none() || field.media.is_some() || field.rich_text,
+                "resource `{slug}`: field `{}` names a media collection but is not a media or rich text field",
                 field.name
             );
             let unique: HashSet<_> = field.rich_nodes.iter().collect();
@@ -323,14 +332,12 @@ impl<R: Resource> ResourceAdapter<R> {
         let number_bounds = input::number_bounds(slug, &form, &columns);
         let conditions = input::form_conditions(slug, &form, &columns, &secrets, &fields);
         // Schemas send the conditions as the server compares them (UUIDs, decimals).
-        let kind_of = |name: &str| {
-            let column = columns.get(name).filter(|_| !secrets.contains_key(name))?;
-            Some((column.kind, crate::wire::decimal_scale(column.column.def().get_column_type())))
-        };
+        let kind_of = |name: &str| input::condition_kind(&columns, &secrets, name);
         crate::engine::conditions::canonicalize(&mut form.components, &kind_of);
-        let repeaters = input::json_repeaters(slug, &form, &columns);
-        let row_repeaters = rows::row_repeaters(slug, &form, &relations);
+        let repeaters = input::json_repeaters(slug, &form, &columns, &secrets);
+        let row_repeaters = rows::row_repeaters(slug, &form, &relations, &conditions);
         let reactions = react::reactions(slug, &form, &fields);
+        let input_rules = rules::input_rules(slug, &form, &fields);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();
             assert!(crate::ui::valid_widget(widget), "resource `{slug}`: invalid widget name `{widget}`");
@@ -424,10 +431,88 @@ impl<R: Resource> ResourceAdapter<R> {
                 column.name
             );
         }
+        let owner = format!("resource `{slug}`");
+        for column in &mut table_ui.columns {
+            let name = column.name.clone();
+            let declared = !column.options.is_empty();
+            if column.counts.is_some() {
+                assert!(!declared && !column.raw, "{owner}: count column `{name}` takes no options");
+                assert!(column.date_format.is_none(), "{owner}: count column `{name}` takes no date format");
+                continue;
+            }
+            let field = field(&name).expect("checked above");
+            let info = &columns[&name];
+            assert!(!(column.count && (declared || column.raw)), "{owner}: count column `{name}` takes no options");
+            if let Some(pattern) = &column.date_format {
+                assert!(
+                    matches!(column.kind, crate::ui::ColumnType::Text | crate::ui::ColumnType::Date) && !column.count,
+                    "{owner}: column `{name}`: a date format needs a date or text column"
+                );
+                assert!(
+                    column.cell.is_none(),
+                    "{owner}: column `{name}`: a custom cell draws the value itself and takes no date format"
+                );
+                crate::engine::date_format::check(&format!("{owner}: column `{name}`"), pattern, Some(info.kind));
+            }
+            let labelled =
+                matches!(column.kind, crate::ui::ColumnType::Text | crate::ui::ColumnType::Badge) && !column.count;
+            assert!(!declared || labelled, "{owner}: column `{name}`: options need a text or badge column");
+            assert!(!column.raw || labelled, "{owner}: column `{name}`: raw() needs a text or badge column");
+            assert!(!(declared && column.raw), "{owner}: column `{name}` takes options or raw(), not both");
+            assert!(
+                !declared || field.belongs_to.is_none(),
+                "{owner}: column `{name}` shows related records by their title and takes no options"
+            );
+            // Values compared as the wire sends them (an `i64` as a string).
+            let what = format!("column `{name}`");
+            for (value, _) in &mut column.colors {
+                *value = input::canonical_option(&owner, &what, info, value);
+            }
+            for option in &mut column.options {
+                option.value = input::canonical_option(&owner, &what, info, &option.value);
+            }
+            for (i, option) in column.options.iter().enumerate() {
+                assert!(
+                    !column.options[..i].iter().any(|o| o.value == option.value),
+                    "{owner}: column `{name}` has option {} twice",
+                    option.value
+                );
+            }
+            // Declared labels name every colored value; the form's may not (a
+            // color for a value only hooks write is kept).
+            if declared {
+                for (value, _) in &column.colors {
+                    assert!(
+                        column.options.iter().any(|o| o.value == *value),
+                        "{owner}: column `{name}` colors {value}, which is not one of its options"
+                    );
+                }
+            }
+            // Without its own, the labels of the form's select or checkbox list.
+            if labelled && !declared && !column.raw && field.belongs_to.is_none() {
+                let input = form.inputs().into_iter().find(|i| {
+                    i.name == name
+                        && matches!(i.kind, InputType::Select | InputType::CheckboxList)
+                        && !i.options.is_empty()
+                });
+                if let Some(input) = input {
+                    column.options = input.options.clone();
+                }
+            }
+        }
         for filter in &table_ui.filters {
             assert!(
                 field(&filter.name).is_some_and(|f| f.filterable),
                 "resource `{slug}`: filter `{}` needs a `.filterable()` field",
+                filter.name
+            );
+            assert!(
+                filter.none.is_none()
+                    || filter.kind == crate::ui::FilterType::Select
+                        && columns.get(&filter.name).is_some_and(|c| c.nullable)
+                        && field(&filter.name).is_some_and(|f| f.belongs_to.is_none()),
+                "resource `{slug}`: filter `{}` has a `none` option but is not a select filter with options on a \
+                 nullable column (a `belongs_to` filter picks records)",
                 filter.name
             );
         }
@@ -469,15 +554,12 @@ impl<R: Resource> ResourceAdapter<R> {
 
         let mut infolist = R::infolist();
         let computed = R::computed();
-        infolist::check_infolist(slug, &infolist, &computed, &fields, &columns);
+        infolist::check_infolist(slug, &infolist, &computed, &fields, &columns, &relations);
         // Schemas send the infolist's conditions as the server compares them.
-        let kind_of = |name: &str| {
-            let column = columns.get(name).filter(|_| !secrets.contains_key(name))?;
-            Some((column.kind, crate::wire::decimal_scale(column.column.def().get_column_type())))
-        };
+        let kind_of = |name: &str| input::condition_kind(&columns, &secrets, name);
         crate::engine::conditions::canonicalize(&mut infolist.components, &kind_of);
 
-        Self {
+        let adapter = Self {
             // Without `infolist()`, the form read-only.
             infolist: Some(if infolist.is_empty() { infolist::from_form(&form, &fields, &columns) } else { infolist }),
             computed,
@@ -501,13 +583,17 @@ impl<R: Resource> ResourceAdapter<R> {
             repeaters,
             row_repeaters,
             reactions,
+            input_rules,
             action_conditions,
             title,
             table_ui,
             limits: Limits::default(),
             rich_nodes: std::sync::OnceLock::new(),
             _resource: PhantomData,
-        }
+        };
+        // Conditions never read an input whose visibility is computed (ADR 0044, part E).
+        adapter.check_rules_unread();
+        adapter
     }
 
     fn field(&self, name: &str) -> Option<&Field> {
@@ -650,6 +736,13 @@ pub(crate) fn check_form_layout(owner: &str, form: &Form) {
         assert!(
             input.kind == InputType::TextInput,
             "{owner}: input `{}`: only text inputs have a prefix or a suffix",
+            input.name
+        );
+    }
+    for input in form.inputs().into_iter().filter(|i| !i.preview) {
+        assert!(
+            input.kind == InputType::FileUpload,
+            "{owner}: input `{}`: only file uploads take `preview`",
             input.name
         );
     }

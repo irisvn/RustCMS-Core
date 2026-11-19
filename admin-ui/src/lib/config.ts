@@ -1,6 +1,8 @@
 // Runtime configuration injected by the server into index.html as
 // <meta name="rustcms-admin" content='{"basePath":"/admin"}'> (no inline script: CSP).
 
+import { parsePattern } from "@/i18n/dates";
+
 export interface PanelConfig {
   /** URL prefix of the panel, without trailing slash (e.g. `/admin`). */
   basePath: string;
@@ -17,6 +19,9 @@ export interface PanelConfig {
   theme?: { logo?: string; logoDark?: string; favicon?: string; colorScheme: "system" | "light" | "dark" };
   /** What the sign-in page offers. */
   signIn?: { passwordReset: boolean; remember: boolean };
+  /** How dates and date-times are shown without a pattern of their own (`AdminProvider::date_format`). */
+  dateFormat?: string;
+  dateTimeFormat?: string;
   /** `[realtime]` as the server applies it: the largest socket message. */
   realtime?: { maxMessageBytes: number };
 }
@@ -34,6 +39,7 @@ export function readConfig(doc: Document = document): PanelConfig {
   const theme: NonNullable<PanelConfig["theme"]> = { colorScheme: "system" };
   const signIn = { passwordReset: false, remember: false };
   let realtime: PanelConfig["realtime"];
+  const formats: Pick<PanelConfig, "dateFormat" | "dateTimeFormat"> = {};
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as Partial<PanelConfig>;
@@ -73,6 +79,11 @@ export function readConfig(doc: Document = document): PanelConfig {
       if (typeof bytes === "number" && Number.isInteger(bytes) && bytes >= 1 && bytes <= MAX_SOCKET_BYTES) {
         realtime = { maxMessageBytes: bytes };
       }
+      // Patterns the server checked; one the panel cannot read is dropped.
+      for (const key of ["dateFormat", "dateTimeFormat"] as const) {
+        const pattern = parsed[key];
+        if (typeof pattern === "string" && parsePattern(pattern) !== null) formats[key] = pattern;
+      }
       const look = parsed.theme as Partial<NonNullable<PanelConfig["theme"]>> | undefined;
       const image = (path: unknown, kind: string) =>
         typeof path === "string" && new RegExp(`^assets/brand/${kind}\\?v=[0-9a-f]{8}$`).test(path) ? path : undefined;
@@ -91,6 +102,7 @@ export function readConfig(doc: Document = document): PanelConfig {
   if (basePath === "/") basePath = "";
   const config: PanelConfig = { basePath, apiPath: `${basePath}/api`, extensions, locale, locales, brand, theme, signIn };
   if (realtime) config.realtime = realtime;
+  Object.assign(config, formats);
   return config;
 }
 

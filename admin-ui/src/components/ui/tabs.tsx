@@ -62,7 +62,7 @@ export function TabsTrigger({ value, className, children, disabled }: { value: s
         if (!selected) tabs.onValueChange(value);
       }}
       className={cn(
-        "-mb-px inline-flex min-h-9 items-center gap-2 border-b-2 px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+        "-mb-px inline-flex min-h-9 items-center gap-2 border-b-2 px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:text-subtle-foreground",
         selected ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
         className,
       )}

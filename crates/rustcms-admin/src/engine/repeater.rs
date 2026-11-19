@@ -2,11 +2,12 @@
 //! form with the rules its inputs declare; shared by resources and settings.
 
 use std::collections::HashSet;
+use std::sync::{Arc, OnceLock};
 
 use rustcms_core::ValidationErrors;
 use serde_json::Value;
 
-use super::conditions::FormConditions;
+use super::conditions::{FormConditions, KindOf, Outer, OuterValues};
 use super::validate::{Bounds, InputRule, Options, check_input};
 use super::wire::FieldKind;
 use crate::Data;
@@ -17,13 +18,28 @@ pub(crate) const MAX_DEPTH: u8 = 3;
 /// Most pairs of a key/value input in a row, and its longest value.
 const KEY_VALUE: (usize, usize) = (50, 1000);
 
+/// The panel's rich text nodes, given to every level of one repeater's rows
+/// once the registry knows them (`Rows::attach_nodes`).
+type NodesCell = Arc<OnceLock<Arc<crate::rich_text::AppNodes>>>;
+
+/// A media reference of a write: where it is (`faq.2.icon`), the rule it
+/// must meet, and the ids (ADR 0044: checked once per write).
+pub(crate) type MediaReference = (String, crate::field::MediaRule, Vec<uuid::Uuid>);
+
 /// The rows of a JSON repeater, checked at boot.
 #[derive(Debug, Clone)]
 pub(crate) struct Rows {
     inputs: Vec<RowInput>,
+    nodes: NodesCell,
     conditions: FormConditions,
+    /// Whether these rows' conditions, or a nested repeater's, read outside
+    /// their row (`when_root`, `when_parent`): those are applied once the
+    /// levels around are known ([`Rows::check_in`]).
+    reads_outside: bool,
     min_items: Option<usize>,
     max_items: Option<usize>,
+    /// The rule over the final rows (a form's top-level repeater, ADR 0044 part D).
+    validate: Option<crate::ui::RowsRule>,
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +64,16 @@ enum RowRule {
     Any {
         required: bool,
     },
+    /// A file upload (ADR 0044): one id, or a list with `multiple`.
+    Media {
+        rule: crate::field::MediaRule,
+        required: bool,
+    },
+    /// A rich editor (ADR 0044): a document with these application nodes.
+    RichText {
+        nodes: Vec<String>,
+        required: bool,
+    },
     Nested(Box<Rows>),
 }
 
@@ -59,6 +85,8 @@ pub(crate) fn row_kind(input: &Input) -> FieldKind {
         InputType::Toggle | InputType::Checkbox => FieldKind::Bool,
         InputType::DatePicker => FieldKind::Date,
         InputType::DateTimePicker => FieldKind::Instant,
+        // One file is its id; several, a list.
+        InputType::FileUpload if input.content.as_deref().is_none_or(|c| c.max_files.is_none()) => FieldKind::Uuid,
         // A select holds what its options hold (text, numbers or booleans).
         InputType::Select if !input.options.is_empty() => {
             let all = |test: fn(&Value) -> bool| input.options.iter().all(|o| test(&o.value));
@@ -77,29 +105,73 @@ pub(crate) fn row_kind(input: &Input) -> FieldKind {
 }
 
 impl Rows {
-    /// The rows of `spec`, the JSON repeater `name` of `owner`; panics on
-    /// what cannot hold (ADR 0040, boot checks).
-    pub(crate) fn compile(owner: &str, name: &str, spec: &RepeaterSpec, depth: u8) -> Self {
+    /// The rows of `spec`, the JSON repeater `name` of `owner`, whose
+    /// conditions may read the record's form through `root` (`when_root`, ADR
+    /// 0044); panics on what cannot hold (ADR 0040, boot checks).
+    pub(crate) fn compile(owner: &str, name: &str, spec: &RepeaterSpec, root: Option<KindOf<'_>>) -> Self {
+        Self::compile_in(owner, name, spec, 1, Outer { parent: None, root }, &NodesCell::default())
+    }
+
+    /// The rows of a JSON repeater at `depth` (a relationship row's input is
+    /// one level below its repeater, ADR 0044 part C), reading `outer`.
+    pub(crate) fn compile_at(owner: &str, name: &str, spec: &RepeaterSpec, depth: u8, outer: Outer<'_>) -> Self {
+        Self::compile_in(owner, name, spec, depth, outer, &NodesCell::default())
+    }
+
+    fn compile_in(
+        owner: &str,
+        name: &str,
+        spec: &RepeaterSpec,
+        depth: u8,
+        outer: Outer<'_>,
+        nodes: &NodesCell,
+    ) -> Self {
         let here = format!("{owner}: repeater `{name}`");
         assert!(depth <= MAX_DEPTH, "{here}: repeaters nest {MAX_DEPTH} deep at most");
         check_spec(&here, spec);
+        assert!(spec.inherit.is_empty(), "{here}: `inherit` is for relationship repeaters nested in rows");
+        assert!(
+            spec.validate.is_none() || depth == 1,
+            "{here}: `validate_rows` is for relationship repeaters and the form's own JSON repeaters (not rows of rows)"
+        );
+        // Conditions name inputs of the same row (ADR 0037 rules), or of the
+        // levels around it (ADR 0044).
+        let kinds: Vec<(String, FieldKind)> =
+            row_inputs(&spec.components).into_iter().map(|i| (i.name.clone(), row_kind(i))).collect();
+        let kind_of = |name: &str| kinds.iter().find(|(n, _)| n == name).map(|(_, k)| (*k, None));
+        let below = Outer { parent: Some(&kind_of), root: outer.root };
         let mut inputs = Vec::new();
         let mut names = HashSet::new();
         for input in row_inputs(&spec.components) {
             let input_name = input.name.as_str();
             assert!(names.insert(input_name), "{here}: input `{input_name}` appears twice in a row");
             assert!(!input.clear_when_hidden, "{here}: `clear_when_hidden` does not apply inside rows");
+            assert!(
+                input.preview || input.kind == InputType::FileUpload,
+                "{here}: input `{input_name}`: only file uploads take `preview`"
+            );
+            let content = input.content.as_deref().cloned().unwrap_or_default();
+            assert!(
+                (matches!(input.kind, InputType::FileUpload)
+                    || content.accept.is_empty() && content.max_size.is_none() && content.max_files.is_none())
+                    && (matches!(input.kind, InputType::FileUpload | InputType::RichEditor)
+                        || content.collection.is_none())
+                    && (input.kind == InputType::RichEditor || content.nodes.is_empty() && !content.full),
+                "{here}: `{input_name}`: `accept`, `max_size` and `multiple` are for file uploads, `nodes` and `full` for \
+                 rich editors, `collection` for both"
+            );
             let rule = match input.kind {
-                InputType::FileUpload | InputType::RichEditor => {
-                    panic!("{here}: `{input_name}`: media and rich text inputs are not supported in JSON rows")
-                }
+                // Media and documents are checked like fields' (ADR 0044); their
+                // references once per write, after every other lock.
+                InputType::FileUpload => RowRule::Media { rule: content.media_rule(), required: input.required },
+                InputType::RichEditor => RowRule::RichText { nodes: content.nodes.clone(), required: input.required },
                 InputType::Secret | InputType::SecretMap | InputType::BelongsToMany => {
                     panic!("{here}: `{input_name}`: secrets and belongs-to-many inputs cannot be in a row")
                 }
                 InputType::Repeater => {
                     let nested = input.repeater.as_deref().expect("repeaters have a spec");
                     assert!(!nested.relationship, "{here}: `{input_name}`: a JSON row holds JSON repeaters only");
-                    RowRule::Nested(Box::new(Rows::compile(&here, input_name, nested, depth + 1)))
+                    RowRule::Nested(Box::new(Rows::compile_in(&here, input_name, nested, depth + 1, below, nodes)))
                 }
                 InputType::Custom | InputType::Hidden => RowRule::Any { required: input.required },
                 _ => {
@@ -148,17 +220,23 @@ impl Rows {
                 );
             }
         }
-        // Conditions name inputs of the same row (ADR 0037 rules).
-        let kinds: Vec<(String, FieldKind)> =
-            row_inputs(&spec.components).into_iter().map(|i| (i.name.clone(), row_kind(i))).collect();
-        let kind_of = |name: &str| kinds.iter().find(|(n, _)| n == name).map(|(_, k)| (*k, None));
-        let conditions = FormConditions::new(&here, &spec.components, &kind_of);
+        let conditions = FormConditions::new_in(&here, &spec.components, &kind_of, outer);
+        let reads_outside = conditions.reads_outside()
+            || inputs.iter().any(|i| matches!(&i.rule, RowRule::Nested(rows) if rows.reads_outside));
         Rows {
             inputs,
+            nodes: nodes.clone(),
             conditions,
+            reads_outside,
             min_items: spec.min_items.map(|n| n as usize),
             max_items: spec.max_items.map(|n| n as usize),
+            validate: spec.validate.clone(),
         }
+    }
+
+    /// The rule over the final rows, if declared.
+    pub(crate) fn validate(&self) -> Option<&crate::ui::RowsValidator> {
+        self.validate.as_ref().map(|r| &r.0)
     }
 
     /// Fewest rows, when declared above 0.
@@ -202,6 +280,11 @@ impl Rows {
                     })
                 }
                 RowRule::Any { required: true } => Some(Value::String("x".into())),
+                RowRule::Media { rule, required: true } => {
+                    let id = Value::String(uuid::Uuid::nil().to_string());
+                    Some(if rule.multiple { Value::Array(vec![id]) } else { id })
+                }
+                RowRule::RichText { required: true, .. } => Some(serde_json::json!({"type": "doc", "content": []})),
                 RowRule::Nested(rows) => rows.min_items().map(|n| Value::Array(vec![rows.probe(); n])),
                 _ => None,
             };
@@ -212,11 +295,64 @@ impl Rows {
         Value::Object(row)
     }
 
+    /// Whether some condition of these rows (nested ones included) reads the
+    /// levels around them: the list is checked again once those are known
+    /// ([`Self::check_in`]).
+    pub(crate) fn reads_root(&self, name: &str) -> bool {
+        self.conditions.reads(crate::ui::Scope::Root, name)
+            || self.inputs.iter().any(|i| matches!(&i.rule, RowRule::Nested(rows) if rows.reads_root(name)))
+    }
+
+    /// Whether some condition of these rows (nested ones included) reads the
+    /// levels around them.
+    pub(crate) fn reads_outside(&self) -> bool {
+        self.reads_outside
+    }
+
     /// Checks `value`, the list at `path`; adds problems to `errors` and returns
     /// the list as stored (inputs hidden by their conditions removed), or
     /// `None` when it is refused. `null` is left to the field's rules, but
     /// holds no rows: refused under `min_items`.
+    ///
+    /// Inputs under a condition reading the record's form (`when_root`) are
+    /// kept, and not required, until [`Self::check_in`] runs with that form's
+    /// values.
     pub(crate) fn check(&self, path: &str, value: &Value, errors: &mut ValidationErrors) -> Option<Value> {
+        self.check_at(path, value, errors, None)
+    }
+
+    /// As [`Self::check`], the record's form holding `root` (as its own
+    /// conditions leave it: hidden inputs `null`): every condition applies.
+    /// Run on the list `check` returned, once the form's values are known.
+    pub(crate) fn check_in(
+        &self,
+        path: &str,
+        value: &Value,
+        errors: &mut ValidationErrors,
+        root: &Data,
+    ) -> Option<Value> {
+        self.check_at(path, value, errors, Some(OuterValues { parent: None, root: Some(root) }))
+    }
+
+    /// As [`Self::check_in`], with every level around the rows (a JSON
+    /// repeater in a relationship row reads that row as its parent).
+    pub(crate) fn check_with(
+        &self,
+        path: &str,
+        value: &Value,
+        errors: &mut ValidationErrors,
+        outer: OuterValues<'_>,
+    ) -> Option<Value> {
+        self.check_at(path, value, errors, Some(outer))
+    }
+
+    fn check_at(
+        &self,
+        path: &str,
+        value: &Value,
+        errors: &mut ValidationErrors,
+        outer: Option<OuterValues<'_>>,
+    ) -> Option<Value> {
         let before = count(errors);
         let Some(rows) = value.as_array() else {
             match self.min_items.filter(|m| *m > 0) {
@@ -232,7 +368,7 @@ impl Rows {
         if let Some(max) = self.max_items.filter(|max| rows.len() > *max) {
             errors.add(path, format!("may not have more than {max} items"));
         }
-        let out = self.check_each(path, 0, rows, errors);
+        let out = self.check_each_at(path, 0, rows, errors, outer);
         (count(errors) == before).then_some(Value::Array(out))
     }
 
@@ -242,7 +378,8 @@ impl Rows {
     }
 
     /// Checks each of `rows`, numbered from `first` in `path`; returns them
-    /// as stored. The list's own bounds are the caller's.
+    /// as stored. The list's own bounds are the caller's. Conditions reading
+    /// outside the row wait, as in [`Self::check`].
     pub(crate) fn check_each(
         &self,
         path: &str,
@@ -250,6 +387,20 @@ impl Rows {
         rows: &[Value],
         errors: &mut ValidationErrors,
     ) -> Vec<Value> {
+        self.check_each_at(path, first, rows, errors, None)
+    }
+
+    /// `outer`: the levels around the rows, `None` while unknown (conditions
+    /// reading them wait: their inputs are kept and not required).
+    fn check_each_at(
+        &self,
+        path: &str,
+        first: usize,
+        rows: &[Value],
+        errors: &mut ValidationErrors,
+        outer: Option<OuterValues<'_>>,
+    ) -> Vec<Value> {
+        let waits = outer.is_none() && self.conditions.reads_outside();
         let mut out = Vec::with_capacity(rows.len());
         for (index, row) in rows.iter().enumerate() {
             let index = first + index;
@@ -261,17 +412,23 @@ impl Rows {
             for key in row.keys().filter(|k| !self.inputs.iter().any(|i| &i.name == *k)) {
                 errors.add(format!("{at}.{key}").as_str(), "is not allowed");
             }
-            let hidden = self.conditions.hidden(row);
+            // Waiting: nothing is hidden yet, and inputs under a condition are not required.
+            let hidden =
+                if waits { Default::default() } else { self.conditions.hidden_in(row, outer.unwrap_or_default()) };
+            // Nested rows read this row as its conditions leave it, once the levels around are known.
+            let shown = outer.filter(|_| !waits).map(|o| self.conditions.shown_values(row, o));
+            let below = shown.as_ref().map(|row| OuterValues { parent: Some(row), root: outer.and_then(|o| o.root) });
             let mut kept = Data::new();
             for input in &self.inputs {
                 if hidden.contains(&input.name) {
                     continue;
                 }
+                let may_wait = waits && self.conditions.is_conditional(&input.name);
                 let name = format!("{at}.{}", input.name);
                 let value = row.get(&input.name);
                 match &input.rule {
                     RowRule::Nested(rows) => {
-                        if let Some(list) = rows.check(&name, value.unwrap_or(&Value::Null), errors) {
+                        if let Some(list) = rows.check_at(&name, value.unwrap_or(&Value::Null), errors, below) {
                             kept.insert(input.name.clone(), list);
                         }
                     }
@@ -279,10 +436,44 @@ impl Rows {
                         Some(v) if !v.is_null() => {
                             kept.insert(input.name.clone(), v.clone());
                         }
-                        _ if *required => errors.add(name.as_str(), "is required"),
+                        _ if *required && !may_wait => errors.add(name.as_str(), "is required"),
+                        _ => {}
+                    },
+                    // Ids well formed here; the files themselves once per write (ADR 0044).
+                    RowRule::Media { rule, required } => match value {
+                        Some(v) if !v.is_null() && !(rule.multiple && v.as_array().is_some_and(Vec::is_empty)) => {
+                            let before = count(errors);
+                            crate::media::reference_ids(&name, rule, v, errors);
+                            if count(errors) == before {
+                                kept.insert(input.name.clone(), v.clone());
+                            }
+                        }
+                        _ if *required && !may_wait => errors.add(name.as_str(), "is required"),
+                        _ => {}
+                    },
+                    RowRule::RichText { nodes, required } => match value {
+                        Some(v) if !v.is_null() => {
+                            let accepts = self.accepts(nodes);
+                            let rule = InputRule {
+                                kind: FieldKind::Json,
+                                nullable: true,
+                                required: false,
+                                max_length: None,
+                                key_value: None,
+                                rich_text: true,
+                                rich_nodes: accepts,
+                                options: None,
+                                bounds: None,
+                            };
+                            if check_input(&name, &rule, v, errors) {
+                                kept.insert(input.name.clone(), v.clone());
+                            }
+                        }
+                        _ if *required && !may_wait => errors.add(name.as_str(), "is required"),
                         _ => {}
                     },
                     RowRule::Value { kind, required, max_length, options, many, bounds, integer, key_value } => {
+                        let required = &(*required && !may_wait);
                         let Some(value) = value else {
                             if *required {
                                 errors.add(name.as_str(), "is required");
@@ -330,6 +521,75 @@ impl Rows {
     }
 }
 
+impl Rows {
+    /// Gives these rows (and the nested ones) the panel's rich text nodes;
+    /// panics, naming `owner`, on a rich editor accepting a node that is not
+    /// declared. Once, at boot.
+    pub(crate) fn attach_nodes(&self, owner: &str, nodes: &Arc<crate::rich_text::AppNodes>) {
+        for name in self.node_names() {
+            assert!(
+                nodes.get(&name).is_some(),
+                "{owner}: a rich editor of a repeater's rows accepts the node `{name}`, which is not declared \
+                 (`AdminProvider::rich_text_node`)"
+            );
+        }
+        let _ = self.nodes.set(nodes.clone());
+    }
+
+    /// What a rich editor of these rows accepting `nodes` holds (none: `None`).
+    fn accepts<'a>(&'a self, nodes: &'a [String]) -> Option<crate::rich_text::Accepts<'a>> {
+        let table = self.nodes.get().filter(|_| !nodes.is_empty())?;
+        Some(crate::rich_text::Accepts { nodes: table, only: Some(nodes) })
+    }
+
+    /// The application nodes the rows' rich editors accept, at any depth.
+    pub(crate) fn node_names(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for input in &self.inputs {
+            match &input.rule {
+                RowRule::RichText { nodes, .. } => out.extend(nodes.iter().cloned()),
+                RowRule::Nested(rows) => out.extend(rows.node_names()),
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// The media each row of `value` (the list at `path`, as stored) refers
+    /// to: files of file uploads, images of rich text, at any depth, with
+    /// where they are (`faq.2.icon`). Malformed values are skipped (refused
+    /// by [`Self::check`]).
+    pub(crate) fn references(&self, path: &str, value: &Value, out: &mut Vec<MediaReference>) {
+        let Some(rows) = value.as_array() else { return };
+        for (index, row) in rows.iter().enumerate() {
+            let Some(row) = row.as_object() else { continue };
+            for input in &self.inputs {
+                let Some(value) = row.get(&input.name).filter(|v| !v.is_null()) else { continue };
+                let at = format!("{path}.{index}.{}", input.name);
+                match &input.rule {
+                    RowRule::Media { rule, .. } => {
+                        let mut ignored = ValidationErrors::new();
+                        if let Some(ids) = crate::media::reference_ids(&at, rule, value, &mut ignored) {
+                            out.push((at, rule.clone(), ids));
+                        }
+                    }
+                    RowRule::RichText { nodes, .. } => {
+                        let accepts = self.accepts(nodes);
+                        if let Ok(doc) = crate::rich_text::parse_with(value, accepts) {
+                            let ids = crate::rich_text::media_ids(&doc);
+                            if !ids.is_empty() {
+                                out.push((at, crate::field::MediaRule::images(), ids));
+                            }
+                        }
+                    }
+                    RowRule::Nested(rows) => rows.references(&at, value, out),
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
 /// Problems reported so far (to tell whether a list added any).
 fn count(errors: &ValidationErrors) -> usize {
     errors.issues().values().map(Vec::len).sum::<usize>() + errors.form_issues().len()
@@ -346,6 +606,31 @@ pub(crate) fn row_inputs(components: &[Component]) -> Vec<&Input> {
         }
     }
     out
+}
+
+/// The media collections the file uploads and rich editors of JSON rows
+/// name (ADR 0044), at any depth (through relationship rows too: their JSON
+/// repeaters), as `(path, collection)` (`faq.icon`).
+pub(crate) fn row_collections(spec: &RepeaterSpec, path: &str, out: &mut Vec<(String, String)>) {
+    for input in row_inputs(&spec.components) {
+        let at = format!("{path}.{}", input.name);
+        if let Some(collection) = input.content.as_deref().and_then(|c| c.collection.clone()) {
+            out.push((at.clone(), collection));
+        }
+        if let Some(nested) = input.repeater.as_deref() {
+            row_collections(nested, &at, out);
+        }
+    }
+}
+
+/// Whether the rows of `spec` (JSON, at any depth) may refer to media:
+/// file uploads, rich editors (their images).
+pub(crate) fn refers_to_media(spec: &RepeaterSpec) -> bool {
+    !spec.relationship
+        && row_inputs(&spec.components).into_iter().any(|i| {
+            matches!(i.kind, InputType::FileUpload | InputType::RichEditor)
+                || i.repeater.as_deref().is_some_and(refers_to_media)
+        })
 }
 
 /// Options and layouts any repeater must respect (JSON or relationship).
@@ -369,15 +654,38 @@ pub(crate) fn check_spec(here: &str, spec: &RepeaterSpec) {
                 }
                 Component::Entry(_) => panic!("{here}: a row holds inputs, not entries"),
                 // Reactions belong to the form's own inputs (ADR 0041).
-                Component::Input(input) => assert!(
-                    input.reaction.is_none(),
-                    "{here}: row input `{}` cannot react (`.reacts()` is for the form's own inputs)",
-                    input.name
-                ),
+                Component::Input(input) => {
+                    assert!(
+                        input.reaction.is_none(),
+                        "{here}: row input `{}` cannot react (`.reacts()` is for the form's own inputs)",
+                        input.name
+                    );
+                    // Rules computed on the server are the form's own inputs' (ADR 0044, part E).
+                    assert!(
+                        input.rules.is_none(),
+                        "{here}: row input `{}` cannot have rules computed on the server (`shown_when_fn`, …)",
+                        input.name
+                    );
+                }
             }
         }
     }
     layouts(here, &spec.components);
+    // A table row holds one cell per input (ADR 0044).
+    if spec.table {
+        assert!(!spec.collapsible, "{here}: table rows do not fold (`collapsible` with `table`)");
+        for component in &spec.components {
+            match component {
+                Component::Input(input) => assert!(
+                    !matches!(input.kind, InputType::Repeater | InputType::FileUpload | InputType::RichEditor),
+                    "{here}: `{}`: table rows hold no nested repeater, file upload or rich editor (they do not fit a \
+                     cell)",
+                    input.name
+                ),
+                _ => panic!("{here}: table rows hold inputs only (no sections or grids)"),
+            }
+        }
+    }
 }
 
 /// The schema of a JSON repeater's rows: the inputs as declared (rows have no
@@ -386,9 +694,15 @@ pub(crate) fn rows_schema(
     spec: &RepeaterSpec,
     t: &dyn Fn(&str) -> String,
     disabled: bool,
+    nodes: Option<&crate::rich_text::AppNodes>,
 ) -> crate::schema::RepeaterSchema {
     use crate::schema::{ComponentSchema, InputSchema, LayoutSchema, Rule};
-    fn components(list: &[Component], t: &dyn Fn(&str) -> String, disabled: bool) -> Vec<ComponentSchema> {
+    fn components(
+        list: &[Component],
+        t: &dyn Fn(&str) -> String,
+        disabled: bool,
+        nodes: Option<&crate::rich_text::AppNodes>,
+    ) -> Vec<ComponentSchema> {
         list.iter()
             .filter_map(|component| match component {
                 Component::Layout(layout) => Some(ComponentSchema::Layout(LayoutSchema {
@@ -396,7 +710,7 @@ pub(crate) fn rows_schema(
                     id: layout.id.clone(),
                     label: layout.label.as_deref().map(t),
                     columns: layout.columns,
-                    components: components(&layout.children, t, disabled),
+                    components: components(&layout.children, t, disabled, nodes),
                     collapsed: layout.collapsed,
                     compact: layout.compact,
                     aside_first: layout.aside_first,
@@ -404,6 +718,7 @@ pub(crate) fn rows_schema(
                 })),
                 Component::Entry(_) => None,
                 Component::Input(input) => {
+                    let content = input.content.as_deref().cloned().unwrap_or_default();
                     let mut rules = Vec::new();
                     if input.required {
                         rules.push(Rule::Required);
@@ -437,7 +752,18 @@ pub(crate) fn rows_schema(
                         relationship: None,
                         widget: input.widget.clone(),
                         props: input.props.clone(),
-                        media: None,
+                        // A file upload's rules are the input's (ADR 0044).
+                        media: (input.kind == InputType::FileUpload).then(|| {
+                            let rule = content.media_rule();
+                            crate::schema::MediaSchema {
+                                multiple: rule.multiple,
+                                max_items: rule.max_items,
+                                accept: rule.accept,
+                                max_size: rule.max_size,
+                                preview: input.preview,
+                            }
+                        }),
+                        collection: content.collection.clone().filter(|_| !disabled),
                         links: None,
                         prefix: input.prefix.clone(),
                         suffix: input.suffix.clone(),
@@ -445,15 +771,29 @@ pub(crate) fn rows_schema(
                         shown_when: input.shown_when.as_deref().cloned(),
                         clear_when_hidden: false,
                         integer: input.integer,
-                        repeater: input.repeater.as_deref().map(|nested| Box::new(rows_schema(nested, t, disabled))),
-                        rich_nodes: Vec::new(),
+                        repeater: input
+                            .repeater
+                            .as_deref()
+                            .map(|nested| Box::new(rows_schema(nested, t, disabled, nodes))),
+                        rich_nodes: match nodes {
+                            Some(table) if !content.nodes.is_empty() => crate::adapter::schema::rich_node_schemas(
+                                crate::rich_text::Accepts { nodes: table, only: Some(&content.nodes) },
+                                t,
+                            ),
+                            _ => Vec::new(),
+                        },
                         reacts: false,
+                        // Rows show a compact rich editor unless the input asks for the full one.
+                        toolbar: (input.kind == InputType::RichEditor)
+                            .then(|| crate::ui::RowContent::toolbar(input.content.as_deref()))
+                            .flatten(),
+                        server_rules: None,
                     }))
                 }
             })
             .collect()
     }
-    options_schema(spec, components(&spec.components, t, disabled), t, None)
+    options_schema(spec, components(&spec.components, t, disabled, nodes), t, None)
 }
 
 /// A repeater's options around its row `components`.
@@ -466,6 +806,7 @@ pub(crate) fn options_schema(
     crate::schema::RepeaterSchema {
         create_components: None,
         components,
+        layout: spec.table.then_some(crate::schema::RepeaterLayout::Table),
         min_items: spec.min_items,
         max_items: spec.max_items,
         reorderable: spec.reorderable,

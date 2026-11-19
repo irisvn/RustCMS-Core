@@ -343,8 +343,10 @@ course meanwhile no longer passes the scope, checked again under the lock.
 - One order everywhere: parent, then child, the order a parent's deletion
   cascades in, so writes and deletions never deadlock. A write takes at most
   one `xact_lock` and takes it first; parent locks come after it.
-- The field must be a `belongs_to` the target; one parent per resource, and
-  the parent may not lock a parent of its own (checked at boot).
+- The field must be a `belongs_to` the target; one parent per resource. The
+  parent may lock a parent of its own (a section's links lock their section,
+  which locks its category): a write locks its direct parent, and the order
+  holds along the chain; a cycle is refused at boot.
 - A hook, an action or a column default that puts a record under a parent
   that was not locked fails (500, nothing written): send the parent field
   (make it `.required()`), and change it through an update. A record moved

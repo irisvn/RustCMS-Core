@@ -33,7 +33,8 @@ test("a custom widget and a has-many relation on the category page", async ({ pa
   await page.goto(url);
   const posts = page.getByRole("table", { name: "Posts" });
   await expect(posts).toBeVisible();
-  await page.getByRole("link", { name: /New/ }).click();
+  // The first section's "New" (the drafts' follows).
+  await page.getByRole("link", { name: /New/ }).first().click();
   await page.getByLabel("Title").fill(title);
   await page.getByRole("button", { name: "Create" }).click();
   await expect(page).toHaveURL(url);

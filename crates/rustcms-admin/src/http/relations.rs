@@ -52,6 +52,8 @@ pub(super) async fn relation_list(
         return Ok(Json(LinkPage { page, pivot }));
     }
     query.parent = Some((relation.field.to_owned(), String::new()));
+    // A filtered relation's records only (ADR 0044).
+    query.relation_filters = relation.query_filters();
     target.admit_list(&ctx, &query).await?;
     let parent_key = parent.visible_key(&ctx, &key).await?;
     query.parent = Some((relation.field.to_owned(), parent_key));

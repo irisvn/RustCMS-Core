@@ -1,6 +1,7 @@
 # ADR 0040: Repeaters
 
-- Status: accepted (0.13.0, vocabulary 15; relationship repeaters amended by ADR 0041, vocabulary 16)
+- Status: accepted (0.13.0, vocabulary 15; relationship repeaters amended by ADR 0041, vocabulary 16, and by ADR
+  0044: conditions, filtered relations, view pages, vocabulary 24)
 - Date: 2026-11-15
 
 > **0.13:** relationship repeaters (part 2) follow the lock contract of ADR 0041 (child `lock_parent` required, one locking pass, rows without references or media, counts-only history, tagged refs).
@@ -97,9 +98,9 @@ Repeater::make("lines")
 - **Relationship rows are the child's fields.** `relationship()` names the
   `Relation::has_many` of the repeater's name; each input of its schema names
   a field of the child resource, with that field's rules. The child's foreign
-  key to the parent and the order column are never inputs. One level only:
-  a relationship row may hold JSON repeaters (a child's JSON field), not
-  relationship repeaters.
+  key to the parent and the order column are never inputs. One level only,
+  and no repeater of any kind in a relationship row yet (ADR 0044, parts B
+  and C).
 
 ### JSON repeaters
 
@@ -115,7 +116,8 @@ Repeater::make("lines")
   condition is removed from the stored row; `required` means "required when
   shown"; `clear_when_hidden` does not apply inside rows (the row is
   rewritten anyway).
-- **Media and rich text inputs are refused in JSON rows** (`FileUpload`,
+- **Media and rich text inputs are refused in JSON rows** (until ADR 0044,
+  part B, which checks their references with the record's) (`FileUpload`,
   `RichEditor`): their ids would escape the reference checks. Secrets and
   belongs-to-many inputs are refused too; a `SelectInput` takes static
   options only (no relationship).
@@ -181,10 +183,8 @@ Repeater::make("lines")
 - **Errors are keyed by row**: `lines.8.quantity`, `lines.n1.quantity`.
 - A create's `Idempotency-Key` claim covers the rows (it hashes the whole
   input).
-- Conditions on a relationship repeater, conditions in its rows and JSON
-  repeaters in its rows are refused at boot for now (the row's kinds come
-  from the child, and a JSON repeater in a child row would need the child's
-  own declaration); they come later. New rows take positions after every row
+- Conditions on a relationship repeater and in its rows came with ADR 0044
+  (part A); JSON repeaters in its rows are still refused at boot (part B). New rows take positions after every row
   of the parent (trashed ones included) before the order is applied.
 - The parent's history entry is `rows_changed`, its `meta` holding the
   relation, how many rows were created, updated and deleted, and whether rows

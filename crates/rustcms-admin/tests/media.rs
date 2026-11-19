@@ -249,6 +249,7 @@ async fn stored_media(db: &sea_orm::DatabaseConnection, owner: i64, name: &str) 
         width: Set(Some(1)),
         height: Set(Some(1)),
         alt: Set(None),
+        collection: Set(None),
         owner_id: Set(owner),
         created_at: Set(chrono::Utc::now()),
         deleted_at: Set(None),

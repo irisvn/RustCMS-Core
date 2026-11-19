@@ -396,6 +396,28 @@ pub struct Relation {
     /// Belongs-to-many: the pivot table, and its columns users see or write.
     pub(crate) pivot: Option<Arc<dyn crate::adapter::DynPivot>>,
     pub(crate) pivot_fields: Vec<Field>,
+    /// Has-many: the target's records the relation holds (`where_null`,
+    /// `where_eq`, all of them; ADR 0044).
+    pub(crate) filters: Vec<(&'static str, RelationFilter)>,
+}
+
+/// What a filtered has-many relation requires of a target field (ADR 0044).
+#[derive(Debug, Clone, PartialEq)]
+pub enum RelationFilter {
+    /// No value (`IS NULL`).
+    Null,
+    /// This value (in wire form, as the field's kind reads it).
+    Eq(serde_json::Value),
+}
+
+impl RelationFilter {
+    /// The value records of the relation hold (`null` for [`Self::Null`]).
+    pub(crate) fn value(&self) -> serde_json::Value {
+        match self {
+            Self::Null => serde_json::Value::Null,
+            Self::Eq(value) => value.clone(),
+        }
+    }
 }
 
 impl std::fmt::Debug for Relation {
@@ -405,6 +427,7 @@ impl std::fmt::Debug for Relation {
             .field("target", &self.target)
             .field("field", &self.field)
             .field("pivot", &self.pivot.as_ref().map(|p| p.table().to_owned()))
+            .field("filters", &self.filters)
             .finish_non_exhaustive()
     }
 }
@@ -413,7 +436,7 @@ impl Relation {
     /// `name` (URL segment): the records of `target` whose `field` (a
     /// `belongs_to` this resource) holds the record's key.
     pub fn has_many(name: &'static str, target: &'static str, field: &'static str) -> Self {
-        Self { name, target, field, label: None, pivot: None, pivot_fields: Vec::new() }
+        Self { name, target, field, label: None, pivot: None, pivot_fields: Vec::new(), filters: Vec::new() }
     }
 
     /// `name` (URL segment): the records of `target` linked to the record by
@@ -442,6 +465,7 @@ impl Relation {
             label: None,
             pivot: Some(Arc::new(pivot)),
             pivot_fields: Vec::new(),
+            filters: Vec::new(),
         }
     }
 
@@ -457,6 +481,67 @@ impl Relation {
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
+    }
+
+    /// Has-many: only the target's records whose `field` holds no value
+    /// (ADR 0044). Wherever the relation is read (its section, counts,
+    /// repeaters, view pages); records created through it get `null` there.
+    /// Several repeaters may edit one target through relations that cannot
+    /// share a record:
+    ///
+    /// ```ignore
+    /// Relation::has_many("options", "question_options", "question_id").where_null("blank_id")
+    /// ```
+    ///
+    /// # Panics
+    /// On a belongs-to-many relation (the field is checked at boot).
+    pub fn where_null(self, field: &'static str) -> Self {
+        self.filtered(field, RelationFilter::Null)
+    }
+
+    /// Has-many: only the target's records whose `field` holds `value` (in
+    /// wire form, as the API sends the field: `7` for an `i32`, `"7"` for an
+    /// `i64`, `"1.5"` or `"1.50"` for a decimal); records
+    /// created through the relation get it. See [`Self::where_null`].
+    ///
+    /// # Panics
+    /// On a belongs-to-many relation (the field and value are checked at boot).
+    pub fn where_eq(self, field: &'static str, value: impl Into<serde_json::Value>) -> Self {
+        self.filtered(field, RelationFilter::Eq(value.into()))
+    }
+
+    fn filtered(mut self, field: &'static str, filter: RelationFilter) -> Self {
+        assert!(
+            self.pivot.is_none(),
+            "relation `{}`: `where_null` and `where_eq` are for has-many relations",
+            self.name
+        );
+        assert!(
+            !self.filters.iter().any(|(f, _)| *f == field),
+            "relation `{}`: `{field}` is filtered twice",
+            self.name
+        );
+        self.filters.push((field, filter));
+        self
+    }
+
+    /// The filters as a list query takes them.
+    pub(crate) fn query_filters(&self) -> Vec<(String, RelationFilter)> {
+        self.filters.iter().map(|(f, v)| ((*f).to_owned(), v.clone())).collect()
+    }
+
+    /// Whether no record can belong to both relations (some field filtered
+    /// apart: null against a value, or two values), the values compared as
+    /// `canonical` reads them for a field (`"1.5"` and `"1.50"` are one value
+    /// of a decimal field).
+    pub(crate) fn disjoint(
+        &self,
+        other: &Relation,
+        canonical: &dyn Fn(&str, &RelationFilter) -> serde_json::Value,
+    ) -> bool {
+        self.filters.iter().any(|(field, filter)| {
+            other.filters.iter().any(|(f, o)| f == field && canonical(field, filter) != canonical(field, o))
+        })
     }
 
     /// Whether this is a belongs-to-many relation.

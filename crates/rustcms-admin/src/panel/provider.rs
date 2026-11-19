@@ -37,6 +37,8 @@ pub struct AdminProvider {
     branding: Option<std::sync::Arc<dyn crate::custom::BrandingSource>>,
     dashboard: crate::dashboard::Dashboard,
     home: Option<String>,
+    date_format: Option<String>,
+    datetime_format: Option<String>,
 }
 
 /// Locales the panel's interface is written in (`admin-ui/src/i18n`).
@@ -62,6 +64,8 @@ impl Default for AdminProvider {
             branding: None,
             dashboard: crate::dashboard::Dashboard::default(),
             home: None,
+            date_format: None,
+            datetime_format: None,
         }
     }
 }
@@ -180,6 +184,35 @@ impl AdminProvider {
         self
     }
 
+    /// How the panel shows dates (date fields) without a pattern of their own,
+    /// in the grammar of [`crate::ui::TableColumn::date_format`] without
+    /// times, e.g. `"dd/MM/yyyy"`. Default: the user's language's medium
+    /// style.
+    ///
+    /// # Panics
+    /// On a pattern that is not one, or shows a time.
+    pub fn date_format(mut self, pattern: impl Into<String>) -> Self {
+        let pattern = pattern.into();
+        crate::engine::date_format::check("admin panel", &pattern, Some(crate::wire::FieldKind::Date));
+        self.date_format = Some(pattern);
+        self
+    }
+
+    /// How the panel shows date-times (local date-time and instant fields,
+    /// history, queue and schedule times) without a pattern of their own, e.g.
+    /// `"HH:mm:ss dd/MM/yyyy"` ([`crate::ui::TableColumn::date_format`]).
+    /// Default: the user's language's medium style.
+    ///
+    /// # Panics
+    /// On a pattern that is not one, or shows the time zone (`z`): local
+    /// date-times have none (a column or entry of an instant may show it).
+    pub fn datetime_format(mut self, pattern: impl Into<String>) -> Self {
+        let pattern = pattern.into();
+        crate::engine::date_format::check("admin panel", &pattern, Some(crate::wire::FieldKind::LocalDateTime));
+        self.datetime_format = Some(pattern);
+        self
+    }
+
     /// Branding chosen while running (name, logos, favicon, color tokens),
     /// over the [`Self::brand`] and [`Self::theme`]. Cached per instance for
     /// `[admin] branding_ttl_secs`; `admin.branding = "static"` ignores it.
@@ -231,6 +264,25 @@ impl AdminProvider {
             let mut registry = self.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let current = registry.take().unwrap_or_default();
             *registry = Some(current.media_hook(hook));
+        }
+        self
+    }
+
+    /// Declares a collection of the media library: `name` is stored on the
+    /// files uploaded through the fields and settings that name it
+    /// ([`crate::Field::collection`], [`crate::settings::SettingField::collection`]);
+    /// `label` is shown (translated) by the Media page's filter, the media
+    /// record and the picker, in declaration order. Collections sort and
+    /// filter; they never limit access. Needs [`media`](Self::media).
+    ///
+    /// # Panics
+    /// On a name other than 1 to 64 of `a-z`, `0-9`, `.`, `_`, `-`, an empty
+    /// label, or a name declared twice; at boot, without the media library.
+    pub fn media_collection(self, name: &str, label: impl Into<String>) -> Self {
+        {
+            let mut registry = self.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let current = registry.take().unwrap_or_default();
+            *registry = Some(current.media_collection(name, label));
         }
         self
     }
@@ -298,14 +350,38 @@ impl ServiceProvider for AdminProvider {
         for permission in self.dashboard.permissions() {
             auth.permissions.declare(ADMIN_GUARD, &permission, Some("dashboard"));
         }
+        assert!(
+            self.media || registry.media_collections().is_empty(),
+            "media collections need the media library (`AdminProvider::media`)"
+        );
         for page in self.settings.all() {
-            if let Some(field) = page.fields().iter().find(|f| f.media.is_some()) {
+            // Media settings, and repeaters whose rows refer to files (ADR 0044).
+            let uploads = |f: &crate::settings::SettingField| {
+                f.input.repeater.as_deref().is_some_and(crate::engine::repeater::refers_to_media)
+            };
+            if let Some(field) = page.fields().iter().find(|f| f.media.is_some() || uploads(f)) {
                 assert!(
                     self.media,
                     "settings `{}`: media setting `{}` needs the media library (`AdminProvider::media`)",
                     page.group(),
                     field.name
                 );
+            }
+            for field in page.fields() {
+                // The field's, and those of its rows' inputs (ADR 0044).
+                let mut named: Vec<(String, String)> =
+                    field.collection.iter().map(|c| (field.name.clone(), c.clone())).collect();
+                if let Some(spec) = field.input.repeater.as_deref() {
+                    crate::engine::repeater::row_collections(spec, &field.name, &mut named);
+                }
+                for (at, collection) in named {
+                    assert!(
+                        registry.media_collection_named(&collection).is_some(),
+                        "settings `{}`: setting `{at}` uses the media collection `{collection}`, which is not \
+                         declared (`AdminProvider::media_collection`)",
+                        page.group(),
+                    );
+                }
             }
             for permission in crate::settings::permissions(page.group()) {
                 auth.permissions.declare(ADMIN_GUARD, &permission, Some("settings"));
@@ -426,6 +502,8 @@ impl ServiceProvider for AdminProvider {
             all: app.config().app.locales.clone(),
             password_reset: auth.config.password_reset,
             remember: auth.config.remember_days > 0,
+            date_format: self.date_format.clone(),
+            datetime_format: self.datetime_format.clone(),
         };
         if serves_panel {
             // Same-origin sockets, also for browsers whose `'self'` misses `ws:`/`wss:`.
@@ -671,6 +749,8 @@ fn missing_translations(panel: &AdminPanel, locale: &str, permission_groups: &[S
     missing.extend(panel.settings.display_strings().into_iter().filter(|s| !translated(None, s)));
     missing.extend(panel.custom.display_strings().into_iter().filter(|s| !translated(None, s)));
     missing.extend(panel.dashboard.display_strings().into_iter().filter(|s| !translated(None, s)));
+    // Media collections are shown by their label everywhere (filter, record, picker).
+    missing.extend(panel.registry.media_collections().iter().map(|c| c.label.clone()).filter(|s| !translated(None, s)));
     // Permission groups that are not resources are shown in words (`users` → "Users").
     for group in permission_groups {
         let source = crate::system::roles::group_source(group);

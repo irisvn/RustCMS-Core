@@ -1,6 +1,7 @@
 # 0018 — Parent locks
 
-- Status: accepted
+- Status: accepted. Amended by ADR 0044 (part C): a `lock_parent` target may lock a parent of its own
+  (chains); a write locks its direct parent, cycles are refused at boot.
 - Date: 2026-10-20
 
 ## Context

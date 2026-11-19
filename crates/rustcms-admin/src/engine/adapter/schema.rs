@@ -28,6 +28,14 @@ impl<R: Resource> ResourceAdapter<R> {
                     resource: relation.target,
                     field: relation.field,
                     create: creatable && target.allows(ctx, ability::CREATE).await,
+                    // In canonical wire form, as the server writes them (checked at boot).
+                    fixed: relation
+                        .filters
+                        .iter()
+                        .map(|(f, v)| {
+                            ((*f).to_owned(), target.relation_filter_value(f, v).unwrap_or_else(|_| v.value()))
+                        })
+                        .collect(),
                     attach: false,
                     detach: false,
                     pivot: Vec::new(),
@@ -69,6 +77,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 resource: relation.target,
                 field: relation.field,
                 create: false,
+                fixed: BTreeMap::new(),
                 attach,
                 detach,
                 pivot: readable,
@@ -130,10 +139,12 @@ impl<R: Resource> ResourceAdapter<R> {
                 None => field_label(&column.name),
             };
             out.extend(column.label.clone().or_else(default));
+            out.extend(column.options.iter().map(|o| o.label.clone()));
         }
         for filter in &self.table_ui.filters {
             out.extend(filter.label.clone().or_else(|| field_label(&filter.name)));
             out.extend(filter.options.iter().map(|o| o.label.clone()));
+            out.extend(filter.none.clone());
         }
         // Messages of declared unique constraints (translated when they fire).
         out.extend(self.meta.constraints.iter().map(|c| c.message.clone()));
@@ -198,8 +209,35 @@ impl<R: Resource> ResourceAdapter<R> {
         }
     }
 
+    /// The options of select `name`: declared, or the panel's media
+    /// collections for the media library's `collection`.
+    fn options_of(
+        &self,
+        ctx: &Ctx,
+        name: &str,
+        declared: &[crate::forms::SelectOption],
+    ) -> Vec<crate::forms::SelectOption> {
+        if self.is_media_collection(name) {
+            return crate::media::collection_options(ctx);
+        }
+        translated_options(ctx, R::SLUG, declared)
+    }
+
+    /// Whether `name` is the media library's `collection`.
+    fn is_media_collection(&self, name: &str) -> bool {
+        R::SLUG == crate::media::SLUG && name == "collection"
+    }
+
+    /// The media library's `collection` is shown only when the panel declares collections.
+    fn shown_here(&self, ctx: &Ctx, name: &str) -> bool {
+        !self.is_media_collection(name) || !ctx.registry.media_collections().is_empty()
+    }
+
     pub(super) fn input_schema(&self, ctx: &Ctx, input: &Input, op: SchemaOperation) -> Option<InputSchema> {
         let field = self.field(&input.name)?;
+        if !self.shown_here(ctx, &input.name) {
+            return None;
+        }
         let is_key = input.name == self.pk_name;
         let (include, disabled) = match op {
             SchemaOperation::Create => {
@@ -257,7 +295,7 @@ impl<R: Resource> ResourceAdapter<R> {
             placeholder: input.placeholder.as_deref().map(|p| ctx.t_in(R::SLUG, p)),
             help: input.help.as_deref().map(|h| ctx.t_in(R::SLUG, h)),
             mode: input.mode,
-            options: translated_options(ctx, R::SLUG, &input.options),
+            options: self.options_of(ctx, &input.name, &input.options),
             relationship: field.belongs_to.map(|resource| Relationship { resource }),
             widget: input.widget.clone(),
             props: input.props.clone(),
@@ -266,7 +304,10 @@ impl<R: Resource> ResourceAdapter<R> {
                 max_items: rule.max_items,
                 accept: rule.accept.clone(),
                 max_size: rule.max_size,
+                preview: input.preview,
             }),
+            // Where its uploads go and its picker opens: for inputs the user may change.
+            collection: field.collection.clone().filter(|_| !disabled),
             links: None,
             // Shown as written (`/posts/`, `.html`): not translated.
             prefix: input.prefix.clone(),
@@ -279,45 +320,15 @@ impl<R: Resource> ResourceAdapter<R> {
             rich_nodes: self.rich_node_schemas(ctx, &input.name),
             // Never on view pages, nor for a user who cannot change the input (ADR 0043).
             reacts: !disabled && op != SchemaOperation::View && input.reaction.is_some(),
+            toolbar: None,
+            server_rules: None,
         })
     }
 
     /// The application nodes rich text field `name` accepts (ADR 0042).
     pub(super) fn rich_node_schemas(&self, ctx: &Ctx, name: &str) -> Vec<crate::contract::RichNodeSchema> {
-        use crate::rich_text::AttrKind;
         let Some(accepts) = self.field(name).and_then(|f| self.accepts(f)) else { return Vec::new() };
-        let names = accepts.only.unwrap_or_default();
-        names
-            .iter()
-            .filter_map(|n| accepts.nodes.get(n))
-            .map(|node| crate::contract::RichNodeSchema {
-                name: node.name().to_owned(),
-                label: ctx.t_in(R::SLUG, node.label_text()),
-                inline: node.is_inline(),
-                attrs: node
-                    .attrs()
-                    .map(|(name, attr)| {
-                        let (kind, min, max, options) = match attr.kind() {
-                            AttrKind::Text { min, max } => ("text", Some(*min as i64), Some(*max as i64), Vec::new()),
-                            AttrKind::Integer { min, max } => ("integer", Some(*min), Some(*max), Vec::new()),
-                            AttrKind::Boolean => ("boolean", None, None, Vec::new()),
-                            AttrKind::OneOf(options) => ("one_of", None, None, options.clone()),
-                            AttrKind::Uuid => ("uuid", None, None, Vec::new()),
-                        };
-                        crate::contract::RichAttrSchema {
-                            name: name.to_owned(),
-                            label: attr.label_text().map_or_else(|| name.to_owned(), |l| ctx.t_in(R::SLUG, l)),
-                            kind,
-                            required: attr.default_value().is_none(),
-                            default: attr.default_value().cloned(),
-                            min,
-                            max,
-                            options,
-                        }
-                    })
-                    .collect(),
-            })
-            .collect()
+        rich_node_schemas(accepts, &|text| ctx.t_in(R::SLUG, text))
     }
 
     /// The rows of a repeater input (JSON: as declared; relationship rows come
@@ -325,7 +336,7 @@ impl<R: Resource> ResourceAdapter<R> {
     fn repeater_schema(&self, ctx: &Ctx, input: &Input, disabled: bool) -> Option<Box<crate::schema::RepeaterSchema>> {
         let spec = input.repeater.as_deref()?;
         let t = |text: &str| ctx.t_in(R::SLUG, text);
-        Some(Box::new(crate::engine::repeater::rows_schema(spec, &t, disabled)))
+        Some(Box::new(crate::engine::repeater::rows_schema(spec, &t, disabled, Some(ctx.registry.rich_nodes()))))
     }
 
     /// The input of a relationship repeater, before its rows are filled in.
@@ -355,16 +366,21 @@ impl<R: Resource> ResourceAdapter<R> {
             widget: None,
             props: None,
             media: None,
+            collection: None,
             links: None,
             prefix: None,
             suffix: None,
             number: None,
-            shown_when: None,
+            // Hidden by its condition, a write removes its rows (ADR 0044).
+            shown_when: input.shown_when.as_deref().cloned(),
             clear_when_hidden: false,
             integer: false,
             repeater: None,
             rich_nodes: Vec::new(),
-            reacts: false,
+            // Its rows may react (ADR 0044, part D); left out when the user can change nothing.
+            reacts: input.reaction.is_some(),
+            toolbar: None,
+            server_rules: None,
         }
     }
 
@@ -377,55 +393,7 @@ impl<R: Resource> ResourceAdapter<R> {
         components: Vec<ComponentSchema>,
         op: SchemaOperation,
     ) -> Vec<ComponentSchema> {
-        let mut out = Vec::with_capacity(components.len());
-        for component in components {
-            match component {
-                ComponentSchema::Input(mut input) if input.value_type == "rows" => {
-                    let Some(repeater) = self.row_repeaters.iter().find(|r| r.name == input.name) else { continue };
-                    let Some(child) = ctx.registry.get(repeater.target) else { continue };
-                    if !child.allows(ctx, ability::VIEW_ANY).await {
-                        continue;
-                    }
-                    let create = child.admits(ctx, ability::CREATE).await && child.allows(ctx, ability::CREATE).await;
-                    let update = op == SchemaOperation::Edit && child.admits(ctx, ability::UPDATE).await;
-                    let delete = op == SchemaOperation::Edit && child.admits(ctx, ability::DELETE).await;
-                    let rows = child.row_schema(ctx, &repeater.spec.components, op);
-                    let t = |text: &str| ctx.t_in(R::SLUG, text);
-                    let relationship = crate::schema::RepeaterRelationship {
-                        resource: repeater.target,
-                        relation: repeater.name,
-                        create,
-                        update,
-                        delete,
-                        order_column: repeater.order_column.clone(),
-                    };
-                    input.disabled = !(create || update || delete);
-                    let mut schema =
-                        crate::engine::repeater::options_schema(&repeater.spec, rows, &t, Some(relationship));
-                    // Empty rows to start with are for new records only.
-                    if op != SchemaOperation::Create {
-                        schema.default_items = None;
-                    }
-                    // Without an order column an order is never stored: no reordering offered.
-                    schema.reorderable = repeater.order_column.is_some();
-                    // On an edit page, new rows are the child's creates: its create form's inputs.
-                    if op == SchemaOperation::Edit && create {
-                        schema.create_components =
-                            Some(child.row_schema(ctx, &repeater.spec.components, SchemaOperation::Create));
-                    }
-                    input.repeater = Some(Box::new(schema));
-                    out.push(ComponentSchema::Input(input));
-                }
-                ComponentSchema::Layout(mut layout) => {
-                    layout.components = Box::pin(self.fill_row_repeaters(ctx, layout.components, op)).await;
-                    if !layout.components.is_empty() {
-                        out.push(ComponentSchema::Layout(layout));
-                    }
-                }
-                other => out.push(other),
-            }
-        }
-        out
+        fill_rows(ctx, R::SLUG, components, op, &self.row_repeaters).await
     }
 
     /// What the user may change with each `BelongsToManySelect` of the form
@@ -489,6 +457,7 @@ impl<R: Resource> ResourceAdapter<R> {
             widget: None,
             props: None,
             media: None,
+            collection: None,
             links: Some(links),
             prefix: None,
             suffix: None,
@@ -499,6 +468,8 @@ impl<R: Resource> ResourceAdapter<R> {
             repeater: None,
             rich_nodes: Vec::new(),
             reacts: false,
+            toolbar: None,
+            server_rules: None,
         })
     }
 
@@ -537,7 +508,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let mut columns = Vec::new();
         for c in &self.table_ui.columns {
             let Some(name) = c.counts else {
-                if readable(&c.name) {
+                if readable(&c.name) && self.shown_here(ctx, &c.name) {
                     columns.push(c);
                 }
                 continue;
@@ -563,6 +534,8 @@ impl<R: Resource> ResourceAdapter<R> {
                         sortable: false,
                         searchable: false,
                         colors: Vec::new(),
+                        options: Vec::new(),
+                        format: None,
                         relationship: None,
                         cell: None,
                         props: c.props.clone(),
@@ -585,6 +558,8 @@ impl<R: Resource> ResourceAdapter<R> {
                         .iter()
                         .map(|(value, color)| BadgeColor { value: value.clone(), color: color.clone() })
                         .collect(),
+                    options: self.options_of(ctx, &c.name, &c.options),
+                    format: c.date_format.clone(),
                     relationship: field.belongs_to.map(|resource| Relationship { resource }),
                     cell: c.cell.clone(),
                     props: c.props.clone(),
@@ -598,7 +573,7 @@ impl<R: Resource> ResourceAdapter<R> {
             .table_ui
             .filters
             .iter()
-            .filter(|f| readable(&f.name))
+            .filter(|f| readable(&f.name) && self.shown_here(ctx, &f.name))
             .map(|f| {
                 let field = self.field(&f.name).expect("validated at registration");
                 FilterSchema {
@@ -606,8 +581,9 @@ impl<R: Resource> ResourceAdapter<R> {
                     name: f.name.clone(),
                     label: ctx.t_in(R::SLUG, &f.label.clone().unwrap_or_else(|| field.display_label())),
                     value_type: self.column(&f.name).kind.name(),
-                    options: translated_options(ctx, R::SLUG, &f.options),
+                    options: self.options_of(ctx, &f.name, &f.options),
                     relationship: field.belongs_to.map(|resource| Relationship { resource }),
+                    none: f.none.as_deref().map(|label| ctx.t_in(R::SLUG, label)),
                 }
             })
             .collect();
@@ -716,6 +692,7 @@ fn pivot_input_schema(
         widget: None,
         props: None,
         media: None,
+        collection: None,
         links: None,
         prefix: None,
         suffix: None,
@@ -726,5 +703,113 @@ fn pivot_input_schema(
         repeater: None,
         rich_nodes: Vec::new(),
         reacts: false,
+        toolbar: None,
+        server_rules: None,
     }
+}
+
+/// The schemas of the application nodes `accepts` names, texts translated by `t` (ADR 0042).
+pub(crate) fn rich_node_schemas(
+    accepts: crate::rich_text::Accepts<'_>,
+    t: &dyn Fn(&str) -> String,
+) -> Vec<crate::contract::RichNodeSchema> {
+    use crate::rich_text::AttrKind;
+    let names = accepts.only.unwrap_or_default();
+    names
+        .iter()
+        .filter_map(|n| accepts.nodes.get(n))
+        .map(|node| crate::contract::RichNodeSchema {
+            name: node.name().to_owned(),
+            label: t(node.label_text()),
+            inline: node.is_inline(),
+            attrs: node
+                .attrs()
+                .map(|(name, attr)| {
+                    let (kind, min, max, options) = match attr.kind() {
+                        AttrKind::Text { min, max } => ("text", Some(*min as i64), Some(*max as i64), Vec::new()),
+                        AttrKind::Integer { min, max } => ("integer", Some(*min), Some(*max), Vec::new()),
+                        AttrKind::Boolean => ("boolean", None, None, Vec::new()),
+                        AttrKind::OneOf(options) => ("one_of", None, None, options.clone()),
+                        AttrKind::Uuid => ("uuid", None, None, Vec::new()),
+                    };
+                    crate::contract::RichAttrSchema {
+                        name: name.to_owned(),
+                        label: attr.label_text().map_or_else(|| name.to_owned(), t),
+                        kind,
+                        required: attr.default_value().is_none(),
+                        default: attr.default_value().cloned(),
+                        min,
+                        max,
+                        options,
+                    }
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+/// Fills in the rows of `repeaters` (a form's, or nested in a row's, ADR 0044
+/// part C) among `components`, texts looked up in `slug`'s table first.
+fn fill_rows<'a>(
+    ctx: &'a Ctx,
+    slug: &'static str,
+    components: Vec<ComponentSchema>,
+    op: SchemaOperation,
+    repeaters: &'a [crate::adapter::rows::RowRepeater],
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Vec<ComponentSchema>> + Send + 'a>> {
+    Box::pin(async move {
+        let mut out = Vec::with_capacity(components.len());
+        for component in components {
+            match component {
+                ComponentSchema::Input(mut input) if input.value_type == "rows" => {
+                    let Some(repeater) = repeaters.iter().find(|r| r.name == input.name) else { continue };
+                    let Some(child) = ctx.registry.get(repeater.target) else { continue };
+                    if !child.allows(ctx, ability::VIEW_ANY).await {
+                        continue;
+                    }
+                    let create = child.admits(ctx, ability::CREATE).await && child.allows(ctx, ability::CREATE).await;
+                    let update = op == SchemaOperation::Edit && child.admits(ctx, ability::UPDATE).await;
+                    let delete = op == SchemaOperation::Edit && child.admits(ctx, ability::DELETE).await;
+                    let nested = &repeater.rules().nested;
+                    let rows = child.row_schema(ctx, &repeater.rules().components, op);
+                    let rows = fill_rows(ctx, slug, rows, op, nested).await;
+                    let t = |text: &str| ctx.t_in(slug, text);
+                    let relationship = crate::schema::RepeaterRelationship {
+                        resource: repeater.target,
+                        relation: repeater.name,
+                        create,
+                        update,
+                        delete,
+                        order_column: repeater.order_column.clone(),
+                    };
+                    input.disabled = !(create || update || delete);
+                    input.reacts &= !input.disabled;
+                    let mut schema =
+                        crate::engine::repeater::options_schema(&repeater.spec, rows, &t, Some(relationship));
+                    // Empty rows to start with are for new records only.
+                    if op != SchemaOperation::Create {
+                        schema.default_items = None;
+                    }
+                    // Without an order column an order is never stored: no reordering offered.
+                    schema.reorderable = repeater.order_column.is_some();
+                    // On an edit page, new rows are the child's creates: its create form's inputs.
+                    if op == SchemaOperation::Edit && create {
+                        let rows = child.row_schema(ctx, &repeater.rules().components, SchemaOperation::Create);
+                        schema.create_components =
+                            Some(fill_rows(ctx, slug, rows, SchemaOperation::Create, nested).await);
+                    }
+                    input.repeater = Some(Box::new(schema));
+                    out.push(ComponentSchema::Input(input));
+                }
+                ComponentSchema::Layout(mut layout) => {
+                    layout.components = fill_rows(ctx, slug, layout.components, op, repeaters).await;
+                    if !layout.components.is_empty() {
+                        out.push(ComponentSchema::Layout(layout));
+                    }
+                }
+                other => out.push(other),
+            }
+        }
+        out
+    })
 }

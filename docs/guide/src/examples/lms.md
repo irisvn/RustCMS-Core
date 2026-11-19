@@ -25,6 +25,7 @@ What it shows:
 | A job that sends mail, queued with the write | `src/jobs/send_welcome.rs` |
 | A settings group | `src/settings/lms_settings.rs` |
 | Media, rich text, belongs-to-many | `src/admin/resources/news_resource.rs` |
+| One form for a quiz question, its options, or its blanks with their choices (rows of rows, `inherit`) | `src/admin/resources/quiz_question_resource.rs`, `quiz_seeder.rs` |
 | Translations (Vietnamese) | `lang/vi.toml` |
 | Feature tests on SQLite, PostgreSQL and MySQL | `tests/feature/` |
 
@@ -395,7 +396,8 @@ See [Testing](../basics/testing.md).
 
 ## What it leaves out {#rough-edges}
 
-Learner sign-in and quizzes are not part of the example yet.
+Learner sign-in is not part of the example yet: quizzes are edited in the
+panel, but learners do not take them.
 
 ## Related pages
 

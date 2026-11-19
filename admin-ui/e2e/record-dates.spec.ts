@@ -34,3 +34,19 @@ test("a record's page formats its dates and times", async ({ page, watch: _ }) =
   expect(await shown.first().getAttribute("datetime")).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   await adminApi(page, "DELETE", `resources/posts/records/${key}`);
 });
+
+// A column's date format (`DateColumn::date_format`): the demo's posts list.
+test("the posts list shows publication times with the column's pattern", async ({ page, watch: _ }) => {
+  await signIn(page, "admin@example.test");
+  const key = await createPost(page, "Patterned post", true);
+  try {
+    await page.goto("/admin/r/posts?search=Patterned+post");
+    const time = page.getByRole("row", { name: /Patterned post/ }).locator("time");
+    await expect(time).toHaveCount(1);
+    // `MMM d, yyyy, h:mm a`: plain spaces (the language's default style puts a narrow one before AM/PM).
+    expect((await time.textContent()) ?? "").toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} (AM|PM)$/);
+    expect(await time.getAttribute("datetime")).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  } finally {
+    await adminApi(page, "DELETE", `resources/posts/records/${key}`);
+  }
+});

@@ -53,19 +53,22 @@ a [computed value](#computed-values). Every entry takes `label`, `help`,
 
 | Entry | For | Options |
 |---|---|---|
-| `TextEntry` | text, numbers, dates, JSON lists | `badge()` with `color(value, color)`, `copyable()`, `limit(chars)`, `url()`, `number(decimals)`, `list()`, `multiline()`, `password()`, `prefix()`, `suffix()`, `options([(value, label)])` |
+| `TextEntry` | text, numbers, dates, JSON lists | `badge()` with `color(value, color)`, `copyable()`, `limit(chars)`, `url()`, `number(decimals)`, `list()`, `multiline()`, `password()`, `prefix()`, `suffix()`, `options([(value, label)])`, `date_format(pattern)` |
 | `RelationEntry` | `belongs_to` fields | none |
 | `BooleanEntry` | boolean columns | `labels(yes, no)`, `color(true, color)` |
 | `KeyValueEntry` | key/value fields | none |
-| `MediaEntry` | media fields | `size(pixels)`, `gallery()` |
+| `MediaEntry` | media fields | `size(pixels)`, `preview(false)` (images do not open the [image viewer](media.md#the-image-viewer)); `gallery()` is deprecated: images open in the viewer by default |
 | `RichTextEntry` | rich text fields | `outline()` |
 | `ComputedEntry` | a computed value | the display options of `TextEntry` |
 | `CustomEntry` | any field or computed value | `props(json)` |
-| `RepeatableEntry` | a JSON field holding rows ([repeaters](forms.md#repeaters)) | `schema(components![…])`: the entries of each row |
+| `RepeatableEntry` | a JSON field holding rows ([repeaters](forms.md#repeaters)), or with `relationship()` a has-many relation's records | `schema(components![…])`: the entries of each row; `relationship()`, `limit(n)` |
 
 - **Dates and times** follow the field's kind: dates in the user's language,
-  instants in their time zone.
-- **Colors** are `primary`, `success`, `warning`, `danger` and `gray` (the
+  instants in their time zone. `date_format("d MMMM yyyy")` on the entry of a
+  date field, or the panel's pattern, writes them as a
+  [date format](tables.md#date-formats) says (not on computed values, row
+  keys or panel pages' data, which have no declared kind).
+- **Colors** are `primary`, `info`, `success`, `warning`, `danger` and `gray` (the
   default), as in [tables](tables.md).
 - **`url()`** links only `http` and `https` values; anything else (a
   `javascript:` text a user typed) is shown as text. Links open in a new tab.
@@ -78,6 +81,7 @@ a [computed value](#computed-values). Every entry takes `label`, `help`,
 
 `RepeatableEntry` shows each row of a JSON list with its own entries, which
 name keys of the row: `TextEntry`, `BooleanEntry`, `KeyValueEntry`,
+`MediaEntry` (a row's files), `RichTextEntry` (a row's document),
 `CustomEntry`, and a nested `RepeatableEntry` (three deep at most).
 
 ```rust
@@ -86,6 +90,25 @@ RepeatableEntry::make("faq").schema(components![
     BooleanEntry::make("pinned").labels("Pinned", "Not pinned"),
 ])
 ```
+
+With `relationship()`, the rows are the records of the has-many
+[relation](relationships.md) of the entry's name, read as its section reads
+them (the child's scope, view policy and read rules, the relation's
+[filters](relationships.md#filtered-relations)), sorted by the order column of
+the form's repeater when the child's lists may sort by it (`sortable()`),
+else in the list's order. Each row's entries name fields of the child
+(checked at boot with the child's fields; those the user may not read are
+left out). At most `limit(n)` rows (100 by default and at most), then a link
+to the relation's section. A user who may not list the child does not see
+the entry. The demo's categories show their posts this way:
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-entry [src/admin/resources/category_resource.rs]
+
+A row may hold a relationship entry of its own: a has-many relation of the
+child (a question's blanks, each with its choices), read through the row's
+relation (each row one request), three levels at most, in the list's order.
+More rows than `limit(n)`: the link opens that row's page, at the relation's
+section. The default view page shows nested relationship repeaters this way.
 
 ### Conditions
 
@@ -123,8 +146,9 @@ that shows its value:
 | `DatePicker`, `DateTimePicker` | `TextEntry`: the date in the user's language |
 | `KeyValue`, `FileUpload` (media), `RichEditor` | `KeyValueEntry`, `MediaEntry`, `RichTextEntry` |
 | `Repeater` (JSON) | `RepeatableEntry`, each row's inputs as entries |
+| `Repeater` with `relationship()` | `RepeatableEntry` of the relation's records, each row's inputs as entries |
 | `CustomInput` | `TextEntry` (a form widget draws no view; declare a `CustomEntry` for one) |
-| `Hidden`, `BelongsToManySelect`, secrets, relationship repeaters | nothing (links and child records show in their relation sections; an encrypted field shows nothing, not even whether it is set) |
+| `Hidden`, `BelongsToManySelect`, secrets | nothing (links show in their relation sections; an encrypted field shows nothing, not even whether it is set) |
 
 An input whose entry does not fit its field (a `Toggle` on a number column)
 is shown as text. Labels, column spans and conditions come from the inputs;
@@ -223,7 +247,8 @@ with the SDK's `Infolist` component.
 The application refuses to start when an entry names no field (or, for a
 `ComputedEntry`, no computed value); an entry does not fit its field (a
 `RelationEntry` on a field without `belongs_to`, a `BooleanEntry` on text);
-an option does not fit the entry (`badge` on a boolean, `number` on text, `color` on text without `badge`);
+an option does not fit the entry (`badge` on a boolean, `number` on text, `color` on text without `badge`,
+`date_format` on another entry than `TextEntry`, or on a field that is not a date);
 the field is encrypted; an entry appears twice; a custom entry's name is not
 `vendor/name` or its props exceed 4 KiB; a condition breaks the rules of
 forms; an infolist holds an input or a form holds an entry; a computed value

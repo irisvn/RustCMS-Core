@@ -9,5 +9,6 @@ mod enrollments;
 mod instructors;
 mod languages;
 mod news;
+mod quizzes;
 mod seeding;
 // rustcms:tests

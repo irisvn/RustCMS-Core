@@ -3,7 +3,8 @@
 - Status: accepted (0.13.1, vocabulary 19). Contributed by @giangittb112000
   (PR #3, drafted as "ADR 0041"), ported onto 0.13.0 and amended after
   review: no strict reactions, the state is the user's form (ADR 0037),
-  bounded answers.
+  bounded answers. Amended by ADR 0044 (part D): relationship rows in the
+  state, row patches by key or ref, reactions on relationship repeaters.
 - Date: 2026-11-17
 
 ## Context

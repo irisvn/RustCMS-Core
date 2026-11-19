@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 19;
+pub const VOCABULARY_VERSION: u32 = 28;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -170,6 +170,12 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media: Option<MediaSchema>,
+    /// Media collection of the files uploaded through the input, and the
+    /// collection its picker opens on (`file_upload` and `rich_text` inputs,
+    /// vocabulary 23).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collection: Option<String>,
     /// What the user may change (`belongs_to_many` inputs, vocabulary 9).
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -209,6 +215,19 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub reacts: bool,
+    /// Rich editors in repeater rows: `compact` shows bold, italic,
+    /// underline, superscript, subscript, images and application elements
+    /// (vocabulary 25, ADR 0044); absent, the full toolbar.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub toolbar: Option<RichToolbar>,
+    /// Rules computed on the server (vocabulary 28, ADR 0044 part E): the
+    /// inputs whose change asks `form/rules` again, and the answer for the
+    /// form's values when the schema was read (`options` holds the computed
+    /// options).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_rules: Option<ServerRulesSchema>,
     /// Rich text: the application nodes the document may hold (vocabulary
     /// 18, ADR 0042); absent when none.
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<RichNodeSchema>>", optional))]
@@ -270,6 +289,11 @@ pub struct RichAttrSchema {
 pub struct RepeaterSchema {
     /// The row's inputs and layouts.
     pub components: Vec<ComponentSchema>,
+    /// How rows are laid out (absent: stacked, each input under the other;
+    /// vocabulary 24).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout: Option<RepeaterLayout>,
     /// Relationship repeaters on an edit page: the inputs of a new row (the
     /// child's create form); `components` are those of a stored row
     /// (vocabulary 16).
@@ -370,6 +394,17 @@ pub struct MediaSchema {
     #[cfg_attr(feature = "ts", ts(optional, type = "number"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u64>,
+    /// Images open in the panel's viewer when clicked; sent only when `false`
+    /// (vocabulary 22).
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "is_true")]
+    pub preview: bool,
+}
+
+/// Whether `value` is `true` (fields sent only when `false`).
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 /// A layout.
@@ -506,10 +541,16 @@ pub struct EntrySchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<u16>,
-    /// Images open in a viewer.
+    /// Media entries: images open in the panel's viewer when clicked; sent
+    /// only when `false` (vocabulary 22, which dropped `gallery`).
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub gallery: bool,
+    #[serde(skip_serializing_if = "is_true")]
+    pub preview: bool,
+    /// How dates or times are shown (a pattern, as `ColumnSchema::format`;
+    /// vocabulary 21). Absent: the panel's.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
     /// The document's headings as an outline.
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -543,6 +584,31 @@ pub struct EntrySchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<ComponentSchema>>", optional))]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub components: Vec<ComponentSchema>,
+    /// Repeatable entries of a has-many relation: where the rows are read
+    /// (vocabulary 24, ADR 0044).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rows: Option<EntryRows>,
+}
+
+/// The rows of a relationship repeatable entry: the records of a has-many
+/// relation, read through its list (`GET …/relations/{relation}`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct EntryRows {
+    /// Slug of the related resource.
+    pub resource: &'static str,
+    /// The relation (URL segment).
+    pub relation: &'static str,
+    /// The field ordering the rows (the form's repeater's order column), when
+    /// the user's lists may sort by it: the panel lists the rows sorted by it
+    /// (`sort=`); without, in the list's own order.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_by: Option<String>,
+    /// Most rows shown; with more, a link to the relation's section.
+    pub limit: u32,
 }
 
 /// A record's view page (vocabulary 14, ADR 0039).
@@ -621,6 +687,74 @@ pub struct FormReactVia {
     pub relation: String,
 }
 
+/// An input's rules computed on the server (ADR 0044, part E).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ServerRulesSchema {
+    /// The inputs whose change asks the server again.
+    pub depends_on: Vec<String>,
+    /// Whether the input is shown (absent: no rule).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shown: Option<bool>,
+    /// Whether the input is required (absent: no rule).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+}
+
+/// The form's state, asking for its inputs' rules computed on the server
+/// (`POST form/rules`, ADR 0044 part E); authorized as [`FormReactRequest`].
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct FormRulesRequest {
+    /// `create` or `edit` (`view` is refused).
+    pub operation: SchemaOperation,
+    /// The record's key (`edit` only).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(default)]
+    pub key: Option<String>,
+    /// The form's values, in wire format (as a save sends them).
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, JsonValue>"))]
+    pub state: crate::Data,
+    /// A create form opened through a relation of another record.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(default)]
+    pub via: Option<FormReactVia>,
+    /// Sent back unchanged: the panel applies only its latest request's answer.
+    pub seq: u32,
+}
+
+/// An input's rules for a form's state.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct EvaluatedRules {
+    /// Whether it is shown.
+    pub shown: bool,
+    /// Whether it is required (when shown).
+    pub required: bool,
+    /// Its options (an `options_fn` input), translated.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<SelectOption>>,
+}
+
+/// The answer to a [`FormRulesRequest`].
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FormRulesResponse {
+    /// The request's `seq`.
+    pub seq: u32,
+    /// Each input with rules, by name.
+    pub rules: std::collections::BTreeMap<String, EvaluatedRules>,
+    /// A rule failed (error, timeout): nothing to apply.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub failed: bool,
+}
+
 /// The answer to a [`FormReactRequest`].
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -671,6 +805,17 @@ pub struct ColumnSchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<BadgeColor>>", optional))]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub colors: Vec<BadgeColor>,
+    /// Labels shown for values of a text or badge column, in the user's
+    /// language (the column's own, or its form select's; vocabulary 20).
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<SelectOption>>", optional))]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<SelectOption>,
+    /// How dates or times are shown, a pattern such as `HH:mm dd/MM/yyyy`
+    /// (`yyyy yy MMMM MMM MM M dd d EEEE EEE HH H hh h mm ss a z`, text in
+    /// single quotes; vocabulary 21). Absent: the panel's.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
     /// Related resource (display `labels[name]`).
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -732,6 +877,11 @@ pub struct FilterSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship: Option<Relationship>,
+    /// Label of the option for records without a value (select filters),
+    /// sent as `~none` in the `in` list (vocabulary 23).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub none: Option<String>,
 }
 
 /// An action the user may run (per-record permission is in each envelope's `abilities`).
@@ -846,6 +996,12 @@ pub struct RelationSchema {
     pub field: &'static str,
     /// Whether the user may create related records from here (has-many).
     pub create: bool,
+    /// Has-many: the fields a filtered relation sets on the records created
+    /// from here, with their values (`null` for `where_null`), as the parent
+    /// key: never sent (ADR 0044).
+    #[cfg_attr(feature = "ts", ts(optional, type = "Record<string, JsonValue>"))]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub fixed: BTreeMap<String, serde_json::Value>,
     /// Whether the user may attach targets to this record (belongs-to-many).
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -866,6 +1022,24 @@ pub struct RelationSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pivot_form: Option<FormSchema>,
+}
+
+/// The toolbar of a rich editor (ADR 0044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum RichToolbar {
+    /// Bold, italic, underline, superscript, subscript, images and application elements.
+    Compact,
+}
+
+/// How a repeater lays out its rows (ADR 0044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum RepeaterLayout {
+    /// A table: one column per input, from the `md` breakpoint (stacked below).
+    Table,
 }
 
 /// Kind of a [`RelationSchema`].

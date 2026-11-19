@@ -8,6 +8,8 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub name: String,
+    /// `topic`, `series` or `event` ([`crate::admin::resources::tag_resource::KINDS`]).
+    pub kind: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

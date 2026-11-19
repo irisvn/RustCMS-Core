@@ -45,15 +45,160 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 );
             }
         }
+        // The rich editors of JSON rows (ADR 0044).
+        for rows in self.repeaters.values() {
+            rows.attach_nodes(&format!("resource `{}`", R::SLUG), nodes);
+        }
         let _ = self.rich_nodes.set(nodes.clone());
+    }
+
+    fn media_collections(&self) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> =
+            self.fields.iter().filter_map(|f| Some((f.name.clone(), f.collection.clone()?))).collect();
+        // Inputs of JSON rows name theirs (ADR 0044).
+        for input in self.form.inputs() {
+            if let Some(spec) = input.repeater.as_deref() {
+                crate::engine::repeater::row_collections(spec, &input.name, &mut out);
+            }
+        }
+        out
     }
 
     fn field_link(&self, name: &str) -> Option<(Option<&'static str>, &'static str)> {
         self.field(name).map(|f| (f.belongs_to, self.column(name).kind.name()))
     }
 
-    fn field_locks_media_or_secret(&self, name: &str) -> bool {
-        self.field(name).is_some_and(|f| f.media.is_some() || f.rich_text || f.secret.is_some())
+    fn condition_kind(&self, name: &str) -> Option<(FieldKind, Option<u32>)> {
+        super::input::condition_kind(&self.columns, &self.secrets, name)
+    }
+
+    fn sorts_by(&self, ctx: &Ctx, name: &str) -> bool {
+        self.field(name).is_some_and(|f| f.sortable && f.can_read(ctx))
+    }
+
+    fn check_relation_entries(&self, registry: &crate::Registry) {
+        let Some(infolist) = self.infolist.as_ref().filter(|i| !i.from_form) else { return };
+        for entry in infolist.entries().into_iter().filter(|e| e.relationship) {
+            let relation = self.relations.iter().find(|r| r.name == entry.name).expect("checked with the infolist");
+            let Some(child) = registry.get(relation.target) else { continue };
+            let here = format!("resource `{}`: repeatable entry `{}`", R::SLUG, entry.name);
+            child.check_entry_rows(&here, &entry.components, registry, 1);
+        }
+    }
+
+    fn check_entry_rows(&self, here: &str, components: &[Component], registry: &crate::Registry, depth: u8) {
+        super::infolist::check_relation_rows(here, depth, components, &self.fields, &self.columns);
+        // Rows of rows (ADR 0044): this resource's has-many relations, their targets' fields.
+        let rows = crate::ui::Infolist::new().schema(components.to_vec());
+        for entry in rows.entries().into_iter().filter(|e| e.relationship) {
+            let inner = format!("{here}: repeatable entry `{}`", entry.name);
+            assert!(
+                entry.kind == crate::ui::EntryType::RepeatableEntry,
+                "{inner}: `relationship()` is for repeatable entries"
+            );
+            assert!(
+                depth < crate::engine::repeater::MAX_DEPTH,
+                "{inner}: repeatable entries nest {} deep at most",
+                crate::engine::repeater::MAX_DEPTH
+            );
+            let relation = self
+                .relations
+                .iter()
+                .find(|r| r.name == entry.name && !r.is_many())
+                .unwrap_or_else(|| panic!("{inner}: `relationship()` needs a has-many relation of `{}`", R::SLUG));
+            super::infolist::check_relationship_options(here, entry);
+            let child =
+                registry.get(relation.target).unwrap_or_else(|| panic!("{inner}: unknown `{}`", relation.target));
+            child.check_entry_rows(&inner, &entry.components, registry, depth + 1);
+        }
+    }
+
+    async fn entry_row_schemas(&self, ctx: &Ctx, components: &[Component]) -> Vec<ComponentSchema> {
+        // Rows of rows (ADR 0044): read through this resource's relations.
+        let entries = crate::ui::Infolist::new().schema(components.to_vec());
+        let rows = self.relation_entry_rows(ctx, &entries.entries()).await;
+        self.entry_components(ctx, components, &super::infolist::EntryLinks { rows, ..Default::default() })
+    }
+
+    fn relation_filter_value(&self, name: &str, filter: &RelationFilter) -> Result<serde_json::Value, String> {
+        if self.field(name).is_none() || self.secrets.contains_key(name) {
+            return Err("is not a field (encrypted fields cannot be filtered)".to_owned());
+        }
+        let column = self.column(name);
+        match filter {
+            RelationFilter::Null if !column.nullable => Err("`where_null` needs a nullable column".to_owned()),
+            RelationFilter::Null => Ok(serde_json::Value::Null),
+            RelationFilter::Eq(value) if value.is_null() => {
+                Err("`where_eq` takes a value (`where_null` for none)".to_owned())
+            }
+            RelationFilter::Eq(value) => self
+                .canonical_filter(name, filter)
+                .map_err(|_| format!("`where_eq` value {value} is not a {}", column.kind.name())),
+        }
+    }
+
+    fn stores_hidden(&self, name: &str) -> bool {
+        self.columns.get(name).is_some_and(|c| c.nullable || c.has_default)
+    }
+
+    fn compile_row_rules(&self, registry: &crate::Registry, nodes: &Arc<crate::rich_text::AppNodes>) {
+        // The record's form, as the rows' `when_root` reads it.
+        let names: HashSet<String> = self.form.inputs().into_iter().map(|i| i.name.clone()).collect();
+        let root = |name: &str| names.contains(name).then(|| self.condition_kind(name)).flatten();
+        for repeater in &self.row_repeaters {
+            let here = format!("resource `{}`: repeater `{}`", R::SLUG, repeater.name);
+            crate::adapter::rows::compile_rules(&here, repeater, registry, nodes, &root, None, &[R::SLUG], 1);
+        }
+        // Rows never read an input whose visibility is computed (ADR 0044, part E).
+        for name in self.form.inputs().iter().map(|i| i.name.as_str()).filter(|n| self.shown_by_rule(n)) {
+            assert!(
+                !crate::adapter::rows::rows_read_root(&self.row_repeaters, name),
+                "resource `{}`: a condition of a relationship repeater's rows reads `{name}`, whose visibility is \
+                 computed on the server (`shown_when_fn`): conditions cannot read it",
+                R::SLUG
+            );
+        }
+    }
+
+    fn row_json_repeaters(&self, target: &str) -> Vec<&HashMap<String, crate::engine::repeater::Rows>> {
+        let mut out = Vec::new();
+        crate::adapter::rows::json_rows_of(&self.row_repeaters, target, &mut out);
+        out
+    }
+
+    fn accept_row_value(
+        &self,
+        ctx: &Ctx,
+        op: Operation,
+        name: &str,
+        value: &serde_json::Value,
+    ) -> Option<serde_json::Value> {
+        self.field(name).filter(|f| f.secret.is_none() && f.can_write(op, ctx))?;
+        let rule = InputRule {
+            options: self.input_options(name),
+            bounds: self.number_bounds.get(name).copied(),
+            ..self.rule(name, false)
+        };
+        let mut errors = ValidationErrors::new();
+        if !check_input(name, &rule, value, &mut errors) {
+            return None;
+        }
+        Some(if value.is_null() { value.clone() } else { self.canonical_value(name, value) })
+    }
+
+    fn decodes(&self, name: &str, value: &serde_json::Value) -> bool {
+        self.field(name).is_some_and(|f| f.secret.is_none())
+            && (value.is_null() || self.column(name).kind.decode(value).is_ok())
+    }
+
+    fn nested_row_edges(&self) -> Vec<(&'static str, &'static str)> {
+        let mut out = Vec::new();
+        crate::adapter::rows::nested_edges(&self.row_repeaters, &mut out);
+        out
+    }
+
+    fn field_is_encrypted(&self, name: &str) -> bool {
+        self.field(name).is_some_and(|f| f.secret.is_some())
     }
 
     fn key_kind(&self) -> &'static str {
@@ -190,19 +335,17 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             return Err(AppError::Forbidden);
         }
         let links = self.link_inputs(ctx, op, viewed.as_ref()).await;
+        let mut components =
+            self.fill_row_repeaters(ctx, self.components(ctx, &self.form.components, op, &links), op).await;
+        // Rules computed on the server: their answer for the form as it opens (ADR 0044, part E).
+        self.fill_rules(ctx, op, viewed.as_ref(), &mut components).await;
         Ok(ResourceSchema {
             schema_version: SCHEMA_VERSION,
             vocabulary_version: VOCABULARY_VERSION,
             resource: ResourceAdapter::info(self).translated(ctx),
             operation: op,
             abilities,
-            form: FormSchema {
-                columns: self.form.columns,
-                components: self
-                    .fill_row_repeaters(ctx, self.components(ctx, &self.form.components, op, &links), op)
-                    .await,
-                width: self.form.width,
-            },
+            form: FormSchema { columns: self.form.columns, components, width: self.form.width },
             table: self.table_schema(ctx).await,
             relations: match (&viewed, op) {
                 (Some(record), SchemaOperation::View) => self.relation_schemas(ctx, record).await,
@@ -247,7 +390,22 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 .collect()
         }
         let rows = inherit(components, &self.form.inputs());
-        self.components(ctx, &rows, op, &HashMap::new())
+        let mut schemas = self.components(ctx, &rows, op, &HashMap::new());
+        // Rows show a compact rich editor unless the input asks for the full one (ADR 0044).
+        fn compact(list: &mut [ComponentSchema], inputs: &[&crate::ui::Input]) {
+            for component in list {
+                match component {
+                    ComponentSchema::Input(schema) if schema.kind == InputType::RichEditor => {
+                        let content = inputs.iter().find(|i| i.name == schema.name).and_then(|i| i.content.as_deref());
+                        schema.toolbar = crate::ui::RowContent::toolbar(content);
+                    }
+                    ComponentSchema::Layout(layout) => compact(&mut layout.components, inputs),
+                    _ => {}
+                }
+            }
+        }
+        compact(&mut schemas, &crate::engine::repeater::row_inputs(&rows));
+        schemas
     }
 
     fn row_repeater_fields(&self) -> Vec<(&'static str, &'static str, Vec<String>, Option<String>)> {
@@ -274,6 +432,14 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         request: crate::schema::FormReactRequest,
     ) -> AppResult<crate::schema::FormReactResponse> {
         ResourceAdapter::react(self, ctx, request).await
+    }
+
+    async fn form_rules(
+        &self,
+        ctx: &Ctx,
+        request: crate::schema::FormRulesRequest,
+    ) -> AppResult<crate::schema::FormRulesResponse> {
+        ResourceAdapter::form_rules(self, ctx, request).await
     }
 
     async fn lookup(&self, ctx: &Ctx, search: Option<&str>, keys: &[String]) -> AppResult<Vec<(String, String)>> {
@@ -484,11 +650,16 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if !self.policy.allows(ctx, ability::CREATE, None).await {
             return Err(AppError::Forbidden);
         }
-        // Through a relation, the foreign key is the relation's: never the client's.
+        // Through a relation, the foreign key is the relation's: never the client's;
+        // so are the fields a filtered relation sets (ADR 0044).
+        let fixed = self.filter_values(&bound_filters(ctx))?;
         if let Some((_, field, _)) = &ctx.bound
             && input.contains_key(field)
         {
             return Err(ValidationErrors::field(field.as_str(), "is set by the relation").into());
+        }
+        if let Some((field, _)) = fixed.iter().find(|(f, _)| input.contains_key(*f)) {
+            return Err(ValidationErrors::field(*field, "is set by the relation").into());
         }
         // The request as sent is what a retry must repeat: a receipt is found
         // before validating, which may have changed (field permissions) since.
@@ -521,10 +692,22 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let mut input = self.accept_input(&wctx, Operation::Create, input)?;
         // Conditions (ADR 0037) on the input and the columns' defaults.
         let bound_field = bound.as_ref().map(|(field, _)| field.as_str());
-        self.apply_conditions(&wctx, Operation::Create, &mut input, None, bound_field)?;
+        // A filtered relation's values are read by the conditions (as the panel's form
+        // holds them), and stored whether or not an input shows them (ADR 0044).
+        input.extend(fixed.iter().map(|(f, v)| ((*f).to_owned(), v.clone())));
+        let (hidden_before, hidden) = self.apply_conditions(&wctx, Operation::Create, &mut input, None, bound_field)?;
+        // Rules computed on the server, on every path (ADR 0044, part E).
+        self.apply_rules(&wctx, Operation::Create, &mut input, None, &hidden).await?;
+        input.extend(fixed.iter().map(|(f, v)| ((*f).to_owned(), v.clone())));
+        // Relationship repeaters hidden by the form's conditions (ADR 0044).
+        let rows = self.settle_rows(Operation::Create, rows, &hidden_before, &hidden)?;
+        let root = self.row_root(&wctx, Operation::Create, None, &input);
         let parents = self.lock_parents(&wctx, &txn, self.parent_of_data(&input).flatten()).await?;
         let data = R::mutate_before_create(&wctx, &txn, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
+        self.check_filters_kept(&data, &fixed)?;
+        // Rules over JSON rows, on what is written (ADR 0044, part D).
+        self.check_json_rows(&wctx, Operation::Create, None, &data, &hidden)?;
         if let Some((field, value)) = &bound
             && data.get(field) != Some(value)
         {
@@ -554,9 +737,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.check_parent_stored(&wctx, &model, &parents)?;
         let link_audits = self.write_links(&wctx, &txn, &model, links).await?;
         // The children, once the parent is written (locked after it); `after_save` sees them.
-        let row_outcomes = self.write_row_changes(&wctx, &txn, &model, rows).await?;
-        // Media last: the media resource ranks after every other (ADR 0041).
-        self.check_media(&wctx, &txn, &data).await?;
+        let mut row_outcomes = self.write_row_changes(&wctx, &txn, &model, Operation::Create, rows, &root).await?;
+        // Media last, the rows' with the record's: the media resource ranks after every other (ADR 0041, 0044).
+        let row_media = row_outcomes.iter_mut().flat_map(|(_, o)| std::mem::take(&mut o.media)).collect();
+        self.check_media(&wctx, &txn, &data, row_media).await?;
         R::after_save(&wctx, &txn, &model).await?;
         // As stored once the hooks ran.
         self.audit_outcome(&wctx, &txn, "created", None, &model, false, true).await?;
@@ -610,9 +794,17 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let mut input = input;
         let record = self.record(&model);
         let viewable = self.policy.allows(&wctx, ability::VIEW, Some(&record)).await;
-        self.apply_conditions(&wctx, Operation::Update, &mut input, Some((&record, viewable)), None)?;
+        let (hidden_before, hidden) =
+            self.apply_conditions(&wctx, Operation::Update, &mut input, Some((&record, viewable)), None)?;
+        // Rules computed on the server, on every path, under the record's lock (ADR 0044, part E).
+        self.apply_rules(&wctx, Operation::Update, &mut input, Some((&record, viewable)), &hidden).await?;
+        // Relationship repeaters hidden by the form's conditions: a write hiding one removes its rows (ADR 0044).
+        let rows = self.settle_rows(Operation::Update, rows, &hidden_before, &hidden)?;
+        let root = self.row_root(&wctx, Operation::Update, Some((&record, viewable)), &input);
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
+        // Rules over JSON rows, on what is written over the record (ADR 0044, part D).
+        self.check_json_rows(&wctx, Operation::Update, Some(&record), &data, &hidden)?;
         self.check_relations(&wctx, &txn, &data).await?;
         // Link targets, before the row's foreign keys lock what they reference.
         let links = self.lock_links(&wctx, &txn, links, &data).await?;
@@ -627,9 +819,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.check_parent_stored(&wctx, &model, &parents)?;
         let link_audits = self.write_links(&wctx, &txn, &model, links).await?;
         // The children, once the parent is written (locked after it); `after_save` sees them.
-        let row_outcomes = self.write_row_changes(&wctx, &txn, &model, rows).await?;
-        // Media last: the media resource ranks after every other (ADR 0041).
-        self.check_media(&wctx, &txn, &data).await?;
+        let mut row_outcomes = self.write_row_changes(&wctx, &txn, &model, Operation::Update, rows, &root).await?;
+        // Media last, the rows' with the record's: the media resource ranks after every other (ADR 0041, 0044).
+        let row_media = row_outcomes.iter_mut().flat_map(|(_, o)| std::mem::take(&mut o.media)).collect();
+        self.check_media(&wctx, &txn, &data, row_media).await?;
         R::after_save(&wctx, &txn, &model).await?;
         // Nothing changed: nothing to record.
         self.audit_outcome(&wctx, &txn, "updated", Some(&before), &model, false, false).await?;
@@ -665,13 +858,33 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         // Back among active records, its relationships must point to records
         // the user can see, as when it was written.
         let record = self.record(&model);
+        // JSON repeaters of rows of other forms (relationship rows, ADR 0044 part C).
+        let rows: Vec<&HashMap<String, crate::engine::repeater::Rows>> =
+            wctx.registry.all().into_iter().flat_map(|r| r.row_json_repeaters(R::SLUG)).collect();
         let relations: Data = self
             .fields
             .iter()
-            .filter(|f| f.belongs_to.is_some() || f.media.is_some() || f.rich_text)
+            // JSON repeaters too: their rows' files and images (ADR 0044).
+            .filter(|f| {
+                f.belongs_to.is_some()
+                    || f.media.is_some()
+                    || f.rich_text
+                    || self.repeaters.contains_key(&f.name)
+                    || rows.iter().any(|r| r.contains_key(&f.name))
+            })
             .filter_map(|f| record.get(&f.name).map(|v| (f.name.clone(), v.clone())))
             .collect();
-        self.check_written(&wctx, &txn, &relations).await?;
+        let mut media = Vec::new();
+        for repeaters in &rows {
+            let only: Data = relations
+                .iter()
+                .filter(|(k, _)| repeaters.contains_key(*k))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            media.extend(self.media_references_in("", &only, repeaters)?);
+        }
+        self.check_relations(&wctx, &txn, &relations).await?;
+        self.check_media(&wctx, &txn, &relations, media).await?;
         let before = self.audit_snapshot(&model);
         let mut active = model.into_active_model();
         self.set_marker(&mut active, false)?;
@@ -889,8 +1102,14 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         ResourceAdapter::add_counts(self, ctx, envelopes).await
     }
 
-    async fn counted_by(&self, ctx: &Ctx, field: &str, parents: &[String]) -> AppResult<BTreeMap<String, u64>> {
-        ResourceAdapter::counted_by(self, ctx, field, parents).await
+    async fn counted_by(
+        &self,
+        ctx: &Ctx,
+        field: &str,
+        filters: &[(String, RelationFilter)],
+        parents: &[String],
+    ) -> AppResult<BTreeMap<String, u64>> {
+        ResourceAdapter::counted_by(self, ctx, field, filters, parents).await
     }
 
     fn check_import_row(&self, ctx: &Ctx, op: Operation, data: Data) -> AppResult<Data> {
@@ -1022,4 +1241,16 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         }
         Ok(out)
     }
+}
+
+/// The filters of the relation a create goes through (`ctx.bound`, a
+/// relation section's "New": `parent.relation`), ADR 0044. Rows of a
+/// relationship repeater set theirs themselves.
+fn bound_filters(ctx: &Ctx) -> Vec<(&'static str, RelationFilter)> {
+    let Some((relation, _, _)) = &ctx.bound else { return Vec::new() };
+    let Some((slug, name)) = relation.split_once('.') else { return Vec::new() };
+    ctx.registry
+        .get(slug)
+        .and_then(|parent| parent.relations().iter().find(|r| r.name == name).map(|r| r.filters.clone()))
+        .unwrap_or_default()
 }

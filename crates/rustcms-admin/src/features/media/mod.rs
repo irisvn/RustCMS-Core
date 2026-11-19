@@ -10,6 +10,7 @@
 //! object. Deleting a media record for good queues its object's removal in the
 //! same transaction; a worker retries it until done.
 
+mod collections;
 mod deletions;
 mod detect;
 mod download;
@@ -21,6 +22,8 @@ mod resource;
 mod upload;
 mod uploads;
 
+pub use collections::{MAX_COLLECTION, MediaCollection};
+pub(crate) use collections::{options as collection_options, valid_name as valid_collection};
 pub use detect::*;
 pub(crate) use download::*;
 pub use hooks::{MediaChange, MediaEvent, MediaHook};
@@ -84,6 +87,10 @@ pub struct MediaItem {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alt: Option<String>,
+    /// Collection, when it is in one.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collection: Option<String>,
 }
 
 impl From<&entity::Model> for MediaItem {
@@ -97,6 +104,7 @@ impl From<&entity::Model> for MediaItem {
             height: m.height,
             inline: inline(&m.mime),
             alt: m.alt.clone(),
+            collection: m.collection.clone(),
         }
     }
 }
@@ -115,6 +123,16 @@ pub(crate) fn upload_limits(app: &AppState, ctx: &Ctx) -> Option<crate::http::Pa
         max_bytes: media.config.max_upload_bytes,
         max_concurrent: u32::try_from(media.config.max_concurrent_uploads.max(1)).unwrap_or(u32::MAX),
     })
+}
+
+/// The collections the panel lists, for users who may list or upload files
+/// (the picker and the Media page show them).
+pub(crate) fn panel_collections(app: &AppState, ctx: &Ctx) -> Vec<crate::ui::SelectOption> {
+    let lists = ctx.can(&format!("{SLUG}.view_any")) || ctx.can(UPLOAD);
+    if app.service::<MediaState>().is_none() || !lists {
+        return Vec::new();
+    }
+    collection_options(ctx)
 }
 
 /// The media library's services; 404 when it is not enabled.

@@ -100,7 +100,7 @@ export function RecordActions({ actions, record, disabled, onStart, size = "sm",
   return (
     <>
       {primary && (
-        <Button size={size} variant={size === "sm" ? "ghost" : "outline"} disabled={disabled} onClick={() => onStart(primary)}>
+        <Button size={size} variant="outline" disabled={disabled} onClick={() => onStart(primary)}>
           {primary.label}
         </Button>
       )}

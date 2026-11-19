@@ -1,5 +1,6 @@
-//! Categories: a plain resource with a has-many relation (its posts) and a
-//! custom widget (`demo/color`).
+//! Categories: a plain resource with a has-many relation (its posts, edited
+//! in its form unless the category is a link) and a custom widget
+//! (`demo/color`).
 
 use rustcms::admin::*;
 use serde_json::json;
@@ -29,6 +30,8 @@ impl Resource for CategoryResource {
             // #region color-field
             Field::column(category::Column::Color).max_length(7),
             // #endregion color-field
+            Field::column(category::Column::Layout).required(),
+            Field::column(category::Column::LinkUrl).max_length(255),
         ]
     }
 
@@ -50,15 +53,77 @@ impl Resource for CategoryResource {
                     }),
                     // #endregion reacts
                     TextInput::make("slug").prefix("/categories/"),
+                    SelectInput::make("layout").options(vec![("posts", "Its posts"), ("link", "A link")]),
+                    // #region link-required
+                    // Required for a link category: a rule `when(..)` cannot state (it
+                    // only shows and hides), computed on the server and checked on
+                    // every save, the API's included.
+                    TextInput::make("link_url")
+                        .label("Link")
+                        .shown_when(when("layout").eq("link"))
+                        .depends_on(["layout"])
+                        .required_fn(|_ctx, state| {
+                            let link = state.text("layout") == "link";
+                            Box::pin(async move { Ok(link) })
+                        }),
+                    // #endregion link-required
                     // #region posts-repeater
                     // The category's posts, edited in its form: each row is a post
-                    // (the posts resource's rules, policy and hooks apply).
+                    // (the posts resource's rules, policy and hooks apply), one
+                    // table row each. A category made a link has none: saving
+                    // that change removes the posts the user sees.
                     Repeater::make("posts")
                         .relationship()
+                        .shown_when(when("layout").eq("posts"))
+                        .table()
                         .schema(components![TextInput::make("title"), Toggle::make("published")])
                         .item_label("{title}")
                         .add_action_label("Add a post"),
                     // #endregion posts-repeater
+                    // #region sections-repeater
+                    // The landing page's sections, each with its links: rows of rows
+                    // (ADR 0044). A link's note shows in a detailed section only: it
+                    // reads the section it is in (`when_parent`).
+                    Repeater::make("sections")
+                        .relationship()
+                        .order_column("position")
+                        .schema(components![
+                            TextInput::make("title"),
+                            SelectInput::make("style"),
+                            Repeater::make("links")
+                                .relationship()
+                                .order_column("position")
+                                .schema(components![
+                                    TextInput::make("label"),
+                                    TextInput::make("url").label("URL"),
+                                    TextInput::make("note").shown_when(when_parent("style").eq("detailed")),
+                                ])
+                                .item_label("{label}")
+                                .add_action_label("Add a link"),
+                        ])
+                        .item_label("{title}")
+                        .add_action_label("Add a section")
+                        // #region sections-reacts
+                        // A reaction on the rows themselves: a section added without a
+                        // title gets one ("Section 2"), which the user may change.
+                        .reacts(|_ctx, state| {
+                            let patches = state
+                                .relation_rows("sections")
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, row)| row.key().is_none() && row.text("title").is_empty())
+                                .map(|(index, row)| {
+                                    FormPatch::update_relation_row(
+                                        "sections",
+                                        row.id(),
+                                        json!({"title": format!("Section {}", index + 1)}),
+                                    )
+                                })
+                                .collect();
+                            Box::pin(async move { Ok(patches) })
+                        }),
+                    // #endregion sections-reacts
+                    // #endregion sections-repeater
                 ])
                 .aside(components![Section::make("Display").compact().collapsible(false).schema(components![
                     // #region color-input
@@ -98,6 +163,17 @@ impl Resource for CategoryResource {
                     TextEntry::make("name").copyable(),
                     TextEntry::make("slug").prefix("/categories/"),
                     ComputedEntry::make("posts_count").label("Posts").number(0),
+                    TextEntry::make("layout").options(vec![("posts", "Its posts"), ("link", "A link")]),
+                    TextEntry::make("link_url").label("Link").url().shown_when(when("layout").eq("link")),
+                    // #region posts-entry
+                    // Its posts under it, as the relation's section lists them.
+                    RepeatableEntry::make("posts")
+                        .label("Its posts")
+                        .relationship()
+                        .limit(10)
+                        .schema(components![TextEntry::make("title"), BooleanEntry::make("published")])
+                        .shown_when(when("layout").eq("posts")),
+                    // #endregion posts-entry
                 ])
                 .aside(components![
                     Section::make("Display").compact().schema(components![CustomEntry::make("color", "demo/swatch"),])
@@ -124,7 +200,13 @@ impl Resource for CategoryResource {
     // #region relations
     /// The category's posts, listed (and created) on its page.
     fn relations() -> Vec<Relation> {
-        vec![Relation::has_many("posts", "posts", "category_id").label("Posts")]
+        vec![
+            Relation::has_many("posts", "posts", "category_id").label("Posts"),
+            // A filtered relation: only the drafts; "New" there creates one.
+            Relation::has_many("drafts", "posts", "category_id").where_eq("published", false).label("Drafts"),
+            // Its landing page's sections (edited in the form).
+            Relation::has_many("sections", "category_sections", "category_id").label("Sections"),
+        ]
     }
     // #endregion relations
 }

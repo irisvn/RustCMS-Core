@@ -687,6 +687,7 @@ async fn stored_media(app: &TestApp, owner: i64, mime: &str, size: i64, trashed:
         width: Set(None),
         height: Set(None),
         alt: Set(None),
+        collection: Set(None),
         owner_id: Set(owner),
         created_at: Set(chrono::Utc::now()),
         deleted_at: Set(trashed.then(chrono::Utc::now)),

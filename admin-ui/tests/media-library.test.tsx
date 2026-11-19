@@ -8,7 +8,7 @@ import { SessionContext } from "@/api/context";
 import type { ResourceSchema } from "@/api/types";
 import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
-import { GRID_PER_PAGE, GridThumb, MediaGrid } from "@/renderers/media-library";
+import { GRID_PER_PAGE, GridThumb, MediaGrid, uploadCollection } from "@/renderers/media-library";
 import posts from "../../fixtures/contract/posts.schema.json";
 
 const API = "http://localhost/admin/api";
@@ -207,6 +207,20 @@ it("never shows more than a grid page, whatever rows it is given (a table's page
   expect(screen.getAllByRole("listitem")).toHaveLength(GRID_PER_PAGE);
 });
 
+it("opens the viewer over the page's images from the grid", async () => {
+  const client = new QueryClient();
+  const session = createSession({ basePath: "", apiPath: API }, client, () => {});
+  const rows = [record(IMAGE, "cat.png", "image/png", "A cat"), record(PDF, "doc.pdf", "application/pdf", "")];
+  render(<SessionContext.Provider value={session}><QueryClientProvider client={client}>
+    <MediaGrid rows={rows} actions={() => null} badge={() => null} />
+  </QueryClientProvider></SessionContext.Provider>);
+  // The PDF is an icon, not a button.
+  expect(screen.getAllByRole("button", { name: /^View / })).toHaveLength(1);
+  await userEvent.click(screen.getByRole("button", { name: "View cat.png" }));
+  await waitFor(() => expect(screen.getByLabelText("Image viewer")).toBeInTheDocument());
+  expect(screen.getByText("1 / 1")).toBeInTheDocument();
+});
+
 it("tries a thumbnail that failed again after the next fetch, even unchanged", async () => {
   const session = createSession({ basePath: "", apiPath: API }, new QueryClient(), () => {});
   const cat = record(IMAGE, "cat.png", "image/png", "A cat");
@@ -242,4 +256,16 @@ it("shows a trashed file as unavailable, without a download link", async () => {
   expect(screen.getByRole("img", { name: "File unavailable" })).toBeInTheDocument();
   expect(screen.queryByRole("img", { name: "A cat" })).toBeNull();
   expect(screen.queryByRole("link", { name: /cat\.png/ })).toBeNull();
+});
+
+describe("uploads from the Media page", () => {
+  it("go into the one declared collection the list is filtered on", () => {
+    const declared = ["covers", "docs"];
+    const filter = (value?: string) => (value === undefined ? {} : { "filter[collection][in]": value });
+    expect(uploadCollection(filter("covers"), declared)).toBe("covers");
+    // None, several, unassigned, or a collection no longer declared (the server would refuse it).
+    for (const value of [undefined, "", "covers,docs", "~none", "retired"]) {
+      expect(uploadCollection(filter(value), declared)).toBeUndefined();
+    }
+  });
 });

@@ -5,18 +5,20 @@ import { Check, Copy } from "lucide-react";
 import { useMemo, useState } from "react";
 import type * as React from "react";
 import { Link } from "@tanstack/react-router";
-import type { ComponentSchema, Condition, Data, EntrySchema, InfolistSchema, JsonValue } from "@/api/types";
-import { Badge } from "@/components/ui/badge";
+import { useQuery } from "@tanstack/react-query";
+import { useApi } from "@/api/context";
+import type { ComponentSchema, Condition, Data, EntrySchema, InfolistSchema, JsonValue, LinkPage } from "@/api/types";
+import { Badge, badgeColor } from "@/components/ui/badge";
 import { ScriptView } from "@/components/custom";
 import { cn } from "@/lib/utils";
 import { asShownDocument } from "@/lib/rich-text";
 import type { DocNode } from "@/lib/rich-text";
 import { formatWireDate, useLocale, useT } from "@/i18n";
-import { isDateKind } from "@/lib/wire";
-import { formConditions, hasConditions, hiddenFields } from "@/schema/conditions";
+import { colorOf, isDateKind, optionLabel } from "@/lib/wire";
+import { type Outer, formConditions, hasConditions, hiddenFields } from "@/schema/conditions";
 import { defaultValues, inputsOf, isEntry, isLayout, isTextObject, wireValues } from "@/schema/form";
 import { SchemaLayout, SplitLayout, TabsLayout, always, gridCols, readOnlyText, shownWith, span, withShownChildren } from "./form";
-import { MediaThumb } from "./media";
+import { MediaThumb, useMediaViewer } from "./media";
 import { RichTextView } from "./rich-text";
 
 export const KNOWN_ENTRIES = new Set([
@@ -30,10 +32,6 @@ export const KNOWN_ENTRIES = new Set([
   "custom_entry",
   "repeatable_entry",
 ]);
-
-/** The colors `Entry::color` documents; anything else (newer) is gray. */
-const BADGE_COLORS = new Set(["primary", "success", "warning", "danger", "gray"]);
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** Computed values of a view page: loading, or the server's answer. */
 export type ComputedState = { status: "loading" } | { status: "error" } | { status: "ready"; data: Data; failed: string[] };
@@ -51,6 +49,15 @@ interface Context {
   /** The resource and record (custom entries); absent on panel pages. */
   slug?: string;
   recordKey?: string;
+  /** Rows of a repeatable entry: the record (`when_root`) and the enclosing row (`when_parent`). */
+  outer?: Outer;
+}
+
+/** The levels the rows of a repeatable entry shown in `ctx` read (ADR 0044). */
+function rowsOuter(ctx: Context): Outer {
+  const root = ctx.outer?.root ?? { values: ctx.data as Record<string, unknown>, kinds: ctx.form ? formConditions(ctx.form).kinds : new Map<string, string>() };
+  // Inside rows, the row being shown is the parent of the rows nested in it.
+  return { root, parent: ctx.outer ? { values: ctx.data as Record<string, unknown>, kinds: new Map() } : undefined };
 }
 
 /** The SDK's `Infolist` (`ui` 3): entries over `data`, in their grid. */
@@ -73,11 +80,11 @@ export function hasComputed(components: ComponentSchema[]): boolean {
  */
 export function InfolistRenderer({ infolist, ...ctx }: { infolist: InfolistSchema } & Context) {
   const { components, fromForm } = infolist;
-  const { form, data } = ctx;
+  const { form, data, outer } = ctx;
   const shown = useMemo(() => {
     if (!hasConditions(components)) return always;
     const own = formConditions(components);
-    if (!form) return shownWith(own, data as Record<string, unknown>);
+    if (!form) return shownWith(own, data as Record<string, unknown>, outer);
     // Each field with its kind (the form's for fields the infolist does not show).
     const edit = formConditions(form);
     const conditions = { fields: own.fields, kinds: new Map([...edit.kinds, ...own.kinds]) };
@@ -88,7 +95,7 @@ export function InfolistRenderer({ infolist, ...ctx }: { infolist: InfolistSchem
     const values: Record<string, unknown> = wireValues(inputs, defaultValues(inputs, data as Record<string, unknown>));
     for (const name of hiddenFields(edit, values)) values[name] = null;
     return shownWith(conditions, values);
-  }, [components, fromForm, form, data]);
+  }, [components, fromForm, form, data, outer]);
   return <Body components={components} ctx={ctx} shown={shown} />;
 }
 
@@ -133,6 +140,8 @@ function Muted({ children }: { children: React.ReactNode }) {
 
 function EntryValue({ entry, ctx }: { entry: EntrySchema; ctx: Context }) {
   const t = useT();
+  // A has-many relation's records: read from its list, not the record (ADR 0044).
+  if (entry.rows) return <RelationRows entry={entry} rows={entry.rows} ctx={ctx} />;
   const supplied = Object.prototype.hasOwnProperty.call(ctx.data, entry.name);
   // A computed value (a custom entry may draw one too).
   const state = ctx.computed;
@@ -168,7 +177,7 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
       return isTextObject(value) ? <KeyValues value={value} /> : <Raw value={value} />;
     case "media_entry": {
       const ids = (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === "string");
-      return <div className="flex flex-wrap gap-3">{ids.map((id) => <MediaThumb key={id} id={id} size={entry.size} link={entry.gallery} />)}</div>;
+      return <MediaValue ids={ids} size={entry.size} preview={entry.preview !== false} />;
     }
     case "repeatable_entry": {
       // Each row shown by the entry's own entries, over the row's values.
@@ -180,7 +189,7 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
           {value.map((row, i) => (
             <li key={i} className="rounded-lg border border-border p-3">
               <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-                <InfolistRenderer infolist={rows} slug={ctx.slug} recordKey={ctx.recordKey}
+                <InfolistRenderer infolist={rows} slug={ctx.slug} recordKey={ctx.recordKey} outer={rowsOuter(ctx)}
                   data={(row && typeof row === "object" && !Array.isArray(row) ? row : {}) as Data} />
               </div>
             </li>
@@ -202,6 +211,78 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
   }
 }
 
+/**
+ * The rows of a relationship repeatable entry (ADR 0044): the relation's
+ * records as its section lists them (the child's scope, policy and read
+ * rules), in the form's order, each shown by the entry's own entries; past
+ * the limit, a link to the section.
+ */
+function RelationRows({ entry, rows, ctx }: { entry: EntrySchema; rows: NonNullable<EntrySchema["rows"]>; ctx: Context }) {
+  const t = useT();
+  // Rows of rows (ADR 0044): read when asked, so a page of many rows does not
+  // send a request per row at every level when it opens.
+  const [asked, setAsked] = useState(!ctx.outer);
+  if (!asked) {
+    return (
+      <button type="button" onClick={() => setAsked(true)} className="self-start text-sm font-medium text-primary underline-offset-4 hover:underline">
+        {t("entry.showRows", { label: entry.label })}
+      </button>
+    );
+  }
+  return <RelationRowsRead entry={entry} rows={rows} ctx={ctx} />;
+}
+
+function RelationRowsRead({ entry, rows, ctx }: { entry: EntrySchema; rows: NonNullable<EntrySchema["rows"]>; ctx: Context }) {
+  const t = useT();
+  const api = useApi();
+  const enc = encodeURIComponent;
+  const page = useQuery({
+    enabled: !!ctx.slug && !!ctx.recordKey,
+    // Read again each time the page opens: a save changes the rows.
+    refetchOnMount: "always",
+    queryKey: ["records", rows.resource, "relation", ctx.slug, ctx.recordKey, rows.relation, "entry", rows.limit],
+    queryFn: () => {
+      // Sorted by the server: the first rows by position, whatever the limit.
+      const query = new URLSearchParams({ per_page: String(rows.limit) });
+      if (rows.orderBy) query.set("sort", rows.orderBy);
+      return api.get<LinkPage>(
+        `/resources/${enc(ctx.slug ?? "")}/records/${enc(ctx.recordKey ?? "")}/relations/${enc(rows.relation)}`,
+        query,
+      );
+    },
+  });
+  if (page.isLoading) return <span role="status" className="inline-block h-5 w-24 animate-pulse rounded bg-muted" aria-label={t("entry.loading")} />;
+  if (page.isError || !page.data) return <Muted>{t("entry.notAvailable")}</Muted>;
+  const records = page.data.data;
+  if (records.length === 0) return <Muted>{t("repeater.empty")}</Muted>;
+  const layout = { columns: 2, components: entry.components ?? [] };
+  const more = page.data.meta.total > records.length;
+  return (
+    <div className="flex flex-col gap-3">
+      <ol className="flex flex-col gap-3">
+        {records.map((record) => (
+          <li key={record.key} className="rounded-lg border border-border p-3">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+              <InfolistRenderer infolist={layout} slug={rows.resource} recordKey={record.key} data={record.data} outer={rowsOuter(ctx)} />
+            </div>
+          </li>
+        ))}
+      </ol>
+      {more && (ctx.outer ? (
+        // Rows of a row (ADR 0044, part C): the relation's section is on that row's page.
+        <Link to="/r/$slug/records/$key" params={{ slug: ctx.slug ?? "", key: ctx.recordKey ?? "" }} hash={`relation-${rows.relation}`}
+          className="self-start text-sm font-medium text-primary underline-offset-4 hover:underline">
+          {t("entry.allRows", { count: page.data.meta.total })}
+        </Link>
+      ) : (
+        <a href={`#relation-${rows.relation}`} className="self-start text-sm font-medium text-primary underline-offset-4 hover:underline">
+          {t("entry.allRows", { count: page.data.meta.total })}
+        </a>
+      ))}
+    </div>
+  );
+}
+
 function RelationValue({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ctx: Context }) {
   const key = typeof value === "string" || typeof value === "number" ? String(value) : null;
   if (key === null) return <Raw value={value} />;
@@ -219,9 +300,9 @@ function BooleanValue({ entry, value }: { entry: EntrySchema; value: JsonValue }
   const t = useT();
   if (typeof value !== "boolean") return <Raw value={value} />;
   const label = entry.labels ? entry.labels[value ? 0 : 1] : value ? t("value.yes") : t("value.no");
-  const color = entry.colors?.find((c) => same(c.value, value))?.color;
+  const color = colorOf(entry.colors, value);
   if (!color) return <>{label}</>;
-  return <Badge color={BADGE_COLORS.has(color) ? color : "gray"}>{label}</Badge>;
+  return <Badge color={badgeColor(color)}>{label}</Badge>;
 }
 
 function KeyValues({ value }: { value: Record<string, string> }) {
@@ -253,6 +334,19 @@ function Outline({ nodes }: { nodes?: DocNode[] }) {
   );
 }
 
+/** A media entry's files: images open the viewer over the entry's images (unless `preview` is off). */
+function MediaValue({ ids, size, preview }: { ids: string[]; size?: number; preview: boolean }) {
+  const viewer = useMediaViewer(ids, {}, preview);
+  return (
+    <div className="flex flex-wrap gap-3">
+      {ids.map((id) => (
+        <MediaThumb key={id} id={id} size={size} onOpen={viewer.open && (() => viewer.open?.(id))} onNotImage={() => viewer.notImage(id)} />
+      ))}
+      {viewer.viewer}
+    </div>
+  );
+}
+
 /** Text, numbers, dates, option labels and lists, with the entry's options. */
 function TextValue({ entry, value }: { entry: EntrySchema; value: JsonValue }) {
   const t = useT();
@@ -261,11 +355,11 @@ function TextValue({ entry, value }: { entry: EntrySchema; value: JsonValue }) {
   if (value === "") return <Muted>{t("value.emptyString")}</Muted>;
   if (entry.password) return <span aria-label={t("value.hidden")}>••••••••</span>;
   const label = (item: JsonValue): string => {
-    const option = entry.options?.find((o) => same(o.value, item));
-    if (option) return option.label;
+    const option = optionLabel(entry.options, item);
+    if (option !== undefined) return option;
     if (typeof item === "boolean") return item ? t("value.yes") : t("value.no");
     if (typeof item === "string" && isDateKind(entry.valueType)) {
-      return formatWireDate(entry.valueType, item) ?? item;
+      return formatWireDate(entry.valueType, item, entry.format) ?? item;
     }
     if (entry.decimals !== undefined && (typeof item === "number" || typeof item === "string")) {
       const n = Number(item);
@@ -298,8 +392,8 @@ function Item({ entry, item, text }: { entry: EntrySchema; item: JsonValue; text
   const shown = typeof item === "string" && isDateKind(entry.valueType) ? <time dateTime={item}>{limited}</time> : limited;
   let content: React.ReactNode = shown;
   if (entry.badge) {
-    const color = entry.colors?.find((c) => same(c.value, item))?.color ?? "gray";
-    content = <Badge color={BADGE_COLORS.has(color) ? color : "gray"}>{shown}</Badge>;
+    const color = colorOf(entry.colors, item);
+    content = <Badge color={badgeColor(color)}>{shown}</Badge>;
   } else if (entry.url && typeof item === "string" && /^https?:\/\//i.test(item)) {
     content = <a href={item} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-4 hover:underline">{limited}</a>;
   }

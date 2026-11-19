@@ -16,6 +16,8 @@
 "Manage every file" = "Quản lý mọi tệp"
 "See every file, and edit, trash, restore or delete other users' files (with the update, delete, restore and force delete permissions of the media library)." = "Xem mọi tệp, và sửa, đưa vào thùng rác, khôi phục hoặc xoá tệp của người khác (cùng các quyền cập nhật, xoá, khôi phục và xoá vĩnh viễn của thư viện media)."
 "Alternative text" = "Văn bản thay thế"
+"Collection" = "Nhóm"
+"Unassigned" = "Chưa phân nhóm"
 
 # Common fields (labels formed from column names).
 "Name" = "Tên"

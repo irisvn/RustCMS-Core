@@ -13,7 +13,7 @@ use serde_json::Value;
 use super::*;
 use crate::forms::{ReactionFn, is_empty};
 use crate::schema::{FormReactRequest, FormReactResponse};
-use crate::ui::{FormPatch, FormState, REACTION_MAX_TIMEOUT};
+use crate::ui::{FormPatch, FormState, REACTION_MAX_TIMEOUT, StateRow};
 
 /// Reactions running at once, across users.
 static REACTING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
@@ -29,6 +29,29 @@ pub(crate) const MAX_MESSAGE: usize = 500;
 /// Rows of a JSON repeater a request may send when the repeater declares no
 /// `max_items`.
 pub(crate) const MAX_STATE_ROWS: usize = 1000;
+
+/// Rows of a relationship repeater a request may send (what the panel edits).
+const MAX_STATE_RELATION_ROWS: usize = 100;
+
+/// What the user may do with a relationship repeater's rows (ADR 0044, part D).
+#[derive(Debug, Clone, Copy, Default)]
+struct RowsAbility {
+    create: bool,
+    update: bool,
+    delete: bool,
+}
+
+impl RowsAbility {
+    fn any(self) -> bool {
+        self.create || self.update || self.delete
+    }
+}
+
+/// A new row's reference: `a-z`, `0-9`, `-`, at most 16 (as a change's).
+fn valid_ref(reference: &str) -> bool {
+    (1..=16).contains(&reference.len())
+        && reference.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
 
 /// The reaction of an input, checked at boot.
 pub(super) struct InputReaction {
@@ -50,15 +73,16 @@ pub(super) fn reactions(slug: &str, form: &Form, fields: &[Field]) -> Vec<InputR
             !reaction.timeout.is_zero() && reaction.timeout <= REACTION_MAX_TIMEOUT,
             "{here}: the reaction timeout must be above zero and at most {REACTION_MAX_TIMEOUT:?}"
         );
+        // A relationship repeater may react to its rows (ADR 0044, part D).
         let relationship = input.repeater.as_deref().is_some_and(|s| s.relationship);
         assert!(
-            fields.iter().any(|f| f.name == name && f.secret.is_none())
-                && !relationship
-                && !matches!(
-                    input.kind,
-                    InputType::Hidden | InputType::Secret | InputType::SecretMap | InputType::BelongsToMany
-                ),
-            "{here}: only inputs of fields react (not hidden, encrypted, link or relationship repeater inputs)"
+            relationship
+                || fields.iter().any(|f| f.name == name && f.secret.is_none())
+                    && !matches!(
+                        input.kind,
+                        InputType::Hidden | InputType::Secret | InputType::SecretMap | InputType::BelongsToMany
+                    ),
+            "{here}: only inputs of fields react, and relationship repeaters (not hidden, encrypted or link inputs)"
         );
         out.push(InputReaction { name: name.to_owned(), run, timeout: reaction.timeout });
     }
@@ -66,10 +90,23 @@ pub(super) fn reactions(slug: &str, form: &Form, fields: &[Field]) -> Vec<InputR
 }
 
 /// A turn of one user, given back when dropped.
-struct UserTurn(String);
+pub(super) struct UserTurn(String);
+
+/// A turn across users if one is free now (the schema's first answer never waits).
+pub(super) fn try_turn() -> Option<tokio::sync::SemaphorePermit<'static>> {
+    REACTING.try_acquire().ok()
+}
+
+/// A turn across users (at most 8 at once), waited for a short while (else 429).
+pub(super) async fn turn() -> AppResult<tokio::sync::SemaphorePermit<'static>> {
+    tokio::time::timeout(REACTING_WAIT, REACTING.acquire())
+        .await
+        .map_err(|_| AppError::TooManyRequests { retry_after: 5 })?
+        .map_err(AppError::internal)
+}
 
 impl UserTurn {
-    fn take(user: &str) -> Option<Self> {
+    pub(super) fn take(user: &str) -> Option<Self> {
         let mut map = PER_USER.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let count = map.get_or_insert_with(HashMap::new).entry(user.to_owned()).or_default();
         if *count >= REACTING_PER_USER {
@@ -120,10 +157,34 @@ impl<R: Resource> ResourceAdapter<R> {
             }
             _ => return Err(ValidationErrors::field("operation", "is invalid").into()),
         };
+        // What the user may do with each relationship repeater's rows (ADR 0044, part D).
+        let mut abilities: HashMap<&'static str, RowsAbility> = HashMap::new();
+        for repeater in &self.row_repeaters {
+            let Some(child) = ctx.registry.get(repeater.target) else { continue };
+            // As the form shows the repeater (a child the user may list) and the save writes it
+            // (a new row's `create` with its parent bound, once there is one).
+            if !child.allows(ctx, ability::VIEW_ANY).await {
+                continue;
+            }
+            let edit = op == Operation::Update;
+            let mut bound = ctx.clone();
+            if let Some(key) = request.key.as_deref().filter(|_| edit) {
+                bound.bound = Some((R::SLUG.to_owned(), repeater.field.to_owned(), key.to_owned()));
+            }
+            let ability = RowsAbility {
+                create: child.admits(ctx, ability::CREATE).await && child.allows(&bound, ability::CREATE).await,
+                update: edit && child.admits(ctx, ability::UPDATE).await,
+                delete: edit && child.admits(ctx, ability::DELETE).await,
+            };
+            abilities.insert(repeater.name, ability);
+        }
         let reaction = self
             .reactions
             .iter()
-            .find(|r| r.name == request.changed && self.writable(ctx, op, &r.name))
+            .find(|r| {
+                r.name == request.changed
+                    && (self.writable(ctx, op, &r.name) || abilities.get(r.name.as_str()).is_some_and(|a| a.any()))
+            })
             .ok_or_else(|| AppError::from(ValidationErrors::field("changed", "is invalid")))?;
         let empty = |failed| FormReactResponse { seq: request.seq, patches: Vec::new(), failed };
         let bound = ctx.bound.as_ref().map(|(_, field, parent)| (field.clone(), self.fk_value(field, parent)));
@@ -134,7 +195,17 @@ impl<R: Resource> ResourceAdapter<R> {
         // then the key a relation binds.
         let mut values = self.condition_values(ctx, op, stored.as_ref().map(|r| (r, viewable)));
         let mut previous = None;
+        let mut relation_rows: HashMap<String, Vec<StateRow>> = HashMap::new();
         for (name, value) in request.state {
+            // A relationship repeater's rows, as the panel holds them (ADR 0044, part D).
+            if let Some(repeater) = self.row_repeaters.iter().find(|r| r.name == name) {
+                if abilities.get(repeater.name).is_some_and(|a| a.any())
+                    && let Some(rows) = self.state_rows(ctx, repeater, &value)?
+                {
+                    relation_rows.insert(name, rows);
+                }
+                continue;
+            }
             if bound.as_ref().is_some_and(|(field, _)| *field == name) || !self.typed(ctx, op, &name, &value)? {
                 continue;
             }
@@ -166,11 +237,12 @@ impl<R: Resource> ResourceAdapter<R> {
                 .filter(|(n, _)| self.state_field(ctx, n))
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
+            relation_rows,
         };
         // One time limit for the reaction and the checking of its patches.
         let deadline = tokio::time::Instant::now() + reaction.timeout;
         let outcome = match tokio::time::timeout_at(deadline, (reaction.run)(ctx, &state)).await {
-            Ok(Ok(patches)) => self.keep_patches(ctx, op, &state, values, patches, deadline).ok_or(None),
+            Ok(Ok(patches)) => self.keep_patches(ctx, &state, values, &abilities, patches, deadline).ok_or(None),
             Ok(Err(err)) => Err(Some(err.to_string())),
             Err(_) => Err(None),
         };
@@ -188,7 +260,7 @@ impl<R: Resource> ResourceAdapter<R> {
     /// form: an input of the form for a field the user may write, not
     /// encrypted, whose value decodes (`null` included). A JSON repeater
     /// holding more rows than it may is refused (422).
-    fn typed(&self, ctx: &Ctx, op: Operation, name: &str, value: &Value) -> AppResult<bool> {
+    pub(super) fn typed(&self, ctx: &Ctx, op: Operation, name: &str, value: &Value) -> AppResult<bool> {
         let input_of_form = self.form.inputs().iter().any(|i| i.name == name);
         let field = self.field(name).filter(|f| f.secret.is_none());
         if !input_of_form || field.is_none() || !self.writable(ctx, op, name) {
@@ -205,8 +277,48 @@ impl<R: Resource> ResourceAdapter<R> {
         Ok(value.is_null() || self.column(name).kind.decode(value).is_ok())
     }
 
+    /// The rows of relationship repeater `repeater` the panel sent, each a
+    /// stored row (`key`) or a new one (`ref`), with the values of the
+    /// repeater's inputs that decode (the rest left out, as a half-typed
+    /// form's); `None` (not in the state) beyond the 100 rows the panel edits.
+    fn state_rows(
+        &self,
+        ctx: &Ctx,
+        repeater: &super::rows::RowRepeater,
+        value: &Value,
+    ) -> AppResult<Option<Vec<StateRow>>> {
+        let Some(items) = value.as_array() else { return Ok(None) };
+        // More rows than the panel edits: the repeater is not in the state (its
+        // rows are edited in the relation section), the reaction still runs.
+        if items.len() > MAX_STATE_RELATION_ROWS {
+            return Ok(None);
+        }
+        let Some(child) = ctx.registry.get(repeater.target) else { return Ok(None) };
+        let mut out: Vec<StateRow> = Vec::new();
+        for item in items {
+            let key = item.get("key").and_then(Value::as_str).and_then(|k| child.canonical_key(k));
+            let reference = item.get("ref").and_then(Value::as_str).filter(|r| valid_ref(r)).map(str::to_owned);
+            let row = match (key, reference) {
+                (Some(key), None) => StateRow { key: Some(key), reference: None, data: Data::new() },
+                (None, Some(reference)) => StateRow { key: None, reference: Some(reference), data: Data::new() },
+                _ => continue,
+            };
+            // One row per identity.
+            if out.iter().any(|r| r.id() == row.id()) {
+                continue;
+            }
+            let data = item.get("data").and_then(Value::as_object).cloned().unwrap_or_default();
+            let data = data
+                .into_iter()
+                .filter(|(name, value)| repeater.inputs.contains(name) && child.decodes(name, value))
+                .collect();
+            out.push(StateRow { data, ..row });
+        }
+        Ok(Some(out))
+    }
+
     /// Whether a reaction may see field `name`: readable, not encrypted.
-    fn state_field(&self, ctx: &Ctx, name: &str) -> bool {
+    pub(super) fn state_field(&self, ctx: &Ctx, name: &str) -> bool {
         self.field(name).is_some_and(|f| f.secret.is_none() && f.can_read(ctx))
     }
 
@@ -218,7 +330,7 @@ impl<R: Resource> ResourceAdapter<R> {
 
     /// `value` as the column stores it (ADR 0003: a decimal at the column's
     /// scale), for comparing and sending.
-    fn canonical_value(&self, name: &str, value: &Value) -> Value {
+    pub(super) fn canonical_value(&self, name: &str, value: &Value) -> Value {
         let column = self.column(name);
         let scale = crate::wire::decimal_scale(column.column.def().get_column_type());
         crate::wire::canonical(column.kind, scale, value).unwrap_or_else(|_| value.clone())
@@ -233,12 +345,15 @@ impl<R: Resource> ResourceAdapter<R> {
     fn keep_patches(
         &self,
         ctx: &Ctx,
-        op: Operation,
         state: &FormState,
         mut values: Data,
+        abilities: &HashMap<&'static str, RowsAbility>,
         patches: Vec<FormPatch>,
         deadline: tokio::time::Instant,
     ) -> Option<Vec<FormPatch>> {
+        let op = state.operation;
+        let mut rows = state.relation_rows.clone();
+        let mut next_ref = 0u32;
         let dropped = |field: &str, reason: &str| {
             tracing::warn!(resource = R::SLUG, input = state.changed, field, reason, "form reaction patch dropped");
         };
@@ -250,7 +365,18 @@ impl<R: Resource> ResourceAdapter<R> {
             if tokio::time::Instant::now() >= deadline {
                 return None;
             }
-            match self.keep_patch(ctx, op, &mut values, patch) {
+            let outcome = if matches!(
+                patch,
+                FormPatch::AddRelationRow { .. }
+                    | FormPatch::UpdateRelationRow { .. }
+                    | FormPatch::RemoveRelationRow { .. }
+                    | FormPatch::FlagRelationRow { .. }
+            ) {
+                self.keep_relation_patch(ctx, &values, &mut rows, abilities, &mut next_ref, patch)
+            } else {
+                self.keep_patch(ctx, op, &mut values, patch)
+            };
+            match outcome {
                 Ok(Some(patch)) => kept.push(patch),
                 Ok(None) => {}
                 Err((field, reason)) => dropped(&field, reason),
@@ -397,9 +523,136 @@ impl<R: Resource> ResourceAdapter<R> {
                 let text = message(&text).ok_or_else(|| fail("a message longer than 500 characters"))?;
                 FormPatch::FlagRow { field, index, message: text }
             }
-            FormPatch::Set { .. } | FormPatch::SetIfEmpty { .. } | FormPatch::Notice { .. } => {
-                unreachable!("handled above")
-            }
+            FormPatch::Set { .. }
+            | FormPatch::SetIfEmpty { .. }
+            | FormPatch::Notice { .. }
+            | FormPatch::AddRelationRow { .. }
+            | FormPatch::UpdateRelationRow { .. }
+            | FormPatch::RemoveRelationRow { .. }
+            | FormPatch::FlagRelationRow { .. } => unreachable!("handled above"),
         }))
+    }
+
+    /// A patch of a relationship repeater's rows (ADR 0044, part D), kept when
+    /// the user could make the change on the rows as the previous patches left
+    /// them (`rows`, updated): the repeater shown, the child's ability, its
+    /// options and bounds, inputs of the rows with values the child's field
+    /// accepts (those hidden by the row's conditions left out), a row of the
+    /// state. `None` when it changes nothing.
+    fn keep_relation_patch(
+        &self,
+        ctx: &Ctx,
+        values: &Data,
+        rows: &mut HashMap<String, Vec<StateRow>>,
+        abilities: &HashMap<&'static str, RowsAbility>,
+        next_ref: &mut u32,
+        patch: FormPatch,
+    ) -> Result<Option<FormPatch>, (String, &'static str)> {
+        let field = patch.field().unwrap_or_default().to_owned();
+        let fail = |reason: &'static str| (field.clone(), reason);
+        let repeater = self
+            .row_repeaters
+            .iter()
+            .find(|r| r.name == field)
+            .ok_or_else(|| fail("not a relationship repeater of the form"))?;
+        let ability = abilities.get(repeater.name).copied().unwrap_or_default();
+        if !ability.any() {
+            return Err(fail("rows the user may not change"));
+        }
+        if self.conditions.hidden(values).contains(&field) {
+            return Err(fail("hidden by its conditions"));
+        }
+        let child = ctx.registry.get(repeater.target).ok_or_else(|| fail("an unknown child resource"))?;
+        let root = self.conditions.shown_values(values, Default::default());
+        // A row's values as a save would store them: inputs of the rows, accepted
+        // by the child's field for the user, changed, shown by the row's conditions.
+        let clean = |data: &Data, op: Operation, current: Option<&Data>| -> Result<Data, (String, &'static str)> {
+            let mut out = Data::new();
+            for (name, value) in data {
+                if !repeater.inputs.contains(name) {
+                    return Err(fail("an input the rows do not edit"));
+                }
+                let value =
+                    child.accept_row_value(ctx, op, name, value).ok_or_else(|| fail("a value its input refuses"))?;
+                if current.is_some_and(|c| c.get(name) == Some(&value)) {
+                    continue;
+                }
+                out.insert(name.clone(), value);
+            }
+            let mut row = current.cloned().unwrap_or_default();
+            row.extend(out.iter().map(|(k, v)| (k.clone(), v.clone())));
+            let outer = crate::engine::conditions::OuterValues { parent: None, root: Some(&root) };
+            let hidden = repeater.rules().conditions.hidden_in(&row, outer);
+            out.retain(|name, _| !hidden.contains(name));
+            Ok(out)
+        };
+        let message = |text: &str| {
+            let text = ctx.t_in(R::SLUG, text);
+            (text.chars().count() <= MAX_MESSAGE).then_some(text)
+        };
+        // Rows the form did not send (more than it edits, or none): nothing to patch.
+        let list = rows.get_mut(&field).ok_or_else(|| fail("rows the form did not send"))?;
+        let at = |list: &Vec<StateRow>, id: &str| {
+            list.iter().position(|r| r.id() == id).ok_or_else(|| fail("a row that is not in the form"))
+        };
+        Ok(match patch {
+            FormPatch::AddRelationRow { reference, data, .. } => {
+                if !ability.create || !repeater.spec.addable {
+                    return Err(fail("rows the user may not add"));
+                }
+                let max = repeater.spec.max_items.map_or(MAX_STATE_RELATION_ROWS, |m| m as usize);
+                if list.len() >= max.min(MAX_STATE_RELATION_ROWS) {
+                    return Err(fail("more rows than the repeater allows"));
+                }
+                let taken = |r: &str| list.iter().any(|row| row.reference.as_deref() == Some(r));
+                let reference = if reference.is_empty() {
+                    loop {
+                        *next_ref += 1;
+                        let candidate = format!("r{next_ref}");
+                        if !taken(&candidate) {
+                            break candidate;
+                        }
+                    }
+                } else if valid_ref(&reference) && !taken(&reference) {
+                    reference
+                } else {
+                    return Err(fail("a reference that is invalid or taken"));
+                };
+                let data = clean(&data, Operation::Create, None)?;
+                list.push(StateRow { key: None, reference: Some(reference.clone()), data: data.clone() });
+                Some(FormPatch::AddRelationRow { field, reference, data })
+            }
+            FormPatch::UpdateRelationRow { id, data, .. } => {
+                let index = at(list, &id)?;
+                let stored = list[index].key.is_some();
+                if stored && !ability.update {
+                    return Err(fail("rows the user may not change"));
+                }
+                let op = if stored { Operation::Update } else { Operation::Create };
+                let data = clean(&data, op, Some(&list[index].data))?;
+                if data.is_empty() {
+                    return Ok(None);
+                }
+                list[index].data.extend(data.iter().map(|(k, v)| (k.clone(), v.clone())));
+                Some(FormPatch::UpdateRelationRow { field, id, data })
+            }
+            FormPatch::RemoveRelationRow { id, .. } => {
+                let index = at(list, &id)?;
+                if list[index].key.is_some() && (!ability.delete || !repeater.spec.deletable) {
+                    return Err(fail("rows the user may not remove"));
+                }
+                if repeater.spec.min_items.is_some_and(|min| list.len() <= min as usize) {
+                    return Err(fail("fewer rows than the repeater needs"));
+                }
+                list.remove(index);
+                Some(FormPatch::RemoveRelationRow { field, id })
+            }
+            FormPatch::FlagRelationRow { id, message: text, .. } => {
+                at(list, &id)?;
+                let text = message(&text).ok_or_else(|| fail("a message longer than 500 characters"))?;
+                Some(FormPatch::FlagRelationRow { field, id, message: text })
+            }
+            _ => unreachable!("only relationship row patches"),
+        })
     }
 }

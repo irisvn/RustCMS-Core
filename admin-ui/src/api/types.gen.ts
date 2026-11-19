@@ -46,6 +46,10 @@ export type Condition = { "op": "eq",
  */
 name: string, 
 /**
+ * Where the input is (absent: the same level).
+ */
+scope?: Scope, 
+/**
  * Compared value.
  */
 value: JsonValue, } | { "op": "ne", 
@@ -53,6 +57,10 @@ value: JsonValue, } | { "op": "ne",
  * Input name.
  */
 name: string, 
+/**
+ * Where the input is (absent: the same level).
+ */
+scope?: Scope, 
 /**
  * Compared value.
  */
@@ -62,17 +70,29 @@ value: JsonValue, } | { "op": "is_in",
  */
 name: string, 
 /**
+ * Where the input is (absent: the same level).
+ */
+scope?: Scope, 
+/**
  * Allowed values.
  */
 values: Array<JsonValue>, } | { "op": "filled", 
 /**
  * Input name.
  */
-name: string, } | { "op": "is_true", 
+name: string, 
+/**
+ * Where the input is (absent: the same level).
+ */
+scope?: Scope, } | { "op": "is_true", 
 /**
  * Input name.
  */
-name: string, } | { "op": "all", 
+name: string, 
+/**
+ * Where the input is (absent: the same level).
+ */
+scope?: Scope, } | { "op": "all", 
 /**
  * Combined conditions.
  */
@@ -81,6 +101,32 @@ conditions: Array<Condition>, } | { "op": "any",
  * Combined conditions.
  */
 conditions: Array<Condition>, };
+
+export type RepeaterLayout = "table";
+
+export type RichToolbar = "compact";
+
+export type EntryRows = { 
+/**
+ * Slug of the related resource.
+ */
+resource: string, 
+/**
+ * The relation (URL segment).
+ */
+relation: string, 
+/**
+ * The field ordering the rows (the form's repeater's order column), when
+ * the user's lists may sort by it: the panel lists the rows sorted by it
+ * (`sort=`); without, in the list's own order.
+ */
+orderBy?: string, 
+/**
+ * Most rows shown; with more, a link to the relation's section.
+ */
+limit: number, };
+
+export type Scope = "row" | "parent" | "root";
 
 export type ResourceInfo = { 
 /**
@@ -155,7 +201,12 @@ accept: Array<string>,
 /**
  * Largest accepted file, in bytes.
  */
-maxSize?: number, };
+maxSize?: number, 
+/**
+ * Images open in the panel's viewer when clicked; sent only when `false`
+ * (vocabulary 22).
+ */
+preview?: boolean, };
 
 export type LinksSchema = { 
 /**
@@ -195,6 +246,12 @@ field: string,
  * Whether the user may create related records from here (has-many).
  */
 create: boolean, 
+/**
+ * Has-many: the fields a filtered relation sets on the records created
+ * from here, with their values (`null` for `where_null`), as the parent
+ * key: never sent (ADR 0044).
+ */
+fixed?: Record<string, JsonValue>, 
 /**
  * Whether the user may attach targets to this record (belongs-to-many).
  */
@@ -248,7 +305,11 @@ inline: boolean,
 /**
  * Alternative text, when given (edited on the media record).
  */
-alt?: string, };
+alt?: string, 
+/**
+ * Collection, when it is in one.
+ */
+collection?: string, };
 
 export type InputSchema = { 
 /**
@@ -328,6 +389,12 @@ props?: JsonValue,
  */
 media?: MediaSchema, 
 /**
+ * Media collection of the files uploaded through the input, and the
+ * collection its picker opens on (`file_upload` and `rich_text` inputs,
+ * vocabulary 23).
+ */
+collection?: string, 
+/**
  * What the user may change (`belongs_to_many` inputs, vocabulary 9).
  */
 links?: LinksSchema, 
@@ -366,6 +433,19 @@ repeater?: RepeaterSchema,
  * the form (vocabulary 19, ADR 0043). Create and edit forms only.
  */
 reacts?: boolean, 
+/**
+ * Rich editors in repeater rows: `compact` shows bold, italic,
+ * underline, superscript, subscript, images and application elements
+ * (vocabulary 25, ADR 0044); absent, the full toolbar.
+ */
+toolbar?: RichToolbar, 
+/**
+ * Rules computed on the server (vocabulary 28, ADR 0044 part E): the
+ * inputs whose change asks `form/rules` again, and the answer for the
+ * form's values when the schema was read (`options` holds the computed
+ * options).
+ */
+serverRules?: ServerRulesSchema, 
 /**
  * Rich text: the application nodes the document may hold (vocabulary
  * 18, ADR 0042); absent when none.
@@ -496,9 +576,15 @@ labels?: [string, string],
  */
 size?: number, 
 /**
- * Images open in a viewer.
+ * Media entries: images open in the panel's viewer when clicked; sent
+ * only when `false` (vocabulary 22, which dropped `gallery`).
  */
-gallery?: boolean, 
+preview?: boolean, 
+/**
+ * How dates or times are shown (a pattern, as `ColumnSchema::format`;
+ * vocabulary 21). Absent: the panel's.
+ */
+format?: string, 
 /**
  * The document's headings as an outline.
  */
@@ -531,13 +617,23 @@ props?: JsonValue,
 /**
  * Repeatable entries: the entries of each row (vocabulary 15).
  */
-components?: Array<ComponentSchema>, };
+components?: Array<ComponentSchema>, 
+/**
+ * Repeatable entries of a has-many relation: where the rows are read
+ * (vocabulary 24, ADR 0044).
+ */
+rows?: EntryRows, };
 
 export type RepeaterSchema = { 
 /**
  * The row's inputs and layouts.
  */
 components: Array<ComponentSchema>, 
+/**
+ * How rows are laid out (absent: stacked, each input under the other;
+ * vocabulary 24).
+ */
+layout?: RepeaterLayout, 
 /**
  * Relationship repeaters on an edit page: the inputs of a new row (the
  * child's create form); `components` are those of a stored row
@@ -765,6 +861,50 @@ message: string, } | { "op": "notice",
 /**
  * The message (translated).
  */
+message: string, } | { "op": "add_relation_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The new row's reference (given by the server when the reaction did not).
+ */
+ref: string, 
+/**
+ * Its inputs' values, in wire format.
+ */
+data: { [key in string]: JsonValue }, } | { "op": "update_relation_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row: a key, or a new row's reference.
+ */
+id: string, 
+/**
+ * The inputs' new values, in wire format.
+ */
+data: { [key in string]: JsonValue }, } | { "op": "remove_relation_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row: a key, or a new row's reference.
+ */
+id: string, } | { "op": "flag_relation_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row: a key, or a new row's reference.
+ */
+id: string, 
+/**
+ * The warning (translated).
+ */
 message: string, };
 
 export type FormReactRequest = { 
@@ -827,6 +967,70 @@ patches: Array<FormPatch>,
  */
 failed?: boolean, };
 
+export type FormRulesRequest = { 
+/**
+ * `create` or `edit` (`view` is refused).
+ */
+operation: SchemaOperation, 
+/**
+ * The record's key (`edit` only).
+ */
+key?: string, 
+/**
+ * The form's values, in wire format (as a save sends them).
+ */
+state: Record<string, JsonValue>, 
+/**
+ * A create form opened through a relation of another record.
+ */
+via?: FormReactVia, 
+/**
+ * Sent back unchanged: the panel applies only its latest request's answer.
+ */
+seq: number, };
+
+export type FormRulesResponse = { 
+/**
+ * The request's `seq`.
+ */
+seq: number, 
+/**
+ * Each input with rules, by name.
+ */
+rules: { [key in string]: EvaluatedRules }, 
+/**
+ * A rule failed (error, timeout): nothing to apply.
+ */
+failed?: boolean, };
+
+export type EvaluatedRules = { 
+/**
+ * Whether it is shown.
+ */
+shown: boolean, 
+/**
+ * Whether it is required (when shown).
+ */
+required: boolean, 
+/**
+ * Its options (an `options_fn` input), translated.
+ */
+options?: Array<SelectOption>, };
+
+export type ServerRulesSchema = { 
+/**
+ * The inputs whose change asks the server again.
+ */
+dependsOn: Array<string>, 
+/**
+ * Whether the input is shown (absent: no rule).
+ */
+shown?: boolean, 
+/**
+ * Whether the input is required (absent: no rule).
+ */
+required?: boolean, };
+
 export type ComponentSchema = InputSchema | LayoutSchema | EntrySchema;
 
 export type FormSchema = { 
@@ -872,6 +1076,17 @@ searchable: boolean,
  * Badge colors.
  */
 colors?: Array<BadgeColor>, 
+/**
+ * Labels shown for values of a text or badge column, in the user's
+ * language (the column's own, or its form select's; vocabulary 20).
+ */
+options?: Array<SelectOption>, 
+/**
+ * How dates or times are shown, a pattern such as `HH:mm dd/MM/yyyy`
+ * (`yyyy yy MMMM MMM MM M dd d EEEE EEE HH H hh h mm ss a z`, text in
+ * single quotes; vocabulary 21). Absent: the panel's.
+ */
+format?: string, 
 /**
  * Related resource (display `labels[name]`).
  */
@@ -934,7 +1149,12 @@ options?: Array<SelectOption>,
 /**
  * Related resource (options endpoint).
  */
-relationship?: Relationship, };
+relationship?: Relationship, 
+/**
+ * Label of the option for records without a value (select filters),
+ * sent as `~none` in the `in` list (vocabulary 23).
+ */
+none?: string, };
 
 export type ActionSchema = { 
 /**
@@ -2275,7 +2495,13 @@ permissions: Array<string>,
  * Upload limits, when the media library is enabled and the user may
  * upload (`media.create`).
  */
-uploads?: PanelUploads, };
+uploads?: PanelUploads, 
+/**
+ * The media library's collections, in declaration order, labels
+ * translated: when the panel declares some and the user may list or
+ * upload files (vocabulary 23).
+ */
+mediaCollections?: Array<SelectOption>, };
 
 export type DataResponse<T> = { 
 /**

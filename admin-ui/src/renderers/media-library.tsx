@@ -6,12 +6,13 @@ import { FileText, LayoutGrid, List, Upload, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { usePanelConfig, useSession } from "@/api/context";
 import { invalidateAfterWrite } from "@/api/queries";
-import type { Envelope } from "@/api/types";
+import { type Envelope, NONE_OPTION } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { useImageViewer, viewerImageOf } from "@/components/lightbox";
 import { mediaUrl } from "@/lib/rich-text";
 import { formatCount, useT } from "@/i18n";
 import { MediaImage, MediaUnavailable } from "./media";
-import { PER_PAGE, isInlineImage } from "./media-picker";
+import { PER_PAGE, isInlineImage, mediaItemOf } from "./media-picker";
 import { UploadList, useUploads } from "./uploads";
 
 /** Slug of the media library resource (`rustcms_admin::media::SLUG`). */
@@ -66,8 +67,18 @@ export const GRID_PER_PAGE = PER_PAGE;
 /** The page sizes offered in the grid: the list's own up to {@link GRID_PER_PAGE}, then that. */
 export const gridPageSizes = (options: number[]) => [...options.filter((n) => n < GRID_PER_PAGE), GRID_PER_PAGE];
 
-/** A record's preview: the file itself, scaled by the browser, or a file icon. */
-export function GridThumb({ record, generation = 0 }: { record: Envelope; generation?: number }) {
+/** What the viewer knows of a media record. */
+const viewerImage = (record: Envelope) => viewerImageOf(mediaItemOf(record));
+
+/** Whether a record's file is shown as an image (not trashed, an inline type). */
+const shownAsImage = (record: Envelope) => !record.trashed && isInlineImage(record.data.mime);
+
+/**
+ * A record's preview: the file itself, scaled by the browser, or a file icon;
+ * `onOpen`: the image opens the viewer.
+ */
+export function GridThumb({ record, generation = 0, onOpen }: { record: Envelope; generation?: number; onOpen?: () => void }) {
+  const t = useT();
   const { apiPath } = usePanelConfig();
   const src = mediaUrl(apiPath, record.key);
   // Failed for this source and this fetch of the list only: tried again
@@ -83,9 +94,16 @@ export function GridThumb({ record, generation = 0 }: { record: Envelope; genera
       </div>
     );
   }
-  return (
+  const image = (
     <img src={src} alt={alt} loading="lazy" decoding="async" onError={() => setFailed({ src, generation })}
       className="aspect-square w-full rounded-md bg-muted object-cover" />
+  );
+  if (!onOpen) return image;
+  return (
+    <button type="button" onClick={onOpen} aria-label={t("viewer.open", { name: record.title ?? alt })}
+      className="block w-full cursor-zoom-in rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      {image}
+    </button>
   );
 }
 
@@ -98,12 +116,19 @@ export function MediaGrid({ rows, generation, select, actions, badge }: {
   actions: (record: Envelope) => React.ReactNode;
   badge: (record: Envelope) => React.ReactNode;
 }) {
+  // The viewer goes through the images of the page shown.
+  const shown = rows.slice(0, GRID_PER_PAGE);
+  const images = shown.filter(shownAsImage);
+  const viewer = useImageViewer(images.map(viewerImage));
   return (
+    <>
+    {viewer.viewer}
     <ul className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 sm:p-5 md:grid-cols-4 lg:grid-cols-6">
       {/* At most a grid page, whatever is shown meanwhile (a table's larger page as placeholder). */}
-      {rows.slice(0, GRID_PER_PAGE).map((record) => (
+      {shown.map((record) => (
         <li key={record.key} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-2">
-          <GridThumb record={record} generation={generation} />
+          <GridThumb record={record} generation={generation}
+            onOpen={shownAsImage(record) ? () => viewer.open(images.indexOf(record)) : undefined} />
           <div className="flex min-w-0 items-start gap-2">
             {select?.(record)}
             <span className="min-w-0 flex-1 truncate text-sm" title={record.title ?? record.key}>{record.title ?? record.key}</span>
@@ -113,15 +138,28 @@ export function MediaGrid({ rows, generation, select, actions, badge }: {
         </li>
       ))}
     </ul>
+    </>
   );
+}
+
+/**
+ * The collection uploads from the Media page go into: the one its list is
+ * filtered on, when exactly one and declared by the panel (none for
+ * "Unassigned", several, or a name no longer declared: the server refuses it).
+ */
+export function uploadCollection(search: Record<string, unknown>, declared: readonly string[]): string | undefined {
+  const value = search["filter[collection][in]"];
+  if (typeof value !== "string" || value === NONE_OPTION || !declared.includes(value)) return undefined;
+  return value;
 }
 
 /**
  * "Upload files": the media library's queue ({@link useUploads}: the server's
  * size limit checked first, two at a time at most, a busy server waited for,
  * a retry only when it may succeed), the list refreshed after each file.
+ * Files go into `collection` (the one the list is filtered on, if just one).
  */
-export function MediaUploader({ disabled }: { disabled?: boolean }) {
+export function MediaUploader({ disabled, collection }: { disabled?: boolean; collection?: string }) {
   const t = useT();
   const client = useQueryClient();
   const picker = useRef<HTMLInputElement>(null);
@@ -132,6 +170,7 @@ export function MediaUploader({ disabled }: { disabled?: boolean }) {
       setUploaded((n) => n + 1);
       void invalidateAfterWrite(client, MEDIA_SLUG);
     },
+    collection,
   });
   const pending = uploads.uploads.filter((u) => u.status === "queued" || u.status === "uploading").length;
   const clear = () => {
@@ -180,13 +219,16 @@ export function MediaPreview({ record }: { record: Envelope }) {
     typeof data.size === "string" ? t("mediaLibrary.bytes", { n: formatCount(Number(data.size)) }) : null,
     typeof data.width === "number" && typeof data.height === "number" ? `${data.width} × ${data.height}` : null,
   ].filter((d): d is string => d !== null);
+  const viewer = useImageViewer(shownAsImage(record) ? [viewerImage(record)] : []);
   return (
     <figure className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+      {viewer.viewer}
       {/* A trashed file is not served: nothing to show or download. */}
       {record.trashed ? (
         <span className="self-start"><MediaUnavailable /></span>
       ) : isInlineImage(data.mime) ? (
-        <MediaImage src={url} alt={typeof data.alt === "string" ? data.alt : ""} className="max-h-96 w-full rounded-md bg-muted object-contain" />
+        <MediaImage src={url} alt={typeof data.alt === "string" ? data.alt : ""} className="max-h-96 w-full rounded-md bg-muted object-contain"
+          onOpen={() => viewer.open(0)} label={t("viewer.open", { name })} />
       ) : (
         <a href={url} className="inline-flex items-center gap-2 self-start rounded-md border border-border px-3 py-2 text-sm hover:bg-muted">
           <FileText className="size-4" aria-hidden="true" /> {name}

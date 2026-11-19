@@ -1,0 +1,600 @@
+{
+  "abilities": {
+    "create": true,
+    "delete": true,
+    "history": true,
+    "update": true,
+    "view": true,
+    "viewAny": true
+  },
+  "form": {
+    "columns": 1,
+    "components": [
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Title",
+        "name": "title",
+        "nullable": false,
+        "reacts": true,
+        "rules": [
+          {
+            "rule": "required"
+          }
+        ],
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Kind",
+        "name": "kind",
+        "nullable": false,
+        "options": [
+          {
+            "label": "Choice",
+            "value": "choice"
+          },
+          {
+            "label": "Blank",
+            "value": "blank"
+          }
+        ],
+        "rules": [
+          {
+            "rule": "required"
+          }
+        ],
+        "type": "select",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Tags",
+        "name": "tags",
+        "nullable": true,
+        "repeater": {
+          "addable": true,
+          "components": [
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Name",
+              "name": "name",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                }
+              ],
+              "type": "text_input",
+              "valueType": "string"
+            }
+          ],
+          "deletable": true
+        },
+        "rules": [],
+        "type": "repeater",
+        "valueType": "json"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Options",
+        "name": "options",
+        "nullable": false,
+        "repeater": {
+          "addable": true,
+          "components": [
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Content",
+              "name": "content",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                },
+                {
+                  "rule": "max_length",
+                  "value": 50
+                }
+              ],
+              "type": "text_input",
+              "valueType": "string"
+            }
+          ],
+          "createComponents": [
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Content",
+              "name": "content",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                },
+                {
+                  "rule": "max_length",
+                  "value": 50
+                }
+              ],
+              "type": "text_input",
+              "valueType": "string"
+            }
+          ],
+          "deletable": true,
+          "relationship": {
+            "create": true,
+            "delete": true,
+            "orderColumn": "position",
+            "relation": "options",
+            "resource": "question_options",
+            "update": true
+          },
+          "reorderable": true
+        },
+        "rules": [],
+        "shownWhen": {
+          "name": "kind",
+          "op": "eq",
+          "value": "choice"
+        },
+        "type": "repeater",
+        "valueType": "rows"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Blanks",
+        "name": "blanks",
+        "nullable": false,
+        "reacts": true,
+        "repeater": {
+          "addable": true,
+          "components": [
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Label",
+              "name": "label",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                }
+              ],
+              "type": "text_input",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Mode",
+              "name": "mode",
+              "nullable": false,
+              "options": [
+                {
+                  "label": "Select",
+                  "value": "select"
+                },
+                {
+                  "label": "Text",
+                  "value": "text"
+                },
+                {
+                  "label": "Open",
+                  "value": "open"
+                }
+              ],
+              "rules": [
+                {
+                  "rule": "required"
+                }
+              ],
+              "type": "select",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Hints",
+              "name": "hints",
+              "nullable": true,
+              "repeater": {
+                "addable": true,
+                "components": [
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Text",
+                    "name": "text",
+                    "nullable": false,
+                    "rules": [
+                      {
+                        "rule": "required"
+                      },
+                      {
+                        "rule": "max_length",
+                        "value": 20
+                      }
+                    ],
+                    "type": "text_input",
+                    "valueType": "string"
+                  }
+                ],
+                "deletable": true
+              },
+              "rules": [],
+              "type": "repeater",
+              "valueType": "json"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Choices",
+              "name": "choices",
+              "nullable": false,
+              "repeater": {
+                "addable": true,
+                "components": [
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Content",
+                    "name": "content",
+                    "nullable": false,
+                    "rules": [
+                      {
+                        "rule": "required"
+                      },
+                      {
+                        "rule": "max_length",
+                        "value": 50
+                      }
+                    ],
+                    "type": "text_input",
+                    "valueType": "string"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Note",
+                    "name": "note",
+                    "nullable": true,
+                    "rules": [],
+                    "shownWhen": {
+                      "name": "mode",
+                      "op": "eq",
+                      "scope": "parent",
+                      "value": "select"
+                    },
+                    "type": "text_input",
+                    "valueType": "string"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Image",
+                    "media": {
+                      "accept": [
+                        "image/*"
+                      ],
+                      "maxItems": 1,
+                      "multiple": false
+                    },
+                    "name": "image",
+                    "nullable": true,
+                    "rules": [],
+                    "type": "file_upload",
+                    "valueType": "uuid"
+                  }
+                ],
+                "createComponents": [
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Content",
+                    "name": "content",
+                    "nullable": false,
+                    "rules": [
+                      {
+                        "rule": "required"
+                      },
+                      {
+                        "rule": "max_length",
+                        "value": 50
+                      }
+                    ],
+                    "type": "text_input",
+                    "valueType": "string"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Note",
+                    "name": "note",
+                    "nullable": true,
+                    "rules": [],
+                    "shownWhen": {
+                      "name": "mode",
+                      "op": "eq",
+                      "scope": "parent",
+                      "value": "select"
+                    },
+                    "type": "text_input",
+                    "valueType": "string"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Image",
+                    "media": {
+                      "accept": [
+                        "image/*"
+                      ],
+                      "maxItems": 1,
+                      "multiple": false
+                    },
+                    "name": "image",
+                    "nullable": true,
+                    "rules": [],
+                    "type": "file_upload",
+                    "valueType": "uuid"
+                  }
+                ],
+                "deletable": true,
+                "relationship": {
+                  "create": true,
+                  "delete": true,
+                  "orderColumn": "position",
+                  "relation": "choices",
+                  "resource": "question_options",
+                  "update": true
+                },
+                "reorderable": true
+              },
+              "rules": [],
+              "shownWhen": {
+                "name": "mode",
+                "op": "ne",
+                "value": "open"
+              },
+              "type": "repeater",
+              "valueType": "rows"
+            }
+          ],
+          "createComponents": [
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Label",
+              "name": "label",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                }
+              ],
+              "type": "text_input",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Mode",
+              "name": "mode",
+              "nullable": false,
+              "options": [
+                {
+                  "label": "Select",
+                  "value": "select"
+                },
+                {
+                  "label": "Text",
+                  "value": "text"
+                },
+                {
+                  "label": "Open",
+                  "value": "open"
+                }
+              ],
+              "rules": [
+                {
+                  "rule": "required"
+                }
+              ],
+              "type": "select",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Hints",
+              "name": "hints",
+              "nullable": true,
+              "repeater": {
+                "addable": true,
+                "components": [
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Text",
+                    "name": "text",
+                    "nullable": false,
+                    "rules": [
+                      {
+                        "rule": "required"
+                      },
+                      {
+                        "rule": "max_length",
+                        "value": 20
+                      }
+                    ],
+                    "type": "text_input",
+                    "valueType": "string"
+                  }
+                ],
+                "deletable": true
+              },
+              "rules": [],
+              "type": "repeater",
+              "valueType": "json"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Choices",
+              "name": "choices",
+              "nullable": false,
+              "repeater": {
+                "addable": true,
+                "components": [
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Content",
+                    "name": "content",
+                    "nullable": false,
+                    "rules": [
+                      {
+                        "rule": "required"
+                      },
+                      {
+                        "rule": "max_length",
+                        "value": 50
+                      }
+                    ],
+                    "type": "text_input",
+                    "valueType": "string"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Note",
+                    "name": "note",
+                    "nullable": true,
+                    "rules": [],
+                    "shownWhen": {
+                      "name": "mode",
+                      "op": "eq",
+                      "scope": "parent",
+                      "value": "select"
+                    },
+                    "type": "text_input",
+                    "valueType": "string"
+                  },
+                  {
+                    "columnSpan": 1,
+                    "disabled": false,
+                    "label": "Image",
+                    "media": {
+                      "accept": [
+                        "image/*"
+                      ],
+                      "maxItems": 1,
+                      "multiple": false
+                    },
+                    "name": "image",
+                    "nullable": true,
+                    "rules": [],
+                    "type": "file_upload",
+                    "valueType": "uuid"
+                  }
+                ],
+                "deletable": true,
+                "relationship": {
+                  "create": true,
+                  "delete": false,
+                  "orderColumn": "position",
+                  "relation": "choices",
+                  "resource": "question_options",
+                  "update": false
+                },
+                "reorderable": true
+              },
+              "rules": [],
+              "shownWhen": {
+                "name": "mode",
+                "op": "ne",
+                "value": "open"
+              },
+              "type": "repeater",
+              "valueType": "rows"
+            }
+          ],
+          "deletable": true,
+          "relationship": {
+            "create": true,
+            "delete": true,
+            "orderColumn": "position",
+            "relation": "blanks",
+            "resource": "question_blanks",
+            "update": true
+          },
+          "reorderable": true
+        },
+        "rules": [],
+        "shownWhen": {
+          "name": "kind",
+          "op": "eq",
+          "value": "blank"
+        },
+        "type": "repeater",
+        "valueType": "rows"
+      }
+    ]
+  },
+  "operation": "edit",
+  "resource": {
+    "label": "Question",
+    "pluralLabel": "Questions",
+    "slug": "questions",
+    "titleField": "title"
+  },
+  "schemaVersion": 2,
+  "table": {
+    "actions": [],
+    "columns": [
+      {
+        "label": "Title",
+        "name": "title",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Kind",
+        "name": "kind",
+        "options": [
+          {
+            "label": "Choice",
+            "value": "choice"
+          },
+          {
+            "label": "Blank",
+            "value": "blank"
+          }
+        ],
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      }
+    ],
+    "filters": [],
+    "perPageOptions": [
+      10,
+      25,
+      50,
+      100
+    ],
+    "searchable": false
+  },
+  "vocabularyVersion": 28
+}

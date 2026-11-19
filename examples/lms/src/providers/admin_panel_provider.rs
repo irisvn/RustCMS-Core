@@ -6,8 +6,13 @@ use rustcms::admin::dashboard::{Bucket, Dashboard, Widget};
 use rustcms::prelude::*;
 
 use crate::admin::resources::{
-    category_resource::CategoryResource, course_resource::CourseResource, enrollment_resource::EnrollmentResource,
-    learner_resource::LearnerResource, lesson_resource::LessonResource, news_resource::NewsResource,
+    category_resource::CategoryResource,
+    course_resource::CourseResource,
+    enrollment_resource::EnrollmentResource,
+    learner_resource::LearnerResource,
+    lesson_resource::LessonResource,
+    news_resource::NewsResource,
+    quiz_question_resource::{QuizBlankResource, QuizOptionResource, QuizQuestionResource},
     tag_resource::TagResource,
 };
 
@@ -26,6 +31,8 @@ pub fn provider() -> AdminProvider {
         )
         // #endregion theme
         .media()
+        .media_collection("news-covers", "News covers")
+        .media_collection("quiz-images", "Quiz images")
         .resource::<CourseResource>()
         .resource::<LessonResource>()
         .resource::<LearnerResource>()
@@ -33,6 +40,9 @@ pub fn provider() -> AdminProvider {
         .resource::<NewsResource>()
         .resource::<CategoryResource>()
         .resource::<TagResource>()
+        .resource::<QuizQuestionResource>()
+        .resource::<QuizOptionResource>()
+        .resource::<QuizBlankResource>()
         // rustcms:resources
         .settings::<crate::settings::lms_settings::LmsSettings>()
         .mail_settings()

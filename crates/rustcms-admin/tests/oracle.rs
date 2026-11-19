@@ -139,6 +139,7 @@ db_test!(oracle_matches_the_admin_api, |db: TestDb| async move {
             width: Set(None),
             height: Set(None),
             alt: Set(None),
+            collection: Set(None),
             owner_id: Set(users.admin.id),
             created_at: Set(chrono::Utc::now()),
             deleted_at: Set(None),

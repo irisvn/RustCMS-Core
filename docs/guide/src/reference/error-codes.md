@@ -110,6 +110,10 @@ keeps it complete.
 | `rows_not_addable` | `rows cannot be added here` (a relationship repeater with `addable(false)`) |
 | `rows_not_deletable` | `rows cannot be removed here` (`deletable(false)`) |
 | `too_many_rows` | `has too many rows to order here` (more than 1,000 rows of one parent) |
+| `too_many_rows_to_remove` | `has too many rows to remove here` (a save hiding a relationship repeater whose parent has more than 1,000 rows) |
+| `too_many_rows_changed` | `changes too many rows at once` (on the form: a save changing more than 1,000 rows of relationship repeaters, at every level, rows removed with their parent row included) |
+| `too_many_rows_to_check` | `has too many rows to check here` (a repeater with `validate_rows` whose parent has more than 1,000 rows) |
+| `form_rules_failed` | `could not check the form; try again` (on the form: a rule computed on the server, `shown_when_fn`, `required_fn` or `options_fn`, failed or ran out of time during the save; nothing saved) |
 | `positions_exhausted` | `has no positions left; renumber the rows` (the order column reached its type's largest value) |
 | `stale` | `This was changed by someone else meanwhile. Reload and try again.` |
 | `last_super_admin` | At least one active super admin is required for the `{guard}` guard. |
@@ -118,13 +122,15 @@ keeps it complete.
 | `duplicate_file` | `may not list the same file twice` |
 | `file_types` | `does not accept {types} files` |
 | `multipart` | `must be sent as multipart/form-data` |
-| `file_part` | must be the only part, named `file` |
+| `file_part` | must be the only part, named `file` (up to 0.13; now `upload_parts`) |
 | `file_name_length` | `has a name longer than 255 characters` |
 | `unreadable` | `could not be read` |
 | `file_type` | `is not an accepted file type` |
 | `incomplete_file` | `is not a complete file of its type` |
 | `image` | `is not a valid image` |
 | `too_many_pixels` | `has too many pixels` |
+| `upload_parts` | must be one part named `file`, with at most one `collection` |
+| `media_collection` | `is not a media collection` |
 | `document` | `is not a document` |
 | `document_invalid` | `is not a valid document` |
 | `document_version` | `is not a valid document (version 1 to 3)` |

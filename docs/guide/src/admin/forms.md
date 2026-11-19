@@ -265,6 +265,10 @@ Section::make("Sale").shown_when(when("on_sale").is_true()).schema(components![
   about its value can be learned from what is saved.
 - On a form opened from a [relation](relationships.md), the key the relation sets
   is read by the conditions with the parent's key.
+- In a [repeater's rows](#repeaters), `when` names an input of the same row;
+  `when_root("x")` names an input of the record's form and `when_parent("x")`
+  one of the enclosing row (a repeater nested in a row), with the same
+  tests. `when_root` and `when_parent` are refused outside rows.
 
 The same works on [settings pages](settings.md) and in
 [action forms](actions.md) (`ActionField::shown_when`; a hidden field reaches
@@ -292,6 +296,10 @@ returns a list of `FormPatch`es:
 | `FormPatch::add_row(field, row)`, `add_row_at(field, index, row)` | adds a row to a JSON repeater |
 | `FormPatch::remove_row(field, index)`, `move_row(field, from, to)` | removes or moves a row |
 | `FormPatch::flag_row(field, index, message)` | a warning under a row; changes nothing |
+| `FormPatch::add_relation_row(field, data)` (`add_relation_row_as(field, ref, data)`) | adds a row to a relationship repeater |
+| `FormPatch::update_relation_row(field, id, data)` | sets inputs of a relationship row (`id`: its key, or a new row's ref) |
+| `FormPatch::remove_relation_row(field, id)` | removes a relationship row |
+| `FormPatch::flag_relation_row(field, id, message)` | a warning under a relationship row; changes nothing |
 | `FormPatch::notice(message)` | a message to the user |
 
 ```rust
@@ -309,16 +317,25 @@ NumberInput::make("total"),
   the user may view the record), then what the user typed in the inputs they
   may write (a value that does not decode yet, a number half typed, is left
   out), and on a create form opened from a relation section, the key that
-  relation binds. Never encrypted fields, links or child records, nor a field
-  the user may not read. **These values are user input**: check an id the
+  relation binds. Never encrypted fields or links, nor a field the user may not
+  read. The rows of the form's relationship repeaters the user may change are
+  there as the panel holds them (stored rows with the user's unsaved changes,
+  then new rows; not a repeater with more rows than the form edits),
+  through `state.relation_rows(name)` (`id()`, `key()`,
+  `reference()`, `get(name)`, `text(name)`). **These values are user input**: check an id the
   reaction looks up (a `belongs_to` key, a media id) against what the user may
   see, with `ctx.records(…)`.
 - **What it may change.** Patches apply in order (a row index is the row's
   place after the previous patches), conditions evaluated again after each
   one. The server drops, and logs, a patch the user could not make: a field
   not in the form, not readable and writable by the user, hidden by its
-  conditions, encrypted, or a value its input refuses; row patches name JSON
-  repeaters only. Patches that change nothing are dropped. Values are sent as
+  conditions, encrypted, or a value its input refuses. Row patches by index
+  name JSON repeaters; relationship rows are named by key or ref and are
+  changed as the user could: `create`, `update` or `delete` on the child,
+  `addable`/`deletable`, `min_items`/`max_items`, inputs of the rows only (never
+  the parent key, a filter or order column), values the child's field accepts,
+  inputs hidden by the row's conditions left out; a new row gets a ref from the
+  server unless the reaction named it. Patches that change nothing are dropped. Values are sent as
   a save stores them (a decimal at the column's scale, rows without their
   hidden inputs). At most 200 patches, messages of at most 500 characters.
   Changes made by a patch do not set off other reactions.
@@ -335,8 +352,60 @@ NumberInput::make("total"),
   them (the API, imports and actions write without them). What must always
   hold belongs in `mutate_before_create`/`mutate_before_update` or validation.
 
+A relationship repeater may react too: a change of its rows asks for its
+reaction. The demo's categories title a new section; the LMS keeps a
+question's blanks in step with its prompt:
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#sections-reacts [src/admin/resources/category_resource.rs]
+
+<<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-prompt-reacts [src/admin/resources/quiz_question_resource.rs]
+
 Reactions are for resource forms: settings pages and action forms do not take
-them yet, nor inputs inside repeater rows.
+them yet, nor inputs inside repeater rows, and rows of nested relationship
+repeaters cannot be patched.
+
+## Rules computed on the server
+
+When a rule needs code or data that `when(..)` cannot state (a field required
+for some accounts, a topic select offering the chosen subject's topics), an
+input takes closures run on the server:
+
+| Method | Answers |
+|---|---|
+| `.shown_when_fn(f)` | whether the input is shown (with `shown_when`, both must say so) |
+| `.required_fn(f)` | whether it is required, when shown |
+| `.options_fn(f)` | the options of a select or checkbox list (not `belongs_to`) |
+| `.depends_on([...])` | **required**: the inputs whose change asks again (empty: only when the form opens and on save) |
+| `.rules_timeout(d)` | the time the input's rules may take (5 seconds by default, at most 30) |
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#link-required [src/admin/resources/category_resource.rs]
+
+The LMS reads data: a published course with lessons needs a summary.
+
+<<< @/../../../examples/lms/src/admin/resources/course_resource.rs#summary-required [src/admin/resources/course_resource.rs]
+
+- **`f` is async**, with the request's `Ctx` (it may read the database; it
+  should not write) and the `FormState` a reaction reads: what the user's form
+  holds, the inputs hidden by `when(..)` conditions read as empty. **Its values
+  are user input**: look records up through `ctx.records(…)`/`ctx.record(…)`.
+- **When the form opens** the schema holds the answer for its values; **when an
+  input of `depends_on` changes** and typing pauses, the panel asks again and
+  applies the latest answer (a hidden input is hidden as by a condition and its
+  value is not sent).
+- **On every save** (the panel, the API, imports) the server runs the rules
+  again, after the `when(..)` conditions: a hidden input's value is dropped; a
+  shown required one (`required_fn`, or under `shown_when_fn` the field's own
+  `required`) without a value is `is required` on create, or when the save sends
+  it or an input it depends on (an old record stays editable otherwise); a
+  value outside the computed options is `is not one of the options`. A rule
+  that fails or runs out of time refuses the save (`form_rules_failed`, nothing
+  saved): keep rules light (each input's time limit, 30 seconds for the whole
+  form). An import's check before it runs does not run them; the run does.
+- **Where.** The form's own inputs of resource forms; not inputs in repeater
+  rows, relationship repeaters, hidden, encrypted or link inputs, settings pages
+  or action forms. A `when(..)` condition may not read an input whose visibility
+  is computed (the panel evaluates conditions without waiting for the server).
+- Prefer `when(..)`: the panel evaluates it at once, without a request.
 
 ## Leaving with unsaved changes
 
@@ -390,30 +459,89 @@ Repeater::make("faq")
 - **A row's rules are on its inputs.** A row is part of one column, with no
   field of its own, so its inputs say what they need: `.required()`,
   `.max_length(n)` on text, `.integer()`, `.min(n)`, `.max(n)` on numbers,
-  `options` on selects (rows have no relationships). Elsewhere these rules
-  come from the field, and the boot refuses them on inputs.
+  `options` on selects (rows have no relationships), and for files and
+  documents `.accept([…])`, `.max_size(bytes)`, `.multiple(n)` (a list of up
+  to `n` files), `.collection(name)` and `.nodes([…])` (a rich editor's
+  application elements). Elsewhere these rules come from the field, and the
+  boot refuses them on inputs.
 - **Values in a row:** text for `TextInput` and `Textarea`, a JSON number for
   `NumberInput`, `true`/`false` for `Toggle` and `Checkbox`, the option's value
   for `SelectInput`, a list for `CheckboxList`, `YYYY-MM-DD` for `DatePicker`,
   an RFC 3339 instant for `DateTimePicker`, an object of text for `KeyValue`,
-  any JSON for `CustomInput`, and a list for a nested `Repeater` (three deep at
-  most). Empty inputs are left out of the row.
+  any JSON for `CustomInput`, a file id (a list with `.multiple`) for
+  `FileUpload`, a document for `RichEditor`, and a list for a nested
+  `Repeater` (three deep at most). Empty inputs are left out of the row.
+- **Files and documents in rows** are checked as a field's on every write:
+  each file must be in the media library, visible to the user, of an accepted
+  type and size; a document is checked as rich text, and its images as files.
+  Errors name the row (`faq.2.icon`). A file only a row names has no foreign
+  key in the database: deleting it from the library leaves the row showing it
+  as unavailable. A row's rich editor shows a compact toolbar (bold, italic,
+  underline, superscript, subscript, images, application elements);
+  `.full()` gives the full one. The document's rules do not change with the
+  toolbar.
 - **Each row is checked on the server**, like a form: a key the row does not
   declare is refused, then each input's rules, then `min_items` and
   `max_items`. Errors name the row and the input: `faq.2.question`
   (`faq.2.links.0.url` nested, `faq` for the list); the panel shows them in
   their row.
-- **Conditions** (`shown_when`) in a row name inputs of the same row. An
-  input hidden by its condition is removed from the stored row, and
-  `required` means "required when shown".
+- **Conditions** (`shown_when`) in a row name inputs of the same row, or of
+  the record's form with `when_root` (`when_parent` for the enclosing row of a
+  nested repeater). An input hidden by its condition is removed from the
+  stored row, and `required` means "required when shown". Inputs whose
+  conditions read the form are checked once the form's values are known (on
+  update, the stored record with the request over it).
 - **Options:** `min_items`, `max_items`, `reorderable` (buttons, or drag the
   handle), `collapsible` / `collapsed`, `item_label("{input}")` (each row's
   heading, a template as [record titles](resources.md#titles-from-several-fields)),
   `add_action_label`, `addable(false)`, `deletable(false)`,
-  `default_items(n)` (rows a create form starts with), `cloneable`.
-- **Not in rows (yet):** `FileUpload` and `RichEditor` (their media escape the
-  [reference checks](media.md)), secrets, belongs-to-many inputs, tabs and
-  splits.
+  `default_items(n)` (rows a create form starts with), `cloneable`, `table()`
+  (below).
+- **`table()`** lays each row out as a table row: one column per input (the
+  labels in a header; each cell keeps its label for screen readers), the
+  row's buttons last; below the `md` breakpoint the rows stack as usual. An
+  input hidden by its condition leaves its cell empty. Table rows hold inputs
+  only (no sections, grids, nested repeaters, file uploads or rich editors)
+  and do not fold.
+- **Not in rows:** secrets, belongs-to-many inputs, record selects
+  (`belongs_to`: a JSON row has no field to choose from), tabs and splits.
+
+### Rules over the rows
+
+`.validate_rows(|ctx, check| …)` keeps an invariant over a repeater's rows (a
+single-answer question has exactly one correct option). It runs on the
+server whenever a save changes the rows, on the panel, the API and imports:
+
+<<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-validate [src/admin/resources/quiz_question_resource.rs]
+
+- **What it reads.** `check.rows()` (each row's `id()` and `get(name)`),
+  `check.parent()` (the values of what holds the rows, as the save leaves
+  them: the record, or the enclosing row) and `check.operation()`.
+  - For [child records](#child-records): **every** live row of the relation
+    (filtered, not trashed), read after the save wrote them, including rows
+    the user cannot see, in the order column's order. A row is named by its
+    key, or the ref of a row this save created. Keep values of rows the user
+    cannot see out of messages.
+  - For a JSON repeater: the list as the save writes it (after the
+    `mutate_before_*` hooks), rows named by index; `parent()` is the record
+    with what the save writes over it.
+- **When.** On create, when the repeater is shown, whether or not rows were
+  sent; on update, when the save adds, changes, removes or reorders rows (a
+  JSON repeater: when its value is sent). Never for a hidden repeater, and not
+  on a save that leaves the rows alone, so a record whose rows break a newer
+  rule stays editable. Writes to a child on its own page do not run its
+  parent's rules, and a save that changes only the parent does not run them
+  either: a rule reading the parent (a question made single-answer while it
+  has two correct options) is kept on that path by the parent's
+  `mutate_before_update`, if it must hold there too.
+- **Errors.** `RowsError::list(message)` on the repeater (`options`),
+  `RowsError::row(id, message)` on a row (`options.n1`),
+  `RowsError::input(id, name, message)` on a row's input
+  (`options.n1.correct`); `.and(…)` gathers several. A refusal saves nothing.
+  Nested repeaters' rules run per row (`blanks.4.choices`).
+- On child records (any level) and on the form's own JSON repeaters; not on
+  JSON repeaters inside rows, settings pages or action forms. A plain
+  function: it does not read the database.
 
 On view pages each row is shown with the entries of its inputs (a
 `RepeatableEntry`, see [the default view page](infolists.md#the-default-view-page));
@@ -448,13 +576,18 @@ ResourceMeta::new("Line").lock_parent("order_id", "orders")
   in the rows), `scope()`, policy and hooks apply to every row, as when the row
   is written from the relation section. The child's key to the parent and the
   order column are set by the server, never inputs.
-- **Not in rows:** `belongs_to` selects, media, rich text, encrypted and
-  belongs-to-many fields (edit them on the child's page). Hooks of the child
-  should not write other resources; a hook adding media to a row is a server
-  error (media are locked after every other record of a write).
-- **One repeater per child resource** in a form; a resource with relationship
-  repeaters cannot link media records (belongs-to-many), and cannot lock a
-  parent of its own (`lock_parent` has no chains).
+- **Media, rich text and `belongs_to` fields in rows** are the child's, with
+  its rules: a row's files and images are checked with the parent's, once,
+  after every other record the save locks (also those a child's hook adds);
+  a `belongs_to` select offers the child's options and its target must be
+  visible to the user. Errors name the row (`photos.n1.image`). Rich editors
+  show the compact toolbar (`.full()` for the full one).
+- **Not in rows:** encrypted and belongs-to-many fields (edit them on the
+  child's page). Hooks of the child should not write other resources.
+- **Several repeaters on one child resource** need [filtered relations](relationships.md#filtered-relations)
+  that cannot share a row (the options of a question and the choices of its
+  blanks, in one table). A resource with relationship repeaters cannot link
+  media records (belongs-to-many).
 - **Concurrent saves** of one parent and its children wait for each other;
   a rare conflict through other records answers 409 ("try again"), nothing
   saved.
@@ -490,14 +623,97 @@ ResourceMeta::new("Line").lock_parent("order_id", "orders")
   entries in the child's history.
 - The form edits up to `max_items` rows (at most 100); with more, the
   repeater is read-only and the relation section edits them. A save reorders
-  at most 1,000 rows of one parent. View pages show
-  the rows in the relation section, not in the form.
-- **Not yet:** conditions in relationship rows, repeaters inside them, and
-  conditions on the repeater itself.
+  at most 1,000 rows of one parent. The [default view page](infolists.md#the-default-view-page)
+  shows the rows under the record, as a `RepeatableEntry` of the relation.
+- **Conditions in rows** are the repeater's own (`shown_when` in its
+  `.schema()`, reading the row and, with `when_root`, the record's form); the
+  child's own form's conditions do not apply to rows. A row input under a
+  condition needs a child column that stores a hidden value (nullable, or
+  with a default), as on forms.
+- **A condition on the repeater** (its own `shown_when`, or a layout's around
+  it) hides it as any input, with one difference: **a save that hides it
+  removes its rows**. Switching a question from "single choice" to "fill in
+  the blanks" removes its options. Only rows the user can see are removed,
+  each needing the child's `delete` (403 otherwise, nothing saved), to the
+  trash with soft deletes; only when the save hides it (shown before the
+  user's changes, hidden after), so rows added elsewhere while it was hidden
+  stay through other edits. Changes sent for a hidden repeater are ignored.
+  The panel says how many rows saving removes where the repeater was. Never
+  hide a repeater on a value whose change should keep its rows. A repeater
+  with `deletable(false)` cannot be under a condition, and
+  `clear_when_hidden` does not apply.
+- **JSON repeaters** of the child's JSON fields may be inputs of rows, with
+  the rules their own inputs declare (as on a form); `when_parent` in their
+  rows reads the relationship row.
 
 The demo's categories edit their posts this way (each row is a post):
 
 <<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-repeater [src/admin/resources/category_resource.rs]
+
+#### Rows of rows
+
+A relationship row may hold relationship repeaters of its own: relations of
+the child (a question's blanks, each with its choices), three levels of
+repeaters at most below the form, whatever their kind. The whole tree is
+saved at once:
+
+- **The change of a row's repeater goes inside the row's change**, of the same
+  shape; a new row's rows are created with it (the server gives them the new
+  row's key). Errors name every level: `blanks.n1.choices.n2.content`,
+  `blanks.8.choices.12.content`.
+- **The nested child locks its parent, or an ancestor it inherits.** Either
+  the child declares `lock_parent` through the nested relation (the section's
+  links lock their section, which locks its category: parent locks may chain),
+  or it locks an enclosing level through a field filled in with
+  `.inherit(field)`. Saves of one record and of any of its rows then wait for
+  each other.
+- **`.inherit("question_id")`** names a field of the nested child that the
+  server fills with the key of an enclosing level (the record's, or an
+  enclosing row's): a `belongs_to` of that level, never an input (a client
+  sending it gets 422). Use it when the child also names an ancestor, as
+  options with a double foreign key `(blank_id, question_id)` do.
+- **Order of a save, level by level:** rows removed (each with its own rows
+  first), then rows changed and added, each written, then its own rows, then
+  its `after_save` (which sees them), then the order. The record's
+  `after_save` runs last.
+- **Removing a row removes its rows** of the repeaters the form declares in it,
+  through the child's policy (`delete` on each) and history, to the trash
+  with soft deletes; when the user cannot see one of them, the save is
+  refused (403). Only the rows of those repeaters' relations are removed:
+  other children of the row (another relation, or outside a filtered
+  relation) are left to the database (its foreign keys), as when the row is
+  deleted on its own page. Restoring a trashed row does not restore its rows.
+- **A nested repeater's condition reads its row only** (`when`): a row the
+  save does not touch keeps its rows, so a condition on the form could hide
+  them without removing them (refused at boot).
+- **Conditions:** `when_parent("x")` in a nested row reads the row it is in, as
+  this save leaves it; a nested repeater hidden by its row's condition loses
+  its rows when the save hides it, as on the form.
+- **At most 1,000 rows per save**, every level counted, rows removed with
+  their parent row included: beyond, the save is refused
+  (`too_many_rows_changed`, nothing saved).
+- **Positions:** new rows of an ordered nested repeater take positions after
+  every row of their parent and every row sharing a key the repeater
+  inherits, so a unique `(question, position)` holds across the blanks.
+- **The form reads** each stored row's own rows through its relation when it
+  opens (one request per row). View pages show the rows of rows too
+  ([relationship entries](infolists.md)).
+- **Hiding a repeater whose rows hold rows** says how many go with them
+  (counted from what the form read); hiding a nested repeater by its row's
+  condition says so in that row.
+
+The demo's categories hold sections, each with its links (a chain of parent
+locks; a link's note shows in a detailed section):
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#sections-repeater [src/admin/resources/category_resource.rs]
+
+The LMS's quiz questions edit their options (hints read from the question's
+form) or their blanks, each with its choices (options that also name their
+question, filled in with `inherit`), depending on the question's kind:
+
+<<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-form [src/admin/resources/quiz_question_resource.rs]
+
+<<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-blank-relations [src/admin/resources/quiz_question_resource.rs]
 
 ### Repeaters in lists, history and CSV
 

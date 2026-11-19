@@ -15,8 +15,11 @@ describe("shared condition cases", () => {
   for (const form of cases.forms) {
     it(form.name, () => {
       const conditions = formConditions(form.components as unknown as ComponentSchema[]);
+      // A repeater's row reading the record's form (ADR 0044).
+      const kinds = "root" in form && form.root ? new Map(Object.entries(form.root.kinds)) : undefined;
       for (const c of form.cases) {
-        expect([...hiddenFields(conditions, c.values)].sort(), JSON.stringify(c.values)).toEqual(c.hidden);
+        const outer = kinds && "root" in c ? { root: { values: c.root as Record<string, unknown>, kinds } } : {};
+        expect([...hiddenFields(conditions, c.values, outer)].sort(), JSON.stringify(c.values)).toEqual(c.hidden);
       }
     });
   }

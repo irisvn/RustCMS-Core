@@ -1,7 +1,7 @@
 //! The admin page of [`SiteSettings`] (`/admin/settings/site`): which fields
 //! the form shows and how they are checked.
 
-use rustcms::admin::{Repeater, SettingField, SettingsMeta, SettingsPage, TextInput, components};
+use rustcms::admin::{FileUpload, Repeater, SettingField, SettingsMeta, SettingsPage, TextInput, components};
 use rustcms::async_trait;
 
 use crate::settings::site_settings::SiteSettings;
@@ -20,7 +20,10 @@ impl SettingsPage for SiteSettings {
             SettingField::boolean("comments_open"),
             SettingField::integer("posts_per_page").help("Between 1 and 100"),
             SettingField::secret("mail_password").label("Mail password"),
-            SettingField::media("logo").accept(&["image/*"]).help("An image of the media library"),
+            SettingField::media("logo")
+                .accept(&["image/*"])
+                .collection("branding")
+                .help("An image of the media library"),
             // #region repeater
             // Rows of inputs in one value (ADR 0040): each row's rules are on its inputs.
             SettingField::repeater(
@@ -29,6 +32,8 @@ impl SettingsPage for SiteSettings {
                     .schema(components![
                         TextInput::make("label").required().max_length(40),
                         TextInput::make("url").url().required().max_length(200),
+                        // A file in a row: its rules are the input's (images, small, in the branding collection).
+                        FileUpload::make("icon").accept(&["image/*"]).max_size(512 * 1024).collection("branding"),
                     ])
                     .max_items(5)
                     .reorderable()

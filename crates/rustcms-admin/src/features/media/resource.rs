@@ -4,8 +4,8 @@
 use super::*;
 
 /// The media library resource: listed, viewed, trashed and restored like any
-/// resource; created only by uploads. Only its `name` (a rename) and `alt`
-/// are edited, by the uploader or with `media.manage_all`.
+/// resource; created only by uploads. Only its `name` (a rename), `alt` and
+/// `collection` are edited, by the uploader or with `media.manage_all`.
 pub struct MediaResource;
 
 /// Longest alternative text, in characters.
@@ -36,6 +36,12 @@ impl Resource for MediaResource {
                 .readable(|_| true)
                 .creatable(|_| false)
                 .max_length(MAX_ALT),
+            // Moved to another collection (or none) on the record, as `name` is renamed.
+            Field::column(entity::Column::Collection)
+                .readable(|_| true)
+                .creatable(|_| false)
+                .max_length(MAX_COLLECTION)
+                .filterable(),
             shown(entity::Column::Mime).filterable(),
             shown(entity::Column::Size).sortable(),
             shown(entity::Column::Width),
@@ -47,7 +53,12 @@ impl Resource for MediaResource {
     }
 
     fn form() -> crate::Form {
-        crate::Form::new().schema(components![crate::TextInput::make("name"), crate::Textarea::make("alt")])
+        // The collection's options are the panel's collections (shown only when it declares some).
+        crate::Form::new().schema(components![
+            crate::TextInput::make("name"),
+            crate::Textarea::make("alt"),
+            crate::SelectInput::make("collection").placeholder("Unassigned"),
+        ])
     }
 
     /// A new name is cleaned as uploaded names are (no path, quotes or
@@ -67,6 +78,19 @@ impl Resource for MediaResource {
         if data.get("alt").and_then(serde_json::Value::as_str).is_some_and(|alt| alt.trim().is_empty()) {
             data.insert("alt".into(), serde_json::Value::Null);
         }
+        // A declared collection, or none (`""` too); an undeclared one is kept only unchanged.
+        match data.get("collection") {
+            Some(serde_json::Value::String(name)) if name.is_empty() => {
+                data.insert("collection".into(), serde_json::Value::Null);
+            }
+            Some(serde_json::Value::String(name))
+                if ctx.registry.media_collection_named(name).is_none()
+                    && record.collection.as_deref() != Some(name.as_str()) =>
+            {
+                return Err(ValidationErrors::field("collection", "is not a media collection").into());
+            }
+            _ => {}
+        }
         // The application's hooks see the record as it will be stored.
         if !ctx.registry.media_hooks().is_empty() && !data.is_empty() {
             let mut next = record.clone();
@@ -76,6 +100,11 @@ impl Resource for MediaResource {
             match data.get("alt") {
                 Some(serde_json::Value::String(alt)) => next.alt = Some(alt.clone()),
                 Some(serde_json::Value::Null) => next.alt = None,
+                _ => {}
+            }
+            match data.get("collection") {
+                Some(serde_json::Value::String(collection)) => next.collection = Some(collection.clone()),
+                Some(serde_json::Value::Null) => next.collection = None,
                 _ => {}
             }
             let change = MediaChange { event: MediaEvent::Updated, media: &next, previous: Some(record) };
@@ -88,10 +117,13 @@ impl Resource for MediaResource {
         Table::new()
             .columns(vec![
                 TextColumn::make("name"),
+                // Shown (with its label) when the panel declares collections.
+                TextColumn::make("collection").hide_below(crate::ui::Breakpoint::Md),
                 TextColumn::make("mime").hide_below(crate::ui::Breakpoint::Sm),
                 TextColumn::make("size").hide_below(crate::ui::Breakpoint::Md),
                 crate::DateColumn::make("created_at").hide_below(crate::ui::Breakpoint::Md),
             ])
+            .filters(vec![crate::ui::SelectFilter::make("collection").none("Unassigned")])
             .default_sort("-created_at")
     }
 

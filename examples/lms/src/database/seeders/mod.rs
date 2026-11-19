@@ -9,6 +9,7 @@ pub mod course_seeder;
 pub mod enrollment_seeder;
 pub mod learner_seeder;
 pub mod news_seeder;
+pub mod quiz_seeder;
 pub mod role_seeder;
 pub mod user_seeder;
 // rustcms:seeder-mods
@@ -31,6 +32,7 @@ impl Seeder for DatabaseSeeder {
                 &learner_seeder::LearnerSeeder,
                 &enrollment_seeder::EnrollmentSeeder,
                 &news_seeder::NewsSeeder,
+                &quiz_seeder::QuizSeeder,
                 // rustcms:seeder-calls
             ],
         )

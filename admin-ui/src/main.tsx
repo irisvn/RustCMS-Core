@@ -6,7 +6,7 @@ import { ApiError } from "@/api/client";
 import { SessionContext } from "@/api/context";
 import { createAppRouter } from "@/app/router";
 import { createSession } from "@/app/session";
-import { setLocale } from "@/i18n";
+import { setDateFormats, setLocale } from "@/i18n";
 import { initialLocale, onOtherTabChoice } from "@/i18n/preference";
 import { keys } from "@/api/queries";
 import { readConfig } from "@/lib/config";
@@ -17,6 +17,7 @@ import "./index.css";
 const config = readConfig();
 applyTheme(config);
 setLocale(initialLocale(config.locales, config.locale));
+setDateFormats(config.dateFormat, config.dateTimeFormat);
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

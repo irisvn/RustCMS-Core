@@ -20,6 +20,22 @@ describe("runtime config", () => {
   });
 });
 
+describe("date formats", () => {
+  const meta = (extra: Record<string, unknown>) => {
+    document.head.innerHTML = `<meta name="rustcms-admin" content='${JSON.stringify({ basePath: "/admin", ...extra })}'>`;
+    return readConfig();
+  };
+
+  it("keeps the panel's patterns, nothing else", () => {
+    const config = meta({ dateFormat: "dd/MM/yyyy", dateTimeFormat: "HH:mm dd/MM/yyyy" });
+    expect([config.dateFormat, config.dateTimeFormat]).toEqual(["dd/MM/yyyy", "HH:mm dd/MM/yyyy"]);
+    for (const bad of [42, "", " ", "y".repeat(65), null]) {
+      expect(meta({ dateFormat: bad }).dateFormat).toBeUndefined();
+    }
+    expect("dateFormat" in meta({})).toBe(false);
+  });
+});
+
 describe("socket message limit", () => {
   const meta = (realtime: unknown) => {
     document.head.innerHTML = `<meta name="rustcms-admin" content='${JSON.stringify({ basePath: "/admin", realtime })}'>`;

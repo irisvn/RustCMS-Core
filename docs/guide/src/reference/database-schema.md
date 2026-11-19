@@ -225,7 +225,7 @@ so every database has the same schema.
 
 | Table | Columns |
 |---|---|
-| `media` | `id` uuid, `disk` varchar(16), `key` varchar(128), `name` varchar(255), `mime` varchar(64), `size` bigint, `sha256` varchar(64), `width`, `height` (int, null), `alt` varchar(500) null, `owner_id` bigint (indexed, no foreign key), `created_at`, `deleted_at` (null; set: in the trash) |
+| `media` | `id` uuid, `disk` varchar(16), `key` varchar(128), `name` varchar(255), `mime` varchar(64), `size` bigint, `sha256` varchar(64), `width`, `height` (int, null), `alt` varchar(500) null, `collection` varchar(64) null (indexed with `created_at`), `owner_id` bigint (indexed, no foreign key), `created_at`, `deleted_at` (null; set: in the trash) |
 | `media_uploads` | `id` uuid, `disk`, `key`, `created_at`: an intent committed before the object is written and removed with the media row, so a crash in between leaves a record of what to clean up |
 | `media_deletions` | `id` uuid, `disk`, `key`, `attempts` int, `next_at` instant (indexed): objects to delete, retried until done |
 

@@ -2,6 +2,7 @@
 //! claims and database errors mapped to field errors.
 
 use super::*;
+use crate::engine::conditions::OuterValues;
 use crate::engine::validate::Bounds;
 use crate::ui::NumberBounds;
 
@@ -66,6 +67,22 @@ impl<R: Resource> ResourceAdapter<R> {
 
     /// Validates client input against field permissions and types.
     pub(super) fn accept_input(&self, ctx: &Ctx, op: Operation, input: Data) -> AppResult<Data> {
+        self.accept_input_in(ctx, op, input, &self.conditions, &self.repeaters, &[])
+    }
+
+    /// As [`Self::accept_input`], `conditions` deciding which inputs are
+    /// conditional and `repeaters` checking JSON rows (a relationship row's,
+    /// ADR 0044); the server sets the fields `given` (a relation's values), so
+    /// they are not required from the client.
+    pub(super) fn accept_input_in(
+        &self,
+        ctx: &Ctx,
+        op: Operation,
+        input: Data,
+        conditions: &crate::engine::conditions::FormConditions,
+        repeaters: &HashMap<String, crate::engine::repeater::Rows>,
+        given: &[&str],
+    ) -> AppResult<Data> {
         let mut errors = ValidationErrors::new();
         let natural_create = op == Operation::Create && matches!(self.meta.key, KeyStrategy::Natural);
         // Select values as stored: their canonical form (a decimal rounded to
@@ -88,12 +105,13 @@ impl<R: Resource> ResourceAdapter<R> {
             let bounds = self.number_bounds.get(name).copied();
             // Under a condition, `required` (and a non-nullable column) means
             // "when shown": checked once visibility is known (`apply_conditions`).
-            let conditional = self.conditions.is_conditional(name);
+            let conditional = conditions.is_conditional(name)
+                || (std::ptr::eq(conditions, &self.conditions) && self.shown_by_rule(name));
             let mut rule = InputRule { options, bounds, ..self.rule(name, field.required && !conditional) };
             rule.nullable |= conditional;
             let accepted = check_input(name, &rule, value, &mut errors);
             // A JSON repeater: each row checked, stored without its hidden inputs.
-            if accepted && let Some(rows) = self.repeaters.get(name.as_str()) {
+            if accepted && let Some(rows) = repeaters.get(name.as_str()) {
                 if let Some(list) = rows.check(name, value, &mut errors) {
                     canonical.push((name.clone(), list));
                 }
@@ -109,22 +127,24 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         if op == Operation::Create {
             // A repeater with `min_items` left out of a create has no rows.
-            for (name, rows) in &self.repeaters {
+            for (name, rows) in repeaters {
                 let writable = self.field(name).is_some_and(|f| f.can_write(op, ctx));
                 if let Some(min) = rows.min_items()
                     && writable
                     && !input.contains_key(name)
-                    && !self.conditions.is_conditional(name)
+                    && !conditions.is_conditional(name)
                 {
                     errors.add(name.as_str(), format!("must have at least {min} items"));
                 }
             }
-            for field in self
-                .fields
-                .iter()
-                .filter(|f| f.required && f.can_write(op, ctx) && !self.conditions.is_conditional(&f.name))
-            {
-                if !input.contains_key(&field.name) {
+            let form = std::ptr::eq(conditions, &self.conditions);
+            for field in self.fields.iter().filter(|f| {
+                f.required
+                    && f.can_write(op, ctx)
+                    && !conditions.is_conditional(&f.name)
+                    && !(form && self.shown_by_rule(&f.name))
+            }) {
+                if !input.contains_key(&field.name) && !given.contains(&field.name.as_str()) {
                     errors.add(field.name.as_str(), "is required");
                 }
             }
@@ -144,6 +164,7 @@ impl<R: Resource> ResourceAdapter<R> {
     /// write it); a shown field is "required" when it is required (or not
     /// nullable) and holds `null`: sent as `null`, on create, or when the
     /// write shows it. Runs before the hooks, which write what they decide.
+    /// Returns the inputs hidden before and after the user's changes.
     pub(super) fn apply_conditions(
         &self,
         ctx: &Ctx,
@@ -151,16 +172,43 @@ impl<R: Resource> ResourceAdapter<R> {
         input: &mut Data,
         stored: Option<(&Data, bool)>,
         bound: Option<&str>,
-    ) -> AppResult<()> {
-        let mut conditional = self.conditions.conditional().peekable();
-        if conditional.peek().is_none() {
-            return Ok(());
+    ) -> AppResult<(BTreeSet<String>, BTreeSet<String>)> {
+        self.apply_conditions_in(ctx, op, input, stored, bound, None)
+    }
+
+    /// As [`Self::apply_conditions`], with the conditions of a relationship
+    /// row (`row`, ADR 0044) rather than the form's.
+    pub(super) fn apply_conditions_in(
+        &self,
+        ctx: &Ctx,
+        op: Operation,
+        input: &mut Data,
+        stored: Option<(&Data, bool)>,
+        bound: Option<&str>,
+        row: Option<&RowLevel<'_>>,
+    ) -> AppResult<(BTreeSet<String>, BTreeSet<String>)> {
+        let (conditions, inputs, outer, repeaters) = match row {
+            Some(row) => {
+                (row.conditions, row.inputs.clone(), OuterValues { parent: row.parent, root: row.root }, row.repeaters)
+            }
+            None => (&self.conditions, self.form.inputs(), OuterValues::default(), &self.repeaters),
+        };
+        let mut conditional = conditions.conditional().peekable();
+        // JSON rows whose conditions read the form (or, in a relationship row,
+        // that row) wait for its values (ADR 0044).
+        let waiting: Vec<&str> = repeaters
+            .iter()
+            .filter(|(name, rows)| rows.reads_outside() && input.contains_key(name.as_str()))
+            .map(|(name, _)| name.as_str())
+            .collect();
+        if conditional.peek().is_none() && waiting.is_empty() {
+            return Ok(Default::default());
         }
-        let before = self.condition_values(ctx, op, stored);
+        let before = self.condition_values_of(ctx, op, stored, &inputs);
         let mut after = before.clone();
         after.extend(input.iter().map(|(k, v)| (k.clone(), v.clone())));
-        let hidden_before = self.conditions.hidden(&before);
-        let hidden = self.conditions.hidden(&after);
+        let hidden_before = conditions.hidden_in(&before, outer);
+        let hidden = conditions.hidden_in(&after, outer);
         let mut errors = ValidationErrors::new();
         for (name, clear) in conditional {
             let Some(field) = self.field(name) else { continue };
@@ -183,6 +231,10 @@ impl<R: Resource> ResourceAdapter<R> {
                 }
                 continue;
             }
+            // Its rule decides when it is shown, so whether it is required then (ADR 0044, part E).
+            if row.is_none() && self.shown_by_rule(name) {
+                continue;
+            }
             let needed = field.required || !self.column(name).nullable;
             let missing = after.get(name).is_none_or(serde_json::Value::is_null);
             let checked = input.get(name).is_some_and(serde_json::Value::is_null)
@@ -190,6 +242,73 @@ impl<R: Resource> ResourceAdapter<R> {
                     && (op == Operation::Create || (hidden_before.contains(name) && !hidden.contains(name))));
             if writable && needed && missing && checked {
                 errors.add(name, "is required");
+            }
+        }
+        if !waiting.is_empty() {
+            // The form (or the row) as its conditions leave it: hidden inputs read as null.
+            let level = conditions.shown_values(&after, outer);
+            for name in waiting {
+                // Hidden repeaters were dropped above.
+                let Some(list) = input.get(name) else { continue };
+                let checked = match row {
+                    // In a relationship row: the row is the rows' parent (ADR 0044, part C).
+                    Some(row) => repeaters[name].check_with(
+                        name,
+                        list,
+                        &mut errors,
+                        OuterValues { parent: Some(&level), root: row.root },
+                    ),
+                    None => repeaters[name].check_in(name, list, &mut errors, &level),
+                };
+                if let Some(list) = checked {
+                    input.insert(name.to_owned(), list);
+                }
+            }
+        }
+        errors.into_result()?;
+        Ok((hidden_before, hidden))
+    }
+
+    /// The rules over the rows of the form's JSON repeaters (ADR 0044, part D),
+    /// on `data` as the save writes it (after the hooks), the record being
+    /// `stored` (on update) with `data` over it: each repeater not `hidden`
+    /// whose value is written, and on create every shown one.
+    pub(super) fn check_json_rows(
+        &self,
+        ctx: &Ctx,
+        op: Operation,
+        stored: Option<&Data>,
+        data: &Data,
+        hidden: &BTreeSet<String>,
+    ) -> AppResult<()> {
+        let mut parent: Option<Data> = None;
+        let mut errors = ValidationErrors::new();
+        for (name, rows) in &self.repeaters {
+            let Some(rule) = rows.validate() else { continue };
+            if hidden.contains(name) || (op == Operation::Update && !data.contains_key(name)) {
+                continue;
+            }
+            let parent = parent.get_or_insert_with(|| {
+                let mut values = stored.cloned().unwrap_or_default();
+                values.extend(data.iter().map(|(k, v)| (k.clone(), v.clone())));
+                values.retain(|name, _| self.field(name).is_none_or(|f| f.secret.is_none()));
+                values
+            });
+            let list = data.get(name).and_then(serde_json::Value::as_array).map_or(&[][..], Vec::as_slice);
+            let check = crate::ui::RowsCheck {
+                operation: op,
+                parent: parent.clone(),
+                rows: list
+                    .iter()
+                    .enumerate()
+                    .map(|(index, row)| crate::ui::CheckedRow {
+                        id: index.to_string(),
+                        values: row.as_object().cloned().unwrap_or_default(),
+                    })
+                    .collect(),
+            };
+            if let Err(refused) = rule(ctx, &check) {
+                refused.add_at(name, &mut errors);
             }
         }
         errors.into_result()
@@ -203,8 +322,23 @@ impl<R: Resource> ResourceAdapter<R> {
     /// anything else is the form's empty value (`false` for a toggle, `""` for
     /// required text, `[]` for lists, else `null`).
     pub(super) fn condition_values(&self, ctx: &Ctx, op: Operation, stored: Option<(&Data, bool)>) -> Data {
+        self.condition_values_of(ctx, op, stored, &self.form.inputs())
+    }
+
+    /// As [`Self::condition_values`], for `inputs` (a relationship row's).
+    pub(super) fn condition_values_in(
+        &self,
+        ctx: &Ctx,
+        op: Operation,
+        stored: Option<(&Data, bool)>,
+        inputs: &[&Input],
+    ) -> Data {
+        self.condition_values_of(ctx, op, stored, inputs)
+    }
+
+    fn condition_values_of(&self, ctx: &Ctx, op: Operation, stored: Option<(&Data, bool)>, inputs: &[&Input]) -> Data {
         let mut out = Data::new();
-        for input in self.form.inputs() {
+        for input in inputs.iter().copied() {
             let name = &input.name;
             // A field with several inputs holds what its last input holds (as
             // the panel's form values do).
@@ -448,26 +582,9 @@ pub(super) fn static_options<C: ColumnTrait>(
         };
         let many = input.kind == InputType::CheckboxList;
         if !many {
-            let scale = crate::wire::decimal_scale(column.column.def().get_column_type());
             for option in options.iter_mut() {
-                let canonical = crate::wire::canonical(column.kind, scale, &option.value).unwrap_or_else(|e| {
-                    panic!(
-                        "resource `{slug}`: option {} of select `{name}` is not a value of its column ({}): {e}",
-                        option.value,
-                        column.kind.name()
-                    )
-                });
-                let same = column.kind.decode(&canonical).ok().and_then(|c| c.into_iter().next())
-                    == column.kind.decode(&option.value).ok().and_then(|c| c.into_iter().next());
-                assert!(
-                    same,
-                    "resource `{slug}`: option {} of select `{name}` would be stored as {canonical}",
-                    option.value
-                );
-                if let Err(problem) = storable(column.column.def().get_column_type(), column.kind, &canonical) {
-                    panic!("resource `{slug}`: option {} of select `{name}` {problem}", option.value);
-                }
-                option.value = canonical;
+                option.value =
+                    canonical_option(&format!("resource `{slug}`"), &format!("select `{name}`"), column, &option.value);
             }
         }
         let values = options.iter().map(|o| o.value.clone()).collect();
@@ -483,6 +600,29 @@ pub(super) fn static_options<C: ColumnTrait>(
         out.insert(name, first);
     }
     out
+}
+
+/// `value`, an option (or a badge color's value) of `what` on `column`, in
+/// canonical wire form: the form clients write and schemas show. Panics when
+/// the column cannot hold it as it is (not a value of its kind, stored as
+/// another value, or finer than the column keeps).
+pub(super) fn canonical_option<C: ColumnTrait>(
+    owner: &str,
+    what: &str,
+    column: &ColumnInfo<C>,
+    value: &serde_json::Value,
+) -> serde_json::Value {
+    let scale = crate::wire::decimal_scale(column.column.def().get_column_type());
+    let canonical = crate::wire::canonical(column.kind, scale, value).unwrap_or_else(|e| {
+        panic!("{owner}: option {value} of {what} is not a value of its column ({}): {e}", column.kind.name())
+    });
+    let same = column.kind.decode(&canonical).ok().and_then(|c| c.into_iter().next())
+        == column.kind.decode(value).ok().and_then(|c| c.into_iter().next());
+    assert!(same, "{owner}: option {value} of {what} would be stored as {canonical}");
+    if let Err(problem) = storable(column.column.def().get_column_type(), column.kind, &canonical) {
+        panic!("{owner}: option {value} of {what} {problem}");
+    }
+    canonical
 }
 
 /// The bounds client writes must respect, by field: from the number inputs of
@@ -538,6 +678,17 @@ pub(super) fn number_bounds<C: ColumnTrait>(
     out
 }
 
+/// How conditions read field `name` (ADR 0037): its column's kind and decimal
+/// scale; `None` for an encrypted field (records hold it as `null`) or no column.
+pub(super) fn condition_kind<C: ColumnTrait>(
+    columns: &HashMap<String, ColumnInfo<C>>,
+    secrets: &HashMap<String, super::secrets::SecretField>,
+    name: &str,
+) -> Option<(FieldKind, Option<u32>)> {
+    let column = columns.get(name).filter(|_| !secrets.contains_key(name))?;
+    Some((column.kind, crate::wire::decimal_scale(column.column.def().get_column_type())))
+}
+
 /// The conditions of `form` (ADR 0037). Panics, besides the checks of
 /// [`FormConditions::new`](crate::engine::conditions::FormConditions::new),
 /// on a condition reading an encrypted field, an input under a condition
@@ -551,10 +702,7 @@ pub(super) fn form_conditions<C: ColumnTrait>(
     secrets: &HashMap<String, super::secrets::SecretField>,
     fields: &[Field],
 ) -> crate::engine::conditions::FormConditions {
-    let kind_of = |name: &str| {
-        let column = columns.get(name).filter(|_| !secrets.contains_key(name))?;
-        Some((column.kind, crate::wire::decimal_scale(column.column.def().get_column_type())))
-    };
+    let kind_of = |name: &str| condition_kind(columns, secrets, name);
     let conditions =
         crate::engine::conditions::FormConditions::new(&format!("resource `{slug}`"), &form.components, &kind_of);
     for (name, clear) in conditions.conditional() {
@@ -587,7 +735,11 @@ pub(super) fn json_repeaters<C: ColumnTrait>(
     slug: &str,
     form: &Form,
     columns: &HashMap<String, ColumnInfo<C>>,
+    secrets: &HashMap<String, super::secrets::SecretField>,
 ) -> HashMap<String, crate::engine::repeater::Rows> {
+    // Rows may read the form's inputs (`when_root`), as the form's own conditions do.
+    let names: HashSet<&str> = form.inputs().into_iter().map(|i| i.name.as_str()).collect();
+    let kind_of = |name: &str| names.contains(name).then(|| condition_kind(columns, secrets, name)).flatten();
     let mut out = HashMap::new();
     for input in form.inputs() {
         let name = input.name.as_str();
@@ -595,6 +747,11 @@ pub(super) fn json_repeaters<C: ColumnTrait>(
             !input.required && input.max_length.is_none() && !input.integer,
             "resource `{slug}`: input `{name}`: `required`, `max_length` and `integer` are for inputs of JSON \
              repeater rows (elsewhere the field decides)"
+        );
+        assert!(
+            input.content.as_deref().is_none_or(|c| !c.has_rules() && !c.full),
+            "resource `{slug}`: input `{name}`: `accept`, `max_size`, `multiple`, `collection`, `nodes` and `full` \
+             are for inputs of repeater rows (elsewhere the field decides: `Field::accept`, …)"
         );
         assert!(
             (input.kind == InputType::Repeater) == input.repeater.is_some(),
@@ -609,10 +766,21 @@ pub(super) fn json_repeaters<C: ColumnTrait>(
         );
         out.insert(
             name.to_owned(),
-            crate::engine::repeater::Rows::compile(&format!("resource `{slug}`"), name, spec, 1),
+            crate::engine::repeater::Rows::compile(&format!("resource `{slug}`"), name, spec, Some(&kind_of)),
         );
     }
     out
+}
+
+/// The conditions a relationship row's write applies (ADR 0044): the
+/// repeater's, on the row's inputs, reading the record's form as `root` and
+/// the enclosing row as `parent` (part C); its JSON repeaters' rules.
+pub(crate) struct RowLevel<'a> {
+    pub(crate) conditions: &'a crate::engine::conditions::FormConditions,
+    pub(crate) inputs: Vec<&'a Input>,
+    pub(crate) root: Option<&'a Data>,
+    pub(crate) parent: Option<&'a Data>,
+    pub(crate) repeaters: &'a HashMap<String, crate::engine::repeater::Rows>,
 }
 
 /// What `clear_when_hidden` writes: the declared default, else `null`, else

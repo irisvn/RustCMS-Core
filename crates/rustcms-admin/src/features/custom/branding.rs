@@ -12,6 +12,7 @@ use axum::body::Bytes;
 use rustcms_core::{AppResult, AppState};
 use serde::Deserialize;
 
+use super::contrast::{self, Low};
 use super::theme::{self, Palette, Theme};
 
 /// A branding value that is refused (shown to the application, never to visitors).
@@ -230,14 +231,11 @@ pub(crate) struct Resolved {
 
 impl Resolved {
     pub(crate) fn new(brand: &str, theme: &Theme, branding: Option<&Branding>) -> Self {
-        let mut merged = theme.clone();
-        if let Some(b) = branding {
-            merged.light = theme.light.merged(&b.light);
-            merged.dark = theme.dark.merged(&b.dark);
-            if b.radius.is_some() {
-                merged.radius.clone_from(&b.radius);
-            }
-        }
+        Self::shown(brand, theme, branding, &merged(theme, branding))
+    }
+
+    /// As [`Resolved::new`], with `merged` the theme with the branding over it.
+    fn shown(brand: &str, theme: &Theme, branding: Option<&Branding>, merged: &Theme) -> Self {
         let image = |runtime: Option<&OwnedImage>, fixed: Option<&theme::Image>| {
             runtime
                 .map(|i| Asset::new(i.bytes.clone(), i.mime))
@@ -268,6 +266,19 @@ impl Resolved {
     pub(crate) fn path(&self, kind: &str) -> Option<String> {
         self.asset(kind).map(|a| format!("assets/brand/{kind}?v={}", a.hash))
     }
+}
+
+/// `theme` with `branding`'s tokens and radius over it.
+fn merged(theme: &Theme, branding: Option<&Branding>) -> Theme {
+    let mut merged = theme.clone();
+    if let Some(b) = branding {
+        merged.light = theme.light.merged(&b.light);
+        merged.dark = theme.dark.merged(&b.dark);
+        if b.radius.is_some() {
+            merged.radius.clone_from(&b.radius);
+        }
+    }
+    merged
 }
 
 /// `[admin]` settings of branding.
@@ -318,6 +329,9 @@ pub struct AdminBranding {
     timeout: Duration,
     entry: Mutex<Entry>,
     loader: tokio::sync::Mutex<()>,
+    /// Low-contrast pairs last logged for the runtime branding (logged again
+    /// only when they change, not at every reload).
+    warned: Mutex<Vec<Low>>,
 }
 
 impl AdminBranding {
@@ -328,6 +342,7 @@ impl AdminBranding {
         config: &BrandingConfig,
     ) -> Self {
         let configured = source.is_some();
+        contrast::warn("theme", &contrast::low(&theme, (&theme.light, &theme.dark)));
         let source = if config.branding == "static" {
             if configured {
                 tracing::warn!("admin.branding is \"static\": the branding source is ignored");
@@ -346,6 +361,7 @@ impl AdminBranding {
             timeout: Duration::from_millis(config.branding_timeout_ms),
             entry: Mutex::new(Entry { generation: 0, value: None }),
             loader: tokio::sync::Mutex::new(()),
+            warned: Mutex::new(Vec::new()),
         }
     }
 
@@ -419,16 +435,36 @@ impl AdminBranding {
 
     async fn load(&self, source: &dyn BrandingSource, app: &AppState) -> Arc<Resolved> {
         match tokio::time::timeout(self.timeout, source.load(app)).await {
-            Ok(Ok(Some(branding))) => Arc::new(Resolved::new(&self.brand, &self.theme, Some(&branding))),
-            Ok(Ok(None)) => self.fallback.clone(),
+            Ok(Ok(Some(branding))) => {
+                let shown = merged(&self.theme, Some(&branding));
+                // Only the branding's own tokens: the theme's were judged at boot.
+                self.warn_once(contrast::low(&shown, (&branding.light, &branding.dark)));
+                Arc::new(Resolved::shown(&self.brand, &self.theme, Some(&branding), &shown))
+            }
+            Ok(Ok(None)) => {
+                self.warn_once(Vec::new());
+                self.fallback.clone()
+            }
             Ok(Err(_)) => {
+                self.warn_once(Vec::new());
                 tracing::warn!("the branding source failed; showing the static theme");
                 self.fallback.clone()
             }
             Err(_) => {
+                self.warn_once(Vec::new());
                 tracing::warn!("the branding source timed out; showing the static theme");
                 self.fallback.clone()
             }
+        }
+    }
+
+    /// Logs the branding's low-contrast pairs when they differ from the last
+    /// ones logged (a branding that goes and comes back is logged again).
+    fn warn_once(&self, low: Vec<Low>) {
+        let mut warned = self.warned.lock().unwrap_or_else(PoisonError::into_inner);
+        if *warned != low {
+            contrast::warn("branding", &low);
+            *warned = low;
         }
     }
 }

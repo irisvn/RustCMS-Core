@@ -47,6 +47,15 @@ pub struct Entry {
     /// Entries of a row generated from a repeater's inputs: the kind of the
     /// row value (dates shown as dates); declared row entries read JSON.
     pub(crate) row_kind: Option<crate::wire::FieldKind>,
+    /// Repeatable entries: the rows are the records of the has-many relation
+    /// of the entry's name (ADR 0044).
+    pub(crate) relationship: bool,
+    /// Rich text entries of a JSON row made from a rich editor: the
+    /// application nodes the input accepts (ADR 0044).
+    pub(crate) row_nodes: Vec<String>,
+    /// Relationship entries of the default view page: the order column of
+    /// the form's repeater, wherever it is declared (rows of rows, ADR 0044).
+    pub(crate) order_by: Option<String>,
 }
 
 /// Display options (boxed: most entries have few).
@@ -66,7 +75,9 @@ pub(crate) struct Display {
     pub(crate) options: Vec<SelectOption>,
     pub(crate) labels: Option<(String, String)>,
     pub(crate) size: Option<u16>,
-    pub(crate) gallery: bool,
+    /// `Some(false)`: images do not open in the viewer (media entries).
+    pub(crate) preview: Option<bool>,
+    pub(crate) date_format: Option<String>,
     pub(crate) outline: bool,
     pub(crate) widget: Option<String>,
     pub(crate) props: Option<Json>,
@@ -84,7 +95,20 @@ impl Entry {
             display: Box::default(),
             components: Vec::new(),
             row_kind: None,
+            relationship: false,
+            row_nodes: Vec::new(),
+            order_by: None,
         }
+    }
+
+    /// Repeatable entries: the rows are the records of the has-many relation
+    /// of the entry's name, read as its section reads them (the child's
+    /// scope, view policy and read rules, the relation's filters); each row's
+    /// entries name fields of the child. At most [`Entry::limit`] rows (100
+    /// by default and at most), then a link to the relation's section.
+    pub fn relationship(mut self) -> Self {
+        self.relationship = true;
+        self
     }
 
     /// Displayed label (default: the field's label).
@@ -120,7 +144,7 @@ impl Entry {
     }
 
     /// The color of the badge (text entries) or of the value (boolean
-    /// entries) for `value`: `primary`, `success`, `warning`, `danger` or
+    /// entries) for `value`: `primary`, `info`, `success`, `warning`, `danger` or
     /// `gray` (the default).
     pub fn color(mut self, value: impl Into<Json>, color: impl Into<String>) -> Self {
         self.display.colors.push((value.into(), color.into()));
@@ -133,7 +157,8 @@ impl Entry {
         self
     }
 
-    /// Shows at most `chars` characters, then `…` (the whole text in a tooltip).
+    /// Shows at most `chars` characters, then `…` (the whole text in a
+    /// tooltip). Relationship repeatable entries: at most this many rows.
     pub fn limit(mut self, chars: u32) -> Self {
         self.display.limit = Some(chars.max(1));
         self
@@ -202,9 +227,25 @@ impl Entry {
         self
     }
 
-    /// Links each image to its file, opened in a new tab (media entries).
-    pub fn gallery(mut self) -> Self {
-        self.display.gallery = true;
+    /// Images of a media entry open in the panel's viewer when clicked
+    /// (default: `true`; zoom, the entry's other images, download).
+    pub fn preview(mut self, preview: bool) -> Self {
+        self.display.preview = Some(preview);
+        self
+    }
+
+    /// Images open when clicked (media entries): now the default, in the
+    /// panel's viewer; kept for applications written before it.
+    #[deprecated(note = "images open in the panel's viewer by default; `.preview(false)` turns it off")]
+    pub fn gallery(self) -> Self {
+        self
+    }
+
+    /// Shows the dates or times of the field with `pattern` (text entries of a
+    /// date, local date-time or instant field), as
+    /// [`crate::ui::TableColumn::date_format`].
+    pub fn date_format(mut self, pattern: impl Into<String>) -> Self {
+        self.display.date_format = Some(pattern.into());
         self
     }
 
@@ -258,8 +299,8 @@ macro_rules! entry_types {
 }
 
 entry_types! {
-    /// Text: numbers, dates (in the user's language and time zone), option
-    /// labels, lists.
+    /// Text: numbers, dates (in the user's language and time zone, or with
+    /// [`Entry::date_format`]), option labels, lists.
     TextEntry => TextEntry,
     /// The title of the related record of a `belongs_to` field, linked to
     /// its page when the user may list the related resource.

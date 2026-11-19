@@ -27,6 +27,9 @@ pub struct SiteSettings {
 pub struct SocialLink {
     pub label: String,
     pub url: String,
+    /// An icon of the media library (a file upload in the row).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<sea_orm::prelude::Uuid>,
 }
 
 impl Default for SiteSettings {

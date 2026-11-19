@@ -6,6 +6,159 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Option labels in table columns (vocabulary 20): `TextColumn`/`BadgeColumn` show the label of each value,
+  declared with `TableColumn::options([(value, label), …])` or taken from the form's select or checkbox list of
+  the same field (never for `belongs_to` fields); `.raw()` keeps the values. Labels are translated (and listed
+  by missing translations); colors, sorting, search, filters and exports still use the values. `ColumnSchema`
+  gains `options`. A badge column holding a list draws one badge per value. The dashboard's recent records use
+  the column's labels.
+
+- Date formats (vocabulary 21): `TableColumn::date_format(pattern)` and `Entry::date_format(pattern)` (text
+  entries) show dates and times with a pattern (`yyyy yy MMMM MMM MM M dd d EEEE EEE HH H hh h mm ss a z`, text
+  in single quotes, at most 64 characters), in the user's language and, for instants, time zone;
+  `AdminProvider::date_format`/`datetime_format` set the panel's patterns for date and date-time fields without
+  one, and for history, queue, schedule and export times. Patterns are checked at boot (fields, a time on a
+  date, a zone on a local date-time, computed values and rows). `ColumnSchema` and `EntrySchema` gain
+  `format`; the panel's configuration `dateFormat`/`dateTimeFormat`. Without any pattern, nothing changes.
+  Demo: the posts list writes publication times with a pattern.
+
+- Image viewer (vocabulary 22): a click on an image opens it over the page, in forms (file uploads), view pages
+  (`MediaEntry`, rich text images), the Media page and its records, and the media picker (a magnifier beside
+  each image: a click still chooses). Zoom (buttons, wheel, double click, pinch, pan), the place's other images
+  (arrows, ← →, a counter), the file's name, alt text, dimensions and size (looked up in the media library when
+  only the id is known) and a download; Escape, the close button or a click outside close it, Escape never
+  closing the dialog under it. `MediaEntry::preview(false)` and `FileUpload` `.preview(false)` keep a field's
+  images still; `EntrySchema` and `MediaSchema` gain `preview` (sent only when `false`). New admin-ui dependency
+  `yet-another-react-lightbox` 3.33.0 (MIT; static stylesheets, styles set through the CSSOM: the CSP is unchanged),
+  loaded with its styles the first time a viewer opens.
+
+- Color tokens (theme API version 1, names only added): `popover`, `selected`, `overlay`, `input`,
+  `subtle-foreground`, `secondary-foreground`, `success-foreground`, `warning-foreground`, `info` and
+  `info-foreground`, hover colors (`primary-hover`, `secondary-hover`, `destructive-hover`) and soft pairs
+  (`destructive`/`success`/`warning`/`info`/`gray` `-soft` and `-soft-foreground`); hover and soft colors follow
+  their color through `color-mix` unless set (hover darker in light mode and lighter in dark mode, away from
+  the text on it, so it never lowers contrast; solid buttons also show a faint ring on hover). The badge color `info` (`BadgeColumn::color`, `TextEntry::color`,
+  the SDK's `Badge`, whose `color` prop is now typed). A theme or runtime branding that brings a text pair under
+  4.5:1 logs a warning (pair, mode, ratio; once per change for the branding); the boot never stops for it.
+
+- Media collections (vocabulary 23): `AdminProvider::media_collection(name, label)` declares a collection of the
+  media library, `Field::collection(name)` (media, media list and rich text fields) and
+  `SettingField::collection(name)` (media settings) put the files uploaded through them into it. Uploads take an
+  optional `collection` part (a declared name, else 422); the Media page gains a Collection column and filter
+  (with Unassigned) and uploads into the collection it is filtered on; the picker opens on the field's
+  collection, with every file, each collection and the unassigned files a choice away; the media record's form
+  moves a file to another collection (rights of a rename; media hooks see it). Collections only sort and filter:
+  scope and references ignore them. Without a declared collection nothing changes. `InputSchema` gains
+  `collection`, `PanelResponse` `mediaCollections`, `MediaItem` `collection`. Framework migration
+  `m20261202_000023_add_collection_to_media` (nullable `media.collection` and an index on it with `created_at`;
+  its `down` drops both). Demo: post covers, post content and branding collections; LMS: news covers.
+- `SelectFilter::none(label)`: a last choice for records without a value (nullable columns), sent as `~none`
+  in the `in` list and matched as `IS NULL` (`FilterSchema.none`).
+- Repeaters, second round, part A (vocabulary 24, ADR 0044):
+  - Conditions on relationship repeaters (their own `shown_when`, or a layout's): a save that hides one removes
+    the rows the user sees (each needing the child's `delete`, else 403 and nothing saved; to the trash with
+    soft deletes), only when that save hides it; changes sent for a hidden repeater are ignored; the panel
+    says how many rows saving removes. New code `too_many_rows_to_remove` (more than 1,000 rows).
+  - Conditions in rows of both kinds of repeater: `when_root(name)` reads the record's form (a settings page's
+    fields), `when_parent(name)` the enclosing row of a nested JSON repeater; `Scope`; conditions in
+    relationship rows are the repeater's own.
+  - Filtered has-many relations: `Relation::where_null(field)` / `where_eq(field, value)` restrict the
+    relation's section, counts, repeater and view-page rows, and set their values on records created through
+    it; several repeaters may edit one child resource through relations that cannot share a row.
+    `RelationSchema` gains `fixed`.
+  - `Repeater::table()`: rows as table rows from `md` (`RepeaterSchema.layout`).
+  - `RepeatableEntry::relationship()`: a has-many relation's records on the view page, through its list,
+    at most `limit(n)` (100) rows; the default view page shows relationship repeaters this way
+    (`EntrySchema.rows`).
+  - Part B (vocabulary 25): JSON rows take file uploads (`.accept`, `.max_size`, `.multiple(n)`,
+    `.collection` on the input) and rich editors (`.nodes`); relationship rows take the child's media, rich text
+    and `belongs_to` fields. A write's media references (fields, JSON rows at any depth, relationship rows after
+    the child's hooks) are checked once, last, errors at the row's path. Rich editors in rows show a compact
+    toolbar (`InputSchema.toolbar`), `.full()` for the full one. View pages show rows' files and documents
+    (`MediaEntry`, `RichTextEntry` in JSON rows). Demo: footer links take an icon; LMS: quiz options take an
+    image and an explanation (migration `m20261120_000007_add_media_to_quiz_options`), courses enroll learners
+    in their form.
+  - Part C (vocabulary 26): rows of rows. A relationship row holds relationship repeaters of the child's
+    relations (three levels at most) and JSON repeaters of its JSON fields; the whole tree is saved at once,
+    the change of a row's repeater inside the row's change, errors at every level
+    (`blanks.n1.choices.n2.content`). `Repeater::inherit(field)` fills a nested child's field with an
+    enclosing level's key. The nested child locks its parent through the nested relation, or an ancestor
+    through an inherited field. Removing a row removes its rows (each through the child's policy and history;
+    403 when the user cannot see one); a row's `after_save` runs after its rows; `when_parent` reads the
+    enclosing relationship row; a nested repeater's own condition reads its row only (boot); a row's parent
+    key and inherited keys are set by the server (the child may keep them `guarded()`); restores check the
+    files of JSON rows declared in relationship rows; at most 1,000 rows per save (new code
+    `too_many_rows_changed`). Demo:
+    categories hold sections with links (migration `m20261121_000001_create_category_sections`). LMS: blanks
+    hold their choices (`inherit("quiz_question_id")`), a quiz seeder.
+  - Part D (vocabulary 27): `Repeater::validate_rows(|ctx, check| …)`, a rule over a repeater's final rows
+    (relationship repeaters at any level: every live row of the relation, also those the user cannot see;
+    the form's JSON repeaters), run on create when shown and whenever a save changes the rows, on every path;
+    `RowsCheck`, `CheckedRow`, `RowsError` (`list`, `row`, `input`, `and`); new code `too_many_rows_to_check`.
+    Form reactions on relationship rows: `FormState::relation_rows(name)` (`StateRow`), patches
+    `add_relation_row`, `update_relation_row`, `remove_relation_row`, `flag_relation_row` by key or ref, kept
+    when the user could make them; relationship repeaters may `.reacts()` (ADR 0043 amended). Demo: a new
+    section gets a title. LMS: one correct option per single-answer question, a correct choice per blank, the
+    prompt's `___` keep the blanks in step.
+  - Part E (vocabulary 28): rules computed on the server: `Input::shown_when_fn`, `required_fn`, `options_fn`
+    (async, with `Ctx`), `depends_on([...])` (required), `rules_timeout`; on resource forms' own inputs (not
+    rows, relationship repeaters, settings, actions). The schema carries the first answer
+    (`InputSchema.serverRules`, computed `options`); `POST form/rules` answers as the form changes (authorized and
+    limited as `form/react`); saves run them again on every path (hidden values dropped, `is required`, `is not
+    one of the options`, new code `form_rules_failed`). Declarative conditions may not read an input whose
+    visibility is computed. `SelectOption` is exported at the crate root. Demo: a link category needs its link.
+  - View pages show rows of rows: a relationship entry in a relationship row reads the row's has-many relation
+    (checked at boot; the default view page shows nested relationship repeaters). The hidden-repeater notice counts
+    the nested rows the form read; a nested repeater hidden by its row's condition says so in the row.
+    `DynResource::check_entry_rows` takes the registry and a depth, `entry_row_schemas` is async. LMS: a published
+    course with lessons needs a summary (`required_fn`).
+  - Demo: categories are their posts or a link (migration `m20261119_000001_add_layout_to_categories`), posts
+    edited as a table and shown on the view page, a "Drafts" section. LMS: quiz questions with options
+    (`where_null("blank_id")`) and blanks, three tables (migration `m20261119_000006_create_quiz_tables`).
+
+### Changed
+- Panel colors (dark mode first): every text pair reaches WCAG AA and input borders and focus rings 3:1, in both
+  modes (checked by the E2E suite). Dark: main buttons light grey instead of white, menus and dialogs lighter
+  than the page and a darker backdrop. Both modes: secondary buttons and switches stand apart from cards, darker
+  input borders and focus ring, selected table rows marked, visible hover colors. Disabled buttons, inputs,
+  menu items and tabs change color instead of fading (opacity). Checkboxes and radios are drawn by the panel
+  (the browser's ignored dark mode). Badges and notices use soft pairs; `primary` badges are solid (the
+  default primary is neutral: a pale one read as gray). A row's primary action is an outline button. The dark
+  tokens are written once in `admin-ui/src/index.css`. `popover` follows `card` (a step lighter in dark mode) and
+  `secondary-foreground` follows `foreground`, so existing themes keep their look there; borders of inputs,
+  checkboxes and outline buttons now use the new `input` token (darker than `border`, for 3:1): a theme that set
+  `border` for them sets `input` too. Demo: tags of kind topic are `info`.
+- The exports list shows times in the panel's language (it used the browser's).
+- A hook of a relationship repeater's child that adds media to a row no longer fails (500): the row's media are
+  checked with the parent's. `media::check_references` takes owned paths; `DynResource::field_locks_media_or_secret`
+  is `field_is_encrypted`.
+- `FormPatch` gains four variants (relationship rows) and `FormState` a field: code matching `FormPatch`
+  exhaustively adds them. `DynResource` gains `accept_row_value`, `decodes`, `row_json_repeaters`.
+- `ResourceMeta::lock_parent` may target a resource that locks a parent of its own (ADR 0044, part C, amending
+  ADR 0018): a write locks its direct parent; a cycle is refused at boot. `DynResource::compile_row_rules` takes
+  the panel's rich text nodes; `DynResource::nested_row_edges` is new. LMS: `quiz_options.blank_id` is a
+  `belongs_to("quiz_blanks")` field (the choices' parent key, still guarded).
+- A relationship repeater removing or ordering more than 500 rows of one parent no longer fails with "keys:
+  may not have more than 500 items": the rows are locked in batches, in key order, up to the 1,000 allowed.
+- Relationship repeater rows follow the repeater's own conditions; the child form's conditions no longer apply
+  to them (ADR 0044). `Condition`'s variants gain `scope` (code building or matching them by hand adds it;
+  `when`, `Condition::all`/`any` are unchanged). `ListQuery` gains `relation_filters` and
+  `DynResource::counted_by` a `filters` argument.
+- An upload with a part other than `file` and `collection` is refused with "must be one part named `file`,
+  with at most one `collection`" (code `upload_parts`; it was `file_part`). New code `media_collection`.
+- Table columns whose field has a select or checkbox list with options in the form now show its labels instead
+  of the values; `.raw()` keeps the values.
+- Values of `TableColumn::color` are compared in canonical wire form, as a select's options, on every column:
+  on an `i64` or a decimal column they are strings (`.color("2", …)`, `"02"` is read as `"2"`), UUIDs lowercase,
+  instants in UTC. A value the column cannot hold refuses to boot: a number on an `i64`, decimal or text column,
+  a string on an `i32` or boolean column, a value finer than the column keeps. Such colors never matched; write
+  them as the API sends the values.
+
+### Deprecated
+- `MediaEntry::gallery()`: images open in the viewer by default (`.preview(false)` turns it off); the schema no
+  longer sends `gallery`.
+
 ## [0.13.1] — 2026-11-17
 
 ### Added

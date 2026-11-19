@@ -8,6 +8,10 @@
 //!
 //! Conditions are data: the SPA evaluates them on every change (no request),
 //! the server again on every write, where it decides.
+//!
+//! In a repeater's rows, `when` names an input of the same row; `when_root`
+//! an input of the record's form and `when_parent` one of the enclosing row
+//! (ADR 0044).
 
 use serde::Serialize;
 use serde_json::Value;
@@ -24,6 +28,10 @@ pub enum Condition {
     Eq {
         /// Input name.
         name: String,
+        /// Where the input is (absent: the same level).
+        #[serde(default, skip_serializing_if = "Scope::is_row")]
+        #[cfg_attr(feature = "ts", ts(as = "Option<Scope>", optional))]
+        scope: Scope,
         /// Compared value.
         value: Value,
     },
@@ -31,6 +39,10 @@ pub enum Condition {
     Ne {
         /// Input name.
         name: String,
+        /// Where the input is (absent: the same level).
+        #[serde(default, skip_serializing_if = "Scope::is_row")]
+        #[cfg_attr(feature = "ts", ts(as = "Option<Scope>", optional))]
+        scope: Scope,
         /// Compared value.
         value: Value,
     },
@@ -38,6 +50,10 @@ pub enum Condition {
     IsIn {
         /// Input name.
         name: String,
+        /// Where the input is (absent: the same level).
+        #[serde(default, skip_serializing_if = "Scope::is_row")]
+        #[cfg_attr(feature = "ts", ts(as = "Option<Scope>", optional))]
+        scope: Scope,
         /// Allowed values.
         values: Vec<Value>,
     },
@@ -45,11 +61,19 @@ pub enum Condition {
     Filled {
         /// Input name.
         name: String,
+        /// Where the input is (absent: the same level).
+        #[serde(default, skip_serializing_if = "Scope::is_row")]
+        #[cfg_attr(feature = "ts", ts(as = "Option<Scope>", optional))]
+        scope: Scope,
     },
     /// The value is `true`.
     IsTrue {
         /// Input name.
         name: String,
+        /// Where the input is (absent: the same level).
+        #[serde(default, skip_serializing_if = "Scope::is_row")]
+        #[cfg_attr(feature = "ts", ts(as = "Option<Scope>", optional))]
+        scope: Scope,
     },
     /// Every condition holds.
     All {
@@ -74,20 +98,21 @@ impl Condition {
         Self::Any { conditions: conditions.into_iter().collect() }
     }
 
-    /// Input names this condition reads, depth first, possibly repeated.
-    pub(crate) fn names(&self) -> Vec<&str> {
+    /// Input names this condition reads, with where they are, depth first,
+    /// possibly repeated.
+    pub(crate) fn names(&self) -> Vec<(Scope, &str)> {
         let mut out = Vec::new();
         self.collect_names(&mut out);
         out
     }
 
-    fn collect_names<'a>(&'a self, out: &mut Vec<&'a str>) {
+    fn collect_names<'a>(&'a self, out: &mut Vec<(Scope, &'a str)>) {
         match self {
-            Self::Eq { name, .. }
-            | Self::Ne { name, .. }
-            | Self::IsIn { name, .. }
-            | Self::Filled { name }
-            | Self::IsTrue { name } => out.push(name),
+            Self::Eq { name, scope, .. }
+            | Self::Ne { name, scope, .. }
+            | Self::IsIn { name, scope, .. }
+            | Self::Filled { name, scope }
+            | Self::IsTrue { name, scope } => out.push((*scope, name)),
             Self::All { conditions } | Self::Any { conditions } => {
                 conditions.iter().for_each(|c| c.collect_names(out));
             }
@@ -106,39 +131,74 @@ impl Condition {
     }
 }
 
-/// Starts a condition on the value of input `name`.
+/// Where the input a condition reads is, from a repeater's row (ADR 0044).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum Scope {
+    /// The same level: the row's inputs (or the form's, outside rows).
+    #[default]
+    Row,
+    /// The enclosing row's inputs.
+    Parent,
+    /// The record's form (the top level).
+    Root,
+}
+
+impl Scope {
+    #[allow(clippy::trivially_copy_pass_by_ref)] // serde's `skip_serializing_if` passes a reference
+    pub(crate) fn is_row(&self) -> bool {
+        *self == Self::Row
+    }
+}
+
+/// Starts a condition on the value of input `name` (in a repeater's row: an
+/// input of the same row).
 pub fn when(name: impl Into<String>) -> When {
-    When(name.into())
+    When(name.into(), Scope::Row)
+}
+
+/// In a repeater's row: starts a condition on the value of input `name` of
+/// the record's form (refused at the form's own level).
+pub fn when_root(name: impl Into<String>) -> When {
+    When(name.into(), Scope::Root)
+}
+
+/// In a repeater's row: starts a condition on the value of input `name` of
+/// the enclosing row (refused outside nested rows).
+pub fn when_parent(name: impl Into<String>) -> When {
+    When(name.into(), Scope::Parent)
 }
 
 /// A condition being built on one input's value ([`when`]).
 #[derive(Debug, Clone)]
-pub struct When(String);
+pub struct When(String, Scope);
 
 impl When {
     /// The value equals `value`.
     pub fn eq(self, value: impl Into<Value>) -> Condition {
-        Condition::Eq { name: self.0, value: value.into() }
+        Condition::Eq { name: self.0, scope: self.1, value: value.into() }
     }
 
     /// The value differs from `value`.
     pub fn ne(self, value: impl Into<Value>) -> Condition {
-        Condition::Ne { name: self.0, value: value.into() }
+        Condition::Ne { name: self.0, scope: self.1, value: value.into() }
     }
 
     /// The value is one of `values`.
     pub fn is_in<V: Into<Value>>(self, values: impl IntoIterator<Item = V>) -> Condition {
-        Condition::IsIn { name: self.0, values: values.into_iter().map(Into::into).collect() }
+        Condition::IsIn { name: self.0, scope: self.1, values: values.into_iter().map(Into::into).collect() }
     }
 
     /// The value is set: not `null`, `""`, `[]` or `{}`.
     pub fn filled(self) -> Condition {
-        Condition::Filled { name: self.0 }
+        Condition::Filled { name: self.0, scope: self.1 }
     }
 
     /// The value is `true` (a boolean input).
     pub fn is_true(self) -> Condition {
-        Condition::IsTrue { name: self.0 }
+        Condition::IsTrue { name: self.0, scope: self.1 }
     }
 }
 
@@ -161,11 +221,17 @@ mod tests {
                 {"op": "is_in", "name": "b", "values": [1, 2]},
             ]})
         );
+        assert_eq!(
+            serde_json::to_value(when_root("type").eq("quiz")).unwrap(),
+            json!({"op": "eq", "name": "type", "scope": "root", "value": "quiz"})
+        );
     }
 
     #[test]
     fn lists_names_and_combines() {
         let condition = when("a").is_true().and(Condition::all([when("b").filled(), when("a").ne(3)]));
-        assert_eq!(condition.names(), ["a", "b", "a"]);
+        let names: Vec<&str> = condition.names().into_iter().map(|(_, n)| n).collect();
+        assert_eq!(names, ["a", "b", "a"]);
+        assert_eq!(when_root("t").filled().names(), [(Scope::Root, "t")]);
     }
 }

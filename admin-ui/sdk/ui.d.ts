@@ -5,7 +5,8 @@ import type * as React from "react";
 type Props<E extends keyof React.JSX.IntrinsicElements> = React.ComponentProps<E> & { className?: string };
 
 export declare const Alert: React.FC<Props<"div"> & { variant?: "default" | "destructive" | "warning" }>;
-export declare const Badge: React.FC<Props<"span">>;
+/** Colors from the panel's tokens; other names show gray (panels up to 0.13.1 have no `info`). */
+export declare const Badge: React.FC<Props<"span"> & { color?: "gray" | "primary" | "info" | "success" | "warning" | "danger" }>;
 export declare const Button: React.FC<
   Props<"button"> & { variant?: "default" | "outline" | "ghost" | "destructive" | "secondary" | "link"; size?: "default" | "sm" | "lg" | "icon" }
 >;

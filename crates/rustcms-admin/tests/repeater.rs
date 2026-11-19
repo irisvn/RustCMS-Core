@@ -96,12 +96,16 @@ impl Resource for ProductResource {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SocialSettings {
     pub links: Vec<SocialLink>,
+    /// Whether links take a note (rows read it: `when_root`).
+    pub notes: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialLink {
     pub label: String,
     pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 impl Settings for SocialSettings {
@@ -115,14 +119,18 @@ impl SettingsPage for SocialSettings {
     }
 
     fn fields() -> Vec<SettingField> {
-        vec![SettingField::repeater(
-            Repeater::make("links")
-                .schema(components![
-                    TextInput::make("label").required(),
-                    TextInput::make("url").required().max_length(30)
-                ])
-                .max_items(2),
-        )]
+        vec![
+            SettingField::repeater(
+                Repeater::make("links")
+                    .schema(components![
+                        TextInput::make("label").required(),
+                        TextInput::make("url").required().max_length(30),
+                        TextInput::make("note").shown_when(when_root("notes").is_true()),
+                    ])
+                    .max_items(2),
+            ),
+            SettingField::boolean("notes"),
+        ]
     }
 }
 
@@ -234,7 +242,7 @@ db_test!(the_schema_describes_the_rows, |db: TestDb| async move {
         // Shared with the SPA tests.
         support::contract("repeater.schema.create.json", &schema);
     }
-    assert_eq!(schema["vocabularyVersion"], json!(19));
+    assert_eq!(schema["vocabularyVersion"], json!(28));
     let input = schema["form"]["components"].as_array().unwrap().iter().find(|c| c["name"] == "faq").unwrap().clone();
     assert_eq!(input["type"], json!("repeater"));
     assert_eq!(input["valueType"], json!("json"));
@@ -339,6 +347,17 @@ db_test!(settings_pages_take_json_repeaters, |db: TestDb| async move {
     client.send(Method::PUT, &url, Some(&good)).await.assert_status(StatusCode::OK);
     let saved = client.get(&url).await.json();
     assert_eq!(saved["data"]["links"], json!([{"label": "X", "url": "https://x.test"}]));
+    // Rows read the page's fields (ADR 0044): a note only where the page takes notes.
+    let version = saved["version"].as_str().unwrap().to_owned();
+    let noted = json!([{"label": "X", "url": "https://x.test", "note": "n"}]);
+    let sent = json!({"version": version, "data": {"links": noted}});
+    client.send(Method::PUT, &url, Some(&sent)).await.assert_status(StatusCode::OK);
+    let saved = client.get(&url).await.json();
+    assert_eq!(saved["data"]["links"], json!([{"label": "X", "url": "https://x.test"}]));
+    let version = saved["version"].as_str().unwrap().to_owned();
+    let sent = json!({"version": version, "data": {"notes": true, "links": noted}});
+    client.send(Method::PUT, &url, Some(&sent)).await.assert_status(StatusCode::OK);
+    assert_eq!(client.get(&url).await.json()["data"]["links"], noted);
 });
 
 macro_rules! refused_at_boot {
@@ -376,10 +395,42 @@ fn rows(components: Vec<rustcms_admin::ui::Component>) -> Vec<rustcms_admin::ui:
 
 refused_at_boot!(an_empty_row, EmptyRow, "the row has no input", components![Repeater::make("faq")]);
 refused_at_boot!(
-    a_media_input_in_a_row,
+    a_section_in_a_table_row,
+    TableSection,
+    "table rows hold inputs only",
+    components![
+        Repeater::make("faq").table().schema(components![Section::make("S").schema(components![TextInput::make("q")])])
+    ]
+);
+refused_at_boot!(
+    a_repeater_in_a_table_row,
+    TableNested,
+    "table rows hold no nested repeater",
+    components![
+        Repeater::make("faq")
+            .table()
+            .schema(components![Repeater::make("links").schema(components![TextInput::make("url")])])
+    ]
+);
+refused_at_boot!(
+    folding_table_rows,
+    TableFolded,
+    "table rows do not fold",
+    components![Repeater::make("faq").table().collapsible().schema(components![TextInput::make("q")])]
+);
+refused_at_boot!(
+    a_row_reading_no_form_input,
+    RootUnknown,
+    "uses `when_root(\"colour\")`, which is not an input of that level",
+    components![
+        Repeater::make("faq").schema(components![TextInput::make("q").shown_when(when_root("colour").filled())])
+    ]
+);
+refused_at_boot!(
+    file_rules_on_a_text_input_in_a_row,
     MediaRow,
-    "media and rich text inputs are not supported in JSON rows",
-    rows(components![FileUpload::make("photo")])
+    "`accept`, `max_size` and `multiple` are for file uploads",
+    rows(components![TextInput::make("photo").max_size(10)])
 );
 refused_at_boot!(
     a_select_without_options,

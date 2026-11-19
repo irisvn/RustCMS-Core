@@ -158,7 +158,7 @@ export function RelationSelect({
           else { setActive(0); setOpen(true); }
         }}
         className={cn(
-          "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 text-left text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
+          "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 text-left text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:bg-muted disabled:text-subtle-foreground",
           invalid && "border-destructive",
         )}
       >
@@ -166,7 +166,7 @@ export function RelationSelect({
         <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       </button>
       {expanded && (
-        <div className="absolute z-20 mt-2 w-full rounded-lg border border-border bg-card p-1.5 shadow-lg">
+        <div className="absolute z-20 mt-2 w-full rounded-lg border border-border bg-popover p-1.5 shadow-lg">
           <Input
             autoFocus role="combobox" aria-label={t("relation.searchOptions")} aria-expanded="true"
             aria-controls={listId} aria-autocomplete="list" aria-activedescendant={activeId}

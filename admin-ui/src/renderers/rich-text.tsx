@@ -26,6 +26,7 @@ import {
 } from "@/lib/rich-text";
 import { AppNode, AppNodeFields, RichSubscript, RichSuperscript, appNodeExtensions } from "./rich-text-app";
 import { MediaImage } from "./media";
+import { useImageViewer } from "@/components/lightbox";
 import { MediaPicker, usePickerAccess } from "./media-picker";
 import { UploadList, useUploads } from "./uploads";
 import { RichCallout, RichEmbed, RichImage, RichTable, RichTableCell, RichTableHeader, RichTableRow } from "./rich-text-nodes";
@@ -51,7 +52,7 @@ interface ImageDetails {
   size: ImageWidth;
 }
 
-export function RichEditorWidget({ id, label, value, onChange, disabled, invalid, describedBy, nullable, onBusy, nodes = NO_NODES }: {
+export function RichEditorWidget({ id, label, value, onChange, disabled, invalid, describedBy, nullable, onBusy, nodes = NO_NODES, collection, toolbar }: {
   id: string;
   label: string;
   value: string;
@@ -63,8 +64,19 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   onBusy?: (busy: boolean) => void;
   /** The application nodes the field accepts (version 3). */
   nodes?: RichNodeSchema[];
+  /** The media collection its images are uploaded into and its picker opens on. */
+  collection?: string;
+  /**
+   * `compact` (repeater rows, ADR 0044): bold, italic, underline, superscript,
+   * subscript, images and application elements. The document's rules are the field's either way.
+   */
+  toolbar?: "compact";
 }) {
   const t = useT();
+  const full = toolbar !== "compact";
+  // The compact toolbar still offers what the selection holds: pasted or stored
+  // formatting stays editable and removable.
+  const shown = (active: boolean) => full || active;
   const { apiPath } = usePanelConfig();
   const access = usePickerAccess();
   const [picking, setPicking] = useState(false);
@@ -85,6 +97,7 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
   const uploads = useUploads({
     onUploaded: (item) => insertImages.current([item], true),
     check: (file) => (file.type.startsWith("image/") ? null : later("rich.imagesOnlyFile", { file: file.name })),
+    collection,
   });
   // Files still queued or uploading (failures left in the list do not count).
   const sending = uploads.uploads.some((u) => u.status === "queued" || u.status === "uploading");
@@ -332,25 +345,25 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
       <div role="toolbar" aria-label={t("rich.toolbar", { field: label })} className="flex flex-wrap gap-1 rounded-t-md border border-border bg-muted/40 p-1">
         {tool(t("rich.bold"), <Bold />, !!s?.marks.bold, () => chain().toggleBold().run())}
         {tool(t("rich.italic"), <Italic />, !!s?.marks.italic, () => chain().toggleItalic().run())}
-        {tool(t("rich.strike"), <Strikethrough />, !!s?.marks.strike, () => chain().toggleStrike().run())}
+        {shown(!!s?.marks.strike) && tool(t("rich.strike"), <Strikethrough />, !!s?.marks.strike, () => chain().toggleStrike().run())}
         {tool(t("rich.underline"), <Underline />, !!s?.marks.underline, () => chain().toggleUnderline().run())}
         {tool(t("rich.superscript"), <Superscript />, !!s?.marks.superscript, () => chain().toggleSuperscript().run())}
         {tool(t("rich.subscript"), <Subscript />, !!s?.marks.subscript, () => chain().toggleSubscript().run())}
-        {tool(t("rich.h2"), <Heading2 />, s?.heading === 2, () => chain().toggleHeading({ level: 2 }).run())}
-        {tool(t("rich.h3"), <Heading3 />, s?.heading === 3, () => chain().toggleHeading({ level: 3 }).run())}
-        {tool(t("rich.h4"), <Heading4 />, s?.heading === 4, () => chain().toggleHeading({ level: 4 }).run())}
-        {tool(t("rich.bullets"), <List />, !!s?.bulletList, () => chain().toggleBulletList().run())}
-        {tool(t("rich.numbers"), <ListOrdered />, !!s?.orderedList, () => chain().toggleOrderedList().run())}
-        {tool(t("rich.quote"), <Quote />, !!s?.blockquote, () => chain().toggleBlockquote().run())}
-        {tool(t("rich.code"), <Code />, !!s?.codeBlock, () => chain().toggleCodeBlock().run())}
-        {tool(t("rich.rule"), <Minus />, false, () => chain().setHorizontalRule().run(), contained)}
-        {tool(t("rich.calloutInfo"), <Info />, s?.callout === "info", () => chain().toggleCallout("info").run())}
-        {tool(t("rich.calloutWarn"), <TriangleAlert />, s?.callout === "warn", () => chain().toggleCallout("warn").run())}
-        {tool(t("rich.link"), <Link />, !!s?.marks.link, link)}
+        {shown(s?.heading === 2) && tool(t("rich.h2"), <Heading2 />, s?.heading === 2, () => chain().toggleHeading({ level: 2 }).run())}
+        {shown(s?.heading === 3) && tool(t("rich.h3"), <Heading3 />, s?.heading === 3, () => chain().toggleHeading({ level: 3 }).run())}
+        {shown(s?.heading === 4) && tool(t("rich.h4"), <Heading4 />, s?.heading === 4, () => chain().toggleHeading({ level: 4 }).run())}
+        {shown(!!s?.bulletList) && tool(t("rich.bullets"), <List />, !!s?.bulletList, () => chain().toggleBulletList().run())}
+        {shown(!!s?.orderedList) && tool(t("rich.numbers"), <ListOrdered />, !!s?.orderedList, () => chain().toggleOrderedList().run())}
+        {shown(!!s?.blockquote) && tool(t("rich.quote"), <Quote />, !!s?.blockquote, () => chain().toggleBlockquote().run())}
+        {shown(!!s?.codeBlock) && tool(t("rich.code"), <Code />, !!s?.codeBlock, () => chain().toggleCodeBlock().run())}
+        {full && tool(t("rich.rule"), <Minus />, false, () => chain().setHorizontalRule().run(), contained)}
+        {shown(s?.callout === "info") && tool(t("rich.calloutInfo"), <Info />, s?.callout === "info", () => chain().toggleCallout("info").run())}
+        {shown(s?.callout === "warn") && tool(t("rich.calloutWarn"), <TriangleAlert />, s?.callout === "warn", () => chain().toggleCallout("warn").run())}
+        {shown(!!s?.marks.link) && tool(t("rich.link"), <Link />, !!s?.marks.link, link)}
         {tool(t("rich.image"), <ImagePlus />, false, () => setPicking(true), !access.library && !access.upload)}
         {tool(t("rich.imageDetails"), <Settings2 />, false, describe, !s?.image)}
-        {tool(t("rich.table"), <TableIcon />, false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), contained)}
-        {tool(t("rich.embed"), <Video />, false, () => setEmbedding(true), contained)}
+        {full && tool(t("rich.table"), <TableIcon />, false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), contained)}
+        {full && tool(t("rich.embed"), <Video />, false, () => setEmbedding(true), contained)}
         {nodes.length > 0 && (
           <DropdownMenu
             variant="ghost"
@@ -415,7 +428,7 @@ export function RichEditorWidget({ id, label, value, onChange, disabled, invalid
         open={picking}
         title={t("rich.imageTitle")}
         action={t("picker.insert")}
-        rules={{ multiple: true, max: PICK_MAX, accept: ["image/*"] }}
+        rules={{ multiple: true, max: PICK_MAX, accept: ["image/*"], collection }}
         onClose={() => {
           setPicking(false);
           editor?.commands.focus();
@@ -553,7 +566,7 @@ function ImageFields({ initial, onClose, onApply }: { initial: ImageDetails; onC
         <div className="flex flex-wrap gap-4">
           {IMAGE_WIDTHS.map((w) => (
             <label key={w} className="inline-flex items-center gap-2 text-sm">
-              <input type="radio" name={`${id}-size`} value={w} checked={size === w} onChange={() => setSize(w)} />
+              <input type="radio" className="admin-radio size-4 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" name={`${id}-size`} value={w} checked={size === w} onChange={() => setSize(w)} />
               {t(`rich.width.${w}`)}
             </label>
           ))}
@@ -625,17 +638,31 @@ function EmbedCard({ embed, link = false }: { embed: Embed; link?: boolean }) {
  */
 export function RichTextView({ doc, nodes: declared = NO_NODES }: { doc: RichDocument; nodes?: RichNodeSchema[] }) {
   const { apiPath } = usePanelConfig();
+  // Its images, in order: each opens the viewer over all of them.
+  const images: DocNode[] = [];
+  // As drawn: application nodes show no content of theirs.
+  const collect = (list: DocNode[] | undefined) => {
+    for (const n of list ?? []) {
+      if (n.type === "image" && typeof n.attrs?.media === "string") images.push(n);
+      if (!isAppNode(n.type)) collect(n.content);
+    }
+  };
+  collect(doc.content);
+  const viewer = useImageViewer(images.map((n) => ({ id: String(n.attrs?.media), alt: String(n.attrs?.alt ?? "") || undefined })));
+  const view = (node: DocNode) => viewer.open(images.indexOf(node));
   const nodes = (list: DocNode[] | undefined): React.ReactNode =>
-    (list ?? []).map((n, i) => <RichNode key={i} node={n} nodes={nodes} apiPath={apiPath} declared={declared} />);
-  return <div className="rich-text">{nodes(doc.content)}</div>;
+    (list ?? []).map((n, i) => <RichNode key={i} node={n} nodes={nodes} apiPath={apiPath} declared={declared} view={view} />);
+  return <div className="rich-text">{nodes(doc.content)}{viewer.viewer}</div>;
 }
 
-function RichNode({ node, nodes, apiPath, declared }: {
+function RichNode({ node, nodes, apiPath, declared, view }: {
   node: DocNode;
   nodes: (list?: DocNode[]) => React.ReactNode;
   apiPath: string;
   declared: RichNodeSchema[];
+  view: (node: DocNode) => void;
 }) {
+  const t = useT();
   if (isAppNode(node.type)) {
     const decl = declared.find((d) => d.name === node.type);
     const attrs = decl ? checkAttrs(decl, node.attrs) : null;
@@ -669,7 +696,9 @@ function RichNode({ node, nodes, apiPath, declared }: {
       const width = IMAGE_WIDTHS.includes(node.attrs?.width as ImageWidth) ? String(node.attrs?.width) : "normal";
       return (
         <figure className="rich-figure" data-width={width}>
-          <MediaImage src={mediaUrl(apiPath, String(node.attrs?.media))} alt={String(node.attrs?.alt ?? "")} />
+          <MediaImage src={mediaUrl(apiPath, String(node.attrs?.media))} alt={String(node.attrs?.alt ?? "")}
+            onOpen={typeof node.attrs?.media === "string" ? () => view(node) : undefined} buttonClassName="rich-image-open"
+            label={t("viewer.open", { name: String(node.attrs?.alt ?? "") || t("viewer.image") })} />
           {caption && <figcaption>{caption}</figcaption>}
         </figure>
       );

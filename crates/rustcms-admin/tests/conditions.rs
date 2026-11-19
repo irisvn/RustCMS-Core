@@ -240,7 +240,7 @@ db_test!(the_schema_carries_the_conditions, |db: TestDb| async move {
     let discount = &section["components"][0];
     assert_eq!((discount["clearWhenHidden"].clone(), discount.get("shownWhen")), (json!(true), None));
     assert!(components.iter().find(|c| c["name"] == json!("name")).unwrap().get("shownWhen").is_none());
-    assert_eq!(schema["vocabularyVersion"], json!(19));
+    assert_eq!(schema["vocabularyVersion"], json!(28));
 });
 
 db_test!(hidden_values_are_never_stored_and_required_means_when_shown, |db: TestDb| async move {

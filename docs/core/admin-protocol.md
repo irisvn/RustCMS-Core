@@ -31,11 +31,12 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | POST | `/resources/{slug}/records` | 201 `{data: Envelope}` |
 | GET / PATCH / DELETE | `/resources/{slug}/records/{key}` | `{data: Envelope}` / `{data: Envelope}` / 204 |
 | POST | `/resources/{slug}/form/react` | `FormReactRequest` `{operation: "create" \| "edit", key?, changed, state, previous?, via?: {parent, record, relation}, seq}` → `FormReactResponse` `{seq, patches, failed?}`: the changes the reaction of input `changed` asks for (ADR 0043). Before the body is read: 403 unless the user may create or update records of the resource, and 120 requests per user per minute; then create: `create` (through `via`, as that relation creates), edit: `update` on the record, in scope; `view` is 422, as is an input without a reaction or a JSON repeater sent with more rows than it holds; 2 reactions at once per user and 8 in all (429 beyond) |
+| POST | `/resources/{slug}/form/rules` | `FormRulesRequest` `{operation, key?, state, via?, seq}` → `FormRulesResponse` `{seq, rules: {input: {shown, required, options?}}, failed?}`: the rules computed on the server of every input with `serverRules` (ADR 0044, part E), for the form's state. Authorized and limited as `form/react` (same bucket and turns); a failing rule answers `failed: true` |
 | GET | `/resources/{slug}/records/{key}/computed` | `ComputedValues` `{data: {name: value}, failed: [name]}`: the computed values the view page's infolist shows, for a user who may view the record (ADR 0039); 60 requests per user per minute and 8 pages computing at once (429 beyond) |
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
-| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `LinkPage` `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable pivot columns by target key, belongs-to-many) |
-| POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key set by the server (has-many; belongs-to-many: 405) |
+| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `LinkPage` `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable pivot columns by target key, belongs-to-many; a filtered has-many lists only its records) |
+| POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key (and a filtered relation's fields: 422 `set_by_relation` when sent) set by the server (has-many; belongs-to-many: 405) |
 | POST | `…/relations/{relation}/attach` `{keys, pivot?}` | `LinkOutcome {processed, missing}`; admitted by `attach_{relation}` before the body (403), then 422 (1–100 keys, pivot by field rules), then parent 404/403 |
 | POST | `…/relations/{relation}/detach` `{keys}` | `LinkOutcome`; `detach_{relation}`; links to targets not visible are kept and listed in `missing` |
 | PATCH | `…/relations/{relation}/links/{target}` `{…pivot}` | `LinkOutcome`; `update_pivot_{relation}`; 404 when not linked or not visible |
@@ -50,7 +51,7 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | POST | `/imports/{id}/run` `{mapping}` | `ImportView` (running); once, then 409 `import_started` |
 | GET | `/exports/{id}/file` | `text/csv`; owner only (else 404), 409 `export_not_ready` / `export_stale` (credentials, permission, fields or any record no longer visible) |
 | GET | `/resources/{slug}/actions/{action}/fields/{field}/options?search=&keys=` | `{data: [SelectOption]}` of a form's `belongs_to` field (keys as text) |
-| POST | `/media` (multipart, one `file` part) | 201 `{data: MediaItem}` (with `alt`, its alternative text; media library enabled; the media schema's `upload` ability says whether the user may); 429 with `Retry-After` when every upload slot of the process is busy (before the body is read) or beyond 60 uploads a minute per user |
+| POST | `/media` (multipart: one `file` part, and an optional `collection` part naming a declared collection, in any order; 422 `collection` for another name) | 201 `{data: MediaItem}` (with `alt`, its alternative text, and `collection`; media library enabled; the media schema's `upload` ability says whether the user may); 429 with `Retry-After` when every upload slot of the process is busy (before the body is read) or beyond 60 uploads a minute per user |
 | GET | `/media/{id}/file` | the file (authorized, safe headers) |
 | GET | `/resources/{slug}/fields/{field}/options?search=&keys=a,b&record=` | `{data: [{value, label}]}` (≤ 50) |
 | … | `/system/…` | users, roles and permissions, see [Users, roles & account](../guide/src/admin/users-roles.md) |
@@ -204,6 +205,101 @@ older documents (`document_needs_version`) and more than 500 nodes
 (`max_app_nodes`). Clients of vocabulary 17 and below show version 3 documents
 read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
 with `registerRichTextNode` (host `ui` 4).
+
+Vocabulary 28 adds rules computed on the server (ADR 0044, part E). An input
+may carry `serverRules` `{dependsOn, shown?, required?}`: the server's answer
+for the form's values when the schema was read (`options` holds computed
+options). Clients hide an input `shown: false` as a condition would (its value
+not sent), mark a `required: true` one required, and, when an input of some
+`dependsOn` changes and typing pauses, post `form/rules` and apply the latest
+answer (only if the form has not changed since). Saves run the rules again on
+every path: a hidden input's value is dropped, a shown required one without a
+value is `is required`, a value outside computed options `is not one of the
+options`; a rule failing refuses the save with a form error
+`form_rules_failed`.
+
+Vocabulary 27 adds reactions on relationship rows (ADR 0044, part D). A
+`form/react` request's `state` may hold a top-level relationship repeater's
+rows as the form holds them: `[{"key": "8", "data": {…}} | {"ref": "n1", "data": {…}}]`,
+at most 100 (422 beyond), each row's inputs in wire format. `FormPatch` gains
+`add_relation_row` (`field`, `ref`, `data`), `update_relation_row` (`field`,
+`id`, `data`), `remove_relation_row` (`field`, `id`) and `flag_relation_row`
+(`field`, `id`, `message`), `id` being a key or a ref; clients apply them to
+the rows they hold (a removed stored row goes to the change's `delete`). A
+relationship repeater may carry `reacts`. New issue code
+`too_many_rows_to_check` (a rule over more than 1,000 rows).
+
+Vocabulary 26 adds rows of rows (ADR 0044, part C). A relationship repeater's
+rows may hold relationship repeaters (`relationship.resource` the nested child,
+`relation` a has-many relation of the row's resource) and JSON repeaters of the
+child's JSON fields; conditions in nested rows may carry `scope: "parent"` (the
+enclosing relationship row). A client reads a stored row's nested rows from
+`GET /resources/{row resource}/records/{row key}/relations/{relation}`; a new
+row has none. A row's change (`create` or `update` data) carries a nested
+repeater's change under its name, of the same shape (`create` and `order`
+only inside a new row); an `update` may carry only that. Errors name every
+level (`blanks.n1.choices.n2.content`). A save changing more than 1,000 rows,
+every level and rows removed with their parent row counted, is refused with a
+form error `too_many_rows_changed`.
+
+Vocabulary 25 adds files, documents and record selects in repeater rows (ADR
+0044, part B). A JSON repeater's rows may hold `file_upload` inputs (their
+`media` and `collection` from the input) and `rich_editor` inputs (their
+`richNodes` from the input); a relationship repeater's rows may hold the
+child's media, rich text and `belongs_to` inputs (`relationship` set). A
+`rich_editor` input may carry `toolbar: "compact"` (rows: bold, italic,
+underline, superscript, subscript, images, application elements); the
+document's rules do not change with it. Media errors of rows name the row
+(`faq.2.icon`, `photos.n1.image`).
+
+Vocabulary 24 adds repeaters' second round (ADR 0044). A leaf condition may
+carry `scope`: `"root"` (an input of the record's form, read from a repeater's
+row) or `"parent"` (the enclosing row); absent, the same level. A
+relationship repeater may carry `shownWhen` and conditions in its rows; when a
+save hides it, the server removes the rows the user sees, and ignores what was
+sent for it. `RepeaterSchema.layout` may be `"table"` (rows as table rows from
+`md`). A has-many `RelationSchema` may carry `fixed` (`{field: value}`, `null`
+for none): the values the filtered relation sets on records created through
+it, kept out of the create form like its foreign key. A `repeatable_entry` may
+carry `rows` (`{resource, relation, orderBy?, limit}`): its rows are read
+from `GET …/relations/{relation}` (`per_page=limit`), sorted by `orderBy`, and
+`components` name the child's fields. Older clients see an unknown vocabulary
+and show forms read-only.
+
+Vocabulary 23 adds media collections. `GET /panel` may carry
+`mediaCollections` (`[{value, label}]`, declaration order, labels translated)
+for users who may list or upload files. A `file_upload` or `rich_text` input
+may carry `collection`: its uploads send it as a `collection` part, and its
+picker opens on it. A select filter may carry `none`, the label of a last
+choice for records without a value, sent as `~none` in its `in` list (matched
+as `IS NULL`; `~none,a` matches either). Older clients never send the part
+(files without a collection) and show no such choice.
+
+Vocabulary 22 adds the image viewer's switch: a media entry and an input's
+`media` may carry `preview: false` (sent only then): its images do not open
+the viewer when clicked. Clients open images in a viewer otherwise (media
+entries, file uploads, images of stored documents, the media library), going
+through the images of the same place. The media entry's `gallery` (vocabulary
+14) is no longer sent: older clients show such entries' images without a link.
+
+Vocabulary 21 adds date formats: a column or an entry may carry `format`, a
+pattern (`yyyy yy MMMM MMM MM M dd d EEEE EEE HH H hh h mm ss a z`, text
+between single quotes, `''` a quote; at most 64 characters) the server checked
+against the field's kind (no time on a date, no `z` on a local date-time).
+Clients write the value with it: instants in the viewer's time zone, dates
+and local date-times as they are, names in the panel's language. Without one,
+the panel's configuration may carry `dateFormat` (date fields) and
+`dateTimeFormat` (local date-times, instants, and the panel's own times); else
+the client's default style. A client that cannot read a pattern uses its
+default. Older clients ignore `format`.
+
+Vocabulary 20 adds option labels to table columns: a text or badge column may
+carry `options` (`[{value, label}]`, labels in the user's language, values in
+canonical wire form like its `colors`), declared by the column or taken from
+the form's select or checkbox list of the field. Clients show the label of the
+option holding a cell's value (each item's, for a list; one badge per item in
+a badge column) and the value itself when no option holds it; colors still
+follow the values. Older clients show the values.
 
 Vocabulary 19 adds form reactions (ADR 0043): inputs of create and edit
 forms may carry `reacts: true` (never on view schemas or repeater rows). After such an input

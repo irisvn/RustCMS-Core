@@ -42,10 +42,10 @@ The LMS's enrollments draw their progress with a
 
 | Column | Shows |
 |---|---|
-| `TextColumn` | text, numbers, related records by title (`belongs_to` fields) |
-| `BadgeColumn` | a badge, `.color(value, color)` per value (`primary`, `success`, `warning`, `danger`, `gray`; any other name shows gray) |
+| `TextColumn` | text, numbers, related records by title (`belongs_to` fields), [option labels](#option-labels) |
+| `BadgeColumn` | a badge, `.color(value, color)` per value (`primary`, `info`, `success`, `warning`, `danger`, `gray`; any other name shows gray), [option labels](#option-labels); a list (a checkbox list's values) as one badge per value |
 | `BooleanColumn` | a check mark |
-| `DateColumn` | dates and times: instants in the user's language and time zone; dates as `YYYY-MM-DD`, local date-times as `YYYY-MM-DD HH:MM` |
+| `DateColumn` | dates and times: instants in the user's language and time zone; dates as `YYYY-MM-DD`, local date-times as `YYYY-MM-DD HH:MM`; or with a [date format](#date-formats) |
 
 Every column takes `.label("…")` (default: the field's label, or its name in
 words), `.hide_below(…)` ([narrow screens](#narrow-screens)), and
@@ -56,6 +56,69 @@ application ([custom cells](customizing.md#custom-cells)).
 // A sketch: a `status` text field.
 BadgeColumn::make("status").color("published", "success").color("draft", "gray")
 ```
+
+Values in `.color(…)` are compared as the API sends them: an `i64` or a
+decimal column's values are strings (`.color("2", "danger")`), as a select's
+options. A value the column cannot hold refuses to boot.
+
+### Option labels
+
+A text or badge column shows the label of each value instead of the value
+(`Draft` for `draft`). Without labels of its own, the column takes the options
+of the form's select or checkbox list of the same field. The demo's tags show
+their kind this way, colored by value:
+
+<<< @/../../../examples/demo/src/admin/resources/tag_resource.rs#table [src/admin/resources/tag_resource.rs]
+
+`.options([(value, label), …])` gives a column its own labels, over the
+form's: `BadgeColumn::make("level").options([("1", "Minor"), ("2", "Major")])`
+for an `i64` field (its values are strings on the wire). `.raw()` keeps the
+values: `TextColumn::make("code").raw()`.
+
+Labels are translated as other labels. Colors, sorting, search, filters and
+exports still use the values, and a value without a label is shown as it is.
+A `belongs_to` field's column shows the related record's title and takes no
+options.
+
+### Date formats
+
+`.date_format(pattern)` on the column of a date, local date-time or instant
+field shows its values with `pattern`; the demo's posts above use
+`"MMM d, yyyy, h:mm a"`. Instants are shown in the user's time zone, dates and
+local date-times as they are; month and weekday names, and AM/PM, are in the
+user's language.
+
+| Pattern | Shows | Example |
+|---|---|---|
+| `yyyy`, `yy` | the year | `2026`, `26` |
+| `MMMM`, `MMM`, `MM`, `M` | the month: name, short name, two digits, digits | `November`, `Nov`, `11`, `11` |
+| `dd`, `d` | the day | `08`, `8` |
+| `EEEE`, `EEE` | the weekday | `Wednesday`, `Wed` |
+| `HH`, `H` | the hour, 0 to 23 | `09`, `9` |
+| `hh`, `h` | the hour, 1 to 12 | `09`, `9` |
+| `mm`, `ss` | minutes, seconds | `05`, `07` |
+| `a` | AM or PM | `PM` |
+| `z` | the time zone (instants only) | `GMT+7` |
+| `'text'` | the text as it is (`''` is a quote) | `'at'` |
+
+Other letters must be quoted; other characters (`/`, `-`, `:`, `,`, spaces)
+are kept. A pattern holds at most 64 characters. A pattern that is not one,
+a time on a date field, or `z` on a local date-time refuses to boot.
+
+Without a pattern of its own, a column uses the panel's, set once for the
+whole panel; history, queue and schedule times use the date-time one too:
+
+```rust
+AdminProvider::new()
+    .date_format("dd/MM/yyyy")                // date fields
+    .datetime_format("HH:mm:ss dd/MM/yyyy")   // local date-times and instants
+```
+
+The panel's date-time pattern also writes local date-times, which have no
+time zone: it may not hold `z` (a column or entry of an instant may).
+
+Without either, dates show as in the table above. Entries of the view page
+take the same patterns ([infolists](infolists.md#entries)).
 
 ### Counts
 
@@ -87,6 +150,12 @@ The demo's categories count their posts:
 Filters take `.label("…")`. The panel's select sends one value; an API client
 may send several (`filter[status][in]=active,withdrawn`). Several filters
 combine with AND.
+
+On a nullable column, `SelectFilter::make("collection").none("Unassigned")`
+adds a last choice for records without a value. It is sent as `~none` in the
+list (`filter[collection][in]=~none`, or `~none,covers` for either) and
+matched as `IS NULL` (in a JSON list too). Without
+`.none(..)`, `~none` is compared as any other value.
 
 ## Search, sorting and pages
 
@@ -151,9 +220,17 @@ The boot stops when:
 
 - a column is not a field, or is an encrypted field;
 - a filter's field is not `.filterable()`;
+- a filter with `.none(..)` is not a `SelectFilter` on a nullable column, or is
+  on a `belongs_to` field;
 - the default sort's field is not `.sortable()`;
 - a cell name is not `vendor/name` (each part 1 to 32 characters of `a-z`,
-  `0-9` and `-`), or its props exceed 4 KiB.
+  `0-9` and `-`), or its props exceed 4 KiB;
+- [option labels](#option-labels) are given to a column that takes none
+  (boolean, date, count, related records), together with `.raw()`, twice for a
+  value, in values the column cannot hold, or miss a colored value;
+- a [date format](#date-formats) is not a pattern, does not fit the field
+  (not a date, a time on a date, a zone on a local date-time), or is given to a
+  boolean, count or [custom cell](customizing.md#custom-cells) column.
 
 ## Related pages
 

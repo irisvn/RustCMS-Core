@@ -179,10 +179,15 @@ impl<R: Resource> ResourceAdapter<R> {
         &self,
         ctx: &Ctx,
         field: &str,
+        filters: &[(String, RelationFilter)],
         parents: &[String],
     ) -> AppResult<BTreeMap<String, u64>> {
-        // As the relation's list: admitted before any parent is looked at.
-        let mut query = ListQuery { parent: Some((field.to_owned(), String::new())), ..Default::default() };
+        // As the relation's list (its filters, ADR 0044): admitted before any parent is looked at.
+        let mut query = ListQuery {
+            parent: Some((field.to_owned(), String::new())),
+            relation_filters: filters.to_vec(),
+            ..Default::default()
+        };
         self.admit_list(ctx, &query).await?;
         let zeros = || parents.iter().map(|k| (k.clone(), 0)).collect::<BTreeMap<_, _>>();
         let column = self.column(field);

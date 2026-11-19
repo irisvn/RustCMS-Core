@@ -10,6 +10,10 @@ pub struct Model {
     pub name: String,
     pub slug: String,
     pub color: Option<String>,
+    /// What its page shows: its posts (`posts`) or a link (`link`).
+    #[sea_orm(default_value = "posts")]
+    pub layout: String,
+    pub link_url: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

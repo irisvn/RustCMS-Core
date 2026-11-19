@@ -1,0 +1,134 @@
+{
+  "abilities": {
+    "create": true,
+    "forceDelete": true,
+    "history": true,
+    "restore": true,
+    "viewAny": true
+  },
+  "form": {
+    "columns": 1,
+    "components": [
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Title",
+        "name": "title",
+        "nullable": false,
+        "rules": [
+          {
+            "rule": "required"
+          }
+        ],
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Links",
+        "name": "links",
+        "nullable": true,
+        "repeater": {
+          "addable": true,
+          "components": [
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Label",
+              "name": "label",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                }
+              ],
+              "type": "text_input",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Icon",
+              "media": {
+                "accept": [
+                  "image/*"
+                ],
+                "maxItems": 1,
+                "maxSize": 100,
+                "multiple": false,
+                "preview": false
+              },
+              "name": "icon",
+              "nullable": true,
+              "rules": [],
+              "type": "file_upload",
+              "valueType": "uuid"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Files",
+              "media": {
+                "accept": [],
+                "maxItems": 2,
+                "multiple": true
+              },
+              "name": "files",
+              "nullable": true,
+              "rules": [],
+              "type": "file_upload",
+              "valueType": "json"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": false,
+              "label": "Body",
+              "name": "body",
+              "nullable": true,
+              "rules": [],
+              "toolbar": "compact",
+              "type": "rich_editor",
+              "valueType": "json"
+            }
+          ],
+          "deletable": true
+        },
+        "rules": [],
+        "type": "repeater",
+        "valueType": "json"
+      }
+    ]
+  },
+  "operation": "create",
+  "resource": {
+    "label": "Note",
+    "pluralLabel": "Notes",
+    "slug": "notes",
+    "titleField": "title"
+  },
+  "schemaVersion": 2,
+  "table": {
+    "actions": [],
+    "columns": [
+      {
+        "label": "Title",
+        "name": "title",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      }
+    ],
+    "filters": [],
+    "perPageOptions": [
+      10,
+      25,
+      50,
+      100
+    ],
+    "searchable": false,
+    "softDeletes": true
+  },
+  "vocabularyVersion": 28
+}

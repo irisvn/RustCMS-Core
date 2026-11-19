@@ -1,6 +1,6 @@
 # ADR 0037: Inputs and layouts shown under conditions
 
-- Status: accepted (unreleased, vocabulary 13)
+- Status: accepted (unreleased, vocabulary 13; conditions in repeater rows reading outer levels: ADR 0044)
 - Date: 2026-11-15
 
 ## Context
@@ -45,7 +45,7 @@ Constraints from the existing design:
   it has one, else `null` when the column is nullable, else the kind's empty
   value (`""` for text, `[]` for a JSON list).
 - A condition names an input of the same form level or of an ancestor level
-  (repeater rows, ADR for A3/A4); for now every form has one level.
+  (repeater rows: `when_root`, `when_parent`, ADR 0044).
 
 ### Meaning
 

@@ -38,3 +38,33 @@ export async function signIn(page: Page, email: string, welcome: RegExp = /^Welc
   // Mobile navigation is intentionally closed after signing in.
   await expect(page.getByRole("main").getByRole("heading", { name: welcome })).toBeVisible();
 }
+
+/**
+ * Colors as sRGB channels (0–255), resolved by the browser: a CSS color, or a
+ * token as `--name` (var(), color-mix() and oklab() included; a canvas would
+ * misread oklab). Through the CSSOM: no injected styles.
+ */
+export async function srgb(page: Page, colors: string[]): Promise<number[][]> {
+  return page.evaluate((list) => list.map((value) => {
+    const probe = document.createElement("span");
+    document.body.append(probe);
+    probe.style.color = `color-mix(in srgb, ${value.startsWith("--") ? `var(${value})` : value} 100%, transparent)`;
+    const resolved = getComputedStyle(probe).color;
+    probe.remove();
+    const scale = resolved.startsWith("color(") ? 255 : 1;
+    return (resolved.match(/-?\d*\.?\d+(?:e-?\d+)?/g) ?? []).slice(0, 3).map((n) => Math.round(Number(n) * scale));
+  }), colors);
+}
+
+/** WCAG contrast of two sRGB colors (0–255). */
+export function contrast(a: number[], b: number[]): number {
+  const luminance = (rgb: number[]) => {
+    const [r, g, b] = rgb.map((channel) => {
+      const value = channel / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return r! * 0.2126 + g! * 0.7152 + b! * 0.0722;
+  };
+  const x = luminance(a), y = luminance(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}

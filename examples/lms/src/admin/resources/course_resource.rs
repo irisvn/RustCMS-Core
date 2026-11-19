@@ -1,7 +1,7 @@
 //! Courses: an instructor, a capacity, and their lessons and enrollments.
 
 use rustcms::admin::*;
-use rustcms::{AppResult, ValidationErrors};
+use rustcms::{AppError, AppResult, ValidationErrors};
 use sea_orm::{ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, Select};
 
 use crate::admin::int;
@@ -53,7 +53,38 @@ impl Resource for CourseResource {
             NumberInput::make("capacity").help("Active enrollments allowed at once"),
             NumberInput::make("instructor_id").help("Id of the user who teaches the course"),
             Toggle::make("published"),
-            Textarea::make("summary").column_span(2),
+            // #region summary-required
+            // A rule computed on the server (it reads the course's lessons): a
+            // published course with lessons shows learners its summary, so it needs
+            // one. Checked on every save that sends it or `published`.
+            Textarea::make("summary").column_span(2).depends_on(["published"]).required_fn(|ctx, state| {
+                let published = state.get("published") == Some(&serde_json::json!(true));
+                let key = state.key().map(str::to_owned);
+                Box::pin(async move {
+                    let Some(key) = key.filter(|_| published) else { return Ok(false) };
+                    // Through the lessons resource: the user's scope applies.
+                    let query = ListQuery {
+                        parent: Some(("course_id".to_owned(), key)),
+                        per_page: Some(1),
+                        ..Default::default()
+                    };
+                    // A user who may not list lessons is not asked for it (the rule
+                    // reads what that user sees).
+                    match ctx.records("lessons", &query).await {
+                        Ok(page) => Ok(page.meta.total > 0),
+                        Err(AppError::Forbidden | AppError::NotFound) => Ok(false),
+                        Err(err) => Err(err),
+                    }
+                })
+            }),
+            // #endregion summary-required
+            // Its learners, enrolled in the course's form: each row is an enrollment
+            // (the seat rules and the welcome job run as for any enrollment).
+            Repeater::make("enrollments")
+                .relationship()
+                .column_span(2)
+                .schema(components![SelectInput::make("learner_id"), SelectInput::make("status")])
+                .add_action_label("Enroll a learner"),
         ])
     }
     // #endregion form

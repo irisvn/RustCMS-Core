@@ -91,6 +91,35 @@ target's own create route) is a separate claim, not a replay. A committed retry
 is answered even if the parent was hidden, trashed or deleted since, like any
 replay.
 
+## Filtered relations
+
+`.where_null(field)` and `.where_eq(field, value)` restrict a has-many
+relation to the target's records whose `field` holds no value, or `value`
+(every filter must hold). One child resource can then hold several relations
+of the parent: the options of a quiz question are the rows without a blank,
+the choices of a blank those with it.
+
+<<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-relations [src/admin/resources/quiz_question_resource.rs]
+
+- **Wherever the relation is read** the filters apply: its section and
+  count columns, its [repeater](forms.md#child-records), its rows on view
+  pages. The child's own pages list every record.
+- **Records created through the relation get its values**, set by the
+  server as the foreign key is: **New** in its section, and rows added by its
+  repeater. A client that sends the field gets a 422 (`is set by the
+  relation` in the section, `is not allowed` in a row); a hook that changes it
+  is a server error (500).
+- A row of another relation is not one of this one's (`not_a_row`); its field
+  cannot be an input of the repeater's rows.
+- **Several repeaters** may edit one child resource when their relations
+  cannot share a record: some field filtered apart (`where_null` against
+  `where_eq`, or two values). New rows of ordered repeaters take positions
+  after every row of the parent, so a unique `(parent, position)` holds
+  across relations.
+- At boot: `field` is a field of the target (not encrypted, not the foreign
+  key or the key), `where_null` needs a nullable column, `where_eq` a value
+  of the field's kind; filters are for has-many relations only.
+
 ## Belongs-to-many (pivot tables)
 
 Records linked through a **pivot table** (posts ↔ tags), with optional columns

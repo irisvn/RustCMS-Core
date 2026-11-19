@@ -489,10 +489,35 @@ fn parent_locks_are_checked_at_boot() {
             vec![Field::column(book::Column::ShelfId).belongs_to("books")]
         }
     }
+    // Two resources locking each other: a cycle.
+    struct LoopA;
+    impl Resource for LoopA {
+        type Entity = book::Entity;
+        const SLUG: &'static str = "loop_a";
+        fn meta() -> ResourceMeta {
+            ResourceMeta::new("x").lock_parent("shelf_id", "loop_b")
+        }
+        fn fields() -> Vec<Field> {
+            vec![Field::column(book::Column::ShelfId).belongs_to("loop_b")]
+        }
+    }
+    struct LoopB;
+    impl Resource for LoopB {
+        type Entity = book::Entity;
+        const SLUG: &'static str = "loop_b";
+        fn meta() -> ResourceMeta {
+            ResourceMeta::new("x").lock_parent("shelf_id", "loop_a")
+        }
+        fn fields() -> Vec<Field> {
+            vec![Field::column(book::Column::ShelfId).belongs_to("loop_a")]
+        }
+    }
     let fails = |registry: fn() -> Registry| std::panic::catch_unwind(move || registry().finish()).is_err();
     assert!(fails(|| Registry::new().register::<ToNowhere>()));
     assert!(fails(|| Registry::new().register::<Shelves>().register::<NotLinked>()));
-    assert!(fails(|| Registry::new().register::<Shelves>().register::<Books>().register::<Chained>()));
+    // Chains are allowed (ADR 0044, part C): each write locks its direct parent.
+    assert!(!fails(|| Registry::new().register::<Shelves>().register::<Books>().register::<Chained>()));
+    assert!(fails(|| Registry::new().register::<LoopA>().register::<LoopB>()));
     assert!(!fails(|| Registry::new().register::<Shelves>().register::<Books>()));
 }
 

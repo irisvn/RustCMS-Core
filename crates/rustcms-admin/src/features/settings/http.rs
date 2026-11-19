@@ -263,7 +263,9 @@ fn input_schema(ctx: &Ctx, field: &SettingField, input: &crate::ui::Input, disab
             max_items: rule.max_items,
             accept: rule.accept.clone(),
             max_size: rule.max_size,
+            preview: input.preview,
         }),
+        collection: field.collection.clone().filter(|_| !disabled),
         links: None,
         prefix: input.prefix.clone(),
         suffix: input.suffix.clone(),
@@ -276,9 +278,11 @@ fn input_schema(ctx: &Ctx, field: &SettingField, input: &crate::ui::Input, disab
             .input
             .repeater
             .as_deref()
-            .map(|spec| Box::new(crate::engine::repeater::rows_schema(spec, &|text| ctx.t(text), disabled))),
+            .map(|spec| Box::new(crate::engine::repeater::rows_schema(spec, &|text| ctx.t(text), disabled, None))),
         rich_nodes: Vec::new(),
         reacts: false,
+        toolbar: None,
+        server_rules: None,
     }
 }
 
@@ -414,6 +418,17 @@ async fn update(
         .collect();
     data.retain(|name, _| !hidden.contains(name));
     writes.retain(|name, _| !hidden.contains(name));
+    // Repeater rows whose conditions read the page's fields, now known (ADR 0044).
+    let shown = page.conditions().shown_values(&resulting, Default::default());
+    let mut row_errors = ValidationErrors::new();
+    for field in page.fields() {
+        let Some(rows) = field.rows.as_deref().filter(|r| r.reads_outside()) else { continue };
+        let Some(list) = data.get(&field.name) else { continue };
+        if let Some(list) = rows.check_in(&field.name, list, &mut row_errors, &shown) {
+            data.insert(field.name.clone(), list);
+        }
+    }
+    row_errors.into_result()?;
 
     let mut values = Map::new();
     let mut secrets = BTreeMap::new();
@@ -497,7 +512,28 @@ async fn update(
             };
             ids.retain(|id| !kept.iter().any(|k| uuid::Uuid::parse_str(k).is_ok_and(|k| k == *id)));
             if !ids.is_empty() {
-                wanted.push((field.name.as_str(), rule, ids));
+                wanted.push((field.name.clone(), rule.clone(), ids));
+            }
+        }
+    }
+    // Files of the rows of changed repeaters (ADR 0044), but those the same input
+    // already referred to (in any row: rows move); a file moved to another input meets its rules.
+    let input_of = |at: &str| at.split('.').filter(|part| part.parse::<usize>().is_err()).collect::<Vec<_>>().join(".");
+    for field in page.fields() {
+        let Some(rows) = field.rows.as_deref().filter(|_| changed(&field.name)) else { continue };
+        let mut kept = Vec::new();
+        if let Some(before) = stored.values.get(&field.name) {
+            rows.references(&field.name, before, &mut kept);
+        }
+        let kept: std::collections::HashSet<(String, uuid::Uuid)> =
+            kept.into_iter().flat_map(|(at, _, ids)| ids.into_iter().map(move |id| (input_of(&at), id))).collect();
+        let mut refs = Vec::new();
+        rows.references(&field.name, &values[&field.name], &mut refs);
+        for (at, rule, mut ids) in refs {
+            let input = input_of(&at);
+            ids.retain(|id| !kept.contains(&(input.clone(), *id)));
+            if !ids.is_empty() {
+                wanted.push((at, rule, ids));
             }
         }
     }

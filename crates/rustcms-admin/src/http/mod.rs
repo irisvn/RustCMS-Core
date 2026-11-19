@@ -59,6 +59,12 @@ pub struct PanelResponse {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uploads: Option<PanelUploads>,
+    /// The media library's collections, in declaration order, labels
+    /// translated: when the panel declares some and the user may list or
+    /// upload files (vocabulary 23).
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::ui::SelectOption>>", optional, rename = "mediaCollections"))]
+    #[serde(rename = "mediaCollections", skip_serializing_if = "Vec::is_empty")]
+    pub media_collections: Vec<crate::ui::SelectOption>,
 }
 
 /// The `[storage]` limits uploading clients respect (`PanelResponse.uploads`);
@@ -105,6 +111,7 @@ pub fn routes(admin_path: &str) -> Vec<(Method, String)> {
         (Method::GET, format!("{base}/panel")),
         (Method::GET, format!("{resource}/schema")),
         (Method::POST, format!("{resource}/form/react")),
+        (Method::POST, format!("{resource}/form/rules")),
         (Method::GET, format!("{resource}/records")),
         (Method::POST, format!("{resource}/records")),
         (Method::GET, format!("{resource}/records/{{key}}")),
@@ -146,6 +153,7 @@ pub(crate) fn router(router: Router<AppState>, admin_path: &str) -> Router<AppSt
         .route(&format!("{base}/panel"), get(panel))
         .route(&format!("{resource}/schema"), get(schema))
         .route(&format!("{resource}/form/react"), post(react))
+        .route(&format!("{resource}/form/rules"), post(form_rules))
         .route(&format!("{resource}/records"), get(list).post(create))
         .route(&format!("{resource}/records/{{key}}"), get(find).patch(update).delete(destroy))
         .route(&format!("{resource}/records/{{key}}/computed"), get(computed))

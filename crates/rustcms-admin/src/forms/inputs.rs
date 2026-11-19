@@ -104,10 +104,62 @@ pub struct Input {
     pub(crate) repeater: Option<Box<super::repeater::RepeaterSpec>>,
     /// The input's reaction (ADR 0043; boxed: most inputs have none).
     pub(crate) reaction: Option<Box<super::reactions::Reaction>>,
+    /// Rules computed on the server (ADR 0044, part E; boxed: most inputs have none).
+    pub(crate) rules: Option<Box<super::rules::InputRules>>,
     /// JSON repeater rows: rules a field gives elsewhere.
     pub(crate) required: bool,
     pub(crate) max_length: Option<usize>,
     pub(crate) integer: bool,
+    /// File uploads: images open in the panel's viewer (the default).
+    pub(crate) preview: bool,
+    /// File uploads and rich editors in rows (ADR 0044): rules of JSON rows
+    /// and the toolbar (boxed: most inputs have none).
+    pub(crate) content: Option<Box<RowContent>>,
+}
+
+/// What a file upload or a rich editor of a repeater's row declares (ADR
+/// 0044): in a JSON row, the rules a field gives elsewhere; in any row, the
+/// rich editor's toolbar.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RowContent {
+    /// Accepted MIME types (`image/*`), JSON rows.
+    pub(crate) accept: Vec<String>,
+    /// Largest file in bytes, JSON rows.
+    pub(crate) max_size: Option<u64>,
+    /// A list of up to this many files (else one), JSON rows.
+    pub(crate) max_files: Option<usize>,
+    /// The media collection of uploads, JSON rows.
+    pub(crate) collection: Option<String>,
+    /// Application nodes a rich editor accepts, JSON rows.
+    pub(crate) nodes: Vec<String>,
+    /// A rich editor in a row shows the full toolbar (else the compact one).
+    pub(crate) full: bool,
+}
+
+impl RowContent {
+    /// The rule a file upload of a JSON row holds its files to.
+    pub(crate) fn media_rule(&self) -> crate::field::MediaRule {
+        crate::field::MediaRule {
+            multiple: self.max_files.is_some(),
+            max_items: self.max_files.unwrap_or(1),
+            accept: self.accept.clone(),
+            max_size: self.max_size,
+        }
+    }
+
+    /// The toolbar of a rich editor in a row: compact unless `full` (ADR 0044).
+    pub(crate) fn toolbar(content: Option<&Self>) -> Option<crate::schema::RichToolbar> {
+        (!content.is_some_and(|c| c.full)).then_some(crate::schema::RichToolbar::Compact)
+    }
+
+    /// Whether a rule meant for JSON rows is set (everything but `full`).
+    pub(crate) fn has_rules(&self) -> bool {
+        !self.accept.is_empty()
+            || self.max_size.is_some()
+            || self.max_files.is_some()
+            || self.collection.is_some()
+            || !self.nodes.is_empty()
+    }
 }
 
 impl Input {
@@ -134,10 +186,60 @@ impl Input {
             clear_when_hidden: false,
             repeater: None,
             reaction: None,
+            rules: None,
             required: false,
             max_length: None,
             integer: false,
+            preview: true,
+            content: None,
         }
+    }
+
+    fn content(&mut self) -> &mut RowContent {
+        self.content.get_or_insert_with(Box::default)
+    }
+
+    /// File uploads in JSON repeater rows: accepted MIME types (`image/*`,
+    /// `application/pdf`). Elsewhere the field decides (`Field::accept`).
+    pub fn accept(mut self, types: &[&str]) -> Self {
+        self.content().accept = types.iter().map(|t| (*t).to_owned()).collect();
+        self
+    }
+
+    /// File uploads in JSON repeater rows: the largest file, in bytes.
+    pub fn max_size(mut self, bytes: u64) -> Self {
+        self.content().max_size = Some(bytes);
+        self
+    }
+
+    /// File uploads in JSON repeater rows: a list of up to `max` files, in
+    /// order (else one file).
+    pub fn multiple(mut self, max: usize) -> Self {
+        self.content().max_files = Some(max.max(1));
+        self
+    }
+
+    /// File uploads and rich editors in JSON repeater rows: uploads go into
+    /// the media collection `name` (declared with
+    /// [`crate::AdminProvider::media_collection`]), and the picker opens on it.
+    pub fn collection(mut self, name: impl Into<String>) -> Self {
+        self.content().collection = Some(name.into());
+        self
+    }
+
+    /// Rich editors in JSON repeater rows: the application nodes the document
+    /// accepts (declared with [`crate::AdminProvider::rich_text_node`]).
+    pub fn nodes<S: Into<String>>(mut self, names: impl IntoIterator<Item = S>) -> Self {
+        self.content().nodes.extend(names.into_iter().map(Into::into));
+        self
+    }
+
+    /// Rich editors in repeater rows: the full toolbar (rows show a compact
+    /// one: bold, italic, underline, superscript, subscript, images and
+    /// application elements). The document's rules are the same either way.
+    pub fn full(mut self) -> Self {
+        self.content().full = true;
+        self
     }
 
     /// Displayed label (default: the field name, humanized).
@@ -180,6 +282,14 @@ impl Input {
     /// canonical wire form. Not used for `belongs_to` fields.
     pub fn options<V: Into<Json>, L: Into<String>>(mut self, options: impl IntoIterator<Item = (V, L)>) -> Self {
         self.options = options.into_iter().map(|(v, l)| SelectOption { value: v.into(), label: l.into() }).collect();
+        self
+    }
+
+    /// Whether the images of a file upload open in the panel's viewer when
+    /// clicked (default: `true`); also the entry its default view page shows.
+    /// Other inputs refuse it at boot.
+    pub fn preview(mut self, preview: bool) -> Self {
+        self.preview = preview;
         self
     }
 
@@ -259,6 +369,77 @@ impl Input {
     /// How long the reaction may take (default 5 seconds, at most 30).
     pub fn reaction_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.reaction.get_or_insert_default().timeout = timeout;
+        self
+    }
+
+    /// Whether the input is shown, computed on the server from the form's
+    /// state (ADR 0044, part E): for rules `when(..)` cannot state (they need
+    /// code or data). Run when the form is read, when an input of
+    /// [`depends_on`](Self::depends_on) changes, and on every save (a hidden
+    /// input's value is dropped, as a condition's). With `shown_when`, both must
+    /// say shown. Needs `depends_on`.
+    ///
+    /// ```rust,ignore
+    /// TextInput::make("tax_id")
+    ///     .depends_on(["country"])
+    ///     .shown_when_fn(|_ctx, state| Box::pin(async move { Ok(state.text("country") == "VN") }))
+    /// ```
+    pub fn shown_when_fn<F>(mut self, rule: F) -> Self
+    where
+        F: for<'a> Fn(&'a crate::Ctx, &'a super::FormState) -> crate::BoxFuture<'a, rustcms_core::AppResult<bool>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.rules.get_or_insert_default().shown = Some(std::sync::Arc::new(rule));
+        self
+    }
+
+    /// Whether the input is required (when shown), computed on the server (see
+    /// [`shown_when_fn`](Self::shown_when_fn)). Needs `depends_on`.
+    pub fn required_fn<F>(mut self, rule: F) -> Self
+    where
+        F: for<'a> Fn(&'a crate::Ctx, &'a super::FormState) -> crate::BoxFuture<'a, rustcms_core::AppResult<bool>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.rules.get_or_insert_default().required = Some(std::sync::Arc::new(rule));
+        self
+    }
+
+    /// The options of a select or checkbox list (not `belongs_to`), computed on
+    /// the server (see [`shown_when_fn`](Self::shown_when_fn)): a value outside
+    /// them is refused on save. Needs `depends_on`.
+    pub fn options_fn<F>(mut self, rule: F) -> Self
+    where
+        F: for<'a> Fn(
+                &'a crate::Ctx,
+                &'a super::FormState,
+            ) -> crate::BoxFuture<'a, rustcms_core::AppResult<Vec<SelectOption>>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.rules.get_or_insert_default().options = Some(std::sync::Arc::new(rule));
+        self
+    }
+
+    /// The inputs whose change asks the server for this input's rules again
+    /// (`shown_when_fn`, `required_fn`, `options_fn`; required with them). An
+    /// empty list: computed when the form is read and on save only.
+    pub fn depends_on<I, S>(mut self, inputs: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.rules.get_or_insert_default().depends_on = Some(inputs.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Time the input's rules may take together (default 5 seconds, at most 30).
+    pub fn rules_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.rules.get_or_insert_default().timeout = timeout;
         self
     }
 

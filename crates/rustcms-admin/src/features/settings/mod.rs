@@ -98,6 +98,8 @@ pub struct SettingField {
     pub(crate) audit_redact: bool,
     pub(crate) kept_while: Vec<String>,
     pub(crate) media: Option<crate::field::MediaRule>,
+    /// Media collection of the files uploaded through this setting.
+    pub(crate) collection: Option<String>,
     /// Repeaters: their rows, checked when declared.
     pub(crate) rows: Option<Box<crate::engine::repeater::Rows>>,
 }
@@ -125,6 +127,7 @@ impl SettingField {
             audit_redact: false,
             kept_while: Vec::new(),
             media: None,
+            collection: None,
             rows: None,
         }
     }
@@ -142,12 +145,8 @@ impl SettingField {
              (declare them on the SettingField)",
             repeater.name
         );
-        let rows = crate::engine::repeater::Rows::compile("settings", &repeater.name, spec, 1);
-        Self {
-            rows: Some(Box::new(rows)),
-            input: repeater.clone(),
-            ..Self::new(repeater.name.clone(), SettingKind::Repeater)
-        }
+        // Compiled with the page (its rows may read the page's fields, `when_root`).
+        Self { input: repeater.clone(), ..Self::new(repeater.name.clone(), SettingKind::Repeater) }
     }
 
     kinds! {
@@ -205,6 +204,19 @@ impl SettingField {
         if let Some(rule) = &mut self.media {
             rule.accept = types.iter().map(|t| (*t).to_owned()).collect();
         }
+        self
+    }
+
+    /// Files uploaded through this media setting go into the media collection
+    /// `name` (declared with [`crate::AdminProvider::media_collection`]), and
+    /// its picker opens on that collection; see [`crate::Field::collection`].
+    ///
+    /// # Panics
+    /// On a setting that is not [`Self::media`] or [`Self::media_list`]; at
+    /// boot, on a collection that is not declared.
+    pub fn collection(mut self, name: impl Into<String>) -> Self {
+        assert!(self.media.is_some(), "settings field `{}`: only media settings have a collection", self.name);
+        self.collection = Some(name.into());
         self
     }
 
@@ -448,7 +460,38 @@ impl<T: SettingsPage> SettingsAdapter<T> {
     pub(crate) fn new() -> Self {
         let group = T::GROUP;
         assert!(valid_group(group), "settings `{group}`: groups are 1–32 of `a-z`, `0-9`, `_`");
-        let fields = T::fields();
+        let mut fields = T::fields();
+        // Rules computed on the server are for resource forms (ADR 0044, part E).
+        for field in &fields {
+            assert!(
+                field.input.rules.is_none(),
+                "settings `{group}`: field `{}`: rules computed on the server (`shown_when_fn`, …) are for resource \
+                 forms",
+                field.name
+            );
+        }
+        // Repeater rows, whose conditions may read the page's fields (`when_root`, ADR 0044).
+        let kinds: Vec<(String, crate::engine::wire::FieldKind)> =
+            fields.iter().filter(|f| !f.is_secret()).map(|f| (f.name.clone(), f.kind.value_kind())).collect();
+        let root = |name: &str| kinds.iter().find(|(n, _)| n == name).map(|(_, k)| (*k, None));
+        for field in fields.iter_mut().filter(|f| f.kind == SettingKind::Repeater) {
+            let spec = field.input.repeater.as_deref().expect("repeater fields have a spec");
+            let here = format!("settings `{group}`");
+            let rows = crate::engine::repeater::Rows::compile(&here, &field.name, spec, Some(&root));
+            // Rules over a settings page's rows come later (ADR 0044, part D).
+            assert!(
+                rows.validate().is_none(),
+                "{here}: `{}`: `validate_rows` is not available on settings pages",
+                field.name
+            );
+            // Settings hold no application rich text nodes (they need a resource's registry).
+            assert!(
+                rows.node_names().is_empty(),
+                "{here}: `{}`: rich editors of settings rows take no application nodes",
+                field.name
+            );
+            field.rows = Some(Box::new(rows));
+        }
         let Ok(Value::Object(defaults)) = serde_json::to_value(T::default()) else {
             panic!("settings `{group}`: the struct must serialize to an object");
         };
@@ -571,6 +614,13 @@ impl<T: SettingsPage> SettingsAdapter<T> {
             assert!(compatible, "settings `{group}`: input `{}` does not match its field's kind", input.name);
             // Reactions are for resource forms (ADR 0041).
             assert!(input.reaction.is_none(), "settings `{group}`: input `{}` cannot react", input.name);
+            // A row's rules (ADR 0044): the SettingField decides here.
+            assert!(
+                input.content.as_deref().is_none_or(|c| !c.has_rules() && !c.full),
+                "settings `{group}`: input `{}`: `accept`, `max_size`, `multiple`, `collection`, `nodes` and `full` are \
+                 for inputs of repeater rows (declare them on the SettingField)",
+                input.name
+            );
             assert!(
                 !input.required && input.max_length.is_none() && !input.integer,
                 "settings `{group}`: input `{}`: `required`, `max_length` and `integer` are for inputs of JSON \

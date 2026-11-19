@@ -1,5 +1,5 @@
 {
-  "about": "Shared cases for input conditions (ADR 0037): the Rust engine (engine/conditions.rs) and the SPA (schema/conditions.ts) must hide exactly `hidden` for `values` (wire form). Decimals have scale 2.",
+  "about": "Shared cases for input conditions (ADR 0037): the Rust engine (engine/conditions.rs) and the SPA (schema/conditions.ts) must hide exactly `hidden` for `values` (wire form). Decimals have scale 2. A form with `root` is a repeater's row (ADR 0044): `root.kinds` are the kinds of the record's form and each case's `root` its values (as its own conditions leave them), read by conditions with `\"scope\": \"root\"`.",
   "forms": [
     {
       "name": "an input shown for one value",
@@ -99,6 +99,33 @@
         { "values": { "owner": "0c7e1d2a5b3f4e6a9d8c1a2b3c4d5e6f" }, "hidden": ["other"] },
         { "values": { "owner": "11111111-1111-1111-1111-111111111111" }, "hidden": ["listed", "mine"] },
         { "values": {}, "hidden": ["listed", "mine"] }
+      ]
+    },
+    {
+      "name": "a repeater row reading the record's form",
+      "root": { "kinds": { "kind": "string", "price": "decimal" } },
+      "components": [
+        { "name": "correct", "valueType": "bool" },
+        {
+          "name": "hint",
+          "valueType": "string",
+          "shownWhen": {
+            "op": "all",
+            "conditions": [
+              { "op": "is_true", "name": "correct" },
+              { "op": "eq", "name": "kind", "scope": "root", "value": "choice" }
+            ]
+          }
+        },
+        { "name": "discount", "valueType": "string", "shownWhen": { "op": "is_in", "name": "price", "scope": "root", "values": ["10.5", "20"] } },
+        { "name": "note", "valueType": "string", "shownWhen": { "op": "filled", "name": "hint" } }
+      ],
+      "cases": [
+        { "values": { "correct": true, "hint": "h" }, "root": { "kind": "choice", "price": "10.50" }, "hidden": [] },
+        { "values": { "correct": true, "hint": "h" }, "root": { "kind": "blank", "price": "20.00" }, "hidden": ["hint", "note"] },
+        { "values": { "correct": false }, "root": { "kind": "choice", "price": "3" }, "hidden": ["discount", "hint", "note"] },
+        { "values": { "correct": true, "hint": "h" }, "root": {}, "hidden": ["discount", "hint", "note"] },
+        { "values": { "correct": true, "hint": "h" }, "root": { "kind": "choice", "price": null }, "hidden": ["discount"] }
       ]
     }
   ]

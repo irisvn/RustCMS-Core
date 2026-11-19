@@ -55,6 +55,51 @@ pub struct FormState {
     pub(crate) changed: String,
     pub(crate) previous: Option<Value>,
     pub(crate) values: Data,
+    /// The rows of the form's relationship repeaters, as the panel holds them
+    /// (ADR 0044, part D).
+    pub(crate) relation_rows: std::collections::HashMap<String, Vec<StateRow>>,
+}
+
+/// A row of a relationship repeater in a [`FormState`]: a stored row (`key`)
+/// or a row the user added (`reference`), with the values the panel holds
+/// (wire format). **User input**, as every value of the state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateRow {
+    pub(crate) key: Option<String>,
+    pub(crate) reference: Option<String>,
+    pub(crate) data: Data,
+}
+
+impl StateRow {
+    /// A stored row's key.
+    pub fn key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    /// A new row's reference.
+    pub fn reference(&self) -> Option<&str> {
+        self.reference.as_deref()
+    }
+
+    /// The key, or the reference: what row patches name.
+    pub fn id(&self) -> &str {
+        self.key.as_deref().or(self.reference.as_deref()).unwrap_or_default()
+    }
+
+    /// The value of `name`, if the row holds one.
+    pub fn get(&self, name: &str) -> Option<&Value> {
+        self.data.get(name)
+    }
+
+    /// The text of `name`: `""` when absent or not a string.
+    pub fn text(&self, name: &str) -> &str {
+        self.get(name).and_then(Value::as_str).unwrap_or_default()
+    }
+
+    /// Every value of the row.
+    pub fn values(&self) -> &Data {
+        &self.data
+    }
 }
 
 impl FormState {
@@ -99,6 +144,13 @@ impl FormState {
     /// Every value the reaction may read.
     pub fn values(&self) -> &Data {
         &self.values
+    }
+
+    /// The rows of the relationship repeater `name` as the panel holds them
+    /// (stored rows with the user's changes, then new rows): empty when absent
+    /// or when the user may not change them.
+    pub fn relation_rows(&self, name: &str) -> &[StateRow] {
+        self.relation_rows.get(name).map_or(&[], Vec::as_slice)
     }
 }
 
@@ -165,6 +217,42 @@ pub enum FormPatch {
         /// The message (translated).
         message: String,
     },
+    /// Adds a row to a relationship repeater (ADR 0044, part D).
+    AddRelationRow {
+        /// The repeater.
+        field: String,
+        /// The new row's reference (given by the server when the reaction did not).
+        #[serde(rename = "ref")]
+        #[cfg_attr(feature = "ts", ts(rename = "ref"))]
+        reference: String,
+        /// Its inputs' values, in wire format.
+        data: Data,
+    },
+    /// Sets inputs of a relationship repeater's row.
+    UpdateRelationRow {
+        /// The repeater.
+        field: String,
+        /// The row: a key, or a new row's reference.
+        id: String,
+        /// The inputs' new values, in wire format.
+        data: Data,
+    },
+    /// Removes a row of a relationship repeater.
+    RemoveRelationRow {
+        /// The repeater.
+        field: String,
+        /// The row: a key, or a new row's reference.
+        id: String,
+    },
+    /// A warning under a row of a relationship repeater; changes nothing.
+    FlagRelationRow {
+        /// The repeater.
+        field: String,
+        /// The row: a key, or a new row's reference.
+        id: String,
+        /// The warning (translated).
+        message: String,
+    },
 }
 
 impl FormPatch {
@@ -208,6 +296,34 @@ impl FormPatch {
         Self::Notice { message: message.into() }
     }
 
+    /// Adds a row holding `data` (an object, wire format) to the relationship
+    /// repeater `field`; the server gives it a reference.
+    pub fn add_relation_row(field: impl Into<String>, data: Value) -> Self {
+        Self::AddRelationRow { field: field.into(), reference: String::new(), data: object(data) }
+    }
+
+    /// As [`Self::add_relation_row`], the new row named `reference` (`a-z`,
+    /// `0-9`, `-`, at most 16), so later patches of the answer can name it.
+    pub fn add_relation_row_as(field: impl Into<String>, reference: impl Into<String>, data: Value) -> Self {
+        Self::AddRelationRow { field: field.into(), reference: reference.into(), data: object(data) }
+    }
+
+    /// Sets the inputs `data` holds on row `id` (a key or a reference) of the
+    /// relationship repeater `field`.
+    pub fn update_relation_row(field: impl Into<String>, id: impl Into<String>, data: Value) -> Self {
+        Self::UpdateRelationRow { field: field.into(), id: id.into(), data: object(data) }
+    }
+
+    /// Removes row `id` of the relationship repeater `field`.
+    pub fn remove_relation_row(field: impl Into<String>, id: impl Into<String>) -> Self {
+        Self::RemoveRelationRow { field: field.into(), id: id.into() }
+    }
+
+    /// A warning under row `id` of the relationship repeater `field`.
+    pub fn flag_relation_row(field: impl Into<String>, id: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::FlagRelationRow { field: field.into(), id: id.into(), message: message.into() }
+    }
+
     /// The field it changes or flags (`None` for a notice).
     pub(crate) fn field(&self) -> Option<&str> {
         match self {
@@ -216,7 +332,11 @@ impl FormPatch {
             | Self::AddRow { field, .. }
             | Self::RemoveRow { field, .. }
             | Self::MoveRow { field, .. }
-            | Self::FlagRow { field, .. } => Some(field),
+            | Self::FlagRow { field, .. }
+            | Self::AddRelationRow { field, .. }
+            | Self::UpdateRelationRow { field, .. }
+            | Self::RemoveRelationRow { field, .. }
+            | Self::FlagRelationRow { field, .. } => Some(field),
             Self::Notice { .. } => None,
         }
     }
@@ -229,5 +349,13 @@ pub(crate) fn is_empty(value: Option<&Value>) -> bool {
         Some(Value::String(text)) => text.is_empty(),
         Some(Value::Array(items)) => items.is_empty(),
         Some(_) => false,
+    }
+}
+
+/// `value` as an object (anything else: empty).
+fn object(value: Value) -> Data {
+    match value {
+        Value::Object(data) => data,
+        _ => Data::new(),
     }
 }

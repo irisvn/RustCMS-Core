@@ -10,7 +10,7 @@ import type { ChartBucket, DashboardView, Envelope, RecentColumn, RecentRecord, 
 import { formatWireDate, useLocale, useT } from "@/i18n";
 import { Cell } from "@/renderers/table";
 import { cn } from "@/lib/utils";
-import { isDateKind } from "@/lib/wire";
+import { isDateKind, optionLabel } from "@/lib/wire";
 
 const enc = encodeURIComponent;
 
@@ -170,8 +170,8 @@ function RecentValue({ column, record }: { column: RecentColumn; record: RecentR
   const value = data[column.name];
   const text = record.values[column.name] ?? "—";
   if (value === undefined || value === null) return <>{text}</>;
-  const option = column.options?.find((o) => JSON.stringify(o.value) === JSON.stringify(value));
-  if (option && !column.column?.cell) return <>{option.label}</>;
+  const option = optionLabel(column.options, value);
+  if (option !== undefined && !column.column?.cell) return <>{option}</>;
   if (column.column && !column.column.relationship) {
     const envelope = { key: record.key, title: record.title, abilities: {}, data, labels: {} } as Envelope;
     return <span className="inline-flex align-middle [&_.line-clamp-2]:inline"><Cell column={column.column} record={envelope} /></span>;

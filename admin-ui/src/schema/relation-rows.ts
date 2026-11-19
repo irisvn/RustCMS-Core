@@ -3,8 +3,9 @@
 // (create, update, delete, order), never the whole list, so rows another user
 // added meanwhile, and rows the user cannot see, are never touched.
 import type { Envelope, InputSchema, JsonValue, RepeaterSchema } from "@/api/types";
+import type { Outer } from "./conditions";
 import { type FormValue, fromFormValue, inputsOf } from "./form";
-import { type Row, rowOf, rowProblems } from "./repeater";
+import { type Row, hiddenInRow, rowLevel, rowOf, rowProblems } from "./repeater";
 
 /** A row: a stored child (`key`) or a new one (`ref`), its form values and what changed. */
 export interface RelationRow {
@@ -77,6 +78,27 @@ export function relationFormValue(input: InputSchema): FormValue {
   return JSON.stringify({ rows, deleted: [] } satisfies RelationState);
 }
 
+/**
+ * Every value a row holds, in wire format (a stored row its edit inputs, a new
+ * row its create inputs; rows of its own relationship repeaters left out): what
+ * a form reaction reads (ADR 0044, part D).
+ */
+export function rowWire(repeater: RepeaterSchema, row: RelationRow): Record<string, JsonValue> {
+  const out: Record<string, JsonValue> = {};
+  for (const i of inputsOf(row.key ? repeater.components : createView(repeater).components)) {
+    if (i.repeater?.relationship) continue;
+    const form = row.values[i.name];
+    if (form === undefined) continue;
+    try {
+      const v = fromFormValue(i, form) as JsonValue | undefined;
+      if (v !== undefined) out[i.name] = v;
+    } catch {
+      // Half typed: left out, as the server would.
+    }
+  }
+  return out;
+}
+
 /** The change a form value sends (undefined: nothing changed). */
 export function changeOf(input: InputSchema, value: FormValue): JsonValue | undefined {
   const repeater = input.repeater;
@@ -121,13 +143,25 @@ export function createView(repeater: RepeaterSchema): RepeaterSchema {
  * inputs (a stored row the child's edit inputs, a new one its create inputs),
  * keyed by the row's place (`2.quantity`).
  */
-export function relationRowProblems(repeater: RepeaterSchema, rows: RelationRow[]): Record<string, unknown> {
+export function relationRowProblems(repeater: RepeaterSchema, rows: RelationRow[], outer?: Outer): Record<string, unknown> {
   // The list's limits once, on every row; then each row with its own inputs.
   const out: Record<string, unknown> = rowProblems({ ...repeater, components: [] }, rows.map((r) => r.values));
   rows.forEach((row, index) => {
     const view = { ...(row.key ? repeater : createView(repeater)), minItems: undefined, maxItems: undefined };
-    for (const [path, problem] of Object.entries(rowProblems(view, [row.values]))) {
+    for (const [path, problem] of Object.entries(rowProblems(view, [row.values], "", outer))) {
       out[path.replace(/^0(?=\.|$)/, String(index))] = problem;
+    }
+    // The rows of the row's own relationship repeaters, as changed (ADR 0044, part C).
+    const hidden = hiddenInRow(view, row.values, outer);
+    // Where the levels around are not known, conditions reading them are the server's.
+    const below = outer ? { parent: rowLevel(view, row.values, hidden), root: outer.root } : undefined;
+    for (const input of inputsOf(view.components)) {
+      if (!input.repeater?.relationship || hidden.has(input.name)) continue;
+      const state = parseState(row.values[input.name] ?? "");
+      if (!state) continue;
+      for (const [path, problem] of Object.entries(relationRowProblems(input.repeater, state.rows, below))) {
+        out[`${index}.${input.name}${path ? `.${path}` : ""}`] = problem;
+      }
     }
   });
   return out;

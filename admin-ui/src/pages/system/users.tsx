@@ -155,7 +155,7 @@ function RolePicker({
       <legend className="mb-3 text-sm font-medium">{t("nav.roles")}</legend>
       {roles.map((r) => (
         <label key={r.id}
-          className="flex min-w-0 items-center gap-3 rounded-md border border-border px-3 py-3 text-sm transition-colors hover:bg-muted/40 has-disabled:cursor-not-allowed has-disabled:opacity-60">
+          className="flex min-w-0 items-center gap-3 rounded-md border border-border px-3 py-3 text-sm transition-colors hover:bg-muted/40 has-disabled:cursor-not-allowed has-disabled:text-subtle-foreground">
           <Checkbox
             className="shrink-0"
             aria-describedby={describedBy}
@@ -239,7 +239,7 @@ export function UserCreatePage() {
             </Field>
             {canInvite && (
               <label className="flex items-start gap-3 rounded-md border border-border p-3 text-sm">
-                <input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={inviting}
+                <Checkbox className="mt-0.5" checked={inviting}
                   onChange={(e) => setInviting(e.target.checked)} disabled={create.isPending || invite.isPending} />
                 <span className="flex flex-col gap-1">
                   {t("users.inviteInstead")}

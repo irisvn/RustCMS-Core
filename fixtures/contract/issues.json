@@ -134,6 +134,9 @@
   "file_types": [
     "does not accept {types} files"
   ],
+  "form_rules_failed": [
+    "could not check the form; try again"
+  ],
   "given_twice": [
     "may only be given once"
   ],
@@ -217,6 +220,9 @@
   ],
   "max_value": [
     "may not be greater than {max}"
+  ],
+  "media_collection": [
+    "is not a media collection"
   ],
   "min_items": [
     "must have at least {min} items"
@@ -347,6 +353,15 @@
   "too_many_rows": [
     "has too many rows to order here"
   ],
+  "too_many_rows_changed": [
+    "changes too many rows at once"
+  ],
+  "too_many_rows_to_check": [
+    "has too many rows to check here"
+  ],
+  "too_many_rows_to_remove": [
+    "has too many rows to remove here"
+  ],
   "too_many_to_export": [
     "More than {max} records to export; narrow the search or filters."
   ],
@@ -373,6 +388,9 @@
   ],
   "unsupported_key": [
     "unsupported key type"
+  ],
+  "upload_parts": [
+    "must be one part named `file`, with at most one `collection`"
   ],
   "uuid": [
     "must be a UUID"
