@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 24;
+pub const VOCABULARY_VERSION: u32 = 25;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -215,6 +215,12 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub reacts: bool,
+    /// Rich editors in repeater rows: `compact` shows bold, italic,
+    /// underline, superscript, subscript, images and application elements
+    /// (vocabulary 25, ADR 0044); absent, the full toolbar.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub toolbar: Option<RichToolbar>,
     /// Rich text: the application nodes the document may hold (vocabulary
     /// 18, ADR 0042); absent when none.
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<RichNodeSchema>>", optional))]
@@ -941,6 +947,15 @@ pub struct RelationSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pivot_form: Option<FormSchema>,
+}
+
+/// The toolbar of a rich editor (ADR 0044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum RichToolbar {
+    /// Bold, italic, underline, superscript, subscript, images and application elements.
+    Compact,
 }
 
 /// How a repeater lays out its rows (ADR 0044).

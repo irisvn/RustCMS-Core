@@ -394,14 +394,27 @@ Repeater::make("faq")
 - **A row's rules are on its inputs.** A row is part of one column, with no
   field of its own, so its inputs say what they need: `.required()`,
   `.max_length(n)` on text, `.integer()`, `.min(n)`, `.max(n)` on numbers,
-  `options` on selects (rows have no relationships). Elsewhere these rules
-  come from the field, and the boot refuses them on inputs.
+  `options` on selects (rows have no relationships), and for files and
+  documents `.accept([…])`, `.max_size(bytes)`, `.multiple(n)` (a list of up
+  to `n` files), `.collection(name)` and `.nodes([…])` (a rich editor's
+  application elements). Elsewhere these rules come from the field, and the
+  boot refuses them on inputs.
 - **Values in a row:** text for `TextInput` and `Textarea`, a JSON number for
   `NumberInput`, `true`/`false` for `Toggle` and `Checkbox`, the option's value
   for `SelectInput`, a list for `CheckboxList`, `YYYY-MM-DD` for `DatePicker`,
   an RFC 3339 instant for `DateTimePicker`, an object of text for `KeyValue`,
-  any JSON for `CustomInput`, and a list for a nested `Repeater` (three deep at
-  most). Empty inputs are left out of the row.
+  any JSON for `CustomInput`, a file id (a list with `.multiple`) for
+  `FileUpload`, a document for `RichEditor`, and a list for a nested
+  `Repeater` (three deep at most). Empty inputs are left out of the row.
+- **Files and documents in rows** are checked as a field's on every write:
+  each file must be in the media library, visible to the user, of an accepted
+  type and size; a document is checked as rich text, and its images as files.
+  Errors name the row (`faq.2.icon`). A file only a row names has no foreign
+  key in the database: deleting it from the library leaves the row showing it
+  as unavailable. A row's rich editor shows a compact toolbar (bold, italic,
+  underline, superscript, subscript, images, application elements);
+  `.full()` gives the full one. The document's rules do not change with the
+  toolbar.
 - **Each row is checked on the server**, like a form: a key the row does not
   declare is refused, then each input's rules, then `min_items` and
   `max_items`. Errors name the row and the input: `faq.2.question`
@@ -423,10 +436,10 @@ Repeater::make("faq")
   labels in a header; each cell keeps its label for screen readers), the
   row's buttons last; below the `md` breakpoint the rows stack as usual. An
   input hidden by its condition leaves its cell empty. Table rows hold inputs
-  only (no sections, grids or nested repeaters) and do not fold.
-- **Not in rows (yet):** `FileUpload` and `RichEditor` (their media escape the
-  [reference checks](media.md)), secrets, belongs-to-many inputs, tabs and
-  splits.
+  only (no sections, grids, nested repeaters, file uploads or rich editors)
+  and do not fold.
+- **Not in rows:** secrets, belongs-to-many inputs, record selects
+  (`belongs_to`: a JSON row has no field to choose from), tabs and splits.
 
 On view pages each row is shown with the entries of its inputs (a
 `RepeatableEntry`, see [the default view page](infolists.md#the-default-view-page));
@@ -461,10 +474,14 @@ ResourceMeta::new("Line").lock_parent("order_id", "orders")
   in the rows), `scope()`, policy and hooks apply to every row, as when the row
   is written from the relation section. The child's key to the parent and the
   order column are set by the server, never inputs.
-- **Not in rows:** `belongs_to` selects, media, rich text, encrypted and
-  belongs-to-many fields (edit them on the child's page). Hooks of the child
-  should not write other resources; a hook adding media to a row is a server
-  error (media are locked after every other record of a write).
+- **Media, rich text and `belongs_to` fields in rows** are the child's, with
+  its rules: a row's files and images are checked with the parent's, once,
+  after every other record the save locks (also those a child's hook adds);
+  a `belongs_to` select offers the child's options and its target must be
+  visible to the user. Errors name the row (`photos.n1.image`). Rich editors
+  show the compact toolbar (`.full()` for the full one).
+- **Not in rows:** encrypted and belongs-to-many fields (edit them on the
+  child's page). Hooks of the child should not write other resources.
 - **Several repeaters on one child resource** need [filtered relations](relationships.md#filtered-relations)
   that cannot share a row (the options of a question and the choices of its
   blanks, in one table). A resource with relationship repeaters cannot link

@@ -454,3 +454,40 @@ describe("rich text view (version 2)", () => {
     expect(container.querySelector("aside[data-tone=warn]")).toHaveTextContent("Careful");
   });
 });
+
+describe("the compact toolbar of repeater rows", () => {
+  it("offers marks, images and elements only; the full one everything", async () => {
+    const { unmount } = render(
+      <Providers>
+        <RichEditorWidget id="field-row" label="Caption" value="" onChange={() => {}} invalid={false} nullable toolbar="compact" />
+      </Providers>,
+    );
+    const bar = await screen.findByRole("toolbar", { name: /Caption/ });
+    for (const name of ["Bold", "Underline", "Insert image"]) expect(within(bar).getByRole("button", { name })).toBeInTheDocument();
+    for (const name of ["Heading 2", "Insert table"]) expect(within(bar).queryByRole("button", { name })).toBeNull();
+    unmount();
+    render(
+      <Providers>
+        <RichEditorWidget id="field-full" label="Body" value="" onChange={() => {}} invalid={false} nullable />
+      </Providers>,
+    );
+    const full = await screen.findByRole("toolbar", { name: /Body/ });
+    expect(within(full).getByRole("button", { name: "Heading 2" })).toBeInTheDocument();
+  });
+});
+
+describe("the compact toolbar and formatting it does not offer", () => {
+  it("shows a tool while the selection holds its formatting, so it can be removed", async () => {
+    const doc = { type: "doc", version: 1, content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Title" }] }] };
+    render(
+      <Providers>
+        <RichEditorWidget id="field-pasted" label="Pasted" value={JSON.stringify(doc)} onChange={() => {}} invalid={false} nullable toolbar="compact" />
+      </Providers>,
+    );
+    const box = await screen.findByRole("textbox", { name: "Pasted" });
+    await userEvent.click(within(box).getByText("Title"));
+    const bar = screen.getByRole("toolbar", { name: /Pasted/ });
+    expect(await within(bar).findByRole("button", { name: "Heading 2" })).toBeInTheDocument();
+    expect(within(bar).queryByRole("button", { name: "Heading 3" })).toBeNull();
+  });
+});

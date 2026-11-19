@@ -468,7 +468,14 @@ impl<T: SettingsPage> SettingsAdapter<T> {
         for field in fields.iter_mut().filter(|f| f.kind == SettingKind::Repeater) {
             let spec = field.input.repeater.as_deref().expect("repeater fields have a spec");
             let here = format!("settings `{group}`");
-            field.rows = Some(Box::new(crate::engine::repeater::Rows::compile(&here, &field.name, spec, Some(&root))));
+            let rows = crate::engine::repeater::Rows::compile(&here, &field.name, spec, Some(&root));
+            // Settings hold no application rich text nodes (they need a resource's registry).
+            assert!(
+                rows.node_names().is_empty(),
+                "{here}: `{}`: rich editors of settings rows take no application nodes",
+                field.name
+            );
+            field.rows = Some(Box::new(rows));
         }
         let Ok(Value::Object(defaults)) = serde_json::to_value(T::default()) else {
             panic!("settings `{group}`: the struct must serialize to an object");
@@ -592,6 +599,13 @@ impl<T: SettingsPage> SettingsAdapter<T> {
             assert!(compatible, "settings `{group}`: input `{}` does not match its field's kind", input.name);
             // Reactions are for resource forms (ADR 0041).
             assert!(input.reaction.is_none(), "settings `{group}`: input `{}` cannot react", input.name);
+            // A row's rules (ADR 0044): the SettingField decides here.
+            assert!(
+                input.content.as_deref().is_none_or(|c| !c.has_rules() && !c.full),
+                "settings `{group}`: input `{}`: `accept`, `max_size`, `multiple`, `collection`, `nodes` and `full` are \
+                 for inputs of repeater rows (declare them on the SettingField)",
+                input.name
+            );
             assert!(
                 !input.required && input.max_length.is_none() && !input.integer,
                 "settings `{group}`: input `{}`: `required`, `max_length` and `integer` are for inputs of JSON \

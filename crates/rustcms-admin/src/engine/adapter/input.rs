@@ -684,6 +684,11 @@ pub(super) fn json_repeaters<C: ColumnTrait>(
              repeater rows (elsewhere the field decides)"
         );
         assert!(
+            input.content.as_deref().is_none_or(|c| !c.has_rules() && !c.full),
+            "resource `{slug}`: input `{name}`: `accept`, `max_size`, `multiple`, `collection`, `nodes` and `full` \
+             are for inputs of repeater rows (elsewhere the field decides: `Field::accept`, …)"
+        );
+        assert!(
             (input.kind == InputType::Repeater) == input.repeater.is_some(),
             "resource `{slug}`: input `{name}`: repeater options (`schema`, `min_items`, …) are for repeaters"
         );

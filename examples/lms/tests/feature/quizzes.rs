@@ -65,3 +65,53 @@ db_test!(a_question_switched_to_blanks_loses_its_options, migrate = Migrator, |d
     let listed = admin.get(&format!("{}/relations/options", record(&app, "quiz_questions", &question))).await.json();
     assert_eq!(listed["meta"]["total"], json!(0));
 });
+
+db_test!(a_courses_form_enrolls_learners_in_rows, migrate = Migrator, |db: TestDb| async move {
+    use lms::models::{enrollment, learner};
+    let app = seeded(db).await;
+    let admin = as_user(&app, "admin@example.test").await;
+    // A course without enrollments yet, and a learner of none.
+    let created = admin
+        .post_json(
+            &records(&app, "courses"),
+            &json!({"title": "Rows", "slug": "rows", "capacity": 5, "published": true}),
+        )
+        .await;
+    created.assert_status(StatusCode::CREATED);
+    let course = key(&created);
+    let learner =
+        learner::Entity::find().order_by_asc(learner::Column::Id).one(app.state().db()).await.unwrap().unwrap();
+    // Each row picks a learner (a `belongs_to` select); the seat rules run as for any enrollment.
+    let row = json!({"enrollments": {"create": [{"ref": "n1", "data": {"learner_id": learner.id.to_string(), "status": "active"}}]}});
+    admin.send(Method::PATCH, &record(&app, "courses", &course), Some(&row)).await.assert_status(StatusCode::OK);
+    let enrolled = enrollment::Entity::find().all(app.state().db()).await.unwrap();
+    assert!(enrolled.iter().any(|e| e.course_id.to_string() == course && e.learner_id == learner.id));
+    // A learner that does not exist is refused in its row.
+    let missing =
+        json!({"enrollments": {"create": [{"ref": "n2", "data": {"learner_id": "999999", "status": "active"}}]}});
+    let refused = admin.send(Method::PATCH, &record(&app, "courses", &course), Some(&missing)).await;
+    assert!(errors(&refused).contains("enrollments.n2.learner_id"), "{}", refused.text());
+});
+
+db_test!(quiz_options_hold_an_image_and_an_explanation, migrate = Migrator, |db: TestDb| async move {
+    let app = seeded(db).await;
+    let admin = as_user(&app, "admin@example.test").await;
+    let lesson = first_lesson(&app).await;
+    // A file the option's image refers to must be in the media library.
+    let missing = uuid_like();
+    let sent = json!({"lesson_id": lesson.to_string(), "kind": "single", "prompt": "Pick", "options": {"create": [
+        {"ref": "n1", "data": {"content": "a", "correct": true, "image": missing}},
+    ]}});
+    let refused = admin.post_json(&records(&app, "quiz_questions"), &sent).await;
+    assert!(errors(&refused).contains("options.n1.image"), "{}", refused.text());
+    // An explanation without images is a document like any rich text.
+    let explained = json!({"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "4 = 2 + 2"}]}]});
+    let sent = json!({"lesson_id": lesson.to_string(), "kind": "single", "prompt": "Pick", "options": {"create": [
+        {"ref": "n1", "data": {"content": "4", "correct": true, "explanation": explained}},
+    ]}});
+    admin.post_json(&records(&app, "quiz_questions"), &sent).await.assert_status(StatusCode::CREATED);
+});
+
+fn uuid_like() -> String {
+    "0199d3a4-1b2c-7d3e-8f40-123456789abc".to_owned()
+}

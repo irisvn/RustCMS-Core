@@ -205,6 +205,16 @@ older documents (`document_needs_version`) and more than 500 nodes
 read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
 with `registerRichTextNode` (host `ui` 4).
 
+Vocabulary 25 adds files, documents and record selects in repeater rows (ADR
+0044, part B). A JSON repeater's rows may hold `file_upload` inputs (their
+`media` and `collection` from the input) and `rich_editor` inputs (their
+`richNodes` from the input); a relationship repeater's rows may hold the
+child's media, rich text and `belongs_to` inputs (`relationship` set). A
+`rich_editor` input may carry `toolbar: "compact"` (rows: bold, italic,
+underline, superscript, subscript, images, application elements); the
+document's rules do not change with it. Media errors of rows name the row
+(`faq.2.icon`, `photos.n1.image`).
+
 Vocabulary 24 adds repeaters' second round (ADR 0044). A leaf condition may
 carry `scope`: `"root"` (an input of the record's form, read from a repeater's
 row) or `"parent"` (the enclosing row); absent, the same level. A

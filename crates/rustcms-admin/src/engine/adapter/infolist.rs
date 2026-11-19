@@ -251,6 +251,9 @@ fn form_entry(input: &Input, field: Option<(&Field, FieldKind)>) -> Option<Entry
         (InputType::KeyValue, None) => EntryType::KeyValueEntry,
         (InputType::FileUpload, Some((f, _))) if f.media.is_some() => EntryType::MediaEntry,
         (InputType::RichEditor, Some((f, _))) if f.rich_text => EntryType::RichTextEntry,
+        // A JSON row's files and documents (ADR 0044).
+        (InputType::FileUpload, None) => EntryType::MediaEntry,
+        (InputType::RichEditor, None) => EntryType::RichTextEntry,
         _ => EntryType::TextEntry,
     };
     let mut entry = Entry::new(input.name.clone(), kind);
@@ -259,6 +262,7 @@ fn form_entry(input: &Input, field: Option<(&Field, FieldKind)>) -> Option<Entry
     entry.shown_when = input.shown_when.clone();
     if field.is_none() {
         entry.row_kind = Some(row_kind(input));
+        entry.row_nodes = input.content.as_deref().map(|c| c.nodes.clone()).unwrap_or_default();
     }
     if kind == EntryType::TextEntry {
         let d = &mut entry.display;
@@ -334,8 +338,11 @@ fn check_row_entries(owner: &str, entry: &Entry, depth: u8) {
                     | EntryType::KeyValueEntry
                     | EntryType::CustomEntry
                     | EntryType::RepeatableEntry
+                    | EntryType::MediaEntry
+                    | EntryType::RichTextEntry
             ),
-            "{here}: entry `{name}`: a row shows its keys with text, boolean, key/value, custom and repeatable entries"
+            "{here}: entry `{name}`: a row shows its keys with text, boolean, key/value, media, rich text, custom and \
+             repeatable entries"
         );
         check_options(&here, row_entry, None);
         if row_entry.kind == EntryType::RepeatableEntry {
@@ -345,6 +352,34 @@ fn check_row_entries(owner: &str, entry: &Entry, depth: u8) {
     // Conditions in a row name entries of the same row (values read from the row).
     let kind_of = |name: &str| seen.contains(name).then_some((FieldKind::Json, None));
     crate::engine::conditions::FormConditions::new(&here, &entry.components, &kind_of);
+}
+
+/// Gives the rich text entries of a row's `schemas` the application nodes
+/// their `entries` (made from a JSON row's rich editors) accept, at any depth.
+fn fill_row_nodes(
+    schemas: &mut [ComponentSchema],
+    entries: &[Component],
+    table: &crate::rich_text::AppNodes,
+    t: &dyn Fn(&str) -> String,
+) {
+    let declared = Infolist::new().schema(entries.to_vec());
+    let declared = declared.entries();
+    for schema in schemas {
+        match schema {
+            ComponentSchema::Entry(entry) => {
+                let Some(source) = declared.iter().find(|e| e.name == entry.name) else { continue };
+                if entry.kind == EntryType::RichTextEntry && !source.row_nodes.is_empty() {
+                    let accepts = crate::rich_text::Accepts { nodes: table, only: Some(&source.row_nodes) };
+                    entry.rich_nodes = super::schema::rich_node_schemas(accepts, t);
+                }
+                if entry.kind == EntryType::RepeatableEntry {
+                    fill_row_nodes(&mut entry.components, &source.components, table, t);
+                }
+            }
+            ComponentSchema::Layout(layout) => fill_row_nodes(&mut layout.components, entries, table, t),
+            _ => {}
+        }
+    }
 }
 
 /// The schemas of a row's entries (values read from the row: kind `json`).
@@ -518,6 +553,10 @@ impl<R: Resource> ResourceAdapter<R> {
         let mut schema = entry_schema(entry, &label, value_type, relationship, link, computed, &t);
         if entry.kind == EntryType::RichTextEntry {
             schema.rich_nodes = self.rich_node_schemas(ctx, &entry.name);
+        }
+        // Rich text in JSON rows: the nodes of the rows' editors (ADR 0044).
+        if entry.kind == EntryType::RepeatableEntry {
+            fill_row_nodes(&mut schema.components, &entry.components, ctx.registry.rich_nodes(), &t);
         }
         Some(schema)
     }

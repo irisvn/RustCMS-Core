@@ -304,8 +304,10 @@ function RowField({ input, row, path, problem, server, ctx, disabled, id, onChan
   const describedBy = [input.help && `${id}-help`, error && `${id}-error`].filter(Boolean).join(" ") || undefined;
   // A nested repeater shows its rows' problems itself, below its own path.
   // Reactions flag rows of the form's own repeaters only.
+  // Uploads in a row block saving by row (its input's id), not by input name (ADR 0044).
+  const rowCtx: FormContext = ctx.onBusy ? { ...ctx, onBusy: (_name, busy) => ctx.onBusy?.(id, busy) } : ctx;
   const nestedCtx: FormContext =
-    input.type === "repeater" ? { ...ctx, errors: nestedErrors(input.name, path, server), rowFlags: undefined } : ctx;
+    input.type === "repeater" ? { ...rowCtx, errors: nestedErrors(input.name, path, server), rowFlags: undefined } : rowCtx;
   return (
     <div className={cn("flex min-w-0 flex-col gap-2", !table && span(input.columnSpan))}>
       {(input.type !== "checkbox" || isTriState(input)) && (

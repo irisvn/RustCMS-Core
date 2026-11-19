@@ -116,7 +116,8 @@ Repeater::make("lines")
   condition is removed from the stored row; `required` means "required when
   shown"; `clear_when_hidden` does not apply inside rows (the row is
   rewritten anyway).
-- **Media and rich text inputs are refused in JSON rows** (`FileUpload`,
+- **Media and rich text inputs are refused in JSON rows** (until ADR 0044,
+  part B, which checks their references with the record's) (`FileUpload`,
   `RichEditor`): their ids would escape the reference checks. Secrets and
   belongs-to-many inputs are refused too; a `SelectInput` takes static
   options only (no relationship).

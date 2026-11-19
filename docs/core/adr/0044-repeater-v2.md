@@ -1,6 +1,7 @@
 # ADR 0044: Repeaters, second round
 
-- Status: accepted for part A (unreleased, vocabulary 24). Parts B, C and D are written and reviewed before each is built.
+- Status: accepted for parts A and B (unreleased, vocabularies 24 and 25). Parts C and D are written and
+  reviewed before each is built.
 - Date: 2026-11-18
 - Amends ADR 0037 (conditions inside rows), ADR 0040 (repeaters), ADR 0041 (one phase per child resource) and,
   in part D, ADR 0043 (form reactions).
@@ -233,17 +234,103 @@ Decisions taken with the owner (2026-11-18), by number in the plan:
 - **Several repeaters on one child** keep the lock order of ADR 0041: their rows are locked under the parent's
   lock, which serializes every writer of them.
 
-## Parts B, C, D
+## Decision: part B (vocabulary 25)
+
+Part B lets rows hold what references other records: files, rich text (whose images are files) and, in
+relationship rows, `belongs_to` selects. The constraint is ADR 0041's: media rows are locked last, once, after
+every other explicit lock of the write.
+
+### Rules of row inputs (JSON rows)
+
+- The rules of a JSON row's inputs are declared on the inputs, as before. The kinds of rule grow, still
+  inside the row compiler (no new trait):
+  - **`FileUpload`** holds one file id, or a list of ids with `.multiple(max)`. It takes `.accept([...])`,
+    `.max_size(bytes)` and `.collection(name)` on the input; these are allowed on inputs of JSON rows only, as
+    `required` and `max_length` are.
+  - **`RichEditor`** holds a document, checked as a rich text field's (versions, bounds, `MAX_BYTES`). It
+    takes `.nodes([...])` for application nodes, checked at boot against the panel's declared nodes.
+- **Checking.** `accept_input` checks each row's values: a file input holds ids, a document is a valid
+  document. Media are checked after the hooks with the record's own media (below), never earlier.
+- **Still refused in JSON rows:**
+  - `belongs_to` selects: a JSON row has no field for an options route, and the id would have no foreign key;
+  - secrets and belongs-to-many inputs;
+  - tabs and splits.
+- **Settings pages** take the same inputs in their JSON rows; their media are checked with the page's own.
+
+### References gathered, checked once (both kinds of rows)
+
+- **One media check per write.** A write's media references are gathered from every place:
+  - its media and rich text fields;
+  - the rows of its JSON repeaters, at any depth;
+  - the rows its relationship repeaters write, after the child's hooks.
+
+  They are checked once, after every other lock of the write, by `media::check_references`: shared locks in
+  id order, as before (ADR 0041 point 2). Each reference keeps its path for errors: `faq.2.icon`,
+  `options.n1.image`, `options.8.content`.
+- **ADR 0041 point 5 is amended.**
+  - A relationship row's media and rich text fields are accepted (boot). The row write gathers its
+    references instead of refusing them; they are checked with the parent's, last. A hook adding media to a
+    row is no longer an error.
+  - Encrypted and belongs-to-many fields stay refused in rows.
+- **`belongs_to` in relationship rows (R7).**
+  - A row's `belongs_to` field is checked as a form's: the target must be visible to the user
+    (`keys_in_scope`), read without an explicit lock, after the child's hooks.
+  - The database's foreign key takes its implicit lock. A cycle there is ADR 0041's 409 `write_conflict`, as
+    for every form's `belongs_to`.
+  - The parent key stays out of rows. A child field that `lock_parent`s another resource is not an input of
+    the rows: every row write locks only the repeater's parent.
+  - The panel's select reads its options from the child's options route (the child's field rules and scope),
+    as on the child's own form.
+- **A parent with relationship repeaters still cannot link media records** (belongs-to-many to media): its
+  link targets would lock media before its rows.
+
+### Rich text in rows
+
+- **A compact editor by default** (Q4). In a row of either kind, a `RichEditor` shows a compact toolbar: bold,
+  italic, underline, superscript, subscript, images and the field's application elements. `.full()` gives
+  the full toolbar.
+- Schema: `InputSchema.toolbar` is `"compact"` (absent: full).
+- **The toolbar is presentation.** The server checks the document by the field's rules (or, in JSON rows, the
+  input's); content pasted from elsewhere (a heading, a table) is kept when those rules allow it.
+- Uploads in a row's editor go into the field's collection (`Field::collection`, or the input's in a JSON row).
+
+### Panel
+
+- **Uploads and saving.** An upload in progress in any row blocks saving. The work is tracked per row
+  (`lines.n1.image`, `faq.2.icon`), so a row's finished upload does not release another's.
+- **Rows keep their state.** A row's editor content and uploads follow the row through additions, removals,
+  moves and hiding, keyed by its identity (key or ref, JSON row keys). Leaving the page with unsaved row
+  changes asks first, as for any input. Nothing is stored in the browser.
+- **Table layout** refuses file uploads and rich text, which do not fit a cell (boot).
+- **Media pickers in rows** open on the field's (or input's) collection.
+
+### View pages
+
+- JSON rows' entries may be `MediaEntry` and `RichTextEntry`; the default view page shows a row's file
+  uploads and rich text with them. Relationship rows already fit their entries to the child's fields.
+
+### Wire (vocabulary 25)
+
+- `InputSchema.toolbar`: `"compact"` on a rich editor in a row (absent: full).
+- File uploads and rich editors in JSON rows carry `media` (accept, size, how many) and `collection` from the
+  input's rules, as inputs of fields do from the field.
+- `RepeaterSchema` of a JSON repeater may hold `file_upload` and `rich_editor` inputs; relationship rows may
+  hold them and `select` inputs of `belongs_to` fields (`relationship` set).
+- An SPA on vocabulary 24 sees vocabulary 25 as unknown and shows forms read-only.
+
+## Consequences (part B)
+
+- **Media references in JSON rows are checked** (existing, visible, accepted type and size) on every write
+  through the panel, the API and imports. JSON values written by other code (hooks, migrations) are not.
+- **A write's media check covers its rows.** Errors are at the row's path; one unavailable file in a row
+  refuses the whole save, as in a field.
+- **Media held only in JSON rows have no database foreign key.** Deleting a media record does not clear a
+  row that names it; the row shows it as unavailable, as a rich text image does today.
+
+## Parts C, D
 
 To be written before each is built. Planned content:
 
-- **B:**
-  - each input carries its server rules (check and normalize, media referenced, records referenced), applied
-    recursively in every row;
-  - references gathered from every level, locked once (media last);
-  - JSON rows take file uploads, rich text, `belongs_to` selects, tabs and splits;
-  - relationship rows take media, rich text (a compact editor by default, Q4) and `belongs_to`;
-  - ADR 0041 point 5 is amended.
 - **C:**
   - nested relationship repeaters, three levels (Q2): nested changes, refs of new parent rows, `inherit`
     (Q7), chained `lock_parent`;

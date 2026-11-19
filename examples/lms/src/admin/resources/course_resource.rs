@@ -54,6 +54,13 @@ impl Resource for CourseResource {
             NumberInput::make("instructor_id").help("Id of the user who teaches the course"),
             Toggle::make("published"),
             Textarea::make("summary").column_span(2),
+            // Its learners, enrolled in the course's form: each row is an enrollment
+            // (the seat rules and the welcome job run as for any enrollment).
+            Repeater::make("enrollments")
+                .relationship()
+                .column_span(2)
+                .schema(components![SelectInput::make("learner_id"), SelectInput::make("status")])
+                .add_action_label("Enroll a learner"),
         ])
     }
     // #endregion form

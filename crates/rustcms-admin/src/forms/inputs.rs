@@ -110,6 +110,54 @@ pub struct Input {
     pub(crate) integer: bool,
     /// File uploads: images open in the panel's viewer (the default).
     pub(crate) preview: bool,
+    /// File uploads and rich editors in rows (ADR 0044): rules of JSON rows
+    /// and the toolbar (boxed: most inputs have none).
+    pub(crate) content: Option<Box<RowContent>>,
+}
+
+/// What a file upload or a rich editor of a repeater's row declares (ADR
+/// 0044): in a JSON row, the rules a field gives elsewhere; in any row, the
+/// rich editor's toolbar.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RowContent {
+    /// Accepted MIME types (`image/*`), JSON rows.
+    pub(crate) accept: Vec<String>,
+    /// Largest file in bytes, JSON rows.
+    pub(crate) max_size: Option<u64>,
+    /// A list of up to this many files (else one), JSON rows.
+    pub(crate) max_files: Option<usize>,
+    /// The media collection of uploads, JSON rows.
+    pub(crate) collection: Option<String>,
+    /// Application nodes a rich editor accepts, JSON rows.
+    pub(crate) nodes: Vec<String>,
+    /// A rich editor in a row shows the full toolbar (else the compact one).
+    pub(crate) full: bool,
+}
+
+impl RowContent {
+    /// The rule a file upload of a JSON row holds its files to.
+    pub(crate) fn media_rule(&self) -> crate::field::MediaRule {
+        crate::field::MediaRule {
+            multiple: self.max_files.is_some(),
+            max_items: self.max_files.unwrap_or(1),
+            accept: self.accept.clone(),
+            max_size: self.max_size,
+        }
+    }
+
+    /// The toolbar of a rich editor in a row: compact unless `full` (ADR 0044).
+    pub(crate) fn toolbar(content: Option<&Self>) -> Option<crate::schema::RichToolbar> {
+        (!content.is_some_and(|c| c.full)).then_some(crate::schema::RichToolbar::Compact)
+    }
+
+    /// Whether a rule meant for JSON rows is set (everything but `full`).
+    pub(crate) fn has_rules(&self) -> bool {
+        !self.accept.is_empty()
+            || self.max_size.is_some()
+            || self.max_files.is_some()
+            || self.collection.is_some()
+            || !self.nodes.is_empty()
+    }
 }
 
 impl Input {
@@ -140,7 +188,55 @@ impl Input {
             max_length: None,
             integer: false,
             preview: true,
+            content: None,
         }
+    }
+
+    fn content(&mut self) -> &mut RowContent {
+        self.content.get_or_insert_with(Box::default)
+    }
+
+    /// File uploads in JSON repeater rows: accepted MIME types (`image/*`,
+    /// `application/pdf`). Elsewhere the field decides (`Field::accept`).
+    pub fn accept(mut self, types: &[&str]) -> Self {
+        self.content().accept = types.iter().map(|t| (*t).to_owned()).collect();
+        self
+    }
+
+    /// File uploads in JSON repeater rows: the largest file, in bytes.
+    pub fn max_size(mut self, bytes: u64) -> Self {
+        self.content().max_size = Some(bytes);
+        self
+    }
+
+    /// File uploads in JSON repeater rows: a list of up to `max` files, in
+    /// order (else one file).
+    pub fn multiple(mut self, max: usize) -> Self {
+        self.content().max_files = Some(max.max(1));
+        self
+    }
+
+    /// File uploads and rich editors in JSON repeater rows: uploads go into
+    /// the media collection `name` (declared with
+    /// [`crate::AdminProvider::media_collection`]), and the picker opens on it.
+    pub fn collection(mut self, name: impl Into<String>) -> Self {
+        self.content().collection = Some(name.into());
+        self
+    }
+
+    /// Rich editors in JSON repeater rows: the application nodes the document
+    /// accepts (declared with [`crate::AdminProvider::rich_text_node`]).
+    pub fn nodes<S: Into<String>>(mut self, names: impl IntoIterator<Item = S>) -> Self {
+        self.content().nodes.extend(names.into_iter().map(Into::into));
+        self
+    }
+
+    /// Rich editors in repeater rows: the full toolbar (rows show a compact
+    /// one: bold, italic, underline, superscript, subscript, images and
+    /// application elements). The document's rules are the same either way.
+    pub fn full(mut self) -> Self {
+        self.content().full = true;
+        self
     }
 
     /// Displayed label (default: the field name, humanized).

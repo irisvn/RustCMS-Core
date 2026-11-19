@@ -32,6 +32,7 @@ pub fn provider() -> AdminProvider {
         // #endregion theme
         .media()
         .media_collection("news-covers", "News covers")
+        .media_collection("quiz-images", "Quiz images")
         .resource::<CourseResource>()
         .resource::<LessonResource>()
         .resource::<LearnerResource>()

@@ -242,7 +242,7 @@ db_test!(the_schema_describes_the_rows, |db: TestDb| async move {
         // Shared with the SPA tests.
         support::contract("repeater.schema.create.json", &schema);
     }
-    assert_eq!(schema["vocabularyVersion"], json!(24));
+    assert_eq!(schema["vocabularyVersion"], json!(25));
     let input = schema["form"]["components"].as_array().unwrap().iter().find(|c| c["name"] == "faq").unwrap().clone();
     assert_eq!(input["type"], json!("repeater"));
     assert_eq!(input["valueType"], json!("json"));
@@ -427,10 +427,10 @@ refused_at_boot!(
     ]
 );
 refused_at_boot!(
-    a_media_input_in_a_row,
+    file_rules_on_a_text_input_in_a_row,
     MediaRow,
-    "media and rich text inputs are not supported in JSON rows",
-    rows(components![FileUpload::make("photo")])
+    "`accept`, `max_size` and `multiple` are for file uploads",
+    rows(components![TextInput::make("photo").max_size(10)])
 );
 refused_at_boot!(
     a_select_without_options,

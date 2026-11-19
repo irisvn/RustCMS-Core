@@ -316,6 +316,11 @@ A referenced file the user cannot load (missing, trashed, or not visible
 to them) shows as a "File unavailable" chip, in file fields and in rich
 text alike.
 
+Files and documents in [repeater rows](forms.md#repeaters) are checked the
+same way, once per save with the record's own: a JSON row's file upload takes
+its rules on the input (`FileUpload::make("icon").accept(&["image/*"])`), a
+relationship row's from the child's field.
+
 Media and rich text columns may not declare a default on the entity (any
 `default_value`, checked when the panel starts). A default written in a
 migration is stored without these checks: do not give these columns one.

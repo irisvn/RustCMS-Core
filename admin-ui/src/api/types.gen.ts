@@ -104,6 +104,8 @@ conditions: Array<Condition>, };
 
 export type RepeaterLayout = "table";
 
+export type RichToolbar = "compact";
+
 export type EntryRows = { 
 /**
  * Slug of the related resource.
@@ -431,6 +433,12 @@ repeater?: RepeaterSchema,
  * the form (vocabulary 19, ADR 0043). Create and edit forms only.
  */
 reacts?: boolean, 
+/**
+ * Rich editors in repeater rows: `compact` shows bold, italic,
+ * underline, superscript, subscript, images and application elements
+ * (vocabulary 25, ADR 0044); absent, the full toolbar.
+ */
+toolbar?: RichToolbar, 
 /**
  * Rich text: the application nodes the document may hold (vocabulary
  * 18, ADR 0042); absent when none.

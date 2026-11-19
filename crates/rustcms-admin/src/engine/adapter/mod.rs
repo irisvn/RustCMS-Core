@@ -15,7 +15,7 @@ mod react;
 mod read;
 mod references;
 pub(crate) mod rows;
-mod schema;
+pub(crate) mod schema;
 mod secrets;
 mod write;
 

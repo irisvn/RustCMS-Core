@@ -81,6 +81,14 @@ All notable changes are documented here. The format follows
   - `RepeatableEntry::relationship()`: a has-many relation's records on the view page, through its list,
     at most `limit(n)` (100) rows; the default view page shows relationship repeaters this way
     (`EntrySchema.rows`).
+  - Part B (vocabulary 25): JSON rows take file uploads (`.accept`, `.max_size`, `.multiple(n)`,
+    `.collection` on the input) and rich editors (`.nodes`); relationship rows take the child's media, rich text
+    and `belongs_to` fields. A write's media references (fields, JSON rows at any depth, relationship rows after
+    the child's hooks) are checked once, last, errors at the row's path. Rich editors in rows show a compact
+    toolbar (`InputSchema.toolbar`), `.full()` for the full one. View pages show rows' files and documents
+    (`MediaEntry`, `RichTextEntry` in JSON rows). Demo: footer links take an icon; LMS: quiz options take an
+    image and an explanation (migration `m20261120_000007_add_media_to_quiz_options`), courses enroll learners
+    in their form.
   - Demo: categories are their posts or a link (migration `m20261119_000001_add_layout_to_categories`), posts
     edited as a table and shown on the view page, a "Drafts" section. LMS: quiz questions with options
     (`where_null("blank_id")`) and blanks, three tables (migration `m20261119_000006_create_quiz_tables`).
@@ -113,6 +121,9 @@ All notable changes are documented here. The format follows
   struct literal adds `collection: None` (or `Set(None)`), as for `alt` in 0.10.1. `MediaItem`, `InputSchema`,
   `FilterSchema` and `PanelResponse` gain fields too.
 
+- A hook of a relationship repeater's child that adds media to a row no longer fails (500): the row's media are
+  checked with the parent's. `media::check_references` takes owned paths; `DynResource::field_locks_media_or_secret`
+  is `field_is_encrypted`.
 - Relationship repeater rows follow the repeater's own conditions; the child form's conditions no longer apply
   to them (ADR 0044). `Condition`'s variants gain `scope` (code building or matching them by hand adds it;
   `when`, `Condition::all`/`any` are unchanged). `ListQuery` gains `relation_filters` and

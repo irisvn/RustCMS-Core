@@ -278,9 +278,10 @@ fn input_schema(ctx: &Ctx, field: &SettingField, input: &crate::ui::Input, disab
             .input
             .repeater
             .as_deref()
-            .map(|spec| Box::new(crate::engine::repeater::rows_schema(spec, &|text| ctx.t(text), disabled))),
+            .map(|spec| Box::new(crate::engine::repeater::rows_schema(spec, &|text| ctx.t(text), disabled, None))),
         rich_nodes: Vec::new(),
         reacts: false,
+        toolbar: None,
     }
 }
 
@@ -510,7 +511,28 @@ async fn update(
             };
             ids.retain(|id| !kept.iter().any(|k| uuid::Uuid::parse_str(k).is_ok_and(|k| k == *id)));
             if !ids.is_empty() {
-                wanted.push((field.name.as_str(), rule, ids));
+                wanted.push((field.name.clone(), rule.clone(), ids));
+            }
+        }
+    }
+    // Files of the rows of changed repeaters (ADR 0044), but those the same input
+    // already referred to (in any row: rows move); a file moved to another input meets its rules.
+    let input_of = |at: &str| at.split('.').filter(|part| part.parse::<usize>().is_err()).collect::<Vec<_>>().join(".");
+    for field in page.fields() {
+        let Some(rows) = field.rows.as_deref().filter(|_| changed(&field.name)) else { continue };
+        let mut kept = Vec::new();
+        if let Some(before) = stored.values.get(&field.name) {
+            rows.references(&field.name, before, &mut kept);
+        }
+        let kept: std::collections::HashSet<(String, uuid::Uuid)> =
+            kept.into_iter().flat_map(|(at, _, ids)| ids.into_iter().map(move |id| (input_of(&at), id))).collect();
+        let mut refs = Vec::new();
+        rows.references(&field.name, &values[&field.name], &mut refs);
+        for (at, rule, mut ids) in refs {
+            let input = input_of(&at);
+            ids.retain(|id| !kept.contains(&(input.clone(), *id)));
+            if !ids.is_empty() {
+                wanted.push((at, rule, ids));
             }
         }
     }

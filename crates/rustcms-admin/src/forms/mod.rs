@@ -9,6 +9,7 @@ mod repeater;
 
 pub use conditions::*;
 pub use form::*;
+pub(crate) use inputs::RowContent;
 pub use inputs::*;
 pub use layouts::*;
 pub use reactions::{FormPatch, FormState, REACTION_MAX_TIMEOUT, REACTION_TIMEOUT};

@@ -45,11 +45,23 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 );
             }
         }
+        // The rich editors of JSON rows (ADR 0044).
+        for rows in self.repeaters.values() {
+            rows.attach_nodes(&format!("resource `{}`", R::SLUG), nodes);
+        }
         let _ = self.rich_nodes.set(nodes.clone());
     }
 
     fn media_collections(&self) -> Vec<(String, String)> {
-        self.fields.iter().filter_map(|f| Some((f.name.clone(), f.collection.clone()?))).collect()
+        let mut out: Vec<(String, String)> =
+            self.fields.iter().filter_map(|f| Some((f.name.clone(), f.collection.clone()?))).collect();
+        // Inputs of JSON rows name theirs (ADR 0044).
+        for input in self.form.inputs() {
+            if let Some(spec) = input.repeater.as_deref() {
+                crate::engine::repeater::row_collections(spec, &input.name, &mut out);
+            }
+        }
+        out
     }
 
     fn field_link(&self, name: &str) -> Option<(Option<&'static str>, &'static str)> {
@@ -134,8 +146,8 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         }
     }
 
-    fn field_locks_media_or_secret(&self, name: &str) -> bool {
-        self.field(name).is_some_and(|f| f.media.is_some() || f.rich_text || f.secret.is_some())
+    fn field_is_encrypted(&self, name: &str) -> bool {
+        self.field(name).is_some_and(|f| f.secret.is_some())
     }
 
     fn key_kind(&self) -> &'static str {
@@ -329,7 +341,22 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 .collect()
         }
         let rows = inherit(components, &self.form.inputs());
-        self.components(ctx, &rows, op, &HashMap::new())
+        let mut schemas = self.components(ctx, &rows, op, &HashMap::new());
+        // Rows show a compact rich editor unless the input asks for the full one (ADR 0044).
+        fn compact(list: &mut [ComponentSchema], inputs: &[&crate::ui::Input]) {
+            for component in list {
+                match component {
+                    ComponentSchema::Input(schema) if schema.kind == InputType::RichEditor => {
+                        let content = inputs.iter().find(|i| i.name == schema.name).and_then(|i| i.content.as_deref());
+                        schema.toolbar = crate::ui::RowContent::toolbar(content);
+                    }
+                    ComponentSchema::Layout(layout) => compact(&mut layout.components, inputs),
+                    _ => {}
+                }
+            }
+        }
+        compact(&mut schemas, &crate::engine::repeater::row_inputs(&rows));
+        schemas
     }
 
     fn row_repeater_fields(&self) -> Vec<(&'static str, &'static str, Vec<String>, Option<String>)> {
@@ -649,9 +676,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.check_parent_stored(&wctx, &model, &parents)?;
         let link_audits = self.write_links(&wctx, &txn, &model, links).await?;
         // The children, once the parent is written (locked after it); `after_save` sees them.
-        let row_outcomes = self.write_row_changes(&wctx, &txn, &model, rows, &root).await?;
-        // Media last: the media resource ranks after every other (ADR 0041).
-        self.check_media(&wctx, &txn, &data).await?;
+        let mut row_outcomes = self.write_row_changes(&wctx, &txn, &model, rows, &root).await?;
+        // Media last, the rows' with the record's: the media resource ranks after every other (ADR 0041, 0044).
+        let row_media = row_outcomes.iter_mut().flat_map(|(_, o)| std::mem::take(&mut o.media)).collect();
+        self.check_media(&wctx, &txn, &data, row_media).await?;
         R::after_save(&wctx, &txn, &model).await?;
         // As stored once the hooks ran.
         self.audit_outcome(&wctx, &txn, "created", None, &model, false, true).await?;
@@ -726,9 +754,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.check_parent_stored(&wctx, &model, &parents)?;
         let link_audits = self.write_links(&wctx, &txn, &model, links).await?;
         // The children, once the parent is written (locked after it); `after_save` sees them.
-        let row_outcomes = self.write_row_changes(&wctx, &txn, &model, rows, &root).await?;
-        // Media last: the media resource ranks after every other (ADR 0041).
-        self.check_media(&wctx, &txn, &data).await?;
+        let mut row_outcomes = self.write_row_changes(&wctx, &txn, &model, rows, &root).await?;
+        // Media last, the rows' with the record's: the media resource ranks after every other (ADR 0041, 0044).
+        let row_media = row_outcomes.iter_mut().flat_map(|(_, o)| std::mem::take(&mut o.media)).collect();
+        self.check_media(&wctx, &txn, &data, row_media).await?;
         R::after_save(&wctx, &txn, &model).await?;
         // Nothing changed: nothing to record.
         self.audit_outcome(&wctx, &txn, "updated", Some(&before), &model, false, false).await?;
@@ -767,7 +796,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let relations: Data = self
             .fields
             .iter()
-            .filter(|f| f.belongs_to.is_some() || f.media.is_some() || f.rich_text)
+            // JSON repeaters too: their rows' files and images (ADR 0044).
+            .filter(|f| {
+                f.belongs_to.is_some() || f.media.is_some() || f.rich_text || self.repeaters.contains_key(&f.name)
+            })
             .filter_map(|f| record.get(&f.name).map(|v| (f.name.clone(), v.clone())))
             .collect();
         self.check_written(&wctx, &txn, &relations).await?;

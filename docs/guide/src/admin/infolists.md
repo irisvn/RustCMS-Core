@@ -81,6 +81,7 @@ a [computed value](#computed-values). Every entry takes `label`, `help`,
 
 `RepeatableEntry` shows each row of a JSON list with its own entries, which
 name keys of the row: `TextEntry`, `BooleanEntry`, `KeyValueEntry`,
+`MediaEntry` (a row's files), `RichTextEntry` (a row's document),
 `CustomEntry`, and a nested `RepeatableEntry` (three deep at most).
 
 ```rust

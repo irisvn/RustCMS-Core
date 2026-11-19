@@ -3,7 +3,7 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "quiz_options")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -15,6 +15,9 @@ pub struct Model {
     pub correct: bool,
     pub hint: Option<String>,
     pub position: i32,
+    pub image: Option<Uuid>,
+    /// Why the option is right or wrong (rich text).
+    pub explanation: Option<Json>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

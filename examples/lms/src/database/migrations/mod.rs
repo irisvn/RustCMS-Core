@@ -8,6 +8,7 @@ mod m20261020_000003_create_learners_table;
 mod m20261020_000004_create_enrollments_table;
 mod m20261026_000005_create_news_tables;
 mod m20261119_000006_create_quiz_tables;
+mod m20261120_000007_add_media_to_quiz_options;
 // rustcms:migration-mods
 
 pub struct Migrator;
@@ -22,6 +23,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261020_000004_create_enrollments_table::Migration),
             Box::new(m20261026_000005_create_news_tables::Migration),
             Box::new(m20261119_000006_create_quiz_tables::Migration),
+            Box::new(m20261120_000007_add_media_to_quiz_options::Migration),
             // rustcms:migrations
         ];
         migrations.extend(app);

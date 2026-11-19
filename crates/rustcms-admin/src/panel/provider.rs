@@ -355,7 +355,11 @@ impl ServiceProvider for AdminProvider {
             "media collections need the media library (`AdminProvider::media`)"
         );
         for page in self.settings.all() {
-            if let Some(field) = page.fields().iter().find(|f| f.media.is_some()) {
+            // Media settings, and repeaters whose rows refer to files (ADR 0044).
+            let uploads = |f: &crate::settings::SettingField| {
+                f.input.repeater.as_deref().is_some_and(crate::engine::repeater::refers_to_media)
+            };
+            if let Some(field) = page.fields().iter().find(|f| f.media.is_some() || uploads(f)) {
                 assert!(
                     self.media,
                     "settings `{}`: media setting `{}` needs the media library (`AdminProvider::media`)",
@@ -364,13 +368,18 @@ impl ServiceProvider for AdminProvider {
                 );
             }
             for field in page.fields() {
-                if let Some(collection) = &field.collection {
+                // The field's, and those of its rows' inputs (ADR 0044).
+                let mut named: Vec<(String, String)> =
+                    field.collection.iter().map(|c| (field.name.clone(), c.clone())).collect();
+                if let Some(spec) = field.input.repeater.as_deref() {
+                    crate::engine::repeater::row_collections(spec, &field.name, &mut named);
+                }
+                for (at, collection) in named {
                     assert!(
-                        registry.media_collection_named(collection).is_some(),
-                        "settings `{}`: setting `{}` uses the media collection `{collection}`, which is not \
+                        registry.media_collection_named(&collection).is_some(),
+                        "settings `{}`: setting `{at}` uses the media collection `{collection}`, which is not \
                          declared (`AdminProvider::media_collection`)",
                         page.group(),
-                        field.name
                     );
                 }
             }

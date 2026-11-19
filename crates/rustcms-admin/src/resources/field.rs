@@ -290,7 +290,7 @@ impl Field {
 }
 
 /// What a media field may reference.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct MediaRule {
     pub(crate) multiple: bool,
     pub(crate) max_items: usize,
@@ -299,6 +299,11 @@ pub(crate) struct MediaRule {
 }
 
 impl MediaRule {
+    /// Images of a rich text document: any number of images.
+    pub(crate) fn images() -> Self {
+        Self { multiple: true, max_items: usize::MAX, accept: vec!["image/*".to_owned()], max_size: None }
+    }
+
     /// Whether `mime` is accepted (`image/*` matches every image type).
     pub(crate) fn accepts(&self, mime: &str) -> bool {
         self.accept.is_empty()

@@ -44,11 +44,11 @@ impl Resource for QuizQuestionResource {
             Textarea::make("prompt"),
             Toggle::make("explain").label("Hints on correct options"),
             // Options of a choice question: the options relation holds the rows
-            // without a blank (`where_null`), one table row each.
+            // without a blank (`where_null`), each with an image and an
+            // explanation (a compact rich editor: rows are short).
             Repeater::make("options")
                 .relationship()
                 .shown_when(when("kind").is_in([quiz_question::SINGLE, quiz_question::MULTIPLE]))
-                .table()
                 .order_column("position")
                 .schema(components![
                     TextInput::make("content"),
@@ -56,6 +56,8 @@ impl Resource for QuizQuestionResource {
                     // Reads the question's form (`when_root`).
                     TextInput::make("hint")
                         .shown_when(Condition::all([when("correct").is_true(), when_root("explain").is_true()])),
+                    FileUpload::make("image"),
+                    RichEditor::make("explanation"),
                 ])
                 .add_action_label("Add an option"),
             Repeater::make("blanks")
@@ -112,6 +114,8 @@ impl Resource for QuizOptionResource {
             Field::column(C::Content).required().max_length(500),
             Field::column(C::Correct),
             Field::column(C::Hint).required().max_length(500),
+            Field::column(C::Image).media().accept(&["image/*"]).collection("quiz-images"),
+            Field::column(C::Explanation).rich_text().collection("quiz-images"),
             // Sortable: the question's page lists its options in order.
             Field::column(C::Position).guarded().readable(|_| true).sortable(),
         ]

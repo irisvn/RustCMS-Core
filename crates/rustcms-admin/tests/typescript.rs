@@ -31,6 +31,7 @@ fn bindings() -> String {
         NumberBounds::decl(&cfg),
         Condition::decl(&cfg),
         RepeaterLayout::decl(&cfg),
+        RichToolbar::decl(&cfg),
         EntryRows::decl(&cfg),
         Scope::decl(&cfg),
         ResourceInfo::decl(&cfg),

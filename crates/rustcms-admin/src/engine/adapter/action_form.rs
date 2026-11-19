@@ -157,6 +157,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     repeater: None,
                     rich_nodes: Vec::new(),
                     reacts: false,
+                    toolbar: None,
                 })
             })
             .collect();

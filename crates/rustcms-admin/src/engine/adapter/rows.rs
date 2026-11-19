@@ -65,6 +65,9 @@ pub(crate) struct RowsOutcome {
     pub(crate) updated: Vec<String>,
     pub(crate) deleted: Vec<String>,
     pub(crate) reordered: bool,
+    /// The media the written rows refer to (after the child's hooks), named
+    /// by row (`options.n1.image`): checked with the parent's, last (ADR 0044).
+    pub(crate) media: Vec<crate::engine::repeater::MediaReference>,
 }
 
 impl RowsOutcome {
@@ -116,32 +119,6 @@ fn below(relation: &str, id: &str, err: AppError) -> AppError {
 }
 
 impl<R: Resource> ResourceAdapter<R> {
-    /// Refuses a row whose data (after the child's hooks) holds a media or
-    /// rich-text field: checking it would lock media rows inside a row write,
-    /// out of the parent write's lock order (ADR 0041). Row inputs never are
-    /// such fields (boot); only a hook can add one.
-    fn refuse_row_media(&self, data: &Data) -> AppResult<()> {
-        // A cleared value (null, an empty list) references nothing and locks nothing.
-        let references = |value: &serde_json::Value| match value {
-            serde_json::Value::Null => false,
-            serde_json::Value::Array(items) => !items.is_empty(),
-            serde_json::Value::String(text) => !text.is_empty(),
-            _ => true,
-        };
-        let media = self
-            .fields
-            .iter()
-            .find(|f| (f.media.is_some() || f.rich_text) && data.get(&f.name).is_some_and(references));
-        match media {
-            Some(field) => Err(AppError::internal(format!(
-                "`{}`: hooks of a relationship repeater's child may not write media or rich-text fields (`{}`)",
-                R::SLUG,
-                field.name
-            ))),
-            None => Ok(()),
-        }
-    }
-
     /// Writes `change` to the children of `target`, in `txn` (the parent's
     /// write, `ctx` its context). Rows named by key are locked in key order
     /// through the child's scope and view policy (re-checked under the lock);
@@ -255,10 +232,13 @@ impl<R: Resource> ResourceAdapter<R> {
             if data.contains_key(target.field) || target.order_column.is_some_and(|c| data.contains_key(c)) {
                 return Err(ValidationErrors::field(format!("{relation}.{key}"), "is not allowed").into());
             }
-            let changed = self
+            let (changed, media) = self
                 .update_row(ctx, txn, model, data, target.field, &rows)
                 .await
                 .map_err(|e| below(relation, &key, e))?;
+            outcome
+                .media
+                .extend(media.into_iter().map(|(at, rule, ids)| (format!("{relation}.{key}.{at}"), rule, ids)));
             if changed {
                 outcome.updated.push(key);
             }
@@ -290,10 +270,13 @@ impl<R: Resource> ResourceAdapter<R> {
                 }
                 None => None,
             };
-            let key = self
+            let (key, media) = self
                 .create_row(&bound, txn, data, position, &rows)
                 .await
                 .map_err(|e| below(relation, &reference, e))?;
+            outcome
+                .media
+                .extend(media.into_iter().map(|(at, rule, ids)| (format!("{relation}.{reference}.{at}"), rule, ids)));
             refs.insert(reference, key.clone());
             outcome.created.push(key);
         }
@@ -402,7 +385,7 @@ impl<R: Resource> ResourceAdapter<R> {
         data: Data,
         parent_field: &str,
         rows: &RowWrite<'_>,
-    ) -> AppResult<bool> {
+    ) -> AppResult<(bool, Vec<crate::engine::repeater::MediaReference>)> {
         let (level, fixed) = (&rows.level, rows.fixed.as_slice());
         let mut input = self.accept_input_in(ctx, Operation::Update, data, level.conditions)?;
         // Rows are locked through the child's view policy: the user views them.
@@ -415,11 +398,11 @@ impl<R: Resource> ResourceAdapter<R> {
         if data.get(parent_field).is_some_and(|v| self.record(&model).get(parent_field) != Some(v)) {
             return Err(AppError::internal(format!("`{}`: a hook changed the relation key `{parent_field}`", R::SLUG)));
         }
-        // A row takes no explicit lock but its own (ADR 0041): no media.
-        self.refuse_row_media(&data)?;
+        // Its media are checked with the parent's, last (ADR 0044).
+        let media = self.media_references("", &data)?;
         self.check_relations(ctx, txn, &data).await?;
         if data.is_empty() {
-            return Ok(false);
+            return Ok((false, media));
         }
         let before = self.audit_snapshot(&model);
         let stored = model.clone();
@@ -428,7 +411,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let model = active.update(txn.as_ref()).await.map_err(|e| self.map_db_err(ctx, e))?;
         R::after_save(ctx, txn, &model).await?;
         self.audit_outcome(ctx, txn, "updated", Some(&before), &model, false, false).await?;
-        Ok(true)
+        Ok((true, media))
     }
 
     /// Inserts a row (`data` holds the parent key); its key.
@@ -439,7 +422,7 @@ impl<R: Resource> ResourceAdapter<R> {
         data: Data,
         position: Option<(&str, i64)>,
         rows: &RowWrite<'_>,
-    ) -> AppResult<String> {
+    ) -> AppResult<(String, Vec<crate::engine::repeater::MediaReference>)> {
         let (level, fixed) = (&rows.level, rows.fixed.as_slice());
         let mut input = self.accept_input_in(ctx, Operation::Create, data, level.conditions)?;
         // The position is the server's (never client input).
@@ -460,8 +443,8 @@ impl<R: Resource> ResourceAdapter<R> {
         if data.get(&field) != parent_value.as_ref() {
             return Err(AppError::internal(format!("`{}`: a hook changed the relation key `{field}`", R::SLUG)));
         }
-        // A row takes no explicit lock but its own (ADR 0041): no media.
-        self.refuse_row_media(&data)?;
+        // Its media are checked with the parent's, last (ADR 0044).
+        let media = self.media_references("", &data)?;
         self.check_relations(ctx, txn, &data).await?;
         let mut active = <<Entity<R> as EntityTrait>::ActiveModel as ActiveModelBehavior>::new();
         self.apply(ctx, &mut active, &data, Operation::Create, None)?;
@@ -480,7 +463,7 @@ impl<R: Resource> ResourceAdapter<R> {
         self.check_parent_stored(ctx, &model, &parents)?;
         R::after_save(ctx, txn, &model).await?;
         self.audit_outcome(ctx, txn, "created", None, &model, false, true).await?;
-        Ok(self.key_of(&model))
+        Ok((self.key_of(&model), media))
     }
 
     /// The parent's rows not in the trash.
@@ -817,6 +800,11 @@ pub(super) fn row_repeaters(
                     InputType::Repeater | InputType::BelongsToMany | InputType::Secret | InputType::SecretMap
                 ),
                 "{here}: `{row_name}`: repeaters, belongs-to-many and secret inputs cannot be in relationship rows"
+            );
+            assert!(
+                row.content.as_deref().is_none_or(|c| !c.has_rules()),
+                "{here}: `{row_name}`: in relationship rows the child's field decides `accept`, `max_size`, \
+                 `multiple`, `collection` and `nodes`"
             );
             assert!(
                 !row.required && row.max_length.is_none() && !row.integer,

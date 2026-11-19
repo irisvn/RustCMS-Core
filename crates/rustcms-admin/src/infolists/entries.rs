@@ -50,6 +50,9 @@ pub struct Entry {
     /// Repeatable entries: the rows are the records of the has-many relation
     /// of the entry's name (ADR 0044).
     pub(crate) relationship: bool,
+    /// Rich text entries of a JSON row made from a rich editor: the
+    /// application nodes the input accepts (ADR 0044).
+    pub(crate) row_nodes: Vec<String>,
 }
 
 /// Display options (boxed: most entries have few).
@@ -90,6 +93,7 @@ impl Entry {
             components: Vec::new(),
             row_kind: None,
             relationship: false,
+            row_nodes: Vec::new(),
         }
     }
 

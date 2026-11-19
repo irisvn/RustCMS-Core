@@ -80,11 +80,11 @@ pub trait DynResource: Send + Sync {
     /// of fields they may not read left out.
     #[doc(hidden)]
     fn entry_row_schemas(&self, ctx: &Ctx, components: &[crate::ui::Component]) -> Vec<crate::schema::ComponentSchema>;
-    /// Whether field `name` references media (a media field, or rich text
-    /// that may hold images) or is encrypted: what a relationship repeater's
-    /// rows may not edit (ADR 0041).
+    /// Whether field `name` is encrypted: what a relationship repeater's rows
+    /// may not edit (ADR 0041, amended by ADR 0044: media and rich text are
+    /// checked with the parent's).
     #[doc(hidden)]
-    fn field_locks_media_or_secret(&self, name: &str) -> bool;
+    fn field_is_encrypted(&self, name: &str) -> bool;
     /// Wire kind of the primary key.
     fn key_kind(&self) -> &'static str;
     /// `key` in canonical form (`01` → `1`), if it is a valid key.
@@ -562,15 +562,16 @@ impl Registry {
                     "{here}: a resource with relationship repeaters cannot link media records (belongs-to-many)"
                 );
                 for input in &inputs {
-                    // A row takes no explicit lock but its own: no references edited in rows.
-                    match child.field_link(input) {
-                        None => panic!("{here}: row input `{input}` is not a field of `{target}`"),
-                        Some((Some(_), _)) => panic!("{here}: row input `{input}` is a belongs_to field (not in rows)"),
-                        Some((None, _)) => assert!(
-                            !child.field_locks_media_or_secret(input),
-                            "{here}: row input `{input}` is a media, rich-text or encrypted field (not in rows)"
-                        ),
-                    }
+                    // A row's references are checked as a form's: `belongs_to` read (no
+                    // explicit lock), media with the parent's, last (ADR 0044).
+                    assert!(
+                        child.field_link(input).is_some(),
+                        "{here}: row input `{input}` is not a field of `{target}`"
+                    );
+                    assert!(
+                        !child.field_is_encrypted(input),
+                        "{here}: row input `{input}` is an encrypted field (not in rows)"
+                    );
                 }
                 if let Some(column) = order {
                     assert!(

@@ -52,7 +52,7 @@ pub(crate) fn reference_ids(
 pub(crate) async fn check_references(
     ctx: &Ctx,
     txn: &DatabaseTransaction,
-    wanted: Vec<(&str, &MediaRule, Vec<Uuid>)>,
+    wanted: Vec<crate::engine::repeater::MediaReference>,
 ) -> AppResult<()> {
     if wanted.is_empty() {
         return Ok(());
@@ -101,7 +101,7 @@ pub(crate) async fn check_references(
                 Some(_) => None,
             };
             if let Some(message) = message {
-                errors.add(field, message);
+                errors.add(field.as_str(), message);
                 break;
             }
         }
