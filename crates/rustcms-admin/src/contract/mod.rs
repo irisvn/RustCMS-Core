@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 23;
+pub const VOCABULARY_VERSION: u32 = 24;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -276,6 +276,11 @@ pub struct RichAttrSchema {
 pub struct RepeaterSchema {
     /// The row's inputs and layouts.
     pub components: Vec<ComponentSchema>,
+    /// How rows are laid out (absent: stacked, each input under the other;
+    /// vocabulary 24).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout: Option<RepeaterLayout>,
     /// Relationship repeaters on an edit page: the inputs of a new row (the
     /// child's create form); `components` are those of a stored row
     /// (vocabulary 16).
@@ -566,6 +571,31 @@ pub struct EntrySchema {
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<ComponentSchema>>", optional))]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub components: Vec<ComponentSchema>,
+    /// Repeatable entries of a has-many relation: where the rows are read
+    /// (vocabulary 24, ADR 0044).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rows: Option<EntryRows>,
+}
+
+/// The rows of a relationship repeatable entry: the records of a has-many
+/// relation, read through its list (`GET …/relations/{relation}`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct EntryRows {
+    /// Slug of the related resource.
+    pub resource: &'static str,
+    /// The relation (URL segment).
+    pub relation: &'static str,
+    /// The field ordering the rows (the form's repeater's order column), when
+    /// the user's lists may sort by it: the panel lists the rows sorted by it
+    /// (`sort=`); without, in the list's own order.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_by: Option<String>,
+    /// Most rows shown; with more, a link to the relation's section.
+    pub limit: u32,
 }
 
 /// A record's view page (vocabulary 14, ADR 0039).
@@ -885,6 +915,12 @@ pub struct RelationSchema {
     pub field: &'static str,
     /// Whether the user may create related records from here (has-many).
     pub create: bool,
+    /// Has-many: the fields a filtered relation sets on the records created
+    /// from here, with their values (`null` for `where_null`), as the parent
+    /// key: never sent (ADR 0044).
+    #[cfg_attr(feature = "ts", ts(optional, type = "Record<string, JsonValue>"))]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub fixed: BTreeMap<String, serde_json::Value>,
     /// Whether the user may attach targets to this record (belongs-to-many).
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -905,6 +941,15 @@ pub struct RelationSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pivot_form: Option<FormSchema>,
+}
+
+/// How a repeater lays out its rows (ADR 0044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum RepeaterLayout {
+    /// A table: one column per input, from the `md` breakpoint (stacked below).
+    Table,
 }
 
 /// Kind of a [`RelationSchema`].

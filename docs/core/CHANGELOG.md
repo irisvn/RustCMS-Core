@@ -65,6 +65,25 @@ All notable changes are documented here. The format follows
   its `down` drops both). Demo: post covers, post content and branding collections; LMS: news covers.
 - `SelectFilter::none(label)`: a last choice for records without a value (nullable columns), sent as `~none`
   in the `in` list and matched as `IS NULL` (`FilterSchema.none`).
+- Repeaters, second round, part A (vocabulary 24, ADR 0044):
+  - Conditions on relationship repeaters (their own `shown_when`, or a layout's): a save that hides one removes
+    the rows the user sees (each needing the child's `delete`, else 403 and nothing saved; to the trash with
+    soft deletes), only when that save hides it; changes sent for a hidden repeater are ignored; the panel
+    says how many rows saving removes. New code `too_many_rows_to_remove` (more than 1,000 rows).
+  - Conditions in rows of both kinds of repeater: `when_root(name)` reads the record's form (a settings page's
+    fields), `when_parent(name)` the enclosing row of a nested JSON repeater; `Scope`; conditions in
+    relationship rows are the repeater's own.
+  - Filtered has-many relations: `Relation::where_null(field)` / `where_eq(field, value)` restrict the
+    relation's section, counts, repeater and view-page rows, and set their values on records created through
+    it; several repeaters may edit one child resource through relations that cannot share a row.
+    `RelationSchema` gains `fixed`.
+  - `Repeater::table()`: rows as table rows from `md` (`RepeaterSchema.layout`).
+  - `RepeatableEntry::relationship()`: a has-many relation's records on the view page, through its list,
+    at most `limit(n)` (100) rows; the default view page shows relationship repeaters this way
+    (`EntrySchema.rows`).
+  - Demo: categories are their posts or a link (migration `m20261119_000001_add_layout_to_categories`), posts
+    edited as a table and shown on the view page, a "Drafts" section. LMS: quiz questions with options
+    (`where_null("blank_id")`) and blanks, three tables (migration `m20261119_000006_create_quiz_tables`).
 
 ### Changed
 - Panel colors (dark mode first): every text pair reaches WCAG AA and input borders and focus rings 3:1, in both
@@ -93,6 +112,11 @@ All notable changes are documented here. The format follows
 - `media::entity::Model` (and its `ActiveModel`) gains `collection`: application code that builds one with a
   struct literal adds `collection: None` (or `Set(None)`), as for `alt` in 0.10.1. `MediaItem`, `InputSchema`,
   `FilterSchema` and `PanelResponse` gain fields too.
+
+- Relationship repeater rows follow the repeater's own conditions; the child form's conditions no longer apply
+  to them (ADR 0044). `Condition`'s variants gain `scope` (code building or matching them by hand adds it;
+  `when`, `Condition::all`/`any` are unchanged). `ListQuery` gains `relation_filters` and
+  `DynResource::counted_by` a `filters` argument.
 - An upload with a part other than `file` and `collection` is refused with "must be one part named `file`,
   with at most one `collection`" (code `file_part`, as before; only its message changed). New code
   `media_collection`.

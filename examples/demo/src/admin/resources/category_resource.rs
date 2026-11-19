@@ -1,5 +1,6 @@
-//! Categories: a plain resource with a has-many relation (its posts) and a
-//! custom widget (`demo/color`).
+//! Categories: a plain resource with a has-many relation (its posts, edited
+//! in its form unless the category is a link) and a custom widget
+//! (`demo/color`).
 
 use rustcms::admin::*;
 use serde_json::json;
@@ -29,6 +30,8 @@ impl Resource for CategoryResource {
             // #region color-field
             Field::column(category::Column::Color).max_length(7),
             // #endregion color-field
+            Field::column(category::Column::Layout).required(),
+            Field::column(category::Column::LinkUrl).max_length(255),
         ]
     }
 
@@ -50,11 +53,17 @@ impl Resource for CategoryResource {
                     }),
                     // #endregion reacts
                     TextInput::make("slug").prefix("/categories/"),
+                    SelectInput::make("layout").options(vec![("posts", "Its posts"), ("link", "A link")]),
+                    TextInput::make("link_url").label("Link").shown_when(when("layout").eq("link")),
                     // #region posts-repeater
                     // The category's posts, edited in its form: each row is a post
-                    // (the posts resource's rules, policy and hooks apply).
+                    // (the posts resource's rules, policy and hooks apply), one
+                    // table row each. A category made a link has none: saving
+                    // that change removes the posts the user sees.
                     Repeater::make("posts")
                         .relationship()
+                        .shown_when(when("layout").eq("posts"))
+                        .table()
                         .schema(components![TextInput::make("title"), Toggle::make("published")])
                         .item_label("{title}")
                         .add_action_label("Add a post"),
@@ -98,6 +107,17 @@ impl Resource for CategoryResource {
                     TextEntry::make("name").copyable(),
                     TextEntry::make("slug").prefix("/categories/"),
                     ComputedEntry::make("posts_count").label("Posts").number(0),
+                    TextEntry::make("layout").options(vec![("posts", "Its posts"), ("link", "A link")]),
+                    TextEntry::make("link_url").label("Link").url().shown_when(when("layout").eq("link")),
+                    // #region posts-entry
+                    // Its posts under it, as the relation's section lists them.
+                    RepeatableEntry::make("posts")
+                        .label("Its posts")
+                        .relationship()
+                        .limit(10)
+                        .schema(components![TextEntry::make("title"), BooleanEntry::make("published")])
+                        .shown_when(when("layout").eq("posts")),
+                    // #endregion posts-entry
                 ])
                 .aside(components![
                     Section::make("Display").compact().schema(components![CustomEntry::make("color", "demo/swatch"),])
@@ -124,7 +144,11 @@ impl Resource for CategoryResource {
     // #region relations
     /// The category's posts, listed (and created) on its page.
     fn relations() -> Vec<Relation> {
-        vec![Relation::has_many("posts", "posts", "category_id").label("Posts")]
+        vec![
+            Relation::has_many("posts", "posts", "category_id").label("Posts"),
+            // A filtered relation: only the drafts; "New" there creates one.
+            Relation::has_many("drafts", "posts", "category_id").where_eq("published", false).label("Drafts"),
+        ]
     }
     // #endregion relations
 }

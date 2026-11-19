@@ -46,6 +46,10 @@ export type Condition = { "op": "eq",
  */
 name: string, 
 /**
+ * Where the input is (absent: the same level).
+ */
+scope?: Scope, 
+/**
  * Compared value.
  */
 value: JsonValue, } | { "op": "ne", 
@@ -53,6 +57,10 @@ value: JsonValue, } | { "op": "ne",
  * Input name.
  */
 name: string, 
+/**
+ * Where the input is (absent: the same level).
+ */
+scope?: Scope, 
 /**
  * Compared value.
  */
@@ -62,17 +70,29 @@ value: JsonValue, } | { "op": "is_in",
  */
 name: string, 
 /**
+ * Where the input is (absent: the same level).
+ */
+scope?: Scope, 
+/**
  * Allowed values.
  */
 values: Array<JsonValue>, } | { "op": "filled", 
 /**
  * Input name.
  */
-name: string, } | { "op": "is_true", 
+name: string, 
+/**
+ * Where the input is (absent: the same level).
+ */
+scope?: Scope, } | { "op": "is_true", 
 /**
  * Input name.
  */
-name: string, } | { "op": "all", 
+name: string, 
+/**
+ * Where the input is (absent: the same level).
+ */
+scope?: Scope, } | { "op": "all", 
 /**
  * Combined conditions.
  */
@@ -81,6 +101,30 @@ conditions: Array<Condition>, } | { "op": "any",
  * Combined conditions.
  */
 conditions: Array<Condition>, };
+
+export type RepeaterLayout = "table";
+
+export type EntryRows = { 
+/**
+ * Slug of the related resource.
+ */
+resource: string, 
+/**
+ * The relation (URL segment).
+ */
+relation: string, 
+/**
+ * The field ordering the rows (the form's repeater's order column), when
+ * the user's lists may sort by it: the panel lists the rows sorted by it
+ * (`sort=`); without, in the list's own order.
+ */
+orderBy?: string, 
+/**
+ * Most rows shown; with more, a link to the relation's section.
+ */
+limit: number, };
+
+export type Scope = "row" | "parent" | "root";
 
 export type ResourceInfo = { 
 /**
@@ -200,6 +244,12 @@ field: string,
  * Whether the user may create related records from here (has-many).
  */
 create: boolean, 
+/**
+ * Has-many: the fields a filtered relation sets on the records created
+ * from here, with their values (`null` for `where_null`), as the parent
+ * key: never sent (ADR 0044).
+ */
+fixed?: Record<string, JsonValue>, 
 /**
  * Whether the user may attach targets to this record (belongs-to-many).
  */
@@ -552,13 +602,23 @@ props?: JsonValue,
 /**
  * Repeatable entries: the entries of each row (vocabulary 15).
  */
-components?: Array<ComponentSchema>, };
+components?: Array<ComponentSchema>, 
+/**
+ * Repeatable entries of a has-many relation: where the rows are read
+ * (vocabulary 24, ADR 0044).
+ */
+rows?: EntryRows, };
 
 export type RepeaterSchema = { 
 /**
  * The row's inputs and layouts.
  */
 components: Array<ComponentSchema>, 
+/**
+ * How rows are laid out (absent: stacked, each input under the other;
+ * vocabulary 24).
+ */
+layout?: RepeaterLayout, 
 /**
  * Relationship repeaters on an edit page: the inputs of a new row (the
  * child's create form); `components` are those of a stored row

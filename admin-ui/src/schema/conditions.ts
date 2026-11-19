@@ -7,6 +7,18 @@ import type { ComponentSchema, Condition, JsonValue } from "@/api/types";
 /** Values in wire form, by input name. */
 export type WireValues = Record<string, unknown>;
 
+/** A level a repeater row's conditions read outside the row: its values (hidden inputs null) and their kinds. */
+export interface Level {
+  values: WireValues;
+  kinds: Map<string, string>;
+}
+
+/** The levels around a row (ADR 0044): the enclosing row (`when_parent`) and the record's form (`when_root`). */
+export interface Outer {
+  parent?: Level;
+  root?: Level;
+}
+
 /** The conditions of a form, with what is needed to evaluate them. */
 export interface FormConditions {
   /** Fields whose every input is under a condition, dependencies first: shown when one condition holds. */
@@ -60,8 +72,42 @@ export function formConditions(components: ComponentSchema[]): FormConditions {
   return { fields: sorted.map((i) => conditional[i]!), kinds };
 }
 
+/** The names a condition reads at its own level (`when`): what orders a level's conditions. */
 function namesOf(condition: Condition): string[] {
-  return condition.op === "all" || condition.op === "any" ? condition.conditions.flatMap(namesOf) : [condition.name];
+  if (condition.op === "all" || condition.op === "any") return condition.conditions.flatMap(namesOf);
+  return (condition.scope ?? "row") === "row" ? [condition.name] : [];
+}
+
+/** The names a condition reads in the record's form (`when_root`). */
+function rootNamesOf(condition: Condition): string[] {
+  if (condition.op === "all" || condition.op === "any") return condition.conditions.flatMap(rootNamesOf);
+  return condition.scope === "root" ? [condition.name] : [];
+}
+
+/**
+ * The inputs of the form that conditions in its repeaters' rows read
+ * (`when_root`, at any depth), once each: the form values rows need.
+ */
+export function rootNames(components: ComponentSchema[]): string[] {
+  const names = new Set<string>();
+  const walk = (list: ComponentSchema[], inRows: boolean) => {
+    for (const c of list) {
+      if (inRows && c.shownWhen) rootNamesOf(c.shownWhen).forEach((n) => names.add(n));
+      if (!isInputSchema(c)) walk(c.components, inRows);
+      else if ("repeater" in c && c.repeater) {
+        walk(c.repeater.components, true);
+        if (c.repeater.createComponents) walk(c.repeater.createComponents, true);
+      }
+    }
+  };
+  walk(components, false);
+  return [...names];
+}
+
+/** Whether a condition reads outside its level (`when_parent`, `when_root`). */
+export function readsOutside(condition: Condition): boolean {
+  if (condition.op === "all" || condition.op === "any") return condition.conditions.some(readsOutside);
+  return (condition.scope ?? "row") !== "row";
 }
 
 /** The input names the conditions of `components` read, once each (the inputs to watch). */
@@ -81,21 +127,29 @@ export function conditionNames(components: ComponentSchema[]): string[] {
 export const hasConditions = (components: ComponentSchema[]): boolean =>
   components.some((c) => c.shownWhen !== undefined || (!isInputSchema(c) && hasConditions(c.components)));
 
-/** The fields hidden for `values` (missing values are null; a hidden field's value is null for the conditions after it). */
-export function hiddenFields(form: FormConditions, values: WireValues): Set<string> {
+/**
+ * The fields hidden for `values` (missing values are null; a hidden field's
+ * value is null for the conditions after it); a row's conditions read the
+ * levels of `outer` (missing ones read as null).
+ */
+export function hiddenFields(form: FormConditions, values: WireValues, outer: Outer = {}): Set<string> {
   const hidden = new Set<string>();
   for (const field of form.fields) {
-    if (!field.conditions.some((c) => holds(form, c, values, hidden))) hidden.add(field.name);
+    if (!field.conditions.some((c) => holds(form, c, values, hidden, outer))) hidden.add(field.name);
   }
   return hidden;
 }
 
-/** Whether `condition` holds for `values`, with `hidden` fields read as null. */
-export function holds(form: FormConditions, condition: Condition, values: WireValues, hidden: Set<string>): boolean {
-  if (condition.op === "all") return condition.conditions.every((c) => holds(form, c, values, hidden));
-  if (condition.op === "any") return condition.conditions.some((c) => holds(form, c, values, hidden));
-  const value = hidden.has(condition.name) ? null : (values[condition.name] ?? null);
-  const kind = form.kinds.get(condition.name) ?? "string";
+/** Whether `condition` holds for `values`, with `hidden` fields read as null and `outer` levels around a row. */
+export function holds(form: FormConditions, condition: Condition, values: WireValues, hidden: Set<string>, outer: Outer = {}): boolean {
+  if (condition.op === "all") return condition.conditions.every((c) => holds(form, c, values, hidden, outer));
+  if (condition.op === "any") return condition.conditions.some((c) => holds(form, c, values, hidden, outer));
+  const scope = condition.scope ?? "row";
+  const level = scope === "parent" ? outer.parent : scope === "root" ? outer.root : undefined;
+  const value = scope === "row"
+    ? (hidden.has(condition.name) ? null : (values[condition.name] ?? null))
+    : (level?.values[condition.name] ?? null);
+  const kind = (scope === "row" ? form.kinds : level?.kinds)?.get(condition.name) ?? "string";
   switch (condition.op) {
     case "eq":
       return same(kind, value, condition.value);

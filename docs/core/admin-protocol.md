@@ -34,8 +34,8 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | GET | `/resources/{slug}/records/{key}/computed` | `ComputedValues` `{data: {name: value}, failed: [name]}`: the computed values the view page's infolist shows, for a user who may view the record (ADR 0039); 60 requests per user per minute and 8 pages computing at once (429 beyond) |
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
-| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `LinkPage` `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable pivot columns by target key, belongs-to-many) |
-| POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key set by the server (has-many; belongs-to-many: 405) |
+| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `LinkPage` `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable pivot columns by target key, belongs-to-many; a filtered has-many lists only its records) |
+| POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key (and a filtered relation's fields: 422 `set_by_relation` when sent) set by the server (has-many; belongs-to-many: 405) |
 | POST | `…/relations/{relation}/attach` `{keys, pivot?}` | `LinkOutcome {processed, missing}`; admitted by `attach_{relation}` before the body (403), then 422 (1–100 keys, pivot by field rules), then parent 404/403 |
 | POST | `…/relations/{relation}/detach` `{keys}` | `LinkOutcome`; `detach_{relation}`; links to targets not visible are kept and listed in `missing` |
 | PATCH | `…/relations/{relation}/links/{target}` `{…pivot}` | `LinkOutcome`; `update_pivot_{relation}`; 404 when not linked or not visible |
@@ -204,6 +204,20 @@ older documents (`document_needs_version`) and more than 500 nodes
 (`max_app_nodes`). Clients of vocabulary 17 and below show version 3 documents
 read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
 with `registerRichTextNode` (host `ui` 4).
+
+Vocabulary 24 adds repeaters' second round (ADR 0044). A leaf condition may
+carry `scope`: `"root"` (an input of the record's form, read from a repeater's
+row) or `"parent"` (the enclosing row); absent, the same level. A
+relationship repeater may carry `shownWhen` and conditions in its rows; when a
+save hides it, the server removes the rows the user sees, and ignores what was
+sent for it. `RepeaterSchema.layout` may be `"table"` (rows as table rows from
+`md`). A has-many `RelationSchema` may carry `fixed` (`{field: value}`, `null`
+for none): the values the filtered relation sets on records created through
+it, kept out of the create form like its foreign key. A `repeatable_entry` may
+carry `rows` (`{resource, relation, orderBy?, limit}`): its rows are read
+from `GET …/relations/{relation}` (`per_page=limit`), sorted by `orderBy`, and
+`components` name the child's fields. Older clients see an unknown vocabulary
+and show forms read-only.
 
 Vocabulary 23 adds media collections. `GET /panel` may carry
 `mediaCollections` (`[{value, label}]`, declaration order, labels translated)

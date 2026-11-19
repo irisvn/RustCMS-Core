@@ -47,6 +47,9 @@ pub struct Entry {
     /// Entries of a row generated from a repeater's inputs: the kind of the
     /// row value (dates shown as dates); declared row entries read JSON.
     pub(crate) row_kind: Option<crate::wire::FieldKind>,
+    /// Repeatable entries: the rows are the records of the has-many relation
+    /// of the entry's name (ADR 0044).
+    pub(crate) relationship: bool,
 }
 
 /// Display options (boxed: most entries have few).
@@ -86,7 +89,18 @@ impl Entry {
             display: Box::default(),
             components: Vec::new(),
             row_kind: None,
+            relationship: false,
         }
+    }
+
+    /// Repeatable entries: the rows are the records of the has-many relation
+    /// of the entry's name, read as its section reads them (the child's
+    /// scope, view policy and read rules, the relation's filters); each row's
+    /// entries name fields of the child. At most [`Entry::limit`] rows (100
+    /// by default and at most), then a link to the relation's section.
+    pub fn relationship(mut self) -> Self {
+        self.relationship = true;
+        self
     }
 
     /// Displayed label (default: the field's label).
@@ -135,7 +149,8 @@ impl Entry {
         self
     }
 
-    /// Shows at most `chars` characters, then `…` (the whole text in a tooltip).
+    /// Shows at most `chars` characters, then `…` (the whole text in a
+    /// tooltip). Relationship repeatable entries: at most this many rows.
     pub fn limit(mut self, chars: u32) -> Self {
         self.display.limit = Some(chars.max(1));
         self

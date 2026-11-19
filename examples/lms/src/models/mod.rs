@@ -7,5 +7,8 @@ pub mod learner;
 pub mod lesson;
 pub mod news;
 pub mod news_tag;
+pub mod quiz_blank;
+pub mod quiz_option;
+pub mod quiz_question;
 pub mod tag;
 // rustcms:models

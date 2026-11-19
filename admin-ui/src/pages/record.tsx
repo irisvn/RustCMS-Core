@@ -8,7 +8,7 @@ import { type Via, useComputed, useDeleteRecord, useRecord, useSaveRecord, useSc
 import { RelationSection, boundInput, boundValue } from "./relations";
 import { RecordHistory } from "./audit";
 import { RecordSlots } from "@/components/slots";
-import type { ComponentSchema, Envelope, InputSchema, ResourceSchema } from "@/api/types";
+import type { ComponentSchema, Envelope, InputSchema, JsonValue, ResourceSchema } from "@/api/types";
 import { ErrorState, Loading, PausedBanner, VersionBanner, compatibility } from "@/components/states";
 import { Alert } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -77,7 +77,7 @@ export function FormPage({ slug, recordKey, via }: { slug: string; recordKey?: s
       key={identity}
       slug={slug}
       recordKey={recordKey}
-      via={via && binding ? { ...via, field: binding.field } : undefined}
+      via={via && binding ? { ...via, field: binding.field, fixed: binding.fixed } : undefined}
       schema={schema.data}
       record={editing && viewable ? record.data : undefined}
     />
@@ -97,8 +97,8 @@ function RecordForm({
   schema: ResourceSchema;
   record?: Envelope;
   refreshError?: unknown;
-  /** Creating through a relation; its field is set by the server, so not shown. */
-  via?: Via & { field: string };
+  /** Creating through a relation; its field (and a filtered relation's, `fixed`) is set by the server, so not shown. */
+  via?: Via & { field: string; fixed?: Record<string, JsonValue> };
 }) {
   const t = useT();
   const navigate = useNavigate();
@@ -456,8 +456,17 @@ export function ViewPage({ slug, recordKey }: { slug: string; recordKey: string 
   );
 }
 
-/** The form through a relation: the bound key's input kept hidden with the parent's key (ADR 0037). */
-function bindVia(components: ComponentSchema[], via: Via & { field: string }): ComponentSchema[] {
-  const input = inputsOf(components).find((i) => i.name === via.field);
-  return input ? boundInput(components, via.field, boundValue(input.valueType, via.record)) : components;
+/**
+ * The form through a relation: the bound key's input kept hidden with the
+ * parent's key (ADR 0037), and so are the fields a filtered relation sets
+ * (ADR 0044): never sent, read by the conditions.
+ */
+function bindVia(components: ComponentSchema[], via: Via & { field: string; fixed?: Record<string, JsonValue> }): ComponentSchema[] {
+  const inputs = inputsOf(components);
+  const input = inputs.find((i) => i.name === via.field);
+  let out = input ? boundInput(components, via.field, boundValue(input.valueType, via.record)) : components;
+  for (const [name, value] of Object.entries(via.fixed ?? {})) {
+    if (inputs.some((i) => i.name === name)) out = boundInput(out, name, value);
+  }
+  return out;
 }

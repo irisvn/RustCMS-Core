@@ -77,6 +77,11 @@ pub struct ListQuery {
     /// may set it.
     #[serde(skip)]
     pub parent: Option<(String, String)>,
+    /// With `parent`: what a filtered relation requires of other fields
+    /// (ADR 0044). Set by the engine, never read from a request.
+    #[doc(hidden)]
+    #[serde(skip)]
+    pub relation_filters: Vec<(String, crate::resource::RelationFilter)>,
     /// Only the records linked to one record through a pivot (belongs-to-many
     /// lists). Set by the engine, never read from a request.
     #[doc(hidden)]

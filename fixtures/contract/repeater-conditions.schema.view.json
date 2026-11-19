@@ -1,0 +1,292 @@
+{
+  "abilities": {
+    "create": true,
+    "delete": true,
+    "history": true,
+    "update": true,
+    "view": true,
+    "viewAny": true
+  },
+  "form": {
+    "columns": 1,
+    "components": [
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Title",
+        "name": "title",
+        "nullable": false,
+        "rules": [],
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Kind",
+        "name": "kind",
+        "nullable": false,
+        "options": [
+          {
+            "label": "Choice",
+            "value": "choice"
+          },
+          {
+            "label": "Blank",
+            "value": "blank"
+          }
+        ],
+        "rules": [],
+        "type": "select",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Explain",
+        "name": "explain",
+        "nullable": false,
+        "rules": [],
+        "type": "toggle",
+        "valueType": "bool"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": true,
+        "label": "Links",
+        "name": "links",
+        "nullable": true,
+        "repeater": {
+          "addable": true,
+          "components": [
+            {
+              "columnSpan": 1,
+              "disabled": true,
+              "label": "Label",
+              "name": "label",
+              "nullable": false,
+              "rules": [
+                {
+                  "rule": "required"
+                }
+              ],
+              "type": "text_input",
+              "valueType": "string"
+            },
+            {
+              "columnSpan": 1,
+              "disabled": true,
+              "label": "Note",
+              "name": "note",
+              "nullable": true,
+              "rules": [],
+              "shownWhen": {
+                "name": "explain",
+                "op": "is_true",
+                "scope": "root"
+              },
+              "type": "text_input",
+              "valueType": "string"
+            }
+          ],
+          "deletable": true
+        },
+        "rules": [],
+        "type": "repeater",
+        "valueType": "json"
+      }
+    ]
+  },
+  "infolist": {
+    "columns": 1,
+    "components": [
+      {
+        "columnSpan": 1,
+        "label": "Title",
+        "multiline": true,
+        "name": "title",
+        "type": "text_entry",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "label": "Kind",
+        "multiline": true,
+        "name": "kind",
+        "options": [
+          {
+            "label": "Choice",
+            "value": "choice"
+          },
+          {
+            "label": "Blank",
+            "value": "blank"
+          }
+        ],
+        "type": "text_entry",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "label": "Explain",
+        "name": "explain",
+        "type": "boolean_entry",
+        "valueType": "bool"
+      },
+      {
+        "columnSpan": 1,
+        "components": [
+          {
+            "columnSpan": 1,
+            "label": "Label",
+            "multiline": true,
+            "name": "label",
+            "type": "text_entry",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "label": "Note",
+            "multiline": true,
+            "name": "note",
+            "shownWhen": {
+              "name": "explain",
+              "op": "is_true",
+              "scope": "root"
+            },
+            "type": "text_entry",
+            "valueType": "string"
+          }
+        ],
+        "label": "Links",
+        "name": "links",
+        "type": "repeatable_entry",
+        "valueType": "json"
+      },
+      {
+        "columnSpan": 1,
+        "components": [
+          {
+            "columnSpan": 1,
+            "label": "Content",
+            "multiline": true,
+            "name": "content",
+            "type": "text_entry",
+            "valueType": "string"
+          },
+          {
+            "columnSpan": 1,
+            "label": "Correct",
+            "name": "correct",
+            "type": "boolean_entry",
+            "valueType": "bool"
+          },
+          {
+            "columnSpan": 1,
+            "label": "Hint",
+            "multiline": true,
+            "name": "hint",
+            "shownWhen": {
+              "conditions": [
+                {
+                  "name": "correct",
+                  "op": "is_true"
+                },
+                {
+                  "name": "explain",
+                  "op": "is_true",
+                  "scope": "root"
+                }
+              ],
+              "op": "all"
+            },
+            "type": "text_entry",
+            "valueType": "string"
+          }
+        ],
+        "label": "Options",
+        "name": "options",
+        "rows": {
+          "limit": 100,
+          "orderBy": "position",
+          "relation": "options",
+          "resource": "quiz_options"
+        },
+        "shownWhen": {
+          "name": "kind",
+          "op": "eq",
+          "value": "choice"
+        },
+        "type": "repeatable_entry",
+        "valueType": "rows"
+      }
+    ],
+    "fromForm": true
+  },
+  "operation": "view",
+  "relations": [
+    {
+      "create": true,
+      "field": "quiz_id",
+      "kind": "hasMany",
+      "label": "Options",
+      "name": "options",
+      "resource": "quiz_options"
+    }
+  ],
+  "resource": {
+    "label": "Quiz",
+    "pluralLabel": "Quizzes",
+    "slug": "quizzes",
+    "titleField": "title"
+  },
+  "schemaVersion": 2,
+  "table": {
+    "actions": [],
+    "columns": [
+      {
+        "label": "Title",
+        "name": "title",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Kind",
+        "name": "kind",
+        "options": [
+          {
+            "label": "Choice",
+            "value": "choice"
+          },
+          {
+            "label": "Blank",
+            "value": "blank"
+          }
+        ],
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Explain",
+        "name": "explain",
+        "searchable": false,
+        "sortable": false,
+        "type": "boolean",
+        "valueType": "bool"
+      }
+    ],
+    "filters": [],
+    "perPageOptions": [
+      10,
+      25,
+      50,
+      100
+    ],
+    "searchable": false
+  },
+  "vocabularyVersion": 24
+}

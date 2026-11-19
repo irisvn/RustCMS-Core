@@ -3,34 +3,61 @@
 // policy and read rules); the form keeps only what the user changed.
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
-import type { LinkPage } from "@/api/types";
+import type { InputSchema, LinkPage } from "@/api/types";
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { type RelationRow, type RelationState, createView, newRef, parseState, relationRowProblems, stateOf } from "@/schema/relation-rows";
 import { type Row, hiddenInRow, itemLabel, rowOf } from "@/schema/repeater";
-import type { WidgetProps } from "./form";
-import { IconButton, RowComponents } from "./repeater";
+import type { FormContext, WidgetProps } from "./form";
+import { useOuter } from "./outer";
+import { IconButton, RowComponents, TABLE_BAR, TABLE_BODY, TABLE_ROW, TableHeader, tableOf } from "./repeater";
 
-export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabled, invalid, describedBy }: WidgetProps) {
-  const t = useT();
+/** How many stored rows a relationship repeater reads (more: edited in the relation section). */
+const pageOf = (input: InputSchema) => Math.min(input.repeater?.maxItems ?? 100, 100);
+
+/** The stored rows of relationship repeater `input` on the edited record, through the relation's list. */
+export function useStoredRows(input: InputSchema, ctx: FormContext, refetch = true) {
   const api = useApi();
-  const repeater = input.repeater!;
-  const relationship = repeater.relationship!;
-  const editing = !!ctx.record;
-  const perPage = Math.min(repeater.maxItems ?? 100, 100);
-  const stored = useQuery({
-    enabled: editing,
+  const relationship = input.repeater!.relationship!;
+  return useQuery({
+    enabled: !!ctx.record,
     // Read again each time the form opens: a save changes the rows.
-    refetchOnMount: "always",
+    refetchOnMount: refetch ? "always" : true,
     queryKey: ["records", relationship.resource, "relation", ctx.slug, ctx.record, relationship.relation, "repeater"],
     queryFn: () =>
       api.get<LinkPage>(
         `/resources/${encodeURIComponent(ctx.slug)}/records/${encodeURIComponent(ctx.record ?? "")}/relations/${encodeURIComponent(relationship.relation)}`,
-        new URLSearchParams({ per_page: String(perPage) }),
+        new URLSearchParams({ per_page: String(pageOf(input)) }),
       ),
   });
+}
+
+/**
+ * In place of a relationship repeater the user's changes hide (ADR 0044):
+ * saving removes the rows they see, so it says how many.
+ */
+export function HiddenRowsNotice({ input, ctx }: { input: InputSchema; ctx: FormContext }) {
+  const t = useT();
+  const stored = useStoredRows(input, ctx, false);
+  const count = stored.data?.meta.total ?? 0;
+  if (!ctx.record || count === 0) return null;
+  return (
+    <p role="status" className="col-span-full rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning-soft-foreground">
+      {t("repeater.willRemove", { count, label: input.label })}
+    </p>
+  );
+}
+
+export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabled, invalid, describedBy }: WidgetProps) {
+  const t = useT();
+  const outer = useOuter();
+  const repeater = input.repeater!;
+  const relationship = repeater.relationship!;
+  const editing = !!ctx.record;
+  const perPage = pageOf(input);
+  const stored = useStoredRows(input, ctx);
   if (editing && stored.isLoading) return <p className="text-sm text-muted-foreground" role="status">{t("state.loading")}</p>;
   if (editing && (stored.isError || !stored.data)) return <p className="text-sm text-destructive">{t("repeater.unavailable")}</p>;
   // More rows than one page: edited in the relation section instead.
@@ -40,7 +67,7 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
 
   const server = (ctx.errors[input.name] as { types?: Record<string, unknown> } | undefined)?.types ?? {};
   // The panel's problems are found by position; the server's by key or ref.
-  const local = ctx.submitCount ? relationRowProblems(repeater, state.rows) : {};
+  const local = ctx.submitCount ? relationRowProblems(repeater, state.rows, outer) : {};
   const idOf = (row: RelationRow) => row.key ?? row.ref ?? "";
   const problem = (index: number) => (path: string) => {
     const id = idOf(state.rows[index]!);
@@ -71,12 +98,14 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
       }),
     });
   const listProblem = server[""] ?? local[""];
+  const table = tableOf(repeater, (repeater.reorderable && !locked ? 2 : 0) + (!locked && repeater.deletable ? 1 : 0));
 
   return (
     <div id={id} className="flex flex-col gap-3" aria-describedby={describedBy} aria-invalid={invalid || undefined}>
       {tooMany && <p className="text-sm text-muted-foreground">{t("repeater.tooMany")}</p>}
       {state.rows.length === 0 && <p className="text-sm text-muted-foreground">{t("repeater.empty")}</p>}
-      <ol className="flex flex-col gap-3">
+      {table && state.rows.length > 0 && <TableHeader table={table} />}
+      <ol className={cn("flex flex-col", table ? "gap-3 md:gap-1.5" : "gap-3")}>
         {state.rows.map((row, index) => {
           const rowId = idOf(row);
           const editable = !locked && (!row.key || row.update === true);
@@ -85,9 +114,9 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
           const failed = Object.keys(server).some((p) => p === rowId || p.startsWith(`${rowId}.`))
             || Object.keys(local).some((p) => p.startsWith(`${index}.`));
           return (
-            <li key={rowId} className={cn("rounded-lg border bg-card", failed ? "border-destructive" : "border-border")}>
-              <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
-                <span className="min-w-0 flex-1 truncate px-1 text-sm font-medium">{itemLabel(repeater, row.values, index)}</span>
+            <li key={rowId} className={cn("rounded-lg border bg-card", table && TABLE_ROW, failed ? "border-destructive" : "border-border")}>
+              <div className={cn("flex items-center gap-1 border-b border-border px-2 py-1.5", table && TABLE_BAR, table?.bar)}>
+                <span className={cn("min-w-0 flex-1 truncate px-1 text-sm font-medium", table && "md:sr-only")}>{itemLabel(repeater, row.values, index)}</span>
                 {repeater.reorderable && !locked && (
                   <>
                     <IconButton label={t("repeater.moveUp")} onClick={() => move(index, index - 1)} disabled={index === 0}><ChevronUp /></IconButton>
@@ -96,11 +125,11 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
                 )}
                 {removable && <IconButton label={t("repeater.remove")} onClick={() => remove(index)}><Trash2 /></IconButton>}
               </div>
-              <div id={bodyId} className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
+              <div id={bodyId} className={table ? cn(TABLE_BODY, table.cols) : "grid grid-cols-1 gap-4 p-4 md:grid-cols-2"}>
                 {typeof server[rowId] === "string" && <p role="alert" className="col-span-full text-xs text-destructive">{String(server[rowId])}</p>}
                 <RowComponents components={row.key ? repeater.components : createView(repeater).components}
                   repeater={row.key ? repeater : createView(repeater)} row={row.values}
-                  hidden={hiddenInRow(row.key ? repeater : createView(repeater), row.values)}
+                  hidden={hiddenInRow(row.key ? repeater : createView(repeater), row.values, outer)}
                   path={(name) => `${index}.${name}`} problem={problem(index)} server={{}}
                   ctx={{ ...ctx, slug: repeater.relationship?.resource ?? ctx.slug, record: row.key }} disabled={!editable}
                   idPrefix={bodyId} onChange={(next) => setRow(index, next)} />

@@ -3,6 +3,7 @@
 // (create, update, delete, order), never the whole list, so rows another user
 // added meanwhile, and rows the user cannot see, are never touched.
 import type { Envelope, InputSchema, JsonValue, RepeaterSchema } from "@/api/types";
+import type { Outer } from "./conditions";
 import { type FormValue, fromFormValue, inputsOf } from "./form";
 import { type Row, rowOf, rowProblems } from "./repeater";
 
@@ -121,12 +122,12 @@ export function createView(repeater: RepeaterSchema): RepeaterSchema {
  * inputs (a stored row the child's edit inputs, a new one its create inputs),
  * keyed by the row's place (`2.quantity`).
  */
-export function relationRowProblems(repeater: RepeaterSchema, rows: RelationRow[]): Record<string, unknown> {
+export function relationRowProblems(repeater: RepeaterSchema, rows: RelationRow[], outer?: Outer): Record<string, unknown> {
   // The list's limits once, on every row; then each row with its own inputs.
   const out: Record<string, unknown> = rowProblems({ ...repeater, components: [] }, rows.map((r) => r.values));
   rows.forEach((row, index) => {
     const view = { ...(row.key ? repeater : createView(repeater)), minItems: undefined, maxItems: undefined };
-    for (const [path, problem] of Object.entries(rowProblems(view, [row.values]))) {
+    for (const [path, problem] of Object.entries(rowProblems(view, [row.values], "", outer))) {
       out[path.replace(/^0(?=\.|$)/, String(index))] = problem;
     }
   });

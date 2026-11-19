@@ -3,7 +3,7 @@
 
 use super::schema::layout_schema;
 use super::*;
-use crate::schema::{ComputedValues, EntrySchema, InfolistSchema};
+use crate::schema::{ComputedValues, EntryRows, EntrySchema, InfolistSchema};
 use crate::ui::{Computed, Entry, EntryType, Infolist};
 
 /// View pages computing their values at once, across users.
@@ -60,6 +60,7 @@ pub(super) fn check_infolist<C: ColumnTrait, E: EntityTrait>(
     computed: &[Computed<E>],
     fields: &[Field],
     columns: &HashMap<String, ColumnInfo<C>>,
+    relations: &[Relation],
 ) {
     let owner = format!("resource `{slug}`");
     let mut names = HashSet::new();
@@ -84,6 +85,20 @@ pub(super) fn check_infolist<C: ColumnTrait, E: EntityTrait>(
     for entry in infolist.entries() {
         let name = entry.name.as_str();
         assert!(seen.insert(name), "{owner}: entry `{name}` appears twice in the infolist");
+        assert!(
+            !entry.relationship || entry.kind == EntryType::RepeatableEntry,
+            "{owner}: entry `{name}`: `relationship()` is for repeatable entries"
+        );
+        if entry.relationship {
+            // The rows are a has-many relation's records; their entries are
+            // checked with the child's fields (`check_relation_rows`).
+            assert!(
+                relations.iter().any(|r| r.name == name && !r.is_many()),
+                "{owner}: repeatable entry `{name}`: `relationship()` needs a has-many relation named `{name}`"
+            );
+            check_relationship_options(&owner, entry);
+            continue;
+        }
         let field = fields.iter().find(|f| f.name == name);
         let is_computed = names.contains(name);
         match entry.kind {
@@ -100,19 +115,7 @@ pub(super) fn check_infolist<C: ColumnTrait, E: EntityTrait>(
             assert!(field.secret.is_none(), "{owner}: encrypted field `{name}` cannot have an entry");
         }
         let kind = field.map(|f| columns[&f.name].kind);
-        let fits = match entry.kind {
-            EntryType::RelationEntry => field.is_some_and(|f| f.belongs_to.is_some()),
-            EntryType::MediaEntry => field.is_some_and(|f| f.media.is_some()),
-            EntryType::RichTextEntry => field.is_some_and(|f| f.rich_text),
-            EntryType::KeyValueEntry => {
-                kind == Some(FieldKind::Json) && field.is_some_and(|f| !f.rich_text && f.media.is_none())
-            }
-            EntryType::BooleanEntry => kind == Some(FieldKind::Bool),
-            EntryType::RepeatableEntry => {
-                kind == Some(FieldKind::Json) && field.is_some_and(|f| !f.rich_text && f.media.is_none())
-            }
-            EntryType::TextEntry | EntryType::ComputedEntry | EntryType::CustomEntry => true,
-        };
+        let fits = entry_fits(entry.kind, field, kind);
         assert!(fits, "{owner}: entry `{name}`: a {} does not fit this field", entry_label(entry.kind));
         check_options(&owner, entry, kind);
         if entry.kind == EntryType::RepeatableEntry {
@@ -128,6 +131,76 @@ pub(super) fn check_infolist<C: ColumnTrait, E: EntityTrait>(
     crate::engine::conditions::FormConditions::new(&format!("{owner} (infolist)"), &infolist.components, &kind_of);
 }
 
+/// Whether an entry of kind `kind` shows `field` (`kind`: its column's).
+fn entry_fits(entry: EntryType, field: Option<&Field>, kind: Option<FieldKind>) -> bool {
+    match entry {
+        EntryType::RelationEntry => field.is_some_and(|f| f.belongs_to.is_some()),
+        EntryType::MediaEntry => field.is_some_and(|f| f.media.is_some()),
+        EntryType::RichTextEntry => field.is_some_and(|f| f.rich_text),
+        EntryType::KeyValueEntry | EntryType::RepeatableEntry => {
+            kind == Some(FieldKind::Json) && field.is_some_and(|f| !f.rich_text && f.media.is_none())
+        }
+        EntryType::BooleanEntry => kind == Some(FieldKind::Bool),
+        EntryType::TextEntry | EntryType::ComputedEntry | EntryType::CustomEntry => true,
+    }
+}
+
+/// Most rows a relationship repeatable entry shows (ADR 0044).
+pub(crate) const MAX_ENTRY_ROWS: u32 = 100;
+
+/// The options of a relationship repeatable entry: rows (`limit`, at most
+/// 100) and the entries of each row; the entries themselves are checked
+/// with the child's fields once every resource is registered.
+fn check_relationship_options(owner: &str, entry: &Entry) {
+    let here = format!("{owner}: repeatable entry `{}`", entry.name);
+    assert!(!entry.components.is_empty(), "{here}: the row has no entry (`.schema(components![…])`)");
+    check_layouts(&here, &entry.components, None);
+    assert!(!holds_inputs(&entry.components), "{here}: a row holds entries, not inputs");
+    assert!(
+        entry.display.limit.is_none_or(|n| n <= MAX_ENTRY_ROWS),
+        "{here}: `limit` shows at most {MAX_ENTRY_ROWS} rows (the others are in the relation's section)"
+    );
+}
+
+/// Checks the entries of the rows of a relationship repeatable entry with
+/// `fields` and `columns`, the child's (ADR 0044): each a readable field of
+/// the child that its entry fits, once; no nested relationship rows.
+pub(super) fn check_relation_rows<C: ColumnTrait>(
+    here: &str,
+    components: &[Component],
+    fields: &[Field],
+    columns: &HashMap<String, ColumnInfo<C>>,
+) {
+    let rows = Infolist::new().schema(components.to_vec());
+    let mut seen = HashSet::new();
+    for entry in rows.entries() {
+        let name = entry.name.as_str();
+        assert!(seen.insert(name), "{here}: entry `{name}` appears twice in a row");
+        assert!(!entry.relationship, "{here}: entry `{name}`: rows of rows come later (ADR 0044, part C)");
+        let field = fields.iter().find(|f| f.name == name && f.secret.is_none());
+        assert!(
+            field.is_some() && !matches!(entry.kind, EntryType::ComputedEntry),
+            "{here}: entry `{name}` is not a field of the related resource (encrypted fields have no entry)"
+        );
+        let kind = field.map(|f| columns[&f.name].kind);
+        assert!(
+            entry_fits(entry.kind, field, kind),
+            "{here}: entry `{name}`: a {} does not fit this field",
+            entry_label(entry.kind)
+        );
+        check_options(here, entry, kind);
+        if entry.kind == EntryType::RepeatableEntry {
+            check_row_entries(here, entry, 2);
+        }
+    }
+    let kind_of = |name: &str| {
+        let field = fields.iter().find(|f| f.name == name && f.secret.is_none())?;
+        let column = columns.get(&field.name)?;
+        Some((column.kind, crate::wire::decimal_scale(column.column.def().get_column_type())))
+    };
+    crate::engine::conditions::FormConditions::new(here, components, &kind_of);
+}
+
 /// The view page of a resource without `infolist()`: its form shown read-only,
 /// each input as the entry that draws its value as the form's read-only view
 /// always has. Inputs that show nothing there (hidden,
@@ -141,6 +214,10 @@ pub(super) fn from_form<C: ColumnTrait>(
     columns: &HashMap<String, ColumnInfo<C>>,
 ) -> Infolist {
     let components = entries_of(&form.components, &|input| {
+        // A relationship repeater names a relation: its rows' entries name the child's fields.
+        if input.repeater.as_deref().is_some_and(|spec| spec.relationship) {
+            return form_entry(input, None);
+        }
         let field = fields.iter().find(|f| f.name == input.name && f.secret.is_none())?;
         form_entry(input, Some((field, columns.get(&field.name)?.kind)))
     });
@@ -154,7 +231,18 @@ fn form_entry(input: &Input, field: Option<(&Field, FieldKind)>) -> Option<Entry
     let json = |f: &Field, kind: FieldKind| kind == FieldKind::Json && !f.rich_text && f.media.is_none();
     let kind = match (input.kind, field) {
         (InputType::Hidden | InputType::BelongsToMany | InputType::Secret | InputType::SecretMap, _) => return None,
-        (InputType::Repeater, _) if input.repeater.as_deref().is_none_or(|spec| spec.relationship) => return None,
+        // A relationship repeater: its rows, as the relation's section reads them (ADR 0044).
+        (InputType::Repeater, _) if input.repeater.as_deref().is_some_and(|spec| spec.relationship) => {
+            let spec = input.repeater.as_deref()?;
+            let mut entry = Entry::new(input.name.clone(), EntryType::RepeatableEntry);
+            entry.label = input.label.clone();
+            entry.column_span = input.column_span;
+            entry.shown_when = input.shown_when.clone();
+            entry.relationship = true;
+            entry.components = entries_of(&spec.components, &|input| form_entry(input, None));
+            return Some(entry);
+        }
+        (InputType::Repeater, _) if input.repeater.is_none() => return None,
         (InputType::Repeater, Some((f, kind))) if !json(f, kind) => EntryType::TextEntry,
         (InputType::Repeater, _) => EntryType::RepeatableEntry,
         (InputType::Select, Some((f, _))) if f.belongs_to.is_some() => EntryType::RelationEntry,
@@ -343,19 +431,44 @@ impl<R: Resource> ResourceAdapter<R> {
                 slot.insert(listable);
             }
         }
+        // Rows of has-many relations, for a user who may list them (ADR 0044).
+        let mut rows = HashMap::new();
+        for entry in infolist.entries().into_iter().filter(|e| e.relationship) {
+            let Some(relation) = self.relations.iter().find(|r| r.name == entry.name) else { continue };
+            let Some(child) = ctx.registry.get(relation.target) else { continue };
+            if !child.allows(ctx, ability::VIEW_ANY).await {
+                continue;
+            }
+            let order_by = self
+                .row_repeaters
+                .iter()
+                .find(|r| r.name == relation.name)
+                .and_then(|r| r.order_column.clone())
+                // The list sorts by it: the first rows are the first by position.
+                .filter(|column| child.sorts_by(ctx, column));
+            let schema = EntryRows {
+                resource: relation.target,
+                relation: relation.name,
+                order_by,
+                limit: entry.display.limit.unwrap_or(MAX_ENTRY_ROWS).min(MAX_ENTRY_ROWS),
+            };
+            let label =
+                entry.label.clone().or_else(|| relation.label.clone()).unwrap_or_else(|| humanize(relation.name));
+            rows.insert(entry.name.clone(), (schema, child.entry_row_schemas(ctx, &entry.components), label));
+        }
         Some(InfolistSchema {
             columns: infolist.columns,
-            components: self.entry_components(ctx, &infolist.components, &links),
+            components: self.entry_components(ctx, &infolist.components, &EntryLinks { links, rows }),
             width: infolist.width.unwrap_or(self.form.width),
             from_form: infolist.from_form,
         })
     }
 
-    fn entry_components(
+    pub(super) fn entry_components(
         &self,
         ctx: &Ctx,
         components: &[Component],
-        links: &HashMap<&'static str, bool>,
+        links: &EntryLinks,
     ) -> Vec<ComponentSchema> {
         components
             .iter()
@@ -372,8 +485,17 @@ impl<R: Resource> ResourceAdapter<R> {
             .collect()
     }
 
-    fn entry_schema(&self, ctx: &Ctx, entry: &Entry, links: &HashMap<&'static str, bool>) -> Option<EntrySchema> {
+    fn entry_schema(&self, ctx: &Ctx, entry: &Entry, links: &EntryLinks) -> Option<EntrySchema> {
         let t = |text: &str| ctx.t_in(R::SLUG, text);
+        if entry.relationship {
+            // Left out for a user who may not list the related resource.
+            let (rows, components, label) = links.rows.get(&entry.name)?;
+            let mut schema = entry_schema(entry, label, "rows", None, false, false, &t);
+            schema.components = components.clone();
+            schema.limit = None;
+            schema.rows = Some(rows.clone());
+            return Some(schema);
+        }
         let (label, value_type, relationship) = match self.field(&entry.name) {
             Some(field) => {
                 if !field.can_read(ctx) {
@@ -391,7 +513,7 @@ impl<R: Resource> ResourceAdapter<R> {
         };
         let relation = entry.kind == EntryType::RelationEntry;
         let relationship = relationship.filter(|_| relation);
-        let link = relationship.is_some_and(|r| links.get(r).copied().unwrap_or(false));
+        let link = relationship.is_some_and(|r| links.links.get(r).copied().unwrap_or(false));
         let computed = self.field(&entry.name).is_none();
         let mut schema = entry_schema(entry, &label, value_type, relationship, link, computed, &t);
         if entry.kind == EntryType::RichTextEntry {
@@ -534,7 +656,17 @@ fn entry_schema(
         widget: d.widget.clone(),
         props: d.props.clone(),
         components: row_components(&entry.components, t),
+        rows: None,
     }
+}
+
+/// What an infolist's entries link to: related resources the user may list
+/// (relation entries), and the rows of relationship repeatable entries with
+/// their entries' schemas and default label (ADR 0044).
+#[derive(Default)]
+pub(super) struct EntryLinks {
+    pub(super) links: HashMap<&'static str, bool>,
+    pub(super) rows: HashMap<String, (EntryRows, Vec<ComponentSchema>, String)>,
 }
 
 /// Checks the infolist of panel page (or slot) `owner`: entries read keys of

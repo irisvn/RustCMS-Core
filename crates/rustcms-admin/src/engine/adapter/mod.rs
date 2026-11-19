@@ -44,7 +44,8 @@ use crate::field::{Field, Operation};
 use crate::policy::{Policy, ability};
 use crate::registry::DynResource;
 use crate::resource::{
-    Envelope, FilterOp, KeyStrategy, Limits, ListQuery, Page, PageMeta, Relation, Resource, ResourceMeta, Trashed,
+    Envelope, FilterOp, KeyStrategy, Limits, ListQuery, Page, PageMeta, Relation, RelationFilter, Resource,
+    ResourceMeta, Trashed,
 };
 use crate::schema::{
     ActionSchema, BadgeColor, ColumnSchema, ComponentSchema, FilterSchema, FormSchema, InputSchema, LayoutSchema,
@@ -328,13 +329,10 @@ impl<R: Resource> ResourceAdapter<R> {
         let number_bounds = input::number_bounds(slug, &form, &columns);
         let conditions = input::form_conditions(slug, &form, &columns, &secrets, &fields);
         // Schemas send the conditions as the server compares them (UUIDs, decimals).
-        let kind_of = |name: &str| {
-            let column = columns.get(name).filter(|_| !secrets.contains_key(name))?;
-            Some((column.kind, crate::wire::decimal_scale(column.column.def().get_column_type())))
-        };
+        let kind_of = |name: &str| input::condition_kind(&columns, &secrets, name);
         crate::engine::conditions::canonicalize(&mut form.components, &kind_of);
-        let repeaters = input::json_repeaters(slug, &form, &columns);
-        let row_repeaters = rows::row_repeaters(slug, &form, &relations);
+        let repeaters = input::json_repeaters(slug, &form, &columns, &secrets);
+        let row_repeaters = rows::row_repeaters(slug, &form, &relations, &conditions);
         let reactions = react::reactions(slug, &form, &fields);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();
@@ -552,12 +550,9 @@ impl<R: Resource> ResourceAdapter<R> {
 
         let mut infolist = R::infolist();
         let computed = R::computed();
-        infolist::check_infolist(slug, &infolist, &computed, &fields, &columns);
+        infolist::check_infolist(slug, &infolist, &computed, &fields, &columns, &relations);
         // Schemas send the infolist's conditions as the server compares them.
-        let kind_of = |name: &str| {
-            let column = columns.get(name).filter(|_| !secrets.contains_key(name))?;
-            Some((column.kind, crate::wire::decimal_scale(column.column.def().get_column_type())))
-        };
+        let kind_of = |name: &str| input::condition_kind(&columns, &secrets, name);
         crate::engine::conditions::canonicalize(&mut infolist.components, &kind_of);
 
         Self {

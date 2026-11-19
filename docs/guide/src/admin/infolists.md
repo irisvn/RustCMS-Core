@@ -61,7 +61,7 @@ a [computed value](#computed-values). Every entry takes `label`, `help`,
 | `RichTextEntry` | rich text fields | `outline()` |
 | `ComputedEntry` | a computed value | the display options of `TextEntry` |
 | `CustomEntry` | any field or computed value | `props(json)` |
-| `RepeatableEntry` | a JSON field holding rows ([repeaters](forms.md#repeaters)) | `schema(components![…])`: the entries of each row |
+| `RepeatableEntry` | a JSON field holding rows ([repeaters](forms.md#repeaters)), or with `relationship()` a has-many relation's records | `schema(components![…])`: the entries of each row; `relationship()`, `limit(n)` |
 
 - **Dates and times** follow the field's kind: dates in the user's language,
   instants in their time zone. `date_format("d MMMM yyyy")` on the entry of a
@@ -89,6 +89,19 @@ RepeatableEntry::make("faq").schema(components![
     BooleanEntry::make("pinned").labels("Pinned", "Not pinned"),
 ])
 ```
+
+With `relationship()`, the rows are the records of the has-many
+[relation](relationships.md) of the entry's name, read as its section reads
+them (the child's scope, view policy and read rules, the relation's
+[filters](relationships.md#filtered-relations)), sorted by the order column of
+the form's repeater when the child's lists may sort by it (`sortable()`),
+else in the list's order. Each row's entries name fields of the child
+(checked at boot with the child's fields; those the user may not read are
+left out). At most `limit(n)` rows (100 by default and at most), then a link
+to the relation's section. A user who may not list the child does not see
+the entry. The demo's categories show their posts this way:
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-entry [src/admin/resources/category_resource.rs]
 
 ### Conditions
 
@@ -126,8 +139,9 @@ that shows its value:
 | `DatePicker`, `DateTimePicker` | `TextEntry`: the date in the user's language |
 | `KeyValue`, `FileUpload` (media), `RichEditor` | `KeyValueEntry`, `MediaEntry`, `RichTextEntry` |
 | `Repeater` (JSON) | `RepeatableEntry`, each row's inputs as entries |
+| `Repeater` with `relationship()` | `RepeatableEntry` of the relation's records, each row's inputs as entries |
 | `CustomInput` | `TextEntry` (a form widget draws no view; declare a `CustomEntry` for one) |
-| `Hidden`, `BelongsToManySelect`, secrets, relationship repeaters | nothing (links and child records show in their relation sections; an encrypted field shows nothing, not even whether it is set) |
+| `Hidden`, `BelongsToManySelect`, secrets | nothing (links show in their relation sections; an encrypted field shows nothing, not even whether it is set) |
 
 An input whose entry does not fit its field (a `Toggle` on a number column)
 is shown as text. Labels, column spans and conditions come from the inputs;

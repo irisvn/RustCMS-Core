@@ -37,6 +37,49 @@ pub trait DynResource: Send + Sync {
     fn media_collections(&self) -> Vec<(String, String)>;
     /// `belongs_to` slug and wire kind of field `name`, if it is a field.
     fn field_link(&self, name: &str) -> Option<(Option<&'static str>, &'static str)>;
+    /// The kind (and decimal scale) conditions read for field `name`, if they
+    /// can (encrypted fields hold nothing for them).
+    #[doc(hidden)]
+    #[allow(private_interfaces)]
+    fn condition_kind(&self, name: &str) -> Option<(crate::wire::FieldKind, Option<u32>)>;
+    /// Whether field `name`'s column stores a record whose input was hidden:
+    /// nullable, or with a default (ADR 0037).
+    #[doc(hidden)]
+    fn stores_hidden(&self, name: &str) -> bool;
+    /// The value records of a relation filtered by `filter` on field `name`
+    /// hold, in canonical wire form (`null` for `where_null`); why it cannot
+    /// filter (ADR 0044): not a plain field, `null` on a column that is not
+    /// nullable, a value the field does not read.
+    #[doc(hidden)]
+    #[allow(private_interfaces)]
+    fn relation_filter_value(
+        &self,
+        name: &str,
+        filter: &crate::resource::RelationFilter,
+    ) -> Result<serde_json::Value, String>;
+    /// Checks the conditions of the relationship repeaters' rows with their
+    /// children's kinds (ADR 0044), once every resource is registered.
+    ///
+    /// # Panics
+    /// On a condition that does not hold (ADR 0037 boot checks).
+    #[doc(hidden)]
+    fn compile_row_rules(&self, registry: &Registry);
+    /// Checks the rows of the relationship repeatable entries of the infolist
+    /// with their children's fields (ADR 0044).
+    ///
+    /// # Panics
+    /// On an entry that is not a readable field of the child, or does not fit it.
+    #[doc(hidden)]
+    fn check_relation_entries(&self, registry: &Registry);
+    /// Checks `components`, the entries of a relationship repeatable entry's
+    /// rows, with this resource's fields (`here` names them in panics).
+    #[doc(hidden)]
+    fn check_entry_rows(&self, here: &str, components: &[crate::ui::Component]);
+    /// The schemas of `components`, the entries of rows of this resource
+    /// (a relationship repeatable entry's), for the user of `ctx`: entries
+    /// of fields they may not read left out.
+    #[doc(hidden)]
+    fn entry_row_schemas(&self, ctx: &Ctx, components: &[crate::ui::Component]) -> Vec<crate::schema::ComponentSchema>;
     /// Whether field `name` references media (a media field, or rich text
     /// that may hold images) or is encrypted: what a relationship repeater's
     /// rows may not edit (ADR 0041).
@@ -46,6 +89,9 @@ pub trait DynResource: Send + Sync {
     fn key_kind(&self) -> &'static str;
     /// `key` in canonical form (`01` → `1`), if it is a valid key.
     fn canonical_key(&self, key: &str) -> Option<String>;
+    /// Whether the user's lists may sort by field `name` (sortable, readable).
+    #[doc(hidden)]
+    fn sorts_by(&self, ctx: &Ctx, name: &str) -> bool;
     /// Whether field `name` is readable, and writable on create, by the user.
     fn field_access(&self, ctx: &Ctx, name: &str) -> (bool, bool);
     /// Name of the primary key column.
@@ -169,7 +215,13 @@ pub trait DynResource: Send + Sync {
     /// How many records the user may list hold each of `parents` in `field`
     /// (count columns); empty when too many must be checked one by one.
     #[doc(hidden)]
-    async fn counted_by(&self, ctx: &Ctx, field: &str, parents: &[String]) -> AppResult<BTreeMap<String, u64>>;
+    async fn counted_by(
+        &self,
+        ctx: &Ctx,
+        field: &str,
+        filters: &[(String, crate::resource::RelationFilter)],
+        parents: &[String],
+    ) -> AppResult<BTreeMap<String, u64>>;
     /// Adds the counts of the table's count columns to a page of the list
     /// route (the table only: relation lists and Rust callers go without).
     #[doc(hidden)]
@@ -384,6 +436,8 @@ impl Registry {
         let nodes = Arc::new(std::mem::take(&mut self.rich_nodes));
         for resource in self.resources.values() {
             resource.attach_rich_nodes(&nodes);
+            resource.compile_row_rules(&self);
+            resource.check_relation_entries(&self);
         }
         self.rich_table = nodes;
         // Pivot tables already used by a relation (one relation per pivot).
@@ -452,6 +506,18 @@ impl Registry {
                     relation.target,
                     relation.field
                 );
+                // Filtered relations (ADR 0044).
+                for (field, filter) in &relation.filters {
+                    let here =
+                        format!("resource `{slug}`: relation `{}`: `{}.{field}`", relation.name, relation.target);
+                    assert!(
+                        *field != relation.field && *field != target.key_name(),
+                        "{here}: the parent key and the key cannot be filtered"
+                    );
+                    if let Err(problem) = target.relation_filter_value(field, filter) {
+                        panic!("{here}: {problem}");
+                    }
+                }
             }
         }
         // Relationship repeaters edit fields of their child (ADR 0040).
@@ -473,11 +539,23 @@ impl Registry {
                         relation.unwrap_or_default()
                     ),
                 }
-                // One locking phase per child resource.
-                assert!(
-                    resource.row_repeater_fields().iter().filter(|(_, t, _, _)| *t == target).count() == 1,
-                    "{here}: `{target}` is edited by another repeater of `{slug}` (one repeater per child resource)"
-                );
+                // Repeaters on one child edit relations that cannot share a row (ADR 0044).
+                let this = resource.relations().iter().find(|r| r.name == name);
+                for (other_name, other_target, _, _) in resource.row_repeater_fields() {
+                    if other_target != target || other_name == name {
+                        continue;
+                    }
+                    let other = resource.relations().iter().find(|r| r.name == other_name);
+                    // Values as the child reads them: `"1.5"` and `"1.50"` are one decimal.
+                    let canonical = |field: &str, filter: &crate::resource::RelationFilter| {
+                        child.relation_filter_value(field, filter).unwrap_or_else(|_| filter.value())
+                    };
+                    assert!(
+                        this.zip(other).is_some_and(|(a, b)| a.disjoint(b, &canonical)),
+                        "{here}: `{target}` is also edited by repeater `{other_name}`, whose relation may hold the \
+                         same rows (filter them apart: `where_null` against `where_eq`, or two values)"
+                    );
+                }
                 // The parent's media locks come last; linking media would lock them earlier.
                 assert!(
                     !resource.relations().iter().any(|r| r.is_many() && r.target == crate::media::SLUG),

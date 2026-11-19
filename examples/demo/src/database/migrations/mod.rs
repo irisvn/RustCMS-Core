@@ -11,6 +11,7 @@ mod m20261015_000001_add_attributes_to_posts;
 mod m20261022_000001_create_tags;
 mod m20261101_000001_create_integrations;
 mod m20261118_000001_add_kind_to_tags;
+mod m20261119_000001_add_layout_to_categories;
 // rustcms:migration-mods
 
 // #region migrator
@@ -29,6 +30,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261022_000001_create_tags::Migration),
             Box::new(m20261101_000001_create_integrations::Migration),
             Box::new(m20261118_000001_add_kind_to_tags::Migration),
+            Box::new(m20261119_000001_add_layout_to_categories::Migration),
             // rustcms:migrations
         ];
         migrations.extend(app);

@@ -1,18 +1,20 @@
 // Renders a form schema: layouts and inputs from the vocabulary. Unknown types
 // fall back to a read-only rendering instead of breaking the page.
-import { Controller, useWatch, type Control, type FieldErrors } from "react-hook-form";
+import { Controller, useFormState, useWatch, type Control, type FieldErrors } from "react-hook-form";
 import { ChevronDown, Plus, X } from "lucide-react";
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import type * as React from "react";
 import type { ComponentSchema, Condition, InputSchema, LayoutSchema, SecretStatus, SelectOption } from "@/api/types";
 import {
   type FormConditions,
+  type Outer,
   type WireValues,
   conditionNames,
   formConditions,
   hasConditions,
   hiddenFields,
   holds,
+  rootNames,
 } from "@/schema/conditions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,7 +37,8 @@ import {
 import { RelationSelect } from "./relation-select";
 import { LinksWidget } from "./links";
 import { RepeaterWidget } from "./repeater";
-import { RelationRepeaterWidget } from "./relation-repeater";
+import { HiddenRowsNotice, RelationRepeaterWidget } from "./relation-repeater";
+import { OuterContext } from "./outer";
 import { FileUploadWidget } from "./media";
 import { RichEditorWidget } from "./rich-text";
 import { CustomField } from "./custom";
@@ -93,12 +96,14 @@ export const span = (n: number) => SPAN[Math.min(Math.max(n, 1), 4)] ?? SPAN[1];
  * `Components` of a form for the nested ones.
  */
 const ShownContext = createContext<((condition: Condition | undefined) => boolean) | null>(null);
+/** As [`ShownContext`], for the values the form opened with: what a save would hide. */
+const ShownBeforeContext = createContext<((condition: Condition | undefined) => boolean) | null>(null);
 export const always = () => true;
 
-/** A predicate on conditions for wire `values` (hidden fields read as null). */
-export function shownWith(form: FormConditions, values: WireValues) {
-  const hidden = hiddenFields(form, values);
-  return (condition: Condition | undefined) => !condition || holds(form, condition, values, hidden);
+/** A predicate on conditions for wire `values` (hidden fields read as null), rows reading `outer`. */
+export function shownWith(form: FormConditions, values: WireValues, outer: Outer = {}) {
+  const hidden = hiddenFields(form, values, outer);
+  return (condition: Condition | undefined) => !condition || holds(form, condition, values, hidden, outer);
 }
 
 /** A layout with only the children (tabs, panes) its conditions show. */
@@ -109,7 +114,8 @@ export const withShownChildren = (layout: LayoutSchema, shown: (c: Condition | u
 
 /** A form's components: its conditions are evaluated here, on every change. */
 export function Components({ components, ctx }: { components: ComponentSchema[]; ctx: FormContext }) {
-  return hasConditions(components) ? <LiveConditions components={components} ctx={ctx} /> : (
+  const live = useMemo(() => hasConditions(components) || rootNames(components).length > 0, [components]);
+  return live ? <LiveConditions components={components} ctx={ctx} /> : (
     <ShownContext.Provider value={always}><ComponentList components={components} ctx={ctx} /></ShownContext.Provider>
   );
 }
@@ -117,11 +123,15 @@ export function Components({ components, ctx }: { components: ComponentSchema[];
 /** Components inside a form (layouts' children), shown by the form's conditions. */
 function ComponentList({ components, ctx }: { components: ComponentSchema[]; ctx: FormContext }) {
   const shown = useContext(ShownContext) ?? always;
+  const shownBefore = useContext(ShownBeforeContext) ?? always;
   return (
     <>
       {components.map((c, i) =>
-        // Hidden: not rendered, its draft kept in the form state (never sent).
-        !shown(c.shownWhen) ? null
+        // Hidden: not rendered, its draft kept in the form state (never sent). A
+        // relationship repeater this save would hide says its rows go (ADR 0044).
+        !shown(c.shownWhen) ? (shownBefore(c.shownWhen)
+          ? relationRepeatersIn([c], shownBefore).map((input) => <HiddenRowsNotice key={input.name} input={input} ctx={ctx} />)
+          : null)
           : isInput(c) ? <Field key={c.name} input={c} ctx={ctx} />
           // Forms hold no entries (refused by the server).
           : isLayout(c) ? <Layout key={`layout-${i}`} layout={c} ctx={ctx} /> : null,
@@ -131,20 +141,52 @@ function ComponentList({ components, ctx }: { components: ComponentSchema[]; ctx
 }
 
 /**
+ * The relationship repeaters of `components` the form showed when it opened
+ * (their conditions and their layouts' held then): hiding them now, by their
+ * own condition or a layout's, removes their rows on save (ADR 0044).
+ */
+function relationRepeatersIn(components: ComponentSchema[], shownBefore: (c: Condition | undefined) => boolean): InputSchema[] {
+  return components.flatMap((c) => {
+    if (!shownBefore(c.shownWhen)) return [];
+    if (isInput(c)) return c.repeater?.relationship ? [c] : [];
+    return isLayout(c) ? relationRepeatersIn(c.components, shownBefore) : [];
+  });
+}
+
+/**
  * Re-evaluates the form's conditions as the user types, without a request.
  * Only the inputs the conditions read are watched: typing elsewhere does not
  * re-render the form.
  */
 function LiveConditions({ components, ctx }: { components: ComponentSchema[]; ctx: FormContext }) {
   const form = useMemo(() => formConditions(components), [components]);
-  const names = useMemo(() => conditionNames(components), [components]);
+  // The form's own conditions, and the form values its repeaters' rows read (`when_root`, ADR 0044).
+  const names = useMemo(() => [...new Set([...conditionNames(components), ...rootNames(components)])], [components]);
   const read = useMemo(() => inputsOf(components).filter((i) => names.includes(i.name)), [components, names]);
   const watched = useWatch({ control: ctx.control, name: names }) as FormValue[];
-  const shown = useMemo(() => {
+  const [shown, outer] = useMemo(() => {
     const values: FormValues = Object.fromEntries(names.map((n, i) => [n, watched[i]!]).filter(([, v]) => v !== undefined));
-    return shownWith(form, wireValues(read, values));
+    const wire = wireValues(read, values);
+    const hidden = hiddenFields(form, wire);
+    // Rows read the form as its conditions leave it: hidden inputs are null.
+    const root = { ...wire };
+    hidden.forEach((name) => (root[name] = null));
+    const predicate = (condition: Condition | undefined) => !condition || holds(form, condition, wire, hidden);
+    return [predicate, { root: { values: root, kinds: new Map(read.map((i) => [i.name, i.valueType])) } }] as const;
   }, [form, names, read, watched]);
-  return <ShownContext.Provider value={shown}><ComponentList components={components} ctx={ctx} /></ShownContext.Provider>;
+  // What the form held when it opened: a relationship repeater shown then and hidden now loses its rows on save.
+  const { defaultValues } = useFormState({ control: ctx.control });
+  const before = useMemo(
+    () => shownWith(form, wireValues(read, (defaultValues ?? {}) as FormValues)),
+    [form, read, defaultValues],
+  );
+  return (
+    <ShownContext.Provider value={shown}>
+      <ShownBeforeContext.Provider value={before}>
+        <OuterContext.Provider value={outer}><ComponentList components={components} ctx={ctx} /></OuterContext.Provider>
+      </ShownBeforeContext.Provider>
+    </ShownContext.Provider>
+  );
 }
 
 export function SchemaLayout({ layout, errors, attempt, children }: {

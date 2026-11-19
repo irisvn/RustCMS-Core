@@ -91,7 +91,7 @@ impl<R: Resource> ResourceAdapter<R> {
             if !target.allows(ctx, ability::VIEW_ANY).await {
                 continue;
             }
-            match target.counted_by(ctx, relation.field, &parents).await {
+            match target.counted_by(ctx, relation.field, &relation.query_filters(), &parents).await {
                 Ok(counts) => {
                     for envelope in envelopes.iter_mut() {
                         if let Some(count) = counts.get(&envelope.key) {
@@ -140,6 +140,19 @@ impl<R: Resource> ResourceAdapter<R> {
         Ok(out)
     }
 
+    /// What a filtered relation requires of `field` (ADR 0044); `None` for a
+    /// value the field does not read (refused at boot) or an unknown field.
+    pub(super) fn relation_filter_condition(&self, field: &str, filter: &RelationFilter) -> Option<Condition> {
+        let column = self.columns.get(field)?;
+        Some(match filter {
+            RelationFilter::Null => Condition::all().add(column.column.is_null()),
+            RelationFilter::Eq(value) => {
+                let decoded = column.kind.decode(value).ok()?.into_iter().next()?;
+                Condition::all().add(column.column.eq(decoded))
+            }
+        })
+    }
+
     pub(super) fn filter_condition(&self, ctx: &Ctx, query: &ListQuery, errors: &mut ValidationErrors) -> Condition {
         use sea_orm::sea_query::IntoCondition;
         let mut condition = Condition::all();
@@ -149,6 +162,13 @@ impl<R: Resource> ResourceAdapter<R> {
             match column.kind.decode(&column.kind.from_query(&serde_json::Value::String(key.clone()))) {
                 Ok(values) if !values.is_empty() => condition = condition.add(column.column.eq(values[0].clone())),
                 _ => errors.add_form("invalid parent key"),
+            }
+        }
+        // A filtered relation's records (ADR 0044): checked at boot to decode.
+        for (field, filter) in &query.relation_filters {
+            match self.relation_filter_condition(field, filter) {
+                Some(filter) => condition = condition.add(filter),
+                None => errors.add_form("invalid parent key"),
             }
         }
         if let Some(through) = &query.through {

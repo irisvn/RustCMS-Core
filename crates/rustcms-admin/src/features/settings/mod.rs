@@ -145,12 +145,8 @@ impl SettingField {
              (declare them on the SettingField)",
             repeater.name
         );
-        let rows = crate::engine::repeater::Rows::compile("settings", &repeater.name, spec, 1);
-        Self {
-            rows: Some(Box::new(rows)),
-            input: repeater.clone(),
-            ..Self::new(repeater.name.clone(), SettingKind::Repeater)
-        }
+        // Compiled with the page (its rows may read the page's fields, `when_root`).
+        Self { input: repeater.clone(), ..Self::new(repeater.name.clone(), SettingKind::Repeater) }
     }
 
     kinds! {
@@ -464,7 +460,16 @@ impl<T: SettingsPage> SettingsAdapter<T> {
     pub(crate) fn new() -> Self {
         let group = T::GROUP;
         assert!(valid_group(group), "settings `{group}`: groups are 1–32 of `a-z`, `0-9`, `_`");
-        let fields = T::fields();
+        let mut fields = T::fields();
+        // Repeater rows, whose conditions may read the page's fields (`when_root`, ADR 0044).
+        let kinds: Vec<(String, crate::engine::wire::FieldKind)> =
+            fields.iter().filter(|f| !f.is_secret()).map(|f| (f.name.clone(), f.kind.value_kind())).collect();
+        let root = |name: &str| kinds.iter().find(|(n, _)| n == name).map(|(_, k)| (*k, None));
+        for field in fields.iter_mut().filter(|f| f.kind == SettingKind::Repeater) {
+            let spec = field.input.repeater.as_deref().expect("repeater fields have a spec");
+            let here = format!("settings `{group}`");
+            field.rows = Some(Box::new(crate::engine::repeater::Rows::compile(&here, &field.name, spec, Some(&root))));
+        }
         let Ok(Value::Object(defaults)) = serde_json::to_value(T::default()) else {
             panic!("settings `{group}`: the struct must serialize to an object");
         };

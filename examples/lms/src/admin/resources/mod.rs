@@ -6,5 +6,6 @@ pub mod enrollment_resource;
 pub mod learner_resource;
 pub mod lesson_resource;
 pub mod news_resource;
+pub mod quiz_question_resource;
 pub mod tag_resource;
 // rustcms:resource-mods

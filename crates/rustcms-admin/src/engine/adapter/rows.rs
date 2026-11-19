@@ -17,6 +17,9 @@ pub(crate) struct RowChange {
     /// Every row the user sees after the change, in order: stored rows by
     /// key, new rows by their reference (`{"new": ref}` on the wire).
     pub(crate) order: Option<Vec<RowId>>,
+    /// Remove every row the user sees (the write hides the repeater, ADR
+    /// 0044); the parts above are then empty.
+    pub(crate) clear: bool,
 }
 
 /// A row named in a change's order.
@@ -46,6 +49,13 @@ pub(crate) struct RowTarget<'a> {
     /// Whether rows may be added and removed (`addable`, `deletable`).
     pub(crate) addable: bool,
     pub(crate) deletable: bool,
+    /// The rows' conditions and components (ADR 0044).
+    pub(crate) rules: &'a RowRules,
+    /// The record's form as the rows' `when_root` reads it.
+    pub(crate) root: &'a Data,
+    /// A filtered relation's requirements (ADR 0044): rows outside them are
+    /// not the relation's; new rows get them.
+    pub(crate) filters: &'a [(&'static str, RelationFilter)],
 }
 
 /// What changed, for the parent's history.
@@ -60,6 +70,29 @@ pub(crate) struct RowsOutcome {
 impl RowsOutcome {
     pub(crate) fn is_empty(&self) -> bool {
         self.created.is_empty() && self.updated.is_empty() && self.deleted.is_empty() && !self.reordered
+    }
+}
+
+/// What every row of one repeater's change is written with, computed once:
+/// the rows' conditions and the relation's values (ADR 0044).
+struct RowWrite<'a> {
+    level: super::input::RowLevel<'a>,
+    fixed: Vec<(&'static str, serde_json::Value)>,
+}
+
+/// Whether `record` is one of the relation's rows: the parent's (`field`
+/// holds `parent`), with the filters' values (`fixed`, canonical) (ADR 0044).
+fn in_relation(record: &Data, field: &str, parent: &serde_json::Value, fixed: &[(&str, serde_json::Value)]) -> bool {
+    record.get(field) == Some(parent)
+        && fixed.iter().all(|(f, v)| record.get(*f).unwrap_or(&serde_json::Value::Null) == v)
+}
+
+/// The conditions a row of `target` is written under: the repeater's (ADR 0044).
+fn row_level<'a>(target: &RowTarget<'a>) -> super::input::RowLevel<'a> {
+    super::input::RowLevel {
+        conditions: &target.rules.conditions,
+        inputs: crate::engine::repeater::row_inputs(&target.rules.components),
+        root: Some(target.root),
     }
 }
 
@@ -122,6 +155,9 @@ impl<R: Resource> ResourceAdapter<R> {
         change: RowChange,
     ) -> AppResult<RowsOutcome> {
         let relation = target.relation;
+        if change.clear {
+            return self.clear_rows(ctx, txn, &target).await;
+        }
         // Rows edit the repeater's inputs only, not every writable field of the child.
         let mut undeclared = ValidationErrors::new();
         let sent = change.update.iter().map(|(k, d)| (k, d)).chain(change.create.iter().map(|(r, d)| (r, d)));
@@ -140,6 +176,9 @@ impl<R: Resource> ResourceAdapter<R> {
         }
         let parent_value = self.fk_value(target.field, target.parent_key);
         let parent_filter = self.parent_filter(&target, &parent_value)?;
+        // Once per repeater: the relation's values (ADR 0044) and the rows' conditions.
+        let rows = RowWrite { level: row_level(&target), fixed: self.filter_values(target.filters)? };
+        let fixed = &rows.fixed;
         let mut named: Vec<String> =
             change.update.iter().map(|(k, _)| k.clone()).chain(change.delete.clone()).collect();
         named.sort();
@@ -188,7 +227,8 @@ impl<R: Resource> ResourceAdapter<R> {
                 None
             };
             match found {
-                Some(model) if self.record(&model).get(target.field) == Some(&parent_value) => {
+                // Rechecked under the lock: still this parent's, and still the relation's.
+                Some(model) if in_relation(&self.record(&model), target.field, &parent_value, fixed) => {
                     models.insert(key.clone(), model);
                 }
                 _ => errors.add(format!("{relation}.{key}"), "is not one of the rows"),
@@ -215,8 +255,10 @@ impl<R: Resource> ResourceAdapter<R> {
             if data.contains_key(target.field) || target.order_column.is_some_and(|c| data.contains_key(c)) {
                 return Err(ValidationErrors::field(format!("{relation}.{key}"), "is not allowed").into());
             }
-            let changed =
-                self.update_row(ctx, txn, model, data, target.field).await.map_err(|e| below(relation, &key, e))?;
+            let changed = self
+                .update_row(ctx, txn, model, data, target.field, &rows)
+                .await
+                .map_err(|e| below(relation, &key, e))?;
             if changed {
                 outcome.updated.push(key);
             }
@@ -248,7 +290,10 @@ impl<R: Resource> ResourceAdapter<R> {
                 }
                 None => None,
             };
-            let key = self.create_row(&bound, txn, data, position).await.map_err(|e| below(relation, &reference, e))?;
+            let key = self
+                .create_row(&bound, txn, data, position, &rows)
+                .await
+                .map_err(|e| below(relation, &reference, e))?;
             refs.insert(reference, key.clone());
             outcome.created.push(key);
         }
@@ -269,6 +314,56 @@ impl<R: Resource> ResourceAdapter<R> {
             let survivors: HashSet<String> = locked.iter().filter(|k| !deleted.contains(k)).cloned().collect();
             outcome.reordered =
                 self.reorder_rows(ctx, txn, &target, column, &parent_value, &order, &refs, &survivors).await?;
+        }
+        Ok(outcome)
+    }
+
+    /// Removes every row of the parent the user sees (ADR 0044: the write hides
+    /// the repeater): the live children (at most 1,000) locked through the
+    /// child's scope and view policy, each deleted under the child's policy
+    /// (403 for one refused: nothing is saved). Rows the user cannot see stay;
+    /// `deletable` and `min_items` do not apply.
+    async fn clear_rows(
+        &self,
+        ctx: &Ctx,
+        txn: &Arc<sea_orm::DatabaseTransaction>,
+        target: &RowTarget<'_>,
+    ) -> AppResult<RowsOutcome> {
+        let parent_value = self.fk_value(target.field, target.parent_key);
+        let live = self
+            .live_rows(target, &parent_value)?
+            .order_by_asc(self.pk)
+            .limit(MAX_ORDERED_ROWS as u64 + 1)
+            .all(txn.as_ref())
+            .await?;
+        if live.len() > MAX_ORDERED_ROWS {
+            return Err(ValidationErrors::field(target.relation, "has too many rows to remove here").into());
+        }
+        let keys: Vec<String> = live.iter().map(|m| self.key_of(m)).collect();
+        let mut locked: Vec<String> = self.locked_visible(ctx, txn, &keys, &[]).await?.into_iter().collect();
+        locked.sort();
+        // Removing rows is the child's `delete`, admitted as a repeater's delete part is.
+        if !locked.is_empty() && !self.policy.admits(ctx, ability::DELETE).await {
+            return Err(AppError::Forbidden);
+        }
+        let fixed = self.filter_values(target.filters)?;
+        let mut outcome = RowsOutcome::default();
+        for key in locked {
+            // Gone, trashed or moved meanwhile: not one of the rows any more.
+            let model = match self.find_model_in(ctx, txn.as_ref(), &key, Trashed::Without).await {
+                Ok(model) => model,
+                Err(AppError::NotFound) => continue,
+                Err(err) => return Err(err),
+            };
+            let record = self.record(&model);
+            if !in_relation(&record, target.field, &parent_value, &fixed) {
+                continue;
+            }
+            if !self.policy.allows(ctx, ability::DELETE, Some(&record)).await {
+                return Err(AppError::Forbidden);
+            }
+            self.delete_locked(ctx, txn, model).await?;
+            outcome.deleted.push(key);
         }
         Ok(outcome)
     }
@@ -306,12 +401,16 @@ impl<R: Resource> ResourceAdapter<R> {
         model: Model<R>,
         data: Data,
         parent_field: &str,
+        rows: &RowWrite<'_>,
     ) -> AppResult<bool> {
-        let mut input = self.accept_input(ctx, Operation::Update, data)?;
+        let (level, fixed) = (&rows.level, rows.fixed.as_slice());
+        let mut input = self.accept_input_in(ctx, Operation::Update, data, level.conditions)?;
         // Rows are locked through the child's view policy: the user views them.
         let record = self.record(&model);
-        self.apply_conditions(ctx, Operation::Update, &mut input, Some((&record, true)), None)?;
+        self.apply_conditions_in(ctx, Operation::Update, &mut input, Some((&record, true)), None, Some(level))?;
         let data = R::mutate_before_update(ctx, txn, &model, input).await?;
+        // The row stays one of the relation's (ADR 0044).
+        self.check_filters_kept(&data, fixed)?;
         // The row stays the child of the parent that was locked and checked.
         if data.get(parent_field).is_some_and(|v| self.record(&model).get(parent_field) != Some(v)) {
             return Err(AppError::internal(format!("`{}`: a hook changed the relation key `{parent_field}`", R::SLUG)));
@@ -339,18 +438,25 @@ impl<R: Resource> ResourceAdapter<R> {
         txn: &Arc<sea_orm::DatabaseTransaction>,
         data: Data,
         position: Option<(&str, i64)>,
+        rows: &RowWrite<'_>,
     ) -> AppResult<String> {
-        let mut input = self.accept_input(ctx, Operation::Create, data)?;
+        let (level, fixed) = (&rows.level, rows.fixed.as_slice());
+        let mut input = self.accept_input_in(ctx, Operation::Create, data, level.conditions)?;
         // The position is the server's (never client input).
         if let Some((column, value)) = position {
             input.insert(column.to_owned(), self.position_value(column, value));
         }
+        // A filtered relation's values are the server's too (ADR 0044).
+        for (field, value) in fixed {
+            input.insert((*field).to_owned(), value.clone());
+        }
         let (_, field, _) = ctx.bound.clone().expect("rows are created with their parent");
-        self.apply_conditions(ctx, Operation::Create, &mut input, None, Some(field.as_str()))?;
+        self.apply_conditions_in(ctx, Operation::Create, &mut input, None, Some(field.as_str()), Some(level))?;
         let parents = self.lock_parents(ctx, txn, self.parent_of_data(&input).flatten()).await?;
         let parent_value = input.get(&field).cloned();
         let data = R::mutate_before_create(ctx, txn, input).await?;
         self.check_parent_written(ctx, &data, &parents)?;
+        self.check_filters_kept(&data, fixed)?;
         if data.get(&field) != parent_value.as_ref() {
             return Err(AppError::internal(format!("`{}`: a hook changed the relation key `{field}`", R::SLUG)));
         }
@@ -390,8 +496,25 @@ impl<R: Resource> ResourceAdapter<R> {
         Ok(query)
     }
 
-    /// `target.field` equals the parent's key.
+    /// The relation's rows: `target.field` equals the parent's key, and the
+    /// relation's filters hold (ADR 0044).
     fn parent_filter(&self, target: &RowTarget<'_>, parent_value: &serde_json::Value) -> AppResult<sea_orm::Condition> {
+        let mut condition = self.parent_key_filter(target, parent_value)?;
+        for (field, filter) in target.filters {
+            let filter = self
+                .relation_filter_condition(field, filter)
+                .ok_or_else(|| AppError::internal(format!("`{}`: relation filter on `{field}`", R::SLUG)))?;
+            condition = condition.add(filter);
+        }
+        Ok(condition)
+    }
+
+    /// `target.field` equals the parent's key (every row of the parent, whatever relation).
+    fn parent_key_filter(
+        &self,
+        target: &RowTarget<'_>,
+        parent_value: &serde_json::Value,
+    ) -> AppResult<sea_orm::Condition> {
         let fk = self.column(target.field);
         let parent = fk
             .kind
@@ -403,8 +526,45 @@ impl<R: Resource> ResourceAdapter<R> {
         Ok(sea_orm::Condition::all().add(fk.column.eq(parent)))
     }
 
+    /// The values a filtered relation's rows hold (ADR 0044), in canonical wire form.
+    pub(super) fn filter_values(
+        &self,
+        filters: &[(&'static str, RelationFilter)],
+    ) -> AppResult<Vec<(&'static str, serde_json::Value)>> {
+        filters.iter().map(|(field, filter)| Ok((*field, self.canonical_filter(field, filter)?))).collect()
+    }
+
+    /// The value `filter` on `field` requires, in canonical wire form (`null` for `where_null`).
+    pub(super) fn canonical_filter(&self, field: &str, filter: &RelationFilter) -> AppResult<serde_json::Value> {
+        let value = filter.value();
+        if value.is_null() {
+            return Ok(value);
+        }
+        let column = self.column(field);
+        let scale = crate::wire::decimal_scale(column.column.def().get_column_type());
+        crate::wire::canonical(column.kind, scale, &value)
+            .map_err(|e| AppError::internal(format!("`{}`: relation filter on `{field}`: {}", R::SLUG, e.0)))
+    }
+
+    /// Refuses data a hook wrote outside the relation's filters (500, as for the parent key).
+    pub(super) fn check_filters_kept(
+        &self,
+        data: &Data,
+        filters: &[(&'static str, serde_json::Value)],
+    ) -> AppResult<()> {
+        match filters.iter().find(|(field, value)| data.get(*field).is_some_and(|v| v != value)) {
+            Some((field, _)) => Err(AppError::internal(format!(
+                "`{}`: a hook changed `{field}`, which the relation's filter sets",
+                R::SLUG
+            ))),
+            None => Ok(()),
+        }
+    }
+
     /// The largest position among the parent's rows (trashed ones included:
-    /// their places stay taken), 0 for none: one `MAX`, read by the column's kind.
+    /// their places stay taken; every relation of the parent, filtered or not,
+    /// so a unique `(parent, position)` holds), 0 for none: one `MAX`, read by
+    /// the column's kind.
     async fn largest_position(
         &self,
         txn: &Arc<sea_orm::DatabaseTransaction>,
@@ -413,7 +573,7 @@ impl<R: Resource> ResourceAdapter<R> {
         parent_value: &serde_json::Value,
     ) -> AppResult<i64> {
         let position = self.column(column);
-        let query = Entity::<R>::find().filter(self.parent_filter(target, parent_value)?).select_only().expr_as(
+        let query = Entity::<R>::find().filter(self.parent_key_filter(target, parent_value)?).select_only().expr_as(
             sea_orm::sea_query::Func::max(sea_orm::sea_query::Expr::col((Entity::<R>::default(), position.column))),
             "largest",
         );
@@ -593,11 +753,36 @@ pub(crate) struct RowRepeater {
     pub(crate) spec: crate::ui::RepeaterSpec,
     /// The child fields the rows edit.
     pub(crate) inputs: Vec<String>,
+    /// The relation's filters (ADR 0044).
+    pub(crate) filters: Vec<(&'static str, RelationFilter)>,
+    /// The rows' conditions, checked with the child's kinds (`Registry::finish`).
+    pub(crate) rules: std::sync::OnceLock<RowRules>,
+}
+
+/// A relationship repeater's rows as the child's kinds read them (ADR 0044).
+#[derive(Debug, Clone)]
+pub(crate) struct RowRules {
+    /// Their conditions (the row's inputs, the record's form with `when_root`).
+    pub(crate) conditions: crate::engine::conditions::FormConditions,
+    /// The row's components, conditions in canonical form (what schemas send).
+    pub(crate) components: Vec<Component>,
+}
+
+impl RowRepeater {
+    /// The rows' rules (set at boot).
+    pub(crate) fn rules(&self) -> &RowRules {
+        self.rules.get().expect("relationship rows are compiled by `Registry::finish`")
+    }
 }
 
 /// The relationship repeaters of `form`; panics on what cannot hold here
 /// (the child's fields are checked by `Registry::finish`).
-pub(super) fn row_repeaters(slug: &str, form: &Form, relations: &[Relation]) -> Vec<RowRepeater> {
+pub(super) fn row_repeaters(
+    slug: &str,
+    form: &Form,
+    relations: &[Relation],
+    form_conditions: &crate::engine::conditions::FormConditions,
+) -> Vec<RowRepeater> {
     let mut out = Vec::new();
     for input in form.inputs() {
         let Some(spec) = input.repeater.as_deref().filter(|s| s.relationship) else { continue };
@@ -608,21 +793,24 @@ pub(super) fn row_repeaters(slug: &str, form: &Form, relations: &[Relation]) -> 
             .find(|r| r.name == name && r.pivot.is_none())
             .unwrap_or_else(|| panic!("{here}: `relationship()` needs a has-many relation named `{name}`"));
         crate::engine::repeater::check_spec(&here, spec);
+        // Hidden by a write, its rows are removed (ADR 0044): nothing to clear, and
+        // never on a repeater whose rows may not be removed.
         assert!(
-            input.shown_when.is_none() && !input.clear_when_hidden,
-            "{here}: conditions on relationship repeaters are not supported yet"
+            !input.clear_when_hidden,
+            "{here}: `clear_when_hidden` does not apply (a write that hides a relationship repeater removes its rows)"
+        );
+        assert!(
+            spec.deletable || !form_conditions.is_conditional(name),
+            "{here}: a repeater with `deletable(false)` cannot be under a condition (hiding it removes its rows)"
         );
         let mut inputs = Vec::new();
-        fn conditions(components: &[Component]) -> bool {
-            components.iter().any(|c| match c {
-                Component::Input(i) => i.shown_when.is_some(),
-                Component::Layout(l) => l.shown_when.is_some() || conditions(&l.children),
-                Component::Entry(_) => false,
-            })
-        }
-        assert!(!conditions(&spec.components), "{here}: conditions in relationship rows are not supported yet");
+        // Conditions in rows are checked with the child's kinds (`compile_row_rules`).
         for row in crate::engine::repeater::row_inputs(&spec.components) {
             let row_name = row.name.as_str();
+            assert!(
+                !row.clear_when_hidden,
+                "{here}: `{row_name}`: `clear_when_hidden` does not apply inside relationship rows"
+            );
             assert!(
                 !matches!(
                     row.kind,
@@ -653,6 +841,17 @@ pub(super) fn row_repeaters(slug: &str, form: &Form, relations: &[Relation]) -> 
             "{here}: the parent key `{}` cannot be an input",
             relation.field
         );
+        // The relation's filters are the server's (ADR 0044).
+        for (field, _) in &relation.filters {
+            assert!(
+                !inputs.iter().any(|n| n == field),
+                "{here}: `{field}`, which the relation filters, cannot be an input"
+            );
+            assert!(
+                spec.order_column.as_deref() != Some(*field),
+                "{here}: `{field}`, which the relation filters, cannot be the order column"
+            );
+        }
         out.push(RowRepeater {
             name: relation.name,
             target: relation.target,
@@ -660,6 +859,8 @@ pub(super) fn row_repeaters(slug: &str, form: &Form, relations: &[Relation]) -> 
             order_column: spec.order_column.clone(),
             spec: spec.clone(),
             inputs,
+            filters: relation.filters.clone(),
+            rules: std::sync::OnceLock::new(),
         });
     }
     out
@@ -706,14 +907,53 @@ impl<R: Resource> ResourceAdapter<R> {
                 None => errors.add(name, "is invalid"),
             }
         }
-        // A new parent has no rows but those it creates: the repeater's minimum
-        // holds on them, sent or not (as a JSON repeater's on create).
-        if op == Operation::Create {
-            for (index, repeater) in self.row_repeaters.iter().enumerate() {
-                let Some(min) = repeater.spec.min_items.filter(|m| *m > 0) else { continue };
+        errors.into_result()?;
+        Ok(out)
+    }
+
+    /// The record's form as the conditions of relationship rows read it
+    /// (`when_root`, ADR 0044): what the user's form holds (ADR 0037) with the
+    /// accepted `input` over it, as its own conditions leave it (hidden inputs
+    /// `null`). Empty when no row reads it.
+    pub(super) fn row_root(&self, ctx: &Ctx, op: Operation, stored: Option<(&Data, bool)>, input: &Data) -> Data {
+        if !self.row_repeaters.iter().any(|r| r.rules().conditions.reads_outside()) {
+            return Data::new();
+        }
+        let mut values = self.condition_values(ctx, op, stored);
+        values.extend(input.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.conditions.shown_values(&values, Default::default())
+    }
+
+    /// The rows' changes once the form's conditions are known (ADR 0044), from
+    /// `hidden_before` and `hidden` (the inputs hidden before and after the
+    /// user's changes): a repeater hidden after the write drops what was sent,
+    /// and one this write hides (shown before, on update) removes its rows. On
+    /// create, a shown repeater's minimum holds on the rows it creates, sent or
+    /// not (as a JSON repeater's).
+    pub(super) fn settle_rows(
+        &self,
+        op: Operation,
+        changes: Vec<(usize, RowChange)>,
+        hidden_before: &BTreeSet<String>,
+        hidden: &BTreeSet<String>,
+    ) -> AppResult<Vec<(usize, RowChange)>> {
+        let mut out: Vec<(usize, RowChange)> =
+            changes.into_iter().filter(|(index, _)| !hidden.contains(self.row_repeaters[*index].name)).collect();
+        let mut errors = ValidationErrors::new();
+        for (index, repeater) in self.row_repeaters.iter().enumerate() {
+            let name = repeater.name;
+            if hidden.contains(name) {
+                if op == Operation::Update && !hidden_before.contains(name) {
+                    out.push((index, RowChange { clear: true, ..RowChange::default() }));
+                }
+                continue;
+            }
+            if op == Operation::Create
+                && let Some(min) = repeater.spec.min_items.filter(|m| *m > 0)
+            {
                 let created = out.iter().find(|(i, _)| *i == index).map_or(0, |(_, c)| c.create.len());
                 if created < min as usize {
-                    errors.add(repeater.name, format!("must have at least {min} items"));
+                    errors.add(name, format!("must have at least {min} items"));
                 }
             }
         }
@@ -728,12 +968,19 @@ impl<R: Resource> ResourceAdapter<R> {
         txn: &Arc<sea_orm::DatabaseTransaction>,
         model: &Model<R>,
         changes: Vec<(usize, RowChange)>,
+        root: &Data,
     ) -> AppResult<Vec<(&'static str, RowsOutcome)>> {
         let key = self.key_of(model);
         let mut out = Vec::new();
         // One phase per child resource, in lock order (ADR 0041).
         let mut changes = changes;
-        changes.sort_by_cached_key(|(index, _)| ctx.registry.lock_rank(self.row_repeaters[*index].target));
+        // Two repeaters on one child (filtered relations, ADR 0044) in the order
+        // their relations are declared: both lock rows of the parent they each locked first.
+        changes.sort_by_cached_key(|(index, _)| {
+            let repeater = &self.row_repeaters[*index];
+            let declared = self.relations.iter().position(|r| r.name == repeater.name);
+            (ctx.registry.lock_rank(repeater.target), declared)
+        });
         for (index, change) in changes {
             let repeater = &self.row_repeaters[index];
             let child = ctx.registry.get(repeater.target).ok_or(AppError::NotFound)?;
@@ -748,6 +995,9 @@ impl<R: Resource> ResourceAdapter<R> {
                 max_items: repeater.spec.max_items,
                 addable: repeater.spec.addable,
                 deletable: repeater.spec.deletable,
+                rules: repeater.rules(),
+                root,
+                filters: &repeater.filters,
             };
             out.push((repeater.name, child.write_rows(ctx, txn, target, change).await?));
         }

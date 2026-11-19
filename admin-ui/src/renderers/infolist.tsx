@@ -5,7 +5,9 @@ import { Check, Copy } from "lucide-react";
 import { useMemo, useState } from "react";
 import type * as React from "react";
 import { Link } from "@tanstack/react-router";
-import type { ComponentSchema, Condition, Data, EntrySchema, InfolistSchema, JsonValue } from "@/api/types";
+import { useQuery } from "@tanstack/react-query";
+import { useApi } from "@/api/context";
+import type { ComponentSchema, Condition, Data, EntrySchema, InfolistSchema, JsonValue, LinkPage } from "@/api/types";
 import { Badge, badgeColor } from "@/components/ui/badge";
 import { ScriptView } from "@/components/custom";
 import { cn } from "@/lib/utils";
@@ -13,7 +15,7 @@ import { asShownDocument } from "@/lib/rich-text";
 import type { DocNode } from "@/lib/rich-text";
 import { formatWireDate, useLocale, useT } from "@/i18n";
 import { colorOf, isDateKind, optionLabel } from "@/lib/wire";
-import { formConditions, hasConditions, hiddenFields } from "@/schema/conditions";
+import { type Outer, formConditions, hasConditions, hiddenFields } from "@/schema/conditions";
 import { defaultValues, inputsOf, isEntry, isLayout, isTextObject, wireValues } from "@/schema/form";
 import { SchemaLayout, SplitLayout, TabsLayout, always, gridCols, readOnlyText, shownWith, span, withShownChildren } from "./form";
 import { MediaThumb, useMediaViewer } from "./media";
@@ -47,6 +49,15 @@ interface Context {
   /** The resource and record (custom entries); absent on panel pages. */
   slug?: string;
   recordKey?: string;
+  /** Rows of a repeatable entry: the record (`when_root`) and the enclosing row (`when_parent`). */
+  outer?: Outer;
+}
+
+/** The levels the rows of a repeatable entry shown in `ctx` read (ADR 0044). */
+function rowsOuter(ctx: Context): Outer {
+  const root = ctx.outer?.root ?? { values: ctx.data as Record<string, unknown>, kinds: ctx.form ? formConditions(ctx.form).kinds : new Map<string, string>() };
+  // Inside rows, the row being shown is the parent of the rows nested in it.
+  return { root, parent: ctx.outer ? { values: ctx.data as Record<string, unknown>, kinds: new Map() } : undefined };
 }
 
 /** The SDK's `Infolist` (`ui` 3): entries over `data`, in their grid. */
@@ -69,11 +80,11 @@ export function hasComputed(components: ComponentSchema[]): boolean {
  */
 export function InfolistRenderer({ infolist, ...ctx }: { infolist: InfolistSchema } & Context) {
   const { components, fromForm } = infolist;
-  const { form, data } = ctx;
+  const { form, data, outer } = ctx;
   const shown = useMemo(() => {
     if (!hasConditions(components)) return always;
     const own = formConditions(components);
-    if (!form) return shownWith(own, data as Record<string, unknown>);
+    if (!form) return shownWith(own, data as Record<string, unknown>, outer);
     // Each field with its kind (the form's for fields the infolist does not show).
     const edit = formConditions(form);
     const conditions = { fields: own.fields, kinds: new Map([...edit.kinds, ...own.kinds]) };
@@ -84,7 +95,7 @@ export function InfolistRenderer({ infolist, ...ctx }: { infolist: InfolistSchem
     const values: Record<string, unknown> = wireValues(inputs, defaultValues(inputs, data as Record<string, unknown>));
     for (const name of hiddenFields(edit, values)) values[name] = null;
     return shownWith(conditions, values);
-  }, [components, fromForm, form, data]);
+  }, [components, fromForm, form, data, outer]);
   return <Body components={components} ctx={ctx} shown={shown} />;
 }
 
@@ -129,6 +140,8 @@ function Muted({ children }: { children: React.ReactNode }) {
 
 function EntryValue({ entry, ctx }: { entry: EntrySchema; ctx: Context }) {
   const t = useT();
+  // A has-many relation's records: read from its list, not the record (ADR 0044).
+  if (entry.rows) return <RelationRows entry={entry} rows={entry.rows} ctx={ctx} />;
   const supplied = Object.prototype.hasOwnProperty.call(ctx.data, entry.name);
   // A computed value (a custom entry may draw one too).
   const state = ctx.computed;
@@ -176,7 +189,7 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
           {value.map((row, i) => (
             <li key={i} className="rounded-lg border border-border p-3">
               <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-                <InfolistRenderer infolist={rows} slug={ctx.slug} recordKey={ctx.recordKey}
+                <InfolistRenderer infolist={rows} slug={ctx.slug} recordKey={ctx.recordKey} outer={rowsOuter(ctx)}
                   data={(row && typeof row === "object" && !Array.isArray(row) ? row : {}) as Data} />
               </div>
             </li>
@@ -196,6 +209,57 @@ function Shown({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ct
       // Text, computed and unknown (newer) entries.
       return <TextValue entry={entry} value={value} />;
   }
+}
+
+/**
+ * The rows of a relationship repeatable entry (ADR 0044): the relation's
+ * records as its section lists them (the child's scope, policy and read
+ * rules), in the form's order, each shown by the entry's own entries; past
+ * the limit, a link to the section.
+ */
+function RelationRows({ entry, rows, ctx }: { entry: EntrySchema; rows: NonNullable<EntrySchema["rows"]>; ctx: Context }) {
+  const t = useT();
+  const api = useApi();
+  const enc = encodeURIComponent;
+  const page = useQuery({
+    enabled: !!ctx.slug && !!ctx.recordKey,
+    // Read again each time the page opens: a save changes the rows.
+    refetchOnMount: "always",
+    queryKey: ["records", rows.resource, "relation", ctx.slug, ctx.recordKey, rows.relation, "entry", rows.limit],
+    queryFn: () => {
+      // Sorted by the server: the first rows by position, whatever the limit.
+      const query = new URLSearchParams({ per_page: String(rows.limit) });
+      if (rows.orderBy) query.set("sort", rows.orderBy);
+      return api.get<LinkPage>(
+        `/resources/${enc(ctx.slug ?? "")}/records/${enc(ctx.recordKey ?? "")}/relations/${enc(rows.relation)}`,
+        query,
+      );
+    },
+  });
+  if (page.isLoading) return <span role="status" className="inline-block h-5 w-24 animate-pulse rounded bg-muted" aria-label={t("entry.loading")} />;
+  if (page.isError || !page.data) return <Muted>{t("entry.notAvailable")}</Muted>;
+  const records = page.data.data;
+  if (records.length === 0) return <Muted>{t("repeater.empty")}</Muted>;
+  const layout = { columns: 2, components: entry.components ?? [] };
+  const more = page.data.meta.total > records.length;
+  return (
+    <div className="flex flex-col gap-3">
+      <ol className="flex flex-col gap-3">
+        {records.map((record) => (
+          <li key={record.key} className="rounded-lg border border-border p-3">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+              <InfolistRenderer infolist={layout} slug={rows.resource} recordKey={record.key} data={record.data} outer={rowsOuter(ctx)} />
+            </div>
+          </li>
+        ))}
+      </ol>
+      {more && (
+        <a href={`#relation-${rows.relation}`} className="self-start text-sm font-medium text-primary underline-offset-4 hover:underline">
+          {t("entry.allRows", { count: page.data.meta.total })}
+        </a>
+      )}
+    </div>
+  );
 }
 
 function RelationValue({ entry, value, ctx }: { entry: EntrySchema; value: JsonValue; ctx: Context }) {

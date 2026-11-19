@@ -28,6 +28,14 @@ impl<R: Resource> ResourceAdapter<R> {
                     resource: relation.target,
                     field: relation.field,
                     create: creatable && target.allows(ctx, ability::CREATE).await,
+                    // In canonical wire form, as the server writes them (checked at boot).
+                    fixed: relation
+                        .filters
+                        .iter()
+                        .map(|(f, v)| {
+                            ((*f).to_owned(), target.relation_filter_value(f, v).unwrap_or_else(|_| v.value()))
+                        })
+                        .collect(),
                     attach: false,
                     detach: false,
                     pivot: Vec::new(),
@@ -69,6 +77,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 resource: relation.target,
                 field: relation.field,
                 create: false,
+                fixed: BTreeMap::new(),
                 attach,
                 detach,
                 pivot: readable,
@@ -392,7 +401,8 @@ impl<R: Resource> ResourceAdapter<R> {
             prefix: None,
             suffix: None,
             number: None,
-            shown_when: None,
+            // Hidden by its condition, a write removes its rows (ADR 0044).
+            shown_when: input.shown_when.as_deref().cloned(),
             clear_when_hidden: false,
             integer: false,
             repeater: None,
@@ -422,7 +432,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     let create = child.admits(ctx, ability::CREATE).await && child.allows(ctx, ability::CREATE).await;
                     let update = op == SchemaOperation::Edit && child.admits(ctx, ability::UPDATE).await;
                     let delete = op == SchemaOperation::Edit && child.admits(ctx, ability::DELETE).await;
-                    let rows = child.row_schema(ctx, &repeater.spec.components, op);
+                    let rows = child.row_schema(ctx, &repeater.rules().components, op);
                     let t = |text: &str| ctx.t_in(R::SLUG, text);
                     let relationship = crate::schema::RepeaterRelationship {
                         resource: repeater.target,
@@ -444,7 +454,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     // On an edit page, new rows are the child's creates: its create form's inputs.
                     if op == SchemaOperation::Edit && create {
                         schema.create_components =
-                            Some(child.row_schema(ctx, &repeater.spec.components, SchemaOperation::Create));
+                            Some(child.row_schema(ctx, &repeater.rules().components, SchemaOperation::Create));
                     }
                     input.repeater = Some(Box::new(schema));
                     out.push(ComponentSchema::Input(input));

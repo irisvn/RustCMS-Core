@@ -265,6 +265,10 @@ Section::make("Sale").shown_when(when("on_sale").is_true()).schema(components![
   about its value can be learned from what is saved.
 - On a form opened from a [relation](relationships.md), the key the relation sets
   is read by the conditions with the parent's key.
+- In a [repeater's rows](#repeaters), `when` names an input of the same row;
+  `when_root("x")` names an input of the record's form and `when_parent("x")`
+  one of the enclosing row (a JSON repeater nested in a row), with the same
+  tests. `when_root` and `when_parent` are refused outside rows.
 
 The same works on [settings pages](settings.md) and in
 [action forms](actions.md) (`ActionField::shown_when`; a hidden field reaches
@@ -403,14 +407,23 @@ Repeater::make("faq")
   `max_items`. Errors name the row and the input: `faq.2.question`
   (`faq.2.links.0.url` nested, `faq` for the list); the panel shows them in
   their row.
-- **Conditions** (`shown_when`) in a row name inputs of the same row. An
-  input hidden by its condition is removed from the stored row, and
-  `required` means "required when shown".
+- **Conditions** (`shown_when`) in a row name inputs of the same row, or of
+  the record's form with `when_root` (`when_parent` for the enclosing row of a
+  nested repeater). An input hidden by its condition is removed from the
+  stored row, and `required` means "required when shown". Inputs whose
+  conditions read the form are checked once the form's values are known (on
+  update, the stored record with the request over it).
 - **Options:** `min_items`, `max_items`, `reorderable` (buttons, or drag the
   handle), `collapsible` / `collapsed`, `item_label("{input}")` (each row's
   heading, a template as [record titles](resources.md#titles-from-several-fields)),
   `add_action_label`, `addable(false)`, `deletable(false)`,
-  `default_items(n)` (rows a create form starts with), `cloneable`.
+  `default_items(n)` (rows a create form starts with), `cloneable`, `table()`
+  (below).
+- **`table()`** lays each row out as a table row: one column per input (the
+  labels in a header; each cell keeps its label for screen readers), the
+  row's buttons last; below the `md` breakpoint the rows stack as usual. An
+  input hidden by its condition leaves its cell empty. Table rows hold inputs
+  only (no sections, grids or nested repeaters) and do not fold.
 - **Not in rows (yet):** `FileUpload` and `RichEditor` (their media escape the
   [reference checks](media.md)), secrets, belongs-to-many inputs, tabs and
   splits.
@@ -452,9 +465,11 @@ ResourceMeta::new("Line").lock_parent("order_id", "orders")
   belongs-to-many fields (edit them on the child's page). Hooks of the child
   should not write other resources; a hook adding media to a row is a server
   error (media are locked after every other record of a write).
-- **One repeater per child resource** in a form; a resource with relationship
-  repeaters cannot link media records (belongs-to-many), and cannot lock a
-  parent of its own (`lock_parent` has no chains).
+- **Several repeaters on one child resource** need [filtered relations](relationships.md#filtered-relations)
+  that cannot share a row (the options of a question and the choices of its
+  blanks, in one table). A resource with relationship repeaters cannot link
+  media records (belongs-to-many), and cannot lock a parent of its own
+  (`lock_parent` has no chains).
 - **Concurrent saves** of one parent and its children wait for each other;
   a rare conflict through other records answers 409 ("try again"), nothing
   saved.
@@ -490,14 +505,35 @@ ResourceMeta::new("Line").lock_parent("order_id", "orders")
   entries in the child's history.
 - The form edits up to `max_items` rows (at most 100); with more, the
   repeater is read-only and the relation section edits them. A save reorders
-  at most 1,000 rows of one parent. View pages show
-  the rows in the relation section, not in the form.
-- **Not yet:** conditions in relationship rows, repeaters inside them, and
-  conditions on the repeater itself.
+  at most 1,000 rows of one parent. The [default view page](infolists.md#the-default-view-page)
+  shows the rows under the record, as a `RepeatableEntry` of the relation.
+- **Conditions in rows** are the repeater's own (`shown_when` in its
+  `.schema()`, reading the row and, with `when_root`, the record's form); the
+  child's own form's conditions do not apply to rows. A row input under a
+  condition needs a child column that stores a hidden value (nullable, or
+  with a default), as on forms.
+- **A condition on the repeater** (its own `shown_when`, or a layout's around
+  it) hides it as any input, with one difference: **a save that hides it
+  removes its rows**. Switching a question from "single choice" to "fill in
+  the blanks" removes its options. Only rows the user can see are removed,
+  each needing the child's `delete` (403 otherwise, nothing saved), to the
+  trash with soft deletes; only when the save hides it (shown before the
+  user's changes, hidden after), so rows added elsewhere while it was hidden
+  stay through other edits. Changes sent for a hidden repeater are ignored.
+  The panel says how many rows saving removes where the repeater was. Never
+  hide a repeater on a value whose change should keep its rows. A repeater
+  with `deletable(false)` cannot be under a condition, and
+  `clear_when_hidden` does not apply.
+- **Not yet:** repeaters inside relationship rows.
 
 The demo's categories edit their posts this way (each row is a post):
 
 <<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-repeater [src/admin/resources/category_resource.rs]
+
+The LMS's quiz questions edit their options (a table, hints read from the
+question's form) or their blanks, depending on the question's kind:
+
+<<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-form [src/admin/resources/quiz_question_resource.rs]
 
 ### Repeaters in lists, history and CSV
 

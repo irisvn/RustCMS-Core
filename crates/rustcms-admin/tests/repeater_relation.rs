@@ -507,12 +507,55 @@ refused_at_boot!(
     Repeater::make("lines").relationship().schema(components![NumberInput::make("order_id")])
 );
 refused_at_boot!(
-    conditions_in_relationship_rows,
+    a_row_condition_naming_no_row_input,
     RowConditions,
-    "conditions in relationship rows are not supported yet",
+    "names `quantity`, which is not an input (or entry) of the form",
     Repeater::make("lines")
         .relationship()
         .schema(components![TextInput::make("product").shown_when(when("quantity").filled())])
+);
+refused_at_boot!(
+    a_row_condition_naming_no_form_input,
+    RowRootConditions,
+    "uses `when_root(\"status\")`, which is not an input of that level",
+    Repeater::make("lines")
+        .relationship()
+        .schema(components![TextInput::make("product").shown_when(when_root("status").filled())])
+);
+refused_at_boot!(
+    a_row_condition_reading_a_parent_row,
+    RowParentConditions,
+    "uses `when_parent(\"number\")`, which reads the enclosing row",
+    Repeater::make("lines")
+        .relationship()
+        .schema(components![TextInput::make("product").shown_when(when_parent("number").filled())])
+);
+refused_at_boot!(
+    clearing_a_relationship_repeater,
+    ClearedRepeater,
+    "`clear_when_hidden` does not apply (a write that hides a relationship repeater removes its rows)",
+    Repeater::make("lines")
+        .relationship()
+        .shown_when(when("number").filled())
+        .clear_when_hidden()
+        .schema(components![TextInput::make("product")])
+);
+refused_at_boot!(
+    clearing_in_relationship_rows,
+    ClearedRow,
+    "`clear_when_hidden` does not apply inside relationship rows",
+    Repeater::make("lines").relationship().schema(components![
+        TextInput::make("product").shown_when(when("quantity").filled()).clear_when_hidden(),
+        NumberInput::make("quantity"),
+    ])
+);
+refused_at_boot!(
+    hiding_rows_that_cannot_be_removed,
+    UndeletableHidden,
+    "a repeater with `deletable(false)` cannot be under a condition",
+    Section::make("Lines").shown_when(when("number").filled()).schema(components![
+        Repeater::make("lines").relationship().deletable(false).schema(components![TextInput::make("product")])
+    ])
 );
 refused_at_boot!(
     a_json_rule_in_relationship_rows,
@@ -616,7 +659,7 @@ impl Resource for TwoRepeaters {
 }
 
 #[test]
-#[should_panic(expected = "is edited by another repeater of `orders`")]
+#[should_panic(expected = "is also edited by repeater `extra`, whose relation may hold the same rows")]
 fn two_repeaters_on_one_child_resource() {
     Registry::new().register::<TwoRepeaters>().register::<LineResource>().finish();
 }

@@ -9,7 +9,7 @@ use rustcms_admin::system::{
     PermissionInfo, PermissionPresetInfo, RoleRef, SystemLinks, SystemRole, SystemUser, UserPage,
 };
 use rustcms_admin::ui::{
-    Breakpoint, ColumnType, Condition, EntryType, FilterType, FormWidth, InputType, LayoutType, NumberBounds,
+    Breakpoint, ColumnType, Condition, EntryType, FilterType, FormWidth, InputType, LayoutType, NumberBounds, Scope,
     SelectOption,
 };
 use rustcms_admin::{ActionOutcome, Envelope, Page, PageMeta};
@@ -30,6 +30,9 @@ fn bindings() -> String {
         SelectOption::decl(&cfg),
         NumberBounds::decl(&cfg),
         Condition::decl(&cfg),
+        RepeaterLayout::decl(&cfg),
+        EntryRows::decl(&cfg),
+        Scope::decl(&cfg),
         ResourceInfo::decl(&cfg),
         SchemaOperation::decl(&cfg),
         Rule::decl(&cfg),

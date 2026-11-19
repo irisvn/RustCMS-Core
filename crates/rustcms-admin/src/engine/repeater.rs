@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use rustcms_core::ValidationErrors;
 use serde_json::Value;
 
-use super::conditions::FormConditions;
+use super::conditions::{FormConditions, KindOf, Outer, OuterValues};
 use super::validate::{Bounds, InputRule, Options, check_input};
 use super::wire::FieldKind;
 use crate::Data;
@@ -22,6 +22,10 @@ const KEY_VALUE: (usize, usize) = (50, 1000);
 pub(crate) struct Rows {
     inputs: Vec<RowInput>,
     conditions: FormConditions,
+    /// Whether these rows' conditions, or a nested repeater's, read outside
+    /// their row (`when_root`, `when_parent`): those are applied once the
+    /// levels around are known ([`Rows::check_in`]).
+    reads_outside: bool,
     min_items: Option<usize>,
     max_items: Option<usize>,
 }
@@ -77,12 +81,23 @@ pub(crate) fn row_kind(input: &Input) -> FieldKind {
 }
 
 impl Rows {
-    /// The rows of `spec`, the JSON repeater `name` of `owner`; panics on
-    /// what cannot hold (ADR 0040, boot checks).
-    pub(crate) fn compile(owner: &str, name: &str, spec: &RepeaterSpec, depth: u8) -> Self {
+    /// The rows of `spec`, the JSON repeater `name` of `owner`, whose
+    /// conditions may read the record's form through `root` (`when_root`, ADR
+    /// 0044); panics on what cannot hold (ADR 0040, boot checks).
+    pub(crate) fn compile(owner: &str, name: &str, spec: &RepeaterSpec, root: Option<KindOf<'_>>) -> Self {
+        Self::compile_in(owner, name, spec, 1, Outer { parent: None, root })
+    }
+
+    fn compile_in(owner: &str, name: &str, spec: &RepeaterSpec, depth: u8, outer: Outer<'_>) -> Self {
         let here = format!("{owner}: repeater `{name}`");
         assert!(depth <= MAX_DEPTH, "{here}: repeaters nest {MAX_DEPTH} deep at most");
         check_spec(&here, spec);
+        // Conditions name inputs of the same row (ADR 0037 rules), or of the
+        // levels around it (ADR 0044).
+        let kinds: Vec<(String, FieldKind)> =
+            row_inputs(&spec.components).into_iter().map(|i| (i.name.clone(), row_kind(i))).collect();
+        let kind_of = |name: &str| kinds.iter().find(|(n, _)| n == name).map(|(_, k)| (*k, None));
+        let below = Outer { parent: Some(&kind_of), root: outer.root };
         let mut inputs = Vec::new();
         let mut names = HashSet::new();
         for input in row_inputs(&spec.components) {
@@ -100,7 +115,7 @@ impl Rows {
                 InputType::Repeater => {
                     let nested = input.repeater.as_deref().expect("repeaters have a spec");
                     assert!(!nested.relationship, "{here}: `{input_name}`: a JSON row holds JSON repeaters only");
-                    RowRule::Nested(Box::new(Rows::compile(&here, input_name, nested, depth + 1)))
+                    RowRule::Nested(Box::new(Rows::compile_in(&here, input_name, nested, depth + 1, below)))
                 }
                 InputType::Custom | InputType::Hidden => RowRule::Any { required: input.required },
                 _ => {
@@ -149,14 +164,13 @@ impl Rows {
                 );
             }
         }
-        // Conditions name inputs of the same row (ADR 0037 rules).
-        let kinds: Vec<(String, FieldKind)> =
-            row_inputs(&spec.components).into_iter().map(|i| (i.name.clone(), row_kind(i))).collect();
-        let kind_of = |name: &str| kinds.iter().find(|(n, _)| n == name).map(|(_, k)| (*k, None));
-        let conditions = FormConditions::new(&here, &spec.components, &kind_of);
+        let conditions = FormConditions::new_in(&here, &spec.components, &kind_of, outer);
+        let reads_outside = conditions.reads_outside()
+            || inputs.iter().any(|i| matches!(&i.rule, RowRule::Nested(rows) if rows.reads_outside));
         Rows {
             inputs,
             conditions,
+            reads_outside,
             min_items: spec.min_items.map(|n| n as usize),
             max_items: spec.max_items.map(|n| n as usize),
         }
@@ -213,11 +227,45 @@ impl Rows {
         Value::Object(row)
     }
 
+    /// Whether some condition of these rows (nested ones included) reads the
+    /// levels around them: the list is checked again once those are known
+    /// ([`Self::check_in`]).
+    pub(crate) fn reads_outside(&self) -> bool {
+        self.reads_outside
+    }
+
     /// Checks `value`, the list at `path`; adds problems to `errors` and returns
     /// the list as stored (inputs hidden by their conditions removed), or
     /// `None` when it is refused. `null` is left to the field's rules, but
     /// holds no rows: refused under `min_items`.
+    ///
+    /// Inputs under a condition reading the record's form (`when_root`) are
+    /// kept, and not required, until [`Self::check_in`] runs with that form's
+    /// values.
     pub(crate) fn check(&self, path: &str, value: &Value, errors: &mut ValidationErrors) -> Option<Value> {
+        self.check_at(path, value, errors, None)
+    }
+
+    /// As [`Self::check`], the record's form holding `root` (as its own
+    /// conditions leave it: hidden inputs `null`): every condition applies.
+    /// Run on the list `check` returned, once the form's values are known.
+    pub(crate) fn check_in(
+        &self,
+        path: &str,
+        value: &Value,
+        errors: &mut ValidationErrors,
+        root: &Data,
+    ) -> Option<Value> {
+        self.check_at(path, value, errors, Some(OuterValues { parent: None, root: Some(root) }))
+    }
+
+    fn check_at(
+        &self,
+        path: &str,
+        value: &Value,
+        errors: &mut ValidationErrors,
+        outer: Option<OuterValues<'_>>,
+    ) -> Option<Value> {
         let before = count(errors);
         let Some(rows) = value.as_array() else {
             match self.min_items.filter(|m| *m > 0) {
@@ -233,7 +281,7 @@ impl Rows {
         if let Some(max) = self.max_items.filter(|max| rows.len() > *max) {
             errors.add(path, format!("may not have more than {max} items"));
         }
-        let out = self.check_each(path, 0, rows, errors);
+        let out = self.check_each_at(path, 0, rows, errors, outer);
         (count(errors) == before).then_some(Value::Array(out))
     }
 
@@ -243,7 +291,8 @@ impl Rows {
     }
 
     /// Checks each of `rows`, numbered from `first` in `path`; returns them
-    /// as stored. The list's own bounds are the caller's.
+    /// as stored. The list's own bounds are the caller's. Conditions reading
+    /// outside the row wait, as in [`Self::check`].
     pub(crate) fn check_each(
         &self,
         path: &str,
@@ -251,6 +300,20 @@ impl Rows {
         rows: &[Value],
         errors: &mut ValidationErrors,
     ) -> Vec<Value> {
+        self.check_each_at(path, first, rows, errors, None)
+    }
+
+    /// `outer`: the levels around the rows, `None` while unknown (conditions
+    /// reading them wait: their inputs are kept and not required).
+    fn check_each_at(
+        &self,
+        path: &str,
+        first: usize,
+        rows: &[Value],
+        errors: &mut ValidationErrors,
+        outer: Option<OuterValues<'_>>,
+    ) -> Vec<Value> {
+        let waits = outer.is_none() && self.conditions.reads_outside();
         let mut out = Vec::with_capacity(rows.len());
         for (index, row) in rows.iter().enumerate() {
             let index = first + index;
@@ -262,17 +325,23 @@ impl Rows {
             for key in row.keys().filter(|k| !self.inputs.iter().any(|i| &i.name == *k)) {
                 errors.add(format!("{at}.{key}").as_str(), "is not allowed");
             }
-            let hidden = self.conditions.hidden(row);
+            // Waiting: nothing is hidden yet, and inputs under a condition are not required.
+            let hidden =
+                if waits { Default::default() } else { self.conditions.hidden_in(row, outer.unwrap_or_default()) };
+            // Nested rows read this row as its conditions leave it, once the levels around are known.
+            let shown = outer.filter(|_| !waits).map(|o| self.conditions.shown_values(row, o));
+            let below = shown.as_ref().map(|row| OuterValues { parent: Some(row), root: outer.and_then(|o| o.root) });
             let mut kept = Data::new();
             for input in &self.inputs {
                 if hidden.contains(&input.name) {
                     continue;
                 }
+                let may_wait = waits && self.conditions.is_conditional(&input.name);
                 let name = format!("{at}.{}", input.name);
                 let value = row.get(&input.name);
                 match &input.rule {
                     RowRule::Nested(rows) => {
-                        if let Some(list) = rows.check(&name, value.unwrap_or(&Value::Null), errors) {
+                        if let Some(list) = rows.check_at(&name, value.unwrap_or(&Value::Null), errors, below) {
                             kept.insert(input.name.clone(), list);
                         }
                     }
@@ -280,10 +349,11 @@ impl Rows {
                         Some(v) if !v.is_null() => {
                             kept.insert(input.name.clone(), v.clone());
                         }
-                        _ if *required => errors.add(name.as_str(), "is required"),
+                        _ if *required && !may_wait => errors.add(name.as_str(), "is required"),
                         _ => {}
                     },
                     RowRule::Value { kind, required, max_length, options, many, bounds, integer, key_value } => {
+                        let required = &(*required && !may_wait);
                         let Some(value) = value else {
                             if *required {
                                 errors.add(name.as_str(), "is required");
@@ -379,6 +449,20 @@ pub(crate) fn check_spec(here: &str, spec: &RepeaterSpec) {
         }
     }
     layouts(here, &spec.components);
+    // A table row holds one cell per input (ADR 0044).
+    if spec.table {
+        assert!(!spec.collapsible, "{here}: table rows do not fold (`collapsible` with `table`)");
+        for component in &spec.components {
+            match component {
+                Component::Input(input) => assert!(
+                    input.kind != InputType::Repeater,
+                    "{here}: `{}`: table rows hold no nested repeater",
+                    input.name
+                ),
+                _ => panic!("{here}: table rows hold inputs only (no sections or grids)"),
+            }
+        }
+    }
 }
 
 /// The schema of a JSON repeater's rows: the inputs as declared (rows have no
@@ -468,6 +552,7 @@ pub(crate) fn options_schema(
     crate::schema::RepeaterSchema {
         create_components: None,
         components,
+        layout: spec.table.then_some(crate::schema::RepeaterLayout::Table),
         min_items: spec.min_items,
         max_items: spec.max_items,
         reorderable: spec.reorderable,

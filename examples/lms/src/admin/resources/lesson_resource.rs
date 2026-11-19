@@ -48,6 +48,11 @@ impl Resource for LessonResource {
         vec![moving("move_up", true).label("Move up"), moving("move_down", false).label("Move down")]
     }
 
+    /// The lesson's quiz, listed (and created) on its page.
+    fn relations() -> Vec<Relation> {
+        vec![Relation::has_many("quiz_questions", "quiz_questions", "lesson_id").label("Quiz")]
+    }
+
     // #region scope
     /// Instructors see the lessons of their courses.
     fn scope(query: Select<lesson::Entity>, ctx: &Ctx) -> Select<lesson::Entity> {

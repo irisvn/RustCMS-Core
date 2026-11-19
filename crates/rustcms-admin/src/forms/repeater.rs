@@ -25,6 +25,8 @@ pub(crate) struct RepeaterSpec {
     pub(crate) deletable: bool,
     pub(crate) default_items: u32,
     pub(crate) cloneable: bool,
+    /// Rows as table rows (ADR 0044).
+    pub(crate) table: bool,
 }
 
 impl Default for RepeaterSpec {
@@ -44,6 +46,7 @@ impl Default for RepeaterSpec {
             deletable: true,
             default_items: 0,
             cloneable: false,
+            table: false,
         }
     }
 }
@@ -160,6 +163,14 @@ impl Input {
     /// Rows a create form starts with (empty).
     pub fn default_items(mut self, n: u32) -> Self {
         self.spec().default_items = n;
+        self
+    }
+
+    /// Rows laid out as a table: one column per input (labels in the header),
+    /// the row's buttons last; stacked on narrow screens. Rows hold inputs
+    /// only (no sections, grids or nested repeaters) and do not fold.
+    pub fn table(mut self) -> Self {
+        self.spec().table = true;
         self
     }
 

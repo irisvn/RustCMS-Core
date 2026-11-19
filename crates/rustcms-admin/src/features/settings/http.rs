@@ -416,6 +416,17 @@ async fn update(
         .collect();
     data.retain(|name, _| !hidden.contains(name));
     writes.retain(|name, _| !hidden.contains(name));
+    // Repeater rows whose conditions read the page's fields, now known (ADR 0044).
+    let shown = page.conditions().shown_values(&resulting, Default::default());
+    let mut row_errors = ValidationErrors::new();
+    for field in page.fields() {
+        let Some(rows) = field.rows.as_deref().filter(|r| r.reads_outside()) else { continue };
+        let Some(list) = data.get(&field.name) else { continue };
+        if let Some(list) = rows.check_in(&field.name, list, &mut row_errors, &shown) {
+            data.insert(field.name.clone(), list);
+        }
+    }
+    row_errors.into_result()?;
 
     let mut values = Map::new();
     let mut secrets = BTreeMap::new();

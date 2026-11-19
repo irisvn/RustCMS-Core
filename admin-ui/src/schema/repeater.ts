@@ -5,7 +5,7 @@
 // (`crates/rustcms-admin/src/engine/repeater.rs`).
 import type { InputSchema, JsonValue, RepeaterSchema } from "@/api/types";
 import { t } from "@/i18n";
-import { formConditions, hasConditions, hiddenFields } from "./conditions";
+import { type Level, type Outer, formConditions, hasConditions, hiddenFields, readsOutside } from "./conditions";
 import { type FormValue, type FormValues, fromFormValue, inputsOf, toFormValue, wireValues, zodSchema } from "./form";
 
 /** A row's form values, by input name. */
@@ -61,25 +61,49 @@ export function wireRows(input: InputSchema, value: FormValue): JsonValue {
   });
 }
 
-/** The inputs of `row` hidden by their conditions (they name inputs of the same row). */
-export function hiddenInRow(repeater: RepeaterSchema, row: Row): Set<string> {
-  return rowHider(repeater)(row);
+/**
+ * The inputs of `row` hidden by their conditions: they name inputs of the
+ * same row, or of the levels of `outer` (`when_parent`, `when_root`).
+ */
+export function hiddenInRow(repeater: RepeaterSchema, row: Row, outer: Outer = {}): Set<string> {
+  return rowHider(repeater, outer)(row);
 }
 
-/** [`hiddenInRow`] for many rows of `repeater`, its conditions read once. */
-function rowHider(repeater: RepeaterSchema): (row: Row) => Set<string> {
+/**
+ * [`hiddenInRow`] for many rows of `repeater`, its conditions read once.
+ * Without `outer` (not known where rows are checked before a save), inputs
+ * whose conditions read outside the row count as hidden: the server decides
+ * on them.
+ */
+function rowHider(repeater: RepeaterSchema, outer?: Outer): (row: Row) => Set<string> {
   if (!hasConditions(repeater.components)) return () => new Set();
   const conditions = formConditions(repeater.components);
   const inputs = inputsOf(repeater.components);
-  return (row) => hiddenFields(conditions, wireValues(inputs, row));
+  const unknown = outer
+    ? []
+    : conditions.fields.filter((f) => f.conditions.some(readsOutside)).map((f) => f.name);
+  return (row) => {
+    const hidden = hiddenFields(conditions, wireValues(inputs, row), outer ?? {});
+    unknown.forEach((name) => hidden.add(name));
+    return hidden;
+  };
+}
+
+/** A row as the rows nested in it read it (`when_parent`): wire values, hidden inputs null. */
+export function rowLevel(repeater: RepeaterSchema, row: Row, hidden: Set<string>): Level {
+  const inputs = inputsOf(repeater.components);
+  const values = wireValues(inputs, row);
+  hidden.forEach((name) => (values[name] = null));
+  return { values, kinds: new Map(inputs.map((i) => [i.name, i.valueType])) };
 }
 
 /**
  * What is wrong with `rows`, by path below the repeater: `""` for the list,
  * `"2.question"` for an input, `"2.links.0.url"` nested. Hidden inputs are
- * not checked (never stored).
+ * not checked (never stored); without `outer`, neither are inputs whose
+ * conditions read outside their row.
  */
-export function rowProblems(repeater: RepeaterSchema, rows: Row[], prefix = ""): Record<string, string> {
+export function rowProblems(repeater: RepeaterSchema, rows: Row[], prefix = "", outer?: Outer): Record<string, string> {
   const out: Record<string, string> = {};
   const at = (path: string) => (prefix ? (path ? `${prefix}.${path}` : prefix) : path);
   if (repeater.minItems !== undefined && rows.length < repeater.minItems) out[at("")] = t("issue.min_items", { min: repeater.minItems });
@@ -87,16 +111,17 @@ export function rowProblems(repeater: RepeaterSchema, rows: Row[], prefix = ""):
   const inputs = inputsOf(repeater.components);
   // Built once per list, not per row.
   const schemas = new Map(inputs.filter((i) => i.type !== "repeater").map((i) => [i.name, zodSchema([i])]));
-  const hiddenIn = rowHider(repeater);
+  const hiddenIn = rowHider(repeater, outer);
   rows.forEach((row, index) => {
     const hidden = hiddenIn(row);
+    const below = outer ? { parent: rowLevel(repeater, row, hidden), root: outer.root } : undefined;
     for (const input of inputs) {
       if (hidden.has(input.name)) continue;
       const path = at(`${index}.${input.name}`);
       const value = row[input.name] ?? toFormValue(input, undefined);
       if (input.type === "repeater" && input.repeater) {
         const nested = parseRows(value) ?? [];
-        Object.assign(out, rowProblems(input.repeater, nested, path));
+        Object.assign(out, rowProblems(input.repeater, nested, path, below));
         continue;
       }
       const result = schemas.get(input.name)!.safeParse({ [input.name]: value });
