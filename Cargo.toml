@@ -41,7 +41,7 @@ base64 = "0.23"
 rand = "0.10"
 anyhow = "1.0"
 minijinja = { version = "3.0", features = ["serde"] }
-lettre = { version = "=0.11.23", default-features = false, features = ["smtp-transport", "builder", "tokio1-rustls", "webpki-roots", "aws-lc-rs"] }
+lettre = { version = "=0.11.24", default-features = false, features = ["smtp-transport", "builder", "tokio1-rustls", "webpki-roots", "aws-lc-rs"] }
 ammonia = "=4.2.5"
 include_dir = "0.7.4"
 argon2 = "0.6"

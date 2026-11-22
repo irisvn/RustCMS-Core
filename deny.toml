@@ -1,6 +1,11 @@
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+    # chrono is unmaintained (informational, no vulnerability). SeaORM's `with-chrono`, sqlx, croner and
+    # our date handling depend on it; moving to `time`/`jiff` is a separate change. Revisit at each release.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained: no fix, needed by SeaORM; tracked for a later migration" },
+]
 
 [licenses]
 version = 2

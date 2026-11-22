@@ -6,6 +6,15 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- lettre 0.11.24 (RUSTSEC-2026-0560 to 0564: STARTTLS response injection,
+  missing dot-stuffing after a bare CR or LF, panics on an `EHLO` reply or a
+  display name with CR/LF, quoted local parts sent to another address) and url
+  2.5.9 (RUSTSEC-2026-0592, stack overflow in `Url::origin()`); both newer
+  than two weeks, as security exceptions. `cargo deny` ignores
+  RUSTSEC-2026-0543 (chrono is unmaintained; no vulnerability, needed by
+  SeaORM).
+
 ## [0.13.1] — 2026-11-17
 
 ### Added
