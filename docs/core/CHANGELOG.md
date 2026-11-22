@@ -16,7 +16,8 @@ All notable changes are documented here. The format follows
   SeaORM).
 
 ### Added
-- Option labels in table columns (vocabulary 20): `TextColumn`/`BadgeColumn` show the label of each value,
+- Option labels in table columns (vocabulary 20; contributed by @giangittb112000, as are the date formats, the image
+  viewer, the color tokens and media collections below): `TextColumn`/`BadgeColumn` show the label of each value,
   declared with `TableColumn::options([(value, label), …])` or taken from the form's select or checkbox list of
   the same field (never for `belongs_to` fields); `.raw()` keeps the values. Labels are translated (and listed
   by missing translations); colors, sorting, search, filters and exports still use the values. `ColumnSchema`
@@ -78,15 +79,30 @@ All notable changes are documented here. The format follows
   checkboxes and outline buttons now use the new `input` token (darker than `border`, for 3:1): a theme that set
   `border` for them sets `input` too. Demo: tags of kind topic are `info`.
 - The exports list shows times in the panel's language (it used the browser's).
+- The light `muted-foreground` is `#63636c` (was `#6b6b74`), so muted text reaches 4.5:1 on selected rows too.
+  The contrast warning for themes and brandings also judges pairs whose color follows a token the
+  application set (`gray-soft` follows `muted`, `secondary-foreground` follows `foreground`), and
+  `foreground`/`muted`, `muted-foreground` on `popover` and `selected`, `destructive` on `background` and
+  `popover`.
+- A select whose stored value is no longer among its options (a media collection no longer declared) shows
+  that value, disabled, rather than a blank choice.
+- The image viewer loads on first use; if that fails (a deploy replaced the file, the network dropped) the
+  viewer closes and the page under it, with its unsaved values, stays (until a reload, opening it again does
+  the same).
+- The SDK `Badge`'s `color` lists the panel's colors and still accepts any string (gray).
+- `media::entity::Model` (and its `ActiveModel`) gains `collection`: application code that builds one with a
+  struct literal adds `collection: None` (or `Set(None)`), as for `alt` in 0.10.1. `MediaItem`, `InputSchema`,
+  `FilterSchema` and `PanelResponse` gain fields too.
 - An upload with a part other than `file` and `collection` is refused with "must be one part named `file`,
-  with at most one `collection`" (code `upload_parts`; it was `file_part`). New code `media_collection`.
+  with at most one `collection`" (code `file_part`, as before; only its message changed). New code
+  `media_collection`.
 - Table columns whose field has a select or checkbox list with options in the form now show its labels instead
   of the values; `.raw()` keeps the values.
 - Values of `TableColumn::color` are compared in canonical wire form, as a select's options, on every column:
   on an `i64` or a decimal column they are strings (`.color("2", …)`, `"02"` is read as `"2"`), UUIDs lowercase,
-  instants in UTC. A value the column cannot hold refuses to boot: a number on an `i64`, decimal or text column,
-  a string on an `i32` or boolean column, a value finer than the column keeps. Such colors never matched; write
-  them as the API sends the values.
+  instants in UTC; a JSON integer on an `i64` or decimal column is read as that string (`.color(2, …)` now
+  matches; a select's options too). A value the column cannot hold refuses to boot: a number on a text column, a string on an `i32` or
+  boolean column, a value finer than the column keeps. Such colors never matched.
 
 ### Deprecated
 - `MediaEntry::gallery()`: images open in the viewer by default (`.preview(false)` turns it off); the schema no

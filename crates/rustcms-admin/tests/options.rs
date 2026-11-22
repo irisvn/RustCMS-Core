@@ -584,8 +584,8 @@ refused_at_boot!(
 refused_at_boot!(
     an_option_of_another_kind,
     WrongKind,
-    "option 12 of select `serial` is not a value of its column (i64)",
-    components![SelectInput::make("serial").options([(12, "Twelve")])]
+    "option true of select `serial` is not a value of its column (i64)",
+    components![SelectInput::make("serial").options([(true, "Twelve")])]
 );
 
 refused_at_boot!(

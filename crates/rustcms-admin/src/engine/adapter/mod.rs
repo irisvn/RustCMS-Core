@@ -464,10 +464,10 @@ impl<R: Resource> ResourceAdapter<R> {
             // Values compared as the wire sends them (an `i64` as a string).
             let what = format!("column `{name}`");
             for (value, _) in &mut column.colors {
-                *value = input::canonical_option(&owner, &what, info, value);
+                *value = input::canonical_option(&owner, "color", &what, info, value);
             }
             for option in &mut column.options {
-                option.value = input::canonical_option(&owner, &what, info, &option.value);
+                option.value = input::canonical_option(&owner, "option", &what, info, &option.value);
             }
             for (i, option) in column.options.iter().enumerate() {
                 assert!(

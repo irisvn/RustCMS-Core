@@ -397,6 +397,16 @@ export interface WidgetProps {
 
 const encodeOption = (o: SelectOption) => JSON.stringify(o.value);
 
+/** An encoded option value as text (a string without its quotes). */
+function optionText(encoded: string): string {
+  try {
+    const value: unknown = JSON.parse(encoded);
+    return typeof value === "string" ? value : encoded;
+  } catch {
+    return encoded;
+  }
+}
+
 export function Widget({ id, input, ctx, value, onChange, onBlur, disabled, invalid, describedBy }: WidgetProps) {
   const t = useT();
   if (isTriState(input)) {
@@ -546,6 +556,13 @@ export function Widget({ id, input, ctx, value, onChange, onBlur, disabled, inva
       return (
         <NativeSelect {...common} value={text} onChange={onText}>
           <option value="">{input.placeholder ?? "—"}</option>
+          {/* A stored value no longer among the options (a collection no longer
+              declared, say) shows as it is rather than as a blank choice. */}
+          {text !== "" && !(input.options ?? []).some((o) => encodeOption(o) === text) && (
+            <option value={text} disabled>
+              {optionText(text)}
+            </option>
+          )}
           {(input.options ?? []).map((o) => (
             <option key={encodeOption(o)} value={encodeOption(o)} disabled={hasUnsafeInteger(o.value)}>
               {o.label}

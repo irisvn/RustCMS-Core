@@ -12,15 +12,20 @@ const PAIRS: &[(&str, &str)] = &[
     ("foreground", "background"),
     ("foreground", "card"),
     ("foreground", "popover"),
+    ("foreground", "muted"),
     ("muted-foreground", "background"),
     ("muted-foreground", "card"),
     ("muted-foreground", "muted"),
+    ("muted-foreground", "popover"),
+    ("muted-foreground", "selected"),
     ("foreground", "selected"),
     ("primary", "card"),
     ("primary-foreground", "primary"),
     ("primary-foreground", "primary-hover"),
     ("secondary-foreground", "secondary"),
+    ("destructive", "background"),
     ("destructive", "card"),
+    ("destructive", "popover"),
     ("destructive-foreground", "destructive"),
     ("destructive-foreground", "destructive-hover"),
     ("secondary-foreground", "secondary-hover"),
@@ -47,7 +52,7 @@ pub(super) const LIGHT: &[(&str, &str)] = &[
     ("card", "#ffffff"),
     ("popover", "var(--card)"),
     ("muted", "#f4f4f5"),
-    ("muted-foreground", "#6b6b74"),
+    ("muted-foreground", "#63636c"),
     ("subtle-foreground", "#a1a1aa"),
     ("border", "#e4e4e7"),
     ("input", "#8a8a93"),
@@ -124,7 +129,9 @@ pub(crate) fn low(shown: &Theme, by: (&Palette, &Palette)) -> Vec<Low> {
 }
 
 fn scheme(name: &'static str, defaults: &[(&'static str, &'static str)], shown: &Palette, by: &Palette) -> Vec<Low> {
-    let set = |palette: &Palette, token: &str| palette.colors.iter().any(|(t, _)| *t == token);
+    // A token counts as set when the application set it, or set the one it
+    // follows (`var(--x)`) without setting it.
+    let set = |by: &Palette, token: &str| follows(defaults, shown, by, token, 0);
     PAIRS
         .iter()
         .filter(|(text, background)| set(by, text) || set(by, background))
@@ -133,6 +140,23 @@ fn scheme(name: &'static str, defaults: &[(&'static str, &'static str)], shown: 
             (ratio < MINIMUM).then_some(Low { scheme: name, text, background, ratio })
         })
         .collect()
+}
+
+/// Whether `by` sets `token`, or (`token` left to its default, by `by` and
+/// what is `shown`) the token its default follows: a theme setting
+/// `foreground` changes `secondary-foreground` too.
+fn follows(defaults: &[(&str, &str)], shown: &Palette, by: &Palette, token: &str, depth: u8) -> bool {
+    if by.colors.iter().any(|(t, _)| *t == token) {
+        return true;
+    }
+    if shown.colors.iter().any(|(t, _)| *t == token) {
+        return false;
+    }
+    let default = defaults.iter().chain(ALIASES).find(|(t, _)| *t == token).map(|(_, v)| *v);
+    match default.and_then(|v| v.strip_prefix("var(--")).and_then(|v| v.strip_suffix(')')) {
+        Some(other) if depth < 4 => follows(defaults, shown, by, other, depth + 1),
+        _ => false,
+    }
 }
 
 /// `token` as shown: the application's value, else the panel's (following `var(--x)`).
@@ -230,6 +254,20 @@ mod tests {
         // Secondary text follows foreground.
         let low = own(&Theme::new().color("secondary", "#27272a"));
         assert_eq!((low[0].text, low[0].background), ("secondary-foreground", "secondary"));
+        // A pair is judged when the application sets a token one of its colors
+        // follows: muted (gray badges' background) under the default text.
+        let low = own(&Theme::new().color("muted", "#52525b"));
+        let pairs: Vec<_> = low.iter().map(|l| (l.text, l.background)).collect();
+        assert!(pairs.contains(&("gray-soft-foreground", "gray-soft")), "{pairs:?}");
+        assert!(pairs.contains(&("foreground", "muted")), "{pairs:?}");
+        // A color the theme set itself does not follow the alias: a branding
+        // setting `muted` answers for none of the theme's gray badge pair.
+        let theme = Theme::new().color("gray-soft", "#ffffff").color("gray-soft-foreground", "#ffffff");
+        let branding = Palette::default().color("muted", "#f4f4f5");
+        let mut shown = theme.clone();
+        shown.light = theme.light.merged(&branding);
+        let judged = super::low(&shown, (&branding, &Palette::default()));
+        assert!(judged.iter().all(|l| l.background != "gray-soft"), "{judged:?}");
     }
 
     #[test]
@@ -256,6 +294,7 @@ mod tests {
                 ("dark", "muted-foreground", "background"),
                 ("dark", "muted-foreground", "card"),
                 ("dark", "muted-foreground", "muted"),
+                ("dark", "muted-foreground", "selected"),
             ]
         );
         assert!(low.iter().all(|l| l.ratio < MINIMUM));

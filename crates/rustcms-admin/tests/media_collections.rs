@@ -393,3 +393,57 @@ mod boot {
         assert!(setting.contains("only media settings"), "{setting}");
     }
 }
+
+/// What a media hook saw: (media id, event, collection, previous collection).
+/// Each test reads its own file's entries: the database cases may run at once.
+type Moved = (String, rustcms_admin::media::MediaEvent, Option<String>, Option<Option<String>>);
+
+static MOVED: std::sync::Mutex<Vec<Moved>> = std::sync::Mutex::new(Vec::new());
+
+struct MoveRecorder;
+
+#[async_trait::async_trait]
+impl rustcms_admin::media::MediaHook for MoveRecorder {
+    async fn changed(
+        &self,
+        _: &Ctx,
+        _: &sea_orm::DatabaseTransaction,
+        change: &rustcms_admin::media::MediaChange<'_>,
+    ) -> rustcms_core::AppResult<()> {
+        if change.media.name == "hooked.png" {
+            MOVED.lock().unwrap().push((
+                change.media.id.to_string(),
+                change.event,
+                change.media.collection.clone(),
+                change.previous.map(|p| p.collection.clone()),
+            ));
+        }
+        Ok(())
+    }
+}
+
+db_test!(media_hooks_see_a_file_move_between_collections, |db: TestDb| async move {
+    support::create_tables(db.conn()).await;
+    let registry = Registry::new()
+        .media_collection("covers", "Covers")
+        .media_hook(MoveRecorder)
+        .register::<rustcms_admin::media::MediaResource>()
+        .finish();
+    let library = registry.get("media").unwrap();
+    let file = stored(db.conn(), 7, "hooked.png", None).await;
+    let owner = user(&db, &registry, "7", &["media.update"]);
+    let input = |value: serde_json::Value| -> Data { value.as_object().unwrap().clone() };
+
+    library.update(&owner, &file, input(json!({"collection": "covers"}))).await.unwrap();
+    library.update(&owner, &file, input(json!({"collection": null}))).await.unwrap();
+
+    let moved: Vec<_> = MOVED
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|m| m.0 == file)
+        .map(|(_, event, collection, previous)| (*event, collection.clone(), previous.clone()))
+        .collect();
+    use rustcms_admin::media::MediaEvent::Updated;
+    assert_eq!(moved, [(Updated, Some("covers".into()), Some(None)), (Updated, None, Some(Some("covers".into())))]);
+});

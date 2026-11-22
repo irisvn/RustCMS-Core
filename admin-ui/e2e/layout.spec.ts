@@ -27,6 +27,7 @@ async function fitsViewport(page: Page) {
 const TEXT_PAIRS = [
   ["foreground", "background"], ["foreground", "card"], ["foreground", "popover"], ["foreground", "muted"], ["foreground", "selected"],
   ["muted-foreground", "background"], ["muted-foreground", "card"], ["muted-foreground", "muted"], ["muted-foreground", "popover"],
+  ["muted-foreground", "selected"],
   ["primary", "card"], ["primary-foreground", "primary"], ["primary-foreground", "primary-hover"],
   ["secondary-foreground", "secondary"], ["secondary-foreground", "secondary-hover"],
   ["destructive", "card"], ["destructive", "background"], ["destructive", "popover"],

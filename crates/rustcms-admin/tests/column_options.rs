@@ -122,8 +122,11 @@ impl Resource for TicketResource {
             TextColumn::make("kind").raw(),
             // From the form's checkbox list (a JSON list).
             BadgeColumn::make("tags"),
-            // Declared: over the form's, in other spellings (an i64 is a string).
-            BadgeColumn::make("level").options([("01", "Minor"), ("2", "Major")]).color("1", "warning"),
+            // Declared: over the form's, in other spellings (an i64 is a string, or a JSON number).
+            BadgeColumn::make("level")
+                .options([("01", "Minor"), ("2", "Major")])
+                .color("1", "warning")
+                .color(2, "danger"),
             BooleanColumn::make("active"),
             // Related records by title: never the select's options.
             TextColumn::make("team_id"),
@@ -193,7 +196,10 @@ db_test!(columns_show_option_labels, |db: TestDb| async move {
         column(&schema, "level")["options"],
         json!([{"value": "1", "label": "Minor"}, {"value": "2", "label": "Major"}])
     );
-    assert_eq!(column(&schema, "level")["colors"], json!([{"value": "1", "color": "warning"}]));
+    assert_eq!(
+        column(&schema, "level")["colors"],
+        json!([{"value": "1", "color": "warning"}, {"value": "2", "color": "danger"}])
+    );
     for name in ["title", "kind", "active", "team_id"] {
         assert_eq!(column(&schema, name).get("options"), None, "column `{name}`");
     }
@@ -306,15 +312,15 @@ refused_at_boot!(
 refused_at_boot!(
     an_option_of_another_kind,
     WrongKind,
-    "option 1 of column `level` is not a value of its column (i64)",
-    vec![TextColumn::make("level").options([(1, "One")])]
+    "option true of column `level` is not a value of its column (i64)",
+    vec![TextColumn::make("level").options([(true, "One")])]
 );
 
 refused_at_boot!(
     a_color_of_another_kind,
     WrongColor,
-    "option 1 of column `level` is not a value of its column (i64)",
-    vec![BadgeColumn::make("level").color(1, "success")]
+    "color \"high\" of column `level` is not a value of its column (i64)",
+    vec![BadgeColumn::make("level").color("high", "success")]
 );
 
 refused_at_boot!(

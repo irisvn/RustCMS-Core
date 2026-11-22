@@ -216,7 +216,7 @@ impl<R: Resource> ResourceAdapter<R> {
 
     /// Whether `name` is the media library's `collection`.
     fn is_media_collection(&self, name: &str) -> bool {
-        R::SLUG == crate::media::SLUG && name == "collection"
+        std::any::TypeId::of::<R>() == std::any::TypeId::of::<crate::media::MediaResource>() && name == "collection"
     }
 
     /// The media library's `collection` is shown only when the panel declares collections.

@@ -29,6 +29,38 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.13.1 to 0.14.0
+
+Run `rustcms migrate`: framework migration `m20261202_000023_add_collection_to_media` adds a nullable
+`media.collection` column and an index. **Rollback:** its `down` drops both; 0.13.1 also runs with the column
+in place (it ignores it), so rolling back the binary alone is safe.
+
+- **Table columns show option labels.** A text or badge column whose field has a select or checkbox list with
+  options in the form shows the option's label instead of the stored value. Add `.raw()` to the column to keep
+  the values. Search, sorting, filters and exports still use the values.
+- **`.color(..)` values are compared as the API sends them.** On an `i64` or decimal column write
+  `.color("2", ..)` (a number such as `.color(2, ..)` is read the same way). A value the column cannot hold (a
+  string on an `i32` or boolean column, a number on a text column) now stops the boot with a message naming
+  it: such colors never matched before.
+- **Colors.** Inputs, checkboxes and outline buttons use the new `input` token instead of `border`: a theme
+  that set `border` for them sets `input` too. Primary badges are solid, a row's primary action is an outline
+  button, dark mode's main buttons are light grey, and the light `muted-foreground` is a little darker
+  (`#63636c`) so muted text reaches 4.5:1 on selected rows. A theme or branding whose text colors fall under
+  4.5:1 is named in a warning in the log; nothing is refused. See [theming](admin/theming.md).
+- **Uploads.** An upload may carry a `collection` part. A part other than `file` and `collection` is still
+  refused with code `file_part`, with a new message; an undeclared collection gets the new code
+  `media_collection`.
+- **Rust API.** `media::entity::Model` gains `collection`: code that builds a media `Model` or `ActiveModel`
+  with a struct literal adds `collection: None` (or `Set(None)`). `MediaEntry::gallery()` is deprecated and
+  does nothing (every image opens in the viewer; `.preview(false)` keeps a field's images still).
+- **Schema (vocabularies 20 to 23).** `ColumnSchema` gains `options` and `format`, `EntrySchema` `format` and
+  `preview` (its `gallery` is gone: code building an `EntrySchema` drops it), `MediaSchema` `preview`,
+  `InputSchema` `collection`, `FilterSchema` `none`, `MediaItem` `collection`, the panel's
+  configuration `dateFormat`/`dateTimeFormat` and `PanelResponse` `mediaCollections`. A client on an older
+  vocabulary shows forms read-only.
+- **Extensions.** The SDK's `Badge` takes `color` (`"gray"`, `"primary"`, `"info"`, `"success"`, `"warning"`,
+  `"danger"`, any other string shows gray); copy the SDK again (`rustcms make:sdk`) to get the type.
+
 ## From 0.13.0 to 0.13.1
 
 No migration. To roll back, install 0.13.0 again; no data changes shape.

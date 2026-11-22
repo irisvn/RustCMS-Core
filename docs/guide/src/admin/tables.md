@@ -58,8 +58,9 @@ BadgeColumn::make("status").color("published", "success").color("draft", "gray")
 ```
 
 Values in `.color(…)` are compared as the API sends them: an `i64` or a
-decimal column's values are strings (`.color("2", "danger")`), as a select's
-options. A value the column cannot hold refuses to boot.
+decimal column's values are strings (`.color("2", "danger")`; an integer such as
+`.color(2, "danger")` is read as that string), as a select's options. A value
+the column cannot hold refuses to boot.
 
 ### Option labels
 
@@ -230,7 +231,7 @@ The boot stops when:
   value, in values the column cannot hold, or miss a colored value;
 - a [date format](#date-formats) is not a pattern, does not fit the field
   (not a date, a time on a date, a zone on a local date-time), or is given to a
-  boolean, count or [custom cell](customizing.md#custom-cells) column.
+  boolean, badge, count or [custom cell](customizing.md#custom-cells) column.
 
 ## Related pages
 

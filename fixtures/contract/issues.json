@@ -126,7 +126,7 @@
     "has a name longer than 255 characters"
   ],
   "file_part": [
-    "must be the only part, named `file`"
+    "must be one part named `file`, with at most one `collection`"
   ],
   "file_type": [
     "is not an accepted file type"
@@ -376,9 +376,6 @@
   ],
   "unsupported_key": [
     "unsupported key type"
-  ],
-  "upload_parts": [
-    "must be one part named `file`, with at most one `collection`"
   ],
   "uuid": [
     "must be a UUID"

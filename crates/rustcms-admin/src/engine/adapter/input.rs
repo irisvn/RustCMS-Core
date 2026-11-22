@@ -449,8 +449,13 @@ pub(super) fn static_options<C: ColumnTrait>(
         let many = input.kind == InputType::CheckboxList;
         if !many {
             for option in options.iter_mut() {
-                option.value =
-                    canonical_option(&format!("resource `{slug}`"), &format!("select `{name}`"), column, &option.value);
+                option.value = canonical_option(
+                    &format!("resource `{slug}`"),
+                    "option",
+                    &format!("select `{name}`"),
+                    column,
+                    &option.value,
+                );
             }
         }
         let values = options.iter().map(|o| o.value.clone()).collect();
@@ -468,25 +473,35 @@ pub(super) fn static_options<C: ColumnTrait>(
     out
 }
 
-/// `value`, an option (or a badge color's value) of `what` on `column`, in
-/// canonical wire form: the form clients write and schemas show. Panics when
+/// `value`, an option (or a badge color's value: `noun` names which) of `what`
+/// on `column`, in canonical wire form: the form clients write and schemas
+/// show. An `i64` or decimal may be written as a JSON integer. Panics when
 /// the column cannot hold it as it is (not a value of its kind, stored as
 /// another value, or finer than the column keeps).
 pub(super) fn canonical_option<C: ColumnTrait>(
     owner: &str,
+    noun: &str,
     what: &str,
     column: &ColumnInfo<C>,
     value: &serde_json::Value,
 ) -> serde_json::Value {
+    // An `i64` or a decimal written as a JSON integer reads as the string the
+    // wire sends (other numbers are refused: a float may not be exact).
+    let value = &match (column.kind, value) {
+        (FieldKind::I64 | FieldKind::Decimal, serde_json::Value::Number(n)) if n.is_i64() || n.is_u64() => {
+            serde_json::Value::String(n.to_string())
+        }
+        _ => value.clone(),
+    };
     let scale = crate::wire::decimal_scale(column.column.def().get_column_type());
     let canonical = crate::wire::canonical(column.kind, scale, value).unwrap_or_else(|e| {
-        panic!("{owner}: option {value} of {what} is not a value of its column ({}): {e}", column.kind.name())
+        panic!("{owner}: {noun} {value} of {what} is not a value of its column ({}): {e}", column.kind.name())
     });
     let same = column.kind.decode(&canonical).ok().and_then(|c| c.into_iter().next())
         == column.kind.decode(value).ok().and_then(|c| c.into_iter().next());
-    assert!(same, "{owner}: option {value} of {what} would be stored as {canonical}");
+    assert!(same, "{owner}: {noun} {value} of {what} would be stored as {canonical}");
     if let Err(problem) = storable(column.column.def().get_column_type(), column.kind, &canonical) {
-        panic!("{owner}: option {value} of {what} {problem}");
+        panic!("{owner}: {noun} {value} of {what} {problem}");
     }
     canonical
 }
