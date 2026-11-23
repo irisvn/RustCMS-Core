@@ -17,8 +17,9 @@ impl<R: Resource> ResourceAdapter<R> {
                 continue;
             }
             let Some(pivot) = &relation.pivot else {
-                let (readable, creatable) = target.field_access(ctx, relation.field);
-                if !readable {
+                // Its parent key and filtered fields readable (ADR 0044).
+                let access = crate::registry::relation_access(ctx, target.as_ref(), relation);
+                if !access.readable {
                     continue;
                 }
                 out.push(RelationSchema {
@@ -27,7 +28,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     label,
                     resource: relation.target,
                     field: relation.field,
-                    create: creatable && target.allows(ctx, ability::CREATE).await,
+                    create: access.creatable && target.allows(ctx, ability::CREATE).await,
                     // In canonical wire form, as the server writes them (checked at boot).
                     fixed: relation
                         .filters
@@ -383,7 +384,7 @@ impl<R: Resource> ResourceAdapter<R> {
 
     /// Fills in the rows of the relationship repeaters in `components`: the
     /// child's inputs for the operation and what the user may do; a repeater
-    /// whose child the user may not list is left out.
+    /// whose rows are left out for the user (`rows_shown`) is left out.
     pub(super) async fn fill_row_repeaters(
         &self,
         ctx: &Ctx,
@@ -396,10 +397,13 @@ impl<R: Resource> ResourceAdapter<R> {
                 ComponentSchema::Input(mut input) if input.value_type == "rows" => {
                     let Some(repeater) = self.row_repeaters.iter().find(|r| r.name == input.name) else { continue };
                     let Some(child) = ctx.registry.get(repeater.target) else { continue };
-                    if !child.allows(ctx, ability::VIEW_ANY).await {
+                    if !self.rows_shown(ctx, repeater).await {
                         continue;
                     }
-                    let create = child.admits(ctx, ability::CREATE).await && child.allows(ctx, ability::CREATE).await;
+                    let creatable = self.relation_of_rows(ctx, repeater).is_some_and(|a| a.creatable);
+                    let create = creatable
+                        && child.admits(ctx, ability::CREATE).await
+                        && child.allows(ctx, ability::CREATE).await;
                     let update = op == SchemaOperation::Edit && child.admits(ctx, ability::UPDATE).await;
                     let delete = op == SchemaOperation::Edit && child.admits(ctx, ability::DELETE).await;
                     let rows = child.row_schema(ctx, &repeater.rules().components, op);
@@ -561,7 +565,7 @@ impl<R: Resource> ResourceAdapter<R> {
             let relation = self.relations.iter().find(|r| r.name == name).expect("validated at registration");
             if let Some(target) = ctx.registry.get(relation.target)
                 && target.allows(ctx, ability::VIEW_ANY).await
-                && target.field_access(ctx, relation.field).0
+                && crate::registry::relation_access(ctx, target.as_ref(), relation).readable
             {
                 columns.push(c);
             }

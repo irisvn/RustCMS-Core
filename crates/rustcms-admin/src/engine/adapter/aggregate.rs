@@ -247,7 +247,9 @@ impl<R: Resource> ResourceAdapter<R> {
             }
             return Ok(out);
         }
-        let select = self.list_select(ctx, &ListQuery::default())?.filter(column.column.is_in(values));
+        // The relation's list without its one parent: every parent's children, filters applied.
+        query.parent = None;
+        let select = self.list_select(ctx, &query)?.filter(column.column.is_in(values));
         let (keys, complete) =
             self.read_candidate_keys(&ctx.db, &select, LIST_SCAN_BATCH, MAX_LIST_SCAN / LIST_SCAN_BATCH).await?;
         if !complete {

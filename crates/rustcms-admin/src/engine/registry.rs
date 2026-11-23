@@ -319,6 +319,38 @@ pub trait DynResource: Send + Sync {
     ) -> AppResult<Vec<LinkOption>>;
 }
 
+/// What the user may do through a has-many relation, field by field (ADR
+/// 0044): the one check every path of a relation shares (its section and
+/// routes, counts, relationship repeaters and entries, reactions).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RelationAccess {
+    /// The parent key and every filtered field are readable: else the
+    /// relation is absent (no section, repeater left out and its changes 403,
+    /// no counts).
+    pub(crate) readable: bool,
+    /// Every filtered field is readable: else the relation's routes answer
+    /// 404, as for a relation that does not exist (an unreadable parent key
+    /// alone: 403, as before filters).
+    pub(crate) filters_readable: bool,
+    /// Readable, and the parent key and every filtered field are writable on
+    /// create (the create writes them): else no New, creates 403.
+    pub(crate) creatable: bool,
+}
+
+/// [`RelationAccess`] of has-many `relation` (whose target is `target`) for
+/// the user of `ctx`.
+pub(crate) fn relation_access(ctx: &Ctx, target: &dyn DynResource, relation: &Relation) -> RelationAccess {
+    let mut access = RelationAccess { readable: true, filters_readable: true, creatable: true };
+    for field in std::iter::once(relation.field).chain(relation.filters.iter().map(|(f, _)| *f)) {
+        let (readable, creatable) = target.field_access(ctx, field);
+        access.readable &= readable;
+        access.filters_readable &= readable || field == relation.field;
+        access.creatable &= creatable;
+    }
+    access.creatable &= access.readable;
+    access
+}
+
 /// All resources of a panel.
 #[derive(Default)]
 pub struct Registry {

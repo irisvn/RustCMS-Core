@@ -1,7 +1,7 @@
-//! Conditions on and in repeaters (ADR 0044, part A): a write that hides a
-//! relationship repeater removes the rows the user sees (only when it hides
-//! it); rows follow the repeater's conditions, which may read the record's
-//! form (`when_root`), as JSON rows may. SQLite, PostgreSQL, MySQL.
+//! Conditions on and in repeaters (ADR 0044, part A): a hidden relationship
+//! repeater keeps its rows (changes sent for it are dropped); rows follow the
+//! repeater's conditions, which may read the record's form (`when_root`), as
+//! JSON rows may. SQLite, PostgreSQL, MySQL.
 
 use axum::http::StatusCode;
 use rustcms_admin::*;
@@ -150,10 +150,79 @@ impl Resource for OptionResource {
     }
 }
 
+/// The same tables, edited by a repeater whose rows declare no condition:
+/// legacy mode (ADR 0044), rows checked with the child form's conditions as in 0.13.
+pub struct PlainQuizResource;
+
+impl Resource for PlainQuizResource {
+    type Entity = quiz::Entity;
+    const SLUG: &'static str = "plain_quizzes";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Plain quiz").title("title")
+    }
+
+    fn fields() -> Vec<Field> {
+        use quiz::Column as C;
+        vec![Field::column(C::Title).required(), Field::column(C::Kind).required()]
+    }
+
+    fn form() -> Form {
+        Form::new().schema(components![
+            TextInput::make("title"),
+            TextInput::make("kind"),
+            Repeater::make("options")
+                .relationship()
+                .order_column("position")
+                .schema(components![TextInput::make("content"), TextInput::make("hint"),]),
+        ])
+    }
+
+    fn relations() -> Vec<Relation> {
+        vec![Relation::has_many("options", "plain_options", "quiz_id")]
+    }
+}
+
+pub struct PlainOptionResource;
+
+impl Resource for PlainOptionResource {
+    type Entity = option::Entity;
+    const SLUG: &'static str = "plain_options";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Plain option").title("content").soft_deletes().lock_parent("quiz_id", "plain_quizzes")
+    }
+
+    fn fields() -> Vec<Field> {
+        use option::Column as C;
+        vec![
+            Field::column(C::QuizId).required().belongs_to("plain_quizzes"),
+            Field::column(C::Content).required(),
+            Field::column(C::Hint).required(),
+            Field::column(C::Position).guarded().readable(|_| true),
+            Field::column(C::DeletedAt).guarded().readable(|_| true),
+        ]
+    }
+
+    // In legacy rows, this form's condition applies.
+    fn form() -> Form {
+        Form::new().schema(components![
+            TextInput::make("content"),
+            TextInput::make("hint").shown_when(when("content").eq("x")),
+        ])
+    }
+}
+
 fn build(config: Config) -> AppBuilder {
     let mut app = AppBuilder::new(config);
     app.provider(AuthProvider::new());
-    app.provider(AdminProvider::new().resource::<QuizResource>().resource::<OptionResource>());
+    app.provider(
+        AdminProvider::new()
+            .resource::<QuizResource>()
+            .resource::<OptionResource>()
+            .resource::<PlainQuizResource>()
+            .resource::<PlainOptionResource>(),
+    );
     app
 }
 
@@ -248,21 +317,25 @@ async fn insert_option(app: &TestApp, quiz: &str, content: &str, position: i32) 
         .unwrap();
 }
 
-db_test!(a_write_hiding_the_repeater_removes_the_rows_the_user_sees, |db: TestDb| async move {
+db_test!(a_write_hiding_the_repeater_keeps_its_rows, |db: TestDb| async move {
     let (app, users) = setup(db).await;
     let admin = app.acting_as(&users.admin).await;
     let quiz = choice_quiz(&app, &admin).await;
+    let before = options(&app, &quiz).await;
     // Changes sent with the switch are dropped: the repeater is hidden after it.
     let sent = json!({"kind": "blank", "options": {"create": [{"ref": "n9", "data": {"content": "z"}}]}});
     update_quiz(&admin, &app, &quiz, sent).await.assert_status(StatusCode::OK);
-    // The row outside the scope stays; the others are in the trash.
-    assert_eq!(options(&app, &quiz).await, [("hidden".to_owned(), None)]);
+    // Hiding is not deleting: every row stays, none in the trash, no rows change in the history
+    // (but the creation's).
+    assert_eq!(options(&app, &quiz).await, before);
     let trashed = option::Entity::find().all(app.state().db()).await.unwrap();
-    assert_eq!(trashed.iter().filter(|o| o.deleted_at.is_some()).count(), 2);
-    // The parent's history counts them; each row has its own entry.
+    assert_eq!(trashed.iter().filter(|o| o.deleted_at.is_some()).count(), 0);
     let history = admin.get(&app.admin_api(&format!("resources/quizzes/records/{quiz}/history"))).await.json();
-    let rows = history["data"].as_array().unwrap().iter().find(|e| e["event"] == "rows_changed").unwrap().clone();
-    assert_eq!((rows["meta"]["relation"].clone(), rows["meta"]["deleted"].clone()), (json!("options"), json!(2)));
+    let changed = history["data"].as_array().unwrap().iter().filter(|e| e["event"] == "rows_changed").count();
+    assert_eq!(changed, 1, "{history}");
+    // Shown again, the rows are there.
+    update_quiz(&admin, &app, &quiz, json!({"kind": "choice"})).await.assert_status(StatusCode::OK);
+    assert_eq!(options(&app, &quiz).await, before);
 });
 
 db_test!(a_repeater_hidden_before_the_write_keeps_its_rows, |db: TestDb| async move {
@@ -288,16 +361,17 @@ db_test!(a_repeater_hidden_before_the_write_keeps_its_rows, |db: TestDb| async m
     assert_eq!(refused["options"][0]["code"], json!("min_items"));
 });
 
-db_test!(removing_the_rows_needs_the_childs_delete, |db: TestDb| async move {
+db_test!(hiding_the_rows_needs_no_delete, |db: TestDb| async move {
     let (app, users) = setup(db).await;
     let admin = app.acting_as(&users.admin).await;
     let clerk = app.acting_as(&users.clerk).await;
     let quiz = choice_quiz(&app, &admin).await;
-    update_quiz(&clerk, &app, &quiz, json!({"kind": "blank"})).await.assert_status(StatusCode::FORBIDDEN);
-    // Nothing saved: the quiz is still a choice, its options all there.
+    let before = options(&app, &quiz).await;
+    // The clerk may not delete options: switching the kind keeps them (nothing to delete).
+    update_quiz(&clerk, &app, &quiz, json!({"kind": "blank"})).await.assert_status(StatusCode::OK);
     let stored = quiz::Entity::find_by_id(quiz.parse::<i32>().unwrap()).one(app.state().db()).await.unwrap().unwrap();
-    assert_eq!(stored.kind, "choice");
-    assert_eq!(options(&app, &quiz).await.len(), 3);
+    assert_eq!(stored.kind, "blank");
+    assert_eq!(options(&app, &quiz).await, before);
 });
 
 db_test!(rows_follow_the_repeaters_conditions_reading_the_form, |db: TestDb| async move {
@@ -340,6 +414,94 @@ db_test!(rows_follow_the_repeaters_conditions_reading_the_form, |db: TestDb| asy
     let sent = json!({"explain": false, "options": {"update": [{"key": a, "data": {"hint": "changed"}}]}});
     update_quiz(&admin, &app, &quiz, sent).await.assert_status(StatusCode::OK);
     assert_eq!(options(&app, &quiz).await[0], ("a".to_owned(), Some("because".to_owned())));
+});
+
+db_test!(a_change_for_a_hidden_repeater_is_still_admitted_and_checked, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    let admin = app.acting_as(&users.admin).await;
+    let clerk = app.acting_as(&users.clerk).await;
+    let quiz = choice_quiz(&app, &admin).await;
+    let before = options(&app, &quiz).await;
+    let a = option::Entity::find()
+        .filter(sea_orm::ColumnTrait::eq(&option::Column::Content, "a"))
+        .one(app.state().db())
+        .await
+        .unwrap()
+        .unwrap()
+        .id
+        .to_string();
+    // Hidden by this write, the repeater's change is admitted first: the clerk may not delete.
+    let forbidden = json!({"kind": "blank", "options": {"delete": [a]}});
+    update_quiz(&clerk, &app, &quiz, forbidden).await.assert_status(StatusCode::FORBIDDEN);
+    // And shape-checked.
+    let malformed = json!({"kind": "blank", "options": {"create": "a"}});
+    assert_eq!(issues(update_quiz(&admin, &app, &quiz, malformed).await)["options"][0]["code"], json!("invalid"));
+    // Hidden before the write too.
+    update_quiz(&admin, &app, &quiz, json!({"kind": "blank"})).await.assert_status(StatusCode::OK);
+    let forbidden = json!({"options": {"delete": [a]}});
+    update_quiz(&clerk, &app, &quiz, forbidden).await.assert_status(StatusCode::FORBIDDEN);
+    let malformed = json!({"options": {"bogus": []}});
+    assert_eq!(issues(update_quiz(&admin, &app, &quiz, malformed).await)["options"][0]["code"], json!("invalid"));
+    // An admitted, well-formed change is discarded: nothing changed.
+    update_quiz(&admin, &app, &quiz, json!({"options": {"delete": [a]}})).await.assert_status(StatusCode::OK);
+    assert_eq!(options(&app, &quiz).await, before);
+});
+
+db_test!(rows_declaring_no_condition_follow_the_child_form, |db: TestDb| async move {
+    let (app, users) = setup(db).await;
+    let admin = app.acting_as(&users.admin).await;
+    let url = app.admin_api("resources/plain_quizzes/records");
+    let row = |reference: &str, content: &str, hint: Option<&str>| json!({"ref": reference, "data": {"content": content, "hint": hint}});
+    // Legacy mode: the child form shows the hint for content "x" only, where it is required.
+    let sent = json!({"title": "Q", "kind": "plain", "options": {"create": [row("n1", "x", None)]}});
+    assert_eq!(issues(admin.post_json(&url, &sent).await)["options.n1.hint"][0]["code"], json!("required"));
+    // Elsewhere hidden: dropped, not required.
+    let sent = json!({"title": "Q", "kind": "plain", "options": {
+        "create": [row("n1", "x", Some("why")), row("n2", "a", Some("dropped")), row("n3", "b", None)],
+        "order": [{"new": "n1"}, {"new": "n2"}, {"new": "n3"}],
+    }});
+    let created = admin.post_json(&url, &sent).await;
+    created.assert_status(StatusCode::CREATED);
+    let quiz = created.json()["data"]["key"].as_str().unwrap().to_owned();
+    assert_eq!(
+        options(&app, &quiz).await,
+        [("x".to_owned(), Some("why".to_owned())), ("a".to_owned(), None), ("b".to_owned(), None)]
+    );
+    // Updates too: the stored row with the change over it.
+    let key = |content: &'static str| {
+        let app = &app;
+        async move {
+            option::Entity::find()
+                .filter(sea_orm::ColumnTrait::eq(&option::Column::Content, content))
+                .one(app.state().db())
+                .await
+                .unwrap()
+                .unwrap()
+                .id
+                .to_string()
+        }
+    };
+    let (x, a) = (key("x").await, key("a").await);
+    let patch = |body: Value| {
+        let (admin, app, quiz) = (&admin, &app, &quiz);
+        async move {
+            admin.fetch_csrf().await;
+            let url = app.admin_api(&format!("resources/plain_quizzes/records/{quiz}"));
+            admin.send(axum::http::Method::PATCH, &url, Some(&body)).await
+        }
+    };
+    let cleared = json!({"options": {"update": [{"key": x, "data": {"hint": null}}]}});
+    assert_eq!(issues(patch(cleared).await)[format!("options.{x}.hint")][0]["code"], json!("required"));
+    let shown = json!({"options": {"update": [{"key": a, "data": {"content": "x"}}]}});
+    assert_eq!(issues(patch(shown).await)[format!("options.{a}.hint")][0]["code"], json!("required"));
+    let hidden = json!({"options": {"update": [{"key": a, "data": {"hint": "ignored"}}]}});
+    patch(hidden).await.assert_status(StatusCode::OK);
+    assert_eq!(options(&app, &quiz).await[1], ("a".to_owned(), None));
+    // The panel evaluates nothing in legacy rows: their schema holds no condition.
+    let schema = admin.get(&app.admin_api("resources/plain_quizzes/schema?operation=create")).await.json();
+    let components = schema["form"]["components"].as_array().unwrap();
+    let rows = &components.iter().find(|c| c["name"] == "options").unwrap()["repeater"]["components"];
+    assert!(rows.as_array().unwrap().iter().all(|c| c.get("shownWhen").is_none()), "{rows}");
 });
 
 db_test!(json_rows_read_the_form, |db: TestDb| async move {

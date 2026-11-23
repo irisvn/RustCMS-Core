@@ -88,7 +88,9 @@ impl<R: Resource> ResourceAdapter<R> {
             }
             let Some(relation) = self.relations.iter().find(|r| r.name == name) else { continue };
             let Some(target) = ctx.registry.get(relation.target) else { continue };
-            if !target.allows(ctx, ability::VIEW_ANY).await {
+            if !target.allows(ctx, ability::VIEW_ANY).await
+                || !crate::registry::relation_access(ctx, target.as_ref(), relation).readable
+            {
                 continue;
             }
             match target.counted_by(ctx, relation.field, &relation.query_filters(), &parents).await {

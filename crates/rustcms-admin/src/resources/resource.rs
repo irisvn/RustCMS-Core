@@ -486,8 +486,11 @@ impl Relation {
     /// Has-many: only the target's records whose `field` holds no value
     /// (ADR 0044). Wherever the relation is read (its section, counts,
     /// repeaters, view pages); records created through it get `null` there.
-    /// Several repeaters may edit one target through relations that cannot
-    /// share a record:
+    /// `field` is a nullable, non-encrypted field. Users who may not read it
+    /// do not get the relation; users who may not write it on create cannot
+    /// create through it; a hook changing it on a record of the relation
+    /// fails the write. Several repeaters may edit one target through
+    /// relations that cannot share a record:
     ///
     /// ```ignore
     /// Relation::has_many("options", "question_options", "question_id").where_null("blank_id")
@@ -501,8 +504,10 @@ impl Relation {
 
     /// Has-many: only the target's records whose `field` holds `value` (in
     /// wire form, as the API sends the field: `7` for an `i32`, `"7"` for an
-    /// `i64`, `"1.5"` or `"1.50"` for a decimal); records
-    /// created through the relation get it. See [`Self::where_null`].
+    /// `i64`); records created through the relation get it. `field` is a
+    /// boolean, integer, UUID or date field (compared exactly: text, JSON,
+    /// floats and decimals are refused at boot, as SQL collations or
+    /// rounding could disagree). See [`Self::where_null`].
     ///
     /// # Panics
     /// On a belongs-to-many relation (the field and value are checked at boot).

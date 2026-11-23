@@ -105,6 +105,19 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             RelationFilter::Eq(value) if value.is_null() => {
                 Err("`where_eq` takes a value (`where_null` for none)".to_owned())
             }
+            // Compared exactly, as SQL does: no collation, no rounding (ADR 0044).
+            RelationFilter::Eq(_)
+                if !matches!(
+                    column.kind,
+                    FieldKind::Bool | FieldKind::I32 | FieldKind::I64 | FieldKind::Uuid | FieldKind::Date
+                ) =>
+            {
+                Err(format!(
+                    "`where_eq` takes a boolean, integer, UUID or date field, not a {} (a database collation or \
+                     rounding could hold rows the relation's exact check does not)",
+                    column.kind.name()
+                ))
+            }
             RelationFilter::Eq(value) => self
                 .canonical_filter(name, filter)
                 .map_err(|_| format!("`where_eq` value {value} is not a {}", column.kind.name())),
@@ -142,7 +155,9 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 crate::ui::Scope::Parent => None,
             };
             crate::engine::conditions::canonicalize_with(&mut components, &kind_of, &root);
-            let _ = repeater.rules.set(crate::adapter::rows::RowRules { conditions, components });
+            // Rows declaring no condition are in legacy mode (ADR 0044).
+            let legacy = !crate::engine::conditions::declares_conditions(&repeater.spec.components);
+            let _ = repeater.rules.set(crate::adapter::rows::RowRules { legacy, conditions, components });
         }
     }
 
@@ -510,10 +525,13 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             return Err(ValidationErrors::field("page", "is too large").into());
         }
 
-        if let Some((field, _)) = &query.parent
-            && !self.field(field).is_some_and(|f| f.can_read(ctx))
+        let parent = query.parent.iter().map(|(field, _)| field.as_str());
+        if parent
+            .chain(query.relation_filters.iter().map(|(field, _)| field.as_str()))
+            .any(|field| !self.field(field).is_some_and(|f| f.can_read(ctx)))
         {
-            // The association itself is data the user may not read.
+            // The association itself (a filtered relation's values too, ADR 0044)
+            // is data the user may not read.
             return Err(AppError::Forbidden);
         }
         if query.trashed != Trashed::Without {
@@ -631,22 +649,23 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if let Some((field, value)) = &bound {
             input.insert(field.clone(), value.clone());
         }
-        // The usual rules apply to the bound key too (writable, typed, required).
+        // A filtered relation's values too (ADR 0044): in the input before
+        // `required` is checked, read by the conditions (as the panel's form
+        // holds them), and stored whether or not an input shows them.
+        input.extend(fixed.iter().map(|(f, v)| ((*f).to_owned(), v.clone())));
+        // The usual rules apply to the bound key and values too (writable, typed, required).
         let mut input = self.accept_input(&wctx, Operation::Create, input)?;
         // Conditions (ADR 0037) on the input and the columns' defaults.
         let bound_field = bound.as_ref().map(|(field, _)| field.as_str());
-        // A filtered relation's values are read by the conditions (as the panel's form
-        // holds them), and stored whether or not an input shows them (ADR 0044).
-        input.extend(fixed.iter().map(|(f, v)| ((*f).to_owned(), v.clone())));
-        let (hidden_before, hidden) = self.apply_conditions(&wctx, Operation::Create, &mut input, None, bound_field)?;
+        let (_, hidden) = self.apply_conditions(&wctx, Operation::Create, &mut input, None, bound_field)?;
         input.extend(fixed.iter().map(|(f, v)| ((*f).to_owned(), v.clone())));
         // Relationship repeaters hidden by the form's conditions (ADR 0044).
-        let rows = self.settle_rows(Operation::Create, rows, &hidden_before, &hidden)?;
+        let rows = self.settle_rows(&wctx, Operation::Create, rows, &hidden).await?;
         let root = self.row_root(&wctx, Operation::Create, None, &input);
         let parents = self.lock_parents(&wctx, &txn, self.parent_of_data(&input).flatten()).await?;
         let data = R::mutate_before_create(&wctx, &txn, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
-        self.check_filters_kept(&data, &fixed)?;
+        self.check_filters_kept(&data, &fixed, true)?;
         if let Some((field, value)) = &bound
             && data.get(field) != Some(value)
         {
@@ -733,10 +752,10 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let mut input = input;
         let record = self.record(&model);
         let viewable = self.policy.allows(&wctx, ability::VIEW, Some(&record)).await;
-        let (hidden_before, hidden) =
+        let (_, hidden) =
             self.apply_conditions(&wctx, Operation::Update, &mut input, Some((&record, viewable)), None)?;
-        // Relationship repeaters hidden by the form's conditions: a write hiding one removes its rows (ADR 0044).
-        let rows = self.settle_rows(Operation::Update, rows, &hidden_before, &hidden)?;
+        // Relationship repeaters hidden by the form's conditions keep their rows (ADR 0044).
+        let rows = self.settle_rows(&wctx, Operation::Update, rows, &hidden).await?;
         let root = self.row_root(&wctx, Operation::Update, Some((&record, viewable)), &input);
         let data = R::mutate_before_update(&wctx, &txn, &model, input).await?;
         self.check_parent_written(&wctx, &data, &parents)?;
@@ -1164,7 +1183,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
 /// The filters of the relation a create goes through (`ctx.bound`, a
 /// relation section's "New": `parent.relation`), ADR 0044. Rows of a
 /// relationship repeater set theirs themselves.
-fn bound_filters(ctx: &Ctx) -> Vec<(&'static str, RelationFilter)> {
+pub(super) fn bound_filters(ctx: &Ctx) -> Vec<(&'static str, RelationFilter)> {
     let Some((relation, _, _)) = &ctx.bound else { return Vec::new() };
     let Some((slug, name)) = relation.split_once('.') else { return Vec::new() };
     ctx.registry

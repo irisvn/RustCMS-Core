@@ -18,13 +18,13 @@ import { IconButton, RowComponents, TABLE_BAR, TABLE_BODY, TABLE_ROW, TableHeade
 const pageOf = (input: InputSchema) => Math.min(input.repeater?.maxItems ?? 100, 100);
 
 /** The stored rows of relationship repeater `input` on the edited record, through the relation's list. */
-export function useStoredRows(input: InputSchema, ctx: FormContext, refetch = true) {
+export function useStoredRows(input: InputSchema, ctx: FormContext) {
   const api = useApi();
   const relationship = input.repeater!.relationship!;
   return useQuery({
     enabled: !!ctx.record,
     // Read again each time the form opens: a save changes the rows.
-    refetchOnMount: refetch ? "always" : true,
+    refetchOnMount: "always",
     queryKey: ["records", relationship.resource, "relation", ctx.slug, ctx.record, relationship.relation, "repeater"],
     queryFn: () =>
       api.get<LinkPage>(
@@ -32,22 +32,6 @@ export function useStoredRows(input: InputSchema, ctx: FormContext, refetch = tr
         new URLSearchParams({ per_page: String(pageOf(input)) }),
       ),
   });
-}
-
-/**
- * In place of a relationship repeater the user's changes hide (ADR 0044):
- * saving removes the rows they see, so it says how many.
- */
-export function HiddenRowsNotice({ input, ctx }: { input: InputSchema; ctx: FormContext }) {
-  const t = useT();
-  const stored = useStoredRows(input, ctx, false);
-  const count = stored.data?.meta.total ?? 0;
-  if (!ctx.record || count === 0) return null;
-  return (
-    <p role="status" className="col-span-full rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning-soft-foreground">
-      {t("repeater.willRemove", { count, label: input.label })}
-    </p>
-  );
 }
 
 export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabled, invalid, describedBy }: WidgetProps) {

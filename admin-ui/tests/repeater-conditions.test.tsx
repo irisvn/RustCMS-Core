@@ -1,6 +1,6 @@
 // Conditions on and in repeaters (ADR 0044, part A): rows read the record's
-// form (`when_root`); a relationship repeater the user's changes hide says
-// that saving removes its rows, and its changes are not sent.
+// form (`when_root`); a relationship repeater the user's changes hide keeps
+// its stored rows (no notice), and its changes are not sent.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
@@ -63,17 +63,17 @@ it("shows a row's input as the form's values read (when_root), as they change", 
   expect(screen.getAllByLabelText(/^Hint/)).toHaveLength(1);
 });
 
-it("warns that saving removes the rows of a repeater the change hides, and sends none of its changes", async () => {
+it("hides a repeater the change hides without a notice (its rows are kept), and sends none of its changes", async () => {
   mount(stored);
   await screen.findByDisplayValue("a");
   fireEvent.change(screen.getAllByLabelText(/^Content/)[1]!, { target: { value: "bb" } });
   fireEvent.change(screen.getByLabelText(/^Kind/), { target: { value: JSON.stringify("blank") } });
-  expect(await screen.findByRole("status")).toHaveTextContent("Saving removes the 2 rows of Options you can see.");
-  expect(screen.queryByDisplayValue("a")).toBeNull();
+  await vi.waitFor(() => expect(screen.queryByDisplayValue("a")).toBeNull());
+  expect(screen.queryByRole("status")).toBeNull();
   // The form leaves out what its conditions hide, as when it saves.
   const values = form!.getValues();
   expect(payloadOf(inputs, values, undefined, hiddenNames(components, values)).options).toBeUndefined();
-  // Shown again: the draft is back, and no warning.
+  // Shown again: the draft is back.
   fireEvent.change(screen.getByLabelText(/^Kind/), { target: { value: JSON.stringify("choice") } });
   expect(await screen.findByDisplayValue("bb")).toBeInTheDocument();
   expect(screen.queryByRole("status")).toBeNull();
@@ -135,7 +135,7 @@ it("shows a relation's rows on the view page, in the form's order, from the rela
   expect(screen.getByRole("link", { name: "All 3 rows" })).toHaveAttribute("href", "#relation-options");
 });
 
-it("warns too when a section around the repeater hides it", async () => {
+it("says nothing either when a section around the repeater hides it", async () => {
   // The options' condition moved to a section around them.
   const options = components.find((c) => "name" in c && c.name === "options") as InputSchema;
   const wrapped = components.map((c) =>
@@ -151,7 +151,28 @@ it("warns too when a section around the repeater hides it", async () => {
   render(<SessionContext.Provider value={session}><QueryClientProvider client={client}><Wrapped /></QueryClientProvider></SessionContext.Provider>);
   await screen.findByDisplayValue("a");
   fireEvent.change(screen.getByLabelText(/^Kind/), { target: { value: JSON.stringify("fill_blank") } });
-  expect(await screen.findByRole("status")).toHaveTextContent("Saving removes the 2 rows of Options you can see.");
+  await vi.waitFor(() => expect(screen.queryByDisplayValue("a")).toBeNull());
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+it("evaluates no condition in rows that declare none (legacy mode): every row shows every input", async () => {
+  // As the server sends a repeater whose rows declare no condition: the child
+  // form's conditions are the server's to apply, never the panel's.
+  const options = components.find((c) => "name" in c && c.name === "options") as InputSchema;
+  const plain = components.map((c) =>
+    c === options
+      ? ({ ...options, shownWhen: undefined, repeater: { ...options.repeater!, components: options.repeater!.components.map((r) => ({ ...r, shownWhen: undefined })) } } as unknown as ComponentSchema)
+      : c);
+  function Plain() {
+    const form = useForm<FormValues>({ defaultValues: defaultValues(inputsOf(plain), stored) });
+    return <Components components={plain} ctx={{ slug: "quizzes", record: "7", control: form.control, errors: form.formState.errors }} />;
+  }
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const session = createSession({ basePath: "", apiPath: "http://localhost/admin/api" }, client, () => {});
+  render(<SessionContext.Provider value={session}><QueryClientProvider client={client}><Plain /></QueryClientProvider></SessionContext.Provider>);
+  await screen.findByDisplayValue("a");
+  // Not explaining, and option "b" not correct: both rows show their hint all the same.
+  expect(screen.getAllByLabelText(/^Hint/)).toHaveLength(2);
 });
 
 it("shows a relation row's inputs under conditions on the record (when_root) on the view page", async () => {

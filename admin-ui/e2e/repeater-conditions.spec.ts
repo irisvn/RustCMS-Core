@@ -4,7 +4,7 @@ import { expect, signIn, test } from "./fixtures";
 // Repeaters, second round (ADR 0044, part A), on the demo's categories: the
 // posts repeater is a table, shown while the category lists its posts; the
 // view page shows the posts under the category; making the category a link
-// warns, then removes the posts it showed when saved. Nothing is left behind.
+// hides them and keeps them (shown again, they are there). Nothing is left behind.
 
 /** Deletes a trashed post for good. */
 async function purge(page: Page, title: string) {
@@ -15,7 +15,7 @@ async function purge(page: Page, title: string) {
   await expect(page.getByText("Deleted permanently.")).toBeVisible();
 }
 
-test("a category's posts follow its layout: a table, its view page, removed when it becomes a link", async ({ page, watch: _ }) => {
+test("a category's posts follow its layout: a table, its view page, kept while it is a link", async ({ page, watch: _ }) => {
   const run = Date.now().toString(36);
   const name = `E2E layout ${run}`;
   const [first, second] = [`Layout one ${run}`, `Layout two ${run}`];
@@ -47,12 +47,12 @@ test("a category's posts follow its layout: a table, its view page, removed when
   await expect(main.getByRole("listitem").filter({ hasText: first })).toBeVisible();
   await expect(main.getByRole("listitem").filter({ hasText: second })).toBeVisible();
 
-  // Made a link: the posts would go; the panel says so in their place.
+  // Made a link: the posts are hidden, not removed (no notice).
   await page.goto(`${url}/edit`);
   await expect(rows).toHaveCount(2);
   await page.getByLabel(/^Layout/).selectOption({ label: "A link" });
-  await expect(page.getByRole("status").filter({ hasText: "Saving removes the 2 rows of Posts you can see." })).toBeVisible();
   await expect(rows).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: /removes/ })).toHaveCount(0);
   await page.getByLabel(/^Link/).fill("https://example.test/elsewhere");
   // Back and forth keeps the drafts: shown again, the rows are there.
   await page.getByLabel(/^Layout/).selectOption({ label: "Its posts" });
@@ -62,6 +62,17 @@ test("a category's posts follow its layout: a table, its view page, removed when
   await expect(page).toHaveURL(url);
   await expect(page.getByRole("table", { name: "Posts" }).getByText(first)).toHaveCount(0);
   await expect(main.getByRole("link", { name: "https://example.test/elsewhere" })).toBeVisible();
+
+  // Its posts again: they were kept. Removed here (to the trash), then left nowhere.
+  await page.goto(`${url}/edit`);
+  await page.getByLabel(/^Layout/).selectOption({ label: "Its posts" });
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0).getByLabel(/^Title/)).toHaveValue(first);
+  await rows.nth(1).getByRole("button", { name: "Remove" }).click();
+  await rows.nth(0).getByRole("button", { name: "Remove" }).click();
+  await expect(rows).toHaveCount(0);
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page).toHaveURL(url);
 
   // Leave nothing behind.
   await purge(page, first);

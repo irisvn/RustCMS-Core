@@ -350,9 +350,6 @@
   "too_many_rows": [
     "has too many rows to order here"
   ],
-  "too_many_rows_to_remove": [
-    "has too many rows to remove here"
-  ],
   "too_many_to_export": [
     "More than {max} records to export; narrow the search or filters."
   ],

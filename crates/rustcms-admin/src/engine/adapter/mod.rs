@@ -332,7 +332,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let kind_of = |name: &str| input::condition_kind(&columns, &secrets, name);
         crate::engine::conditions::canonicalize(&mut form.components, &kind_of);
         let repeaters = input::json_repeaters(slug, &form, &columns, &secrets);
-        let row_repeaters = rows::row_repeaters(slug, &form, &relations, &conditions);
+        let row_repeaters = rows::row_repeaters(slug, &form, &relations);
         let reactions = react::reactions(slug, &form, &fields);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();

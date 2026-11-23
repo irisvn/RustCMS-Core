@@ -1,6 +1,6 @@
 // Renders a form schema: layouts and inputs from the vocabulary. Unknown types
 // fall back to a read-only rendering instead of breaking the page.
-import { Controller, useFormState, useWatch, type Control, type FieldErrors } from "react-hook-form";
+import { Controller, useWatch, type Control, type FieldErrors } from "react-hook-form";
 import { ChevronDown, Plus, X } from "lucide-react";
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import type * as React from "react";
@@ -37,7 +37,7 @@ import {
 import { RelationSelect } from "./relation-select";
 import { LinksWidget } from "./links";
 import { RepeaterWidget } from "./repeater";
-import { HiddenRowsNotice, RelationRepeaterWidget } from "./relation-repeater";
+import { RelationRepeaterWidget } from "./relation-repeater";
 import { OuterContext } from "./outer";
 import { FileUploadWidget } from "./media";
 import { RichEditorWidget } from "./rich-text";
@@ -96,8 +96,6 @@ export const span = (n: number) => SPAN[Math.min(Math.max(n, 1), 4)] ?? SPAN[1];
  * `Components` of a form for the nested ones.
  */
 const ShownContext = createContext<((condition: Condition | undefined) => boolean) | null>(null);
-/** As [`ShownContext`], for the values the form opened with: what a save would hide. */
-const ShownBeforeContext = createContext<((condition: Condition | undefined) => boolean) | null>(null);
 export const always = () => true;
 
 /** A predicate on conditions for wire `values` (hidden fields read as null), rows reading `outer`. */
@@ -123,34 +121,18 @@ export function Components({ components, ctx }: { components: ComponentSchema[];
 /** Components inside a form (layouts' children), shown by the form's conditions. */
 function ComponentList({ components, ctx }: { components: ComponentSchema[]; ctx: FormContext }) {
   const shown = useContext(ShownContext) ?? always;
-  const shownBefore = useContext(ShownBeforeContext) ?? always;
   return (
     <>
       {components.map((c, i) =>
-        // Hidden: not rendered, its draft kept in the form state (never sent). A
-        // relationship repeater this save would hide says its rows go (ADR 0044).
-        !shown(c.shownWhen) ? (shownBefore(c.shownWhen)
-          ? relationRepeatersIn([c], shownBefore).map((input) => <HiddenRowsNotice key={input.name} input={input} ctx={ctx} />)
-          : null)
+        // Hidden: not rendered, its draft kept in the form state (never sent); a
+        // relationship repeater's stored rows are kept (ADR 0044).
+        !shown(c.shownWhen) ? null
           : isInput(c) ? <Field key={c.name} input={c} ctx={ctx} />
           // Forms hold no entries (refused by the server).
           : isLayout(c) ? <Layout key={`layout-${i}`} layout={c} ctx={ctx} /> : null,
       )}
     </>
   );
-}
-
-/**
- * The relationship repeaters of `components` the form showed when it opened
- * (their conditions and their layouts' held then): hiding them now, by their
- * own condition or a layout's, removes their rows on save (ADR 0044).
- */
-function relationRepeatersIn(components: ComponentSchema[], shownBefore: (c: Condition | undefined) => boolean): InputSchema[] {
-  return components.flatMap((c) => {
-    if (!shownBefore(c.shownWhen)) return [];
-    if (isInput(c)) return c.repeater?.relationship ? [c] : [];
-    return isLayout(c) ? relationRepeatersIn(c.components, shownBefore) : [];
-  });
 }
 
 /**
@@ -174,17 +156,9 @@ function LiveConditions({ components, ctx }: { components: ComponentSchema[]; ct
     const predicate = (condition: Condition | undefined) => !condition || holds(form, condition, wire, hidden);
     return [predicate, { root: { values: root, kinds: new Map(read.map((i) => [i.name, i.valueType])) } }] as const;
   }, [form, names, read, watched]);
-  // What the form held when it opened: a relationship repeater shown then and hidden now loses its rows on save.
-  const { defaultValues } = useFormState({ control: ctx.control });
-  const before = useMemo(
-    () => shownWith(form, wireValues(read, (defaultValues ?? {}) as FormValues)),
-    [form, read, defaultValues],
-  );
   return (
     <ShownContext.Provider value={shown}>
-      <ShownBeforeContext.Provider value={before}>
-        <OuterContext.Provider value={outer}><ComponentList components={components} ctx={ctx} /></OuterContext.Provider>
-      </ShownBeforeContext.Provider>
+      <OuterContext.Provider value={outer}><ComponentList components={components} ctx={ctx} /></OuterContext.Provider>
     </ShownContext.Provider>
   );
 }

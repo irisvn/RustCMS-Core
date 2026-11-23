@@ -471,7 +471,9 @@ impl<R: Resource> ResourceAdapter<R> {
         for entry in infolist.entries().into_iter().filter(|e| e.relationship) {
             let Some(relation) = self.relations.iter().find(|r| r.name == entry.name) else { continue };
             let Some(child) = ctx.registry.get(relation.target) else { continue };
-            if !child.allows(ctx, ability::VIEW_ANY).await {
+            if !child.allows(ctx, ability::VIEW_ANY).await
+                || !crate::registry::relation_access(ctx, child.as_ref(), relation).readable
+            {
                 continue;
             }
             let order_by = self

@@ -37,6 +37,11 @@ pub(super) async fn relation_list(
     Query(pairs): Query<Vec<(String, String)>>,
 ) -> AppResult<Json<LinkPage>> {
     let (parent, relation, target) = relation_of(&ctx, &slug, &name)?;
+    // A relation whose filtered fields the user may not read is not theirs
+    // (ADR 0044): absent, before any record is read.
+    if !relation.is_many() && !crate::registry::relation_access(&ctx, target.as_ref(), &relation).filters_readable {
+        return Err(AppError::NotFound);
+    }
     // Everything that does not depend on the parent first (no probing of keys).
     if !parent.admits(&ctx, ability::VIEW).await || !target.allows(&ctx, ability::VIEW_ANY).await {
         return Err(AppError::Forbidden);
@@ -179,9 +184,13 @@ pub(super) async fn relation_create(
     if relation.is_many() {
         return Err(AppError::MethodNotAllowed);
     }
-    // The foreign key is written by the user's create: they must be allowed to set it.
-    let (_, creatable) = target.field_access(&ctx, relation.field);
-    if !creatable || !parent.admits(&ctx, ability::VIEW).await || !target.allows(&ctx, ability::CREATE).await {
+    // The foreign key and the filtered fields are written by the user's
+    // create: they must be allowed to read and set them (ADR 0044).
+    let access = crate::registry::relation_access(&ctx, target.as_ref(), &relation);
+    if !access.filters_readable {
+        return Err(AppError::NotFound);
+    }
+    if !access.creatable || !parent.admits(&ctx, ability::VIEW).await || !target.allows(&ctx, ability::CREATE).await {
         return Err(AppError::Forbidden);
     }
     let canonical = parent.canonical_key(&key).ok_or(AppError::NotFound)?;

@@ -533,7 +533,7 @@ refused_at_boot!(
 refused_at_boot!(
     clearing_a_relationship_repeater,
     ClearedRepeater,
-    "`clear_when_hidden` does not apply (a write that hides a relationship repeater removes its rows)",
+    "`clear_when_hidden` does not apply (a hidden relationship repeater keeps its rows)",
     Repeater::make("lines")
         .relationship()
         .shown_when(when("number").filled())
@@ -547,14 +547,6 @@ refused_at_boot!(
     Repeater::make("lines").relationship().schema(components![
         TextInput::make("product").shown_when(when("quantity").filled()).clear_when_hidden(),
         NumberInput::make("quantity"),
-    ])
-);
-refused_at_boot!(
-    hiding_rows_that_cannot_be_removed,
-    UndeletableHidden,
-    "a repeater with `deletable(false)` cannot be under a condition",
-    Section::make("Lines").shown_when(when("number").filled()).schema(components![
-        Repeater::make("lines").relationship().deletable(false).schema(components![TextInput::make("product")])
     ])
 );
 refused_at_boot!(

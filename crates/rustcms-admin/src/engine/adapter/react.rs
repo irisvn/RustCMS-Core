@@ -133,9 +133,14 @@ impl<R: Resource> ResourceAdapter<R> {
         // form may be half typed: values that do not decode are left out),
         // then the key a relation binds.
         let mut values = self.condition_values(ctx, op, stored.as_ref().map(|r| (r, viewable)));
+        // Through a filtered relation, its values as the save sets them (ADR 0044).
+        let fixed = self.filter_values(&super::operations::bound_filters(ctx))?;
         let mut previous = None;
         for (name, value) in request.state {
-            if bound.as_ref().is_some_and(|(field, _)| *field == name) || !self.typed(ctx, op, &name, &value)? {
+            if bound.as_ref().is_some_and(|(field, _)| *field == name)
+                || fixed.iter().any(|(field, _)| *field == name)
+                || !self.typed(ctx, op, &name, &value)?
+            {
                 continue;
             }
             if name == reaction.name {
@@ -146,6 +151,7 @@ impl<R: Resource> ResourceAdapter<R> {
         if let Some((field, value)) = bound {
             values.insert(field, value);
         }
+        values.extend(fixed.into_iter().map(|(f, v)| (f.to_owned(), v)));
         if self.conditions.hidden(&values).contains(&reaction.name) {
             return Ok(empty(false));
         }
@@ -291,6 +297,10 @@ impl<R: Resource> ResourceAdapter<R> {
         // The key a relation binds is the relation's (the save binds it again).
         if ctx.bound.as_ref().is_some_and(|(_, bound, _)| *bound == field) {
             return Err(fail("the key a relation binds"));
+        }
+        // So are a filtered relation's values (ADR 0044).
+        if super::operations::bound_filters(ctx).iter().any(|(f, _)| *f == field) {
+            return Err(fail("a value the relation sets"));
         }
         // Written into the user's form: a field the user may read and write.
         if !self.writable(ctx, op, &field) || self.field(&field).is_none_or(|f| !f.can_read(ctx)) {

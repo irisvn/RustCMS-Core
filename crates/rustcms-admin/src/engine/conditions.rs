@@ -271,6 +271,14 @@ fn canonical_condition(condition: &Condition, kind_of: ScopedKindOf<'_>) -> Cond
     }
 }
 
+/// Whether `components` declare a condition (an input's, an entry's or a
+/// layout's `shown_when`), at any depth.
+pub(crate) fn declares_conditions(components: &[Component]) -> bool {
+    let mut inputs = Vec::new();
+    walk(components, None, &mut inputs);
+    inputs.iter().any(|(_, _, condition, _)| condition.is_some())
+}
+
 fn walk(
     components: &[Component],
     inherited: Option<&Condition>,

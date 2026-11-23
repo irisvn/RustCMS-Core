@@ -173,11 +173,10 @@ pub(super) async fn react(
         None => ctx,
         Some(via) => {
             let (parent, relation, _) = super::relations::relation_of(&ctx, &via.parent, &via.relation)?;
-            let (_, creatable) = target.field_access(&ctx, relation.field);
             if relation.is_many()
                 || relation.target != slug
                 || request.operation != SchemaOperation::Create
-                || !creatable
+                || !crate::registry::relation_access(&ctx, target.as_ref(), &relation).creatable
                 || !parent.admits(&ctx, ability::VIEW).await
             {
                 return Err(AppError::Forbidden);
