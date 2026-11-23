@@ -110,6 +110,7 @@
             "orderColumn": "position",
             "relation": "lines",
             "resource": "order_lines",
+            "rowLimit": 50,
             "update": true
           },
           "reorderable": true

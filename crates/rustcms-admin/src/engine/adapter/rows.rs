@@ -174,14 +174,15 @@ impl<R: Resource> ResourceAdapter<R> {
         };
         let ordering = target.order_column.is_some() && change.order.is_some();
         if ordering {
+            let max = ctx.registry.repeater_rows();
             let live = self
                 .live_rows(&target, &parent_value)?
                 .order_by_asc(self.pk)
-                .limit(MAX_ORDERED_ROWS as u64 + 1)
+                .limit(max as u64 + 1)
                 .all(txn.as_ref())
                 .await?;
-            if live.len() > MAX_ORDERED_ROWS {
-                return Err(ValidationErrors::field(relation, "has too many rows to order here").into());
+            if live.len() > max {
+                return Err(too_many_rows(relation, max));
             }
             candidates.extend(live.iter().map(|m| self.key_of(m)));
         }
@@ -683,12 +684,19 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 }
 
-/// Most rows a change may order (the parent's live children, discovered
-/// before any lock).
-const MAX_ORDERED_ROWS: usize = 1000;
+/// The refusal of a change over `[admin] repeater_rows` (`max`): more rows
+/// to order, or more entries in one part of the change.
+fn too_many_rows(relation: &str, max: usize) -> AppError {
+    ValidationErrors::field(relation, format!("has more than {max} rows (`[admin] repeater_rows`)")).into()
+}
 
-/// Most entries of one part of a relationship repeater's change.
-const MAX_ROW_ITEMS: usize = 100;
+/// Whether a part of `value` (a repeater's change) holds more than `max`
+/// entries. Checked before the shape: over the limit is its own 422.
+fn over_row_limit(value: &serde_json::Value, max: usize) -> bool {
+    ["create", "update", "delete", "order"]
+        .iter()
+        .any(|part| value.get(part).and_then(|v| v.as_array()).is_some_and(|a| a.len() > max))
+}
 
 /// A relationship repeater of a resource's form, checked at boot.
 #[derive(Debug, Clone)]
@@ -875,6 +883,11 @@ impl<R: Resource> ResourceAdapter<R> {
             let repeater = &self.row_repeaters[index];
             let name = repeater.name;
             let child = ctx.registry.get(repeater.target).ok_or(AppError::NotFound)?;
+            let max = ctx.registry.repeater_rows();
+            if over_row_limit(&value, max) {
+                errors.add(name, format!("has more than {max} rows (`[admin] repeater_rows`)"));
+                continue;
+            }
             match parse_change(value, op, child.as_ref()) {
                 Some(change) => out.push((index, change)),
                 None => errors.add(name, "is invalid"),
@@ -1017,7 +1030,7 @@ fn parse_change(value: serde_json::Value, op: Operation, child: &dyn DynResource
     let list = |part: &str| -> Option<Vec<serde_json::Value>> {
         match object.get(part) {
             None => Some(Vec::new()),
-            Some(serde_json::Value::Array(items)) if items.len() <= MAX_ROW_ITEMS => Some(items.clone()),
+            Some(serde_json::Value::Array(items)) => Some(items.clone()),
             Some(_) => None,
         }
     };
@@ -1055,7 +1068,7 @@ fn parse_change(value: serde_json::Value, op: Operation, child: &dyn DynResource
         change.delete.push(key);
     }
     if let Some(order) = object.get("order") {
-        let items = order.as_array().filter(|a| a.len() <= MAX_ORDERED_ROWS)?;
+        let items = order.as_array()?;
         let mut ids = Vec::with_capacity(items.len());
         let mut seen = HashSet::new();
         for item in items {

@@ -706,7 +706,13 @@ delete: boolean,
 /**
  * The child field holding each row's position (rows are shown in its order).
  */
-orderColumn?: string, };
+orderColumn?: string, 
+/**
+ * The most stored rows the panel reads, and the most entries of each
+ * part of a change (`[admin] repeater_rows`); more rows are edited in the
+ * relation's section.
+ */
+rowLimit: number, };
 
 export type InfolistSchema = { 
 /**

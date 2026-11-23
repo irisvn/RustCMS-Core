@@ -517,7 +517,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         if !self.policy.allows(ctx, ability::VIEW_ANY, None).await {
             return Err(AppError::Forbidden);
         }
-        let per_page = query.per_page.unwrap_or(DEFAULT_PER_PAGE).clamp(1, self.limits.per_page);
+        let per_page = query.per_page.unwrap_or(DEFAULT_PER_PAGE).clamp(1, self.page_limit(ctx, query));
         let page = query.page.unwrap_or(1).max(1);
         // The SQL offset must fit (databases take a signed 64-bit offset).
         let offset_fits = (page - 1).checked_mul(per_page).is_some_and(|offset| i64::try_from(offset).is_ok());
@@ -548,7 +548,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
 
     async fn list(&self, ctx: &Ctx, query: &ListQuery) -> AppResult<Page> {
         self.admit_list(ctx, query).await?;
-        let per_page = query.per_page.unwrap_or(DEFAULT_PER_PAGE).clamp(1, self.limits.per_page);
+        let per_page = query.per_page.unwrap_or(DEFAULT_PER_PAGE).clamp(1, self.page_limit(ctx, query));
         let page = query.page.unwrap_or(1).max(1);
         let select = self.list_select(ctx, query)?;
         if !self.policy.view_depends_on_record() && query.trashed == Trashed::Without {
@@ -810,15 +810,14 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let (txn, wctx) = self.begin(ctx).await?;
         let model = self.find_authorized_locked(&wctx, &txn, key, ability::RESTORE, Trashed::Only).await?;
         // Back among active records, its relationships must point to records
-        // the user can see, as when it was written.
+        // the user can see, as when it was written. Not the files of JSON rows
+        // (ADR 0044): one column may hold rows of several forms; a file gone
+        // meanwhile shows as missing.
         let record = self.record(&model);
         let relations: Data = self
             .fields
             .iter()
-            // JSON repeaters too: their rows' files and images (ADR 0044).
-            .filter(|f| {
-                f.belongs_to.is_some() || f.media.is_some() || f.rich_text || self.repeaters.contains_key(&f.name)
-            })
+            .filter(|f| f.belongs_to.is_some() || f.media.is_some() || f.rich_text)
             .filter_map(|f| record.get(&f.name).map(|v| (f.name.clone(), v.clone())))
             .collect();
         self.check_written(&wctx, &txn, &relations).await?;

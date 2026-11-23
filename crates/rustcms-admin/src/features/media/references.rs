@@ -44,11 +44,17 @@ pub(crate) fn reference_ids(
     }
 }
 
+/// Most distinct media one write may refer to (its fields, rich text and
+/// rows together): beyond, a 422 before any lookup.
+pub(crate) const MAX_MEDIA_PER_WRITE: usize = 2_000;
+
 /// Checks each field's referenced media: existing, not trashed, visible to
 /// the user (scope and policy of the media resource, as in `ctx`), and of an
 /// accepted type and size. The rows are locked (shared, in id order) in
 /// `txn` so they cannot be trashed meanwhile; records the user cannot see are
-/// never locked.
+/// never locked. Every `(path, rule, ids)` is checked on its own; the ids are
+/// looked up and locked once each, sorted, in chunks of `Limits::keys`. More
+/// than [`MAX_MEDIA_PER_WRITE`] distinct ids: 422 `too_many_media`.
 pub(crate) async fn check_references(
     ctx: &Ctx,
     txn: &DatabaseTransaction,
@@ -58,36 +64,52 @@ pub(crate) async fn check_references(
         return Ok(());
     }
     let library = ctx.registry.get(SLUG).ok_or_else(|| AppError::internal("the media library is not enabled"))?;
-    let mut all: Vec<Uuid> = wanted.iter().flat_map(|(_, _, ids)| ids.iter().copied()).collect();
+    let mut distinct = HashSet::new();
+    for (path, _, ids) in &wanted {
+        distinct.extend(ids.iter().copied());
+        if distinct.len() > MAX_MEDIA_PER_WRITE {
+            // At the input (its top level) whose references pass the limit.
+            let at = path.split('.').next().unwrap_or_default();
+            return Err(ValidationErrors::field(at, "refers to too many files at once").into());
+        }
+    }
+    let mut all: Vec<Uuid> = distinct.into_iter().collect();
     all.sort_unstable();
-    all.dedup();
-    // Visibility first: records the user cannot see are never locked.
-    let keys: Vec<String> = all.iter().map(Uuid::to_string).collect();
-    let visible = library.keys_in_scope(ctx, txn, &keys).await?;
-    let lockable: Vec<Uuid> = all.iter().copied().filter(|id| visible.contains(&id.to_string())).collect();
-    // Re-read under the lock: trashed meanwhile means unavailable.
-    let rows: HashMap<Uuid, entity::Model> = match txn.get_database_backend() {
-        // InnoDB locks while scanning: one point lock per id, in id order (the
-        // byte order of `binary(16)` and of `Uuid`).
-        DbBackend::MySql => {
-            let mut rows = HashMap::new();
-            for id in lockable {
-                if let Some(m) = entity::Entity::find_by_id(id).lock_shared().one(txn).await? {
-                    rows.insert(m.id, m);
+    let chunk = crate::resource::Limits::default().keys;
+    let mut visible = HashSet::new();
+    let mut rows: HashMap<Uuid, entity::Model> = HashMap::new();
+    // Chunks in id order: the locks stay in id order across them.
+    for ids in all.chunks(chunk) {
+        // Visibility first: records the user cannot see are never locked.
+        let keys: Vec<String> = ids.iter().map(Uuid::to_string).collect();
+        let seen = library.keys_in_scope(ctx, txn, &keys).await?;
+        let lockable: Vec<Uuid> = ids.iter().copied().filter(|id| seen.contains(&id.to_string())).collect();
+        visible.extend(seen);
+        // Re-read under the lock: trashed meanwhile means unavailable.
+        match txn.get_database_backend() {
+            // InnoDB locks while scanning: one point lock per id, in id order (the
+            // byte order of `binary(16)` and of `Uuid`).
+            DbBackend::MySql => {
+                for id in lockable {
+                    if let Some(m) = entity::Entity::find_by_id(id).lock_shared().one(txn).await? {
+                        rows.insert(m.id, m);
+                    }
                 }
             }
-            rows
-        }
-        backend => {
-            let mut select = entity::Entity::find()
-                .filter(entity::Column::Id.is_in(lockable))
-                .order_by(entity::Column::Id, Order::Asc);
-            if backend == DbBackend::Postgres {
-                select = select.lock_shared();
+            backend => {
+                if lockable.is_empty() {
+                    continue;
+                }
+                let mut select = entity::Entity::find()
+                    .filter(entity::Column::Id.is_in(lockable))
+                    .order_by(entity::Column::Id, Order::Asc);
+                if backend == DbBackend::Postgres {
+                    select = select.lock_shared();
+                }
+                rows.extend(select.all(txn).await?.into_iter().map(|m| (m.id, m)));
             }
-            select.all(txn).await?.into_iter().map(|m| (m.id, m)).collect()
         }
-    };
+    }
     let mut errors = ValidationErrors::new();
     for (field, rule, ids) in wanted {
         for id in ids {

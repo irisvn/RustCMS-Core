@@ -338,6 +338,9 @@
   "too_many_matches": [
     "Too many matching records to check individually; narrow the search or filters."
   ],
+  "too_many_media": [
+    "refers to too many files at once"
+  ],
   "too_many_permissions": [
     "has too many permissions"
   ],
@@ -348,7 +351,7 @@
     "has too many roles"
   ],
   "too_many_rows": [
-    "has too many rows to order here"
+    "has more than {max} rows (`[admin] repeater_rows`)"
   ],
   "too_many_to_export": [
     "More than {max} records to export; narrow the search or filters."

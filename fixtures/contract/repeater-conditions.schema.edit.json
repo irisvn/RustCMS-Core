@@ -237,6 +237,7 @@
             "orderColumn": "position",
             "relation": "options",
             "resource": "quiz_options",
+            "rowLimit": 50,
             "update": true
           },
           "reorderable": true

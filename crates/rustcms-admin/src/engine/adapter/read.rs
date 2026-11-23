@@ -3,6 +3,14 @@
 use super::*;
 
 impl<R: Resource> ResourceAdapter<R> {
+    /// The largest page of `query`: the resource's, or for a relation list
+    /// (`parent`) at least `[admin] repeater_rows`, which a relationship
+    /// repeater reads in one page (ADR 0044).
+    pub(super) fn page_limit(&self, ctx: &Ctx, query: &ListQuery) -> u64 {
+        let rows = u64::try_from(ctx.registry.repeater_rows()).unwrap_or(u64::MAX);
+        if query.parent.is_some() { self.limits.per_page.max(rows) } else { self.limits.per_page }
+    }
+
     pub(super) async fn envelopes(&self, ctx: &Ctx, models: Vec<Model<R>>) -> AppResult<Vec<Envelope>> {
         let readable: Vec<&Field> = self.fields.iter().filter(|f| f.can_read(ctx)).collect();
         // Labels are presentation: a failure (e.g. a related resource unavailable)

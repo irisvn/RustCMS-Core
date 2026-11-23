@@ -126,7 +126,7 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     ("incomplete", "is incomplete"),
     ("rows_not_addable", "rows cannot be added here"),
     ("rows_not_deletable", "rows cannot be removed here"),
-    ("too_many_rows", "has too many rows to order here"),
+    ("too_many_rows", "has more than {max} rows (`[admin] repeater_rows`)"),
     ("positions_exhausted", "has no positions left; renumber the rows"),
     ("stale", "This was changed by someone else meanwhile. Reload and try again."),
     ("last_super_admin", "At least one active super admin is required for the `{guard}` guard."),
@@ -144,6 +144,7 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     ("image", "is not a valid image"),
     ("too_many_pixels", "has too many pixels"),
     ("media_collection", "is not a media collection"),
+    ("too_many_media", "refers to too many files at once"),
     // Rich text documents.
     ("document", "is not a document"),
     ("document_invalid", "is not a valid document"),

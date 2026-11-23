@@ -415,6 +415,7 @@ impl<R: Resource> ResourceAdapter<R> {
                         update,
                         delete,
                         order_column: repeater.order_column.clone(),
+                        row_limit: u32::try_from(ctx.registry.repeater_rows()).unwrap_or(u32::MAX),
                     };
                     input.disabled = !(create || update || delete);
                     let mut schema =

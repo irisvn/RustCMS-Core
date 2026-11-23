@@ -358,6 +358,10 @@ pub struct RepeaterRelationship {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_column: Option<String>,
+    /// The most stored rows the panel reads, and the most entries of each
+    /// part of a change (`[admin] repeater_rows`); more rows are edited in the
+    /// relation's section.
+    pub row_limit: u32,
 }
 
 /// The changes a `belongs_to_many` input may send (checked again by the

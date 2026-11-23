@@ -418,7 +418,7 @@ db_test!(each_part_needs_its_ability_on_the_child, |db: TestDb| async move {
         input["repeater"]["relationship"],
         json!({
             "resource": "order_lines", "relation": "lines", "create": true, "update": true, "delete": false,
-            "orderColumn": "position",
+            "orderColumn": "position", "rowLimit": 50,
         })
     );
     let rows: Vec<&str> =

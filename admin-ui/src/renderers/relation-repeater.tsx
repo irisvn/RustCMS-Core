@@ -15,7 +15,10 @@ import { useOuter } from "./outer";
 import { IconButton, RowComponents, TABLE_BAR, TABLE_BODY, TABLE_ROW, TableHeader, tableOf } from "./repeater";
 
 /** How many stored rows a relationship repeater reads (more: edited in the relation section). */
-const pageOf = (input: InputSchema) => Math.min(input.repeater?.maxItems ?? 100, 100);
+const pageOf = (input: InputSchema) => {
+  const limit = input.repeater?.relationship?.rowLimit ?? 50;
+  return Math.min(input.repeater?.maxItems ?? limit, limit);
+};
 
 /** The stored rows of relationship repeater `input` on the edited record, through the relation's list. */
 export function useStoredRows(input: InputSchema, ctx: FormContext) {

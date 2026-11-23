@@ -322,11 +322,43 @@ const PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(3_600);
 /// Longest run of that pass.
 const PRUNE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1_800);
 
+/// `[admin]` settings of relationship repeaters (ADR 0044).
+#[derive(serde::Deserialize)]
+#[serde(default)]
+struct RowsConfig {
+    /// The most rows of one parent a relationship repeater reads and orders,
+    /// and the most entries of each part of its change (1 to 500).
+    repeater_rows: usize,
+}
+
+impl Default for RowsConfig {
+    fn default() -> Self {
+        Self { repeater_rows: crate::registry::DEFAULT_REPEATER_ROWS }
+    }
+}
+
+impl RowsConfig {
+    /// The settings of `config`.
+    ///
+    /// # Panics
+    /// On an invalid `[admin]` section (the range is checked by
+    /// [`Registry::with_repeater_rows`]).
+    fn of(config: &rustcms_core::Config) -> Self {
+        config.section("admin").unwrap_or_else(|e| panic!("invalid [admin] configuration: {e}"))
+    }
+}
+
 #[async_trait]
 impl ServiceProvider for AdminProvider {
     fn register(&self, app: &mut AppBuilder) {
-        let registry =
-            self.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take().unwrap_or_default().finish();
+        let registry = self
+            .registry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+            .unwrap_or_default()
+            .with_repeater_rows(RowsConfig::of(app.config()).repeater_rows)
+            .finish();
         let auth = app.service::<AuthState>().expect("register AuthProvider before AdminProvider");
         for resource in registry.all() {
             for permission in resource.permissions() {

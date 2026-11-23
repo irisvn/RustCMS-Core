@@ -369,12 +369,42 @@ pub struct Registry {
     /// The media library's collections, in declaration order
     /// ([`crate::AdminProvider::media_collection`]).
     media_collections: Vec<crate::media::MediaCollection>,
+    /// `[admin] repeater_rows` (`None`: [`DEFAULT_REPEATER_ROWS`]).
+    repeater_rows: Option<usize>,
 }
+
+/// Default of `[admin] repeater_rows`: the most rows of one parent a
+/// relationship repeater reads and orders, and the most entries of each part
+/// of its change (ADR 0044).
+pub(crate) const DEFAULT_REPEATER_ROWS: usize = 50;
+
+/// Highest `[admin] repeater_rows`: `Limits::keys`, so the rows a repeater
+/// locks fit one key list.
+pub(crate) const MAX_REPEATER_ROWS: usize = 500;
 
 impl Registry {
     /// Creates an empty registry.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets `[admin] repeater_rows` (see [`DEFAULT_REPEATER_ROWS`]).
+    ///
+    /// # Panics
+    /// Outside 1 to [`MAX_REPEATER_ROWS`].
+    pub(crate) fn with_repeater_rows(mut self, rows: usize) -> Self {
+        assert!(
+            (1..=MAX_REPEATER_ROWS).contains(&rows),
+            "admin.repeater_rows must be 1 to {MAX_REPEATER_ROWS}, not {rows}"
+        );
+        self.repeater_rows = Some(rows);
+        self
+    }
+
+    /// The most rows of one parent a relationship repeater reads and orders,
+    /// and the most entries of each part of its change (`[admin] repeater_rows`).
+    pub(crate) fn repeater_rows(&self) -> usize {
+        self.repeater_rows.unwrap_or(DEFAULT_REPEATER_ROWS)
     }
 
     /// Adds a hook run on every change to a media record.

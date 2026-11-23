@@ -199,6 +199,28 @@ impl Resource for PhotoResource {
         }
         Ok(data)
     }
+
+    // An outside effect, through a job of the write's transaction: it runs
+    // before the write's media check, and goes if that check fails.
+    async fn after_save(ctx: &Ctx, txn: &DatabaseTransaction, model: &photo::Model) -> AppResult<()> {
+        ctx.dispatch(txn, &PhotoSaved { id: model.id }).await?;
+        Ok(())
+    }
+}
+
+/// Queued by a photo's `after_save`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct PhotoSaved {
+    pub id: i32,
+}
+
+#[async_trait::async_trait]
+impl rustcms_core::queue::Job for PhotoSaved {
+    const KIND: &'static str = "test.photo_saved";
+
+    async fn handle(self, _: rustcms_core::queue::JobCtx) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 /// A settings page whose rows take an image and a PDF.
@@ -466,7 +488,7 @@ refused_at_boot!(
     components![Repeater::make("links").table().schema(components![FileUpload::make("icon")])]
 );
 
-db_test!(a_restored_record_meets_its_rows_files, |db: TestDb| async move {
+db_test!(a_restore_leaves_the_files_of_json_rows_alone, |db: TestDb| async move {
     let (app, admin) = setup(db).await;
     let client = app.acting_as(&admin).await;
     let png = stored_media(&app, admin.id, "image/png", 10, false).await;
@@ -476,7 +498,8 @@ db_test!(a_restored_record_meets_its_rows_files, |db: TestDb| async move {
     client.fetch_csrf().await;
     let url = app.admin_api(&format!("resources/notes/records/{key}"));
     client.send(axum::http::Method::DELETE, &url, None).await.assert_status(StatusCode::NO_CONTENT);
-    // The row's file went to the trash meanwhile: restoring would bring back a reference to it.
+    // The row's file went to the trash meanwhile: the record comes back, the
+    // file shows as missing (one column may hold rows of several forms).
     {
         use sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
         let id = uuid::Uuid::parse_str(&png).unwrap();
@@ -486,7 +509,8 @@ db_test!(a_restored_record_meets_its_rows_files, |db: TestDb| async move {
         file.update(app.state().db()).await.unwrap();
     }
     let restored = client.post_json(&format!("{url}/restore"), &json!({})).await;
-    assert!(issues(restored)["links.0.icon"].is_array());
+    restored.assert_status(StatusCode::OK);
+    assert_eq!(restored.json()["data"]["data"]["links"][0]["icon"], json!(png));
 });
 
 db_test!(a_settings_row_file_moved_to_another_input_meets_its_rules, |db: TestDb| async move {
@@ -568,4 +592,85 @@ db_test!(rich_editors_in_settings_rows_need_the_media_library, |db: TestDb| asyn
     let panicked = futures_util::FutureExt::catch_unwind(built).await;
     let message = panicked.err().and_then(|p| p.downcast_ref::<String>().cloned()).unwrap_or_default();
     assert!(message.contains("needs the media library"), "{message}");
+});
+
+/// `n` media items of the library (images, 10 bytes), inserted at once.
+async fn many_media(app: &TestApp, owner: i64, n: usize) -> Vec<String> {
+    use sea_orm::ActiveValue::Set;
+    let ids: Vec<uuid::Uuid> = (0..n).map(|_| uuid::Uuid::now_v7()).collect();
+    for chunk in ids.chunks(200) {
+        let rows = chunk.iter().map(|id| rustcms_admin::media::entity::ActiveModel {
+            id: Set(*id),
+            disk: Set("local".into()),
+            key: Set(format!("media/{id}")),
+            name: Set("f".into()),
+            mime: Set("image/png".into()),
+            size: Set(10),
+            sha256: Set("0".repeat(64)),
+            width: Set(None),
+            height: Set(None),
+            alt: Set(None),
+            collection: Set(None),
+            owner_id: Set(owner),
+            created_at: Set(chrono::Utc::now()),
+            deleted_at: Set(None),
+        });
+        rustcms_admin::media::entity::Entity::insert_many(rows).exec(app.state().db()).await.unwrap();
+    }
+    ids.iter().map(uuid::Uuid::to_string).collect()
+}
+
+db_test!(a_write_checks_its_media_in_batches_and_at_most_2000, |db: TestDb| async move {
+    let (app, admin) = setup(db).await;
+    let client = app.acting_as(&admin).await;
+    // 600 distinct files, two per row: more than one batch of 500.
+    let files = many_media(&app, admin.id, 600).await;
+    let rows = |files: &[String]| -> Value {
+        files.chunks(2).enumerate().map(|(i, pair)| json!({"label": format!("r{i}"), "files": pair})).collect()
+    };
+    let created = create(&client, &app, "notes", json!({"title": "N", "links": rows(&files)})).await;
+    created.assert_status(StatusCode::CREATED);
+    // A file of the second batch unavailable: refused at its row's path.
+    let mut missing = files.clone();
+    missing[599] = uuid::Uuid::now_v7().to_string();
+    let found = issues(create(&client, &app, "notes", json!({"title": "N", "links": rows(&missing)})).await);
+    assert_eq!(found["links.299.files"][0]["params"]["message"], json!("refers to a file that is not available"));
+    assert_eq!(found.as_object().unwrap().len(), 1, "{found}");
+    // 2,001 distinct ids: refused before any lookup.
+    let ids: Vec<String> = (0..2001).map(|_| uuid::Uuid::now_v7().to_string()).collect();
+    let found = issues(create(&client, &app, "notes", json!({"title": "N", "links": rows(&ids)})).await);
+    assert_eq!(found["links"][0]["code"], json!("too_many_media"), "{found}");
+    // Settings saves share the check.
+    let url = app.admin_api("settings/gallery");
+    let version = client.get(&url).await.json()["version"].as_str().unwrap().to_owned();
+    let items: Vec<Value> = ids.chunks(2).map(|p| json!({"image": p[0], "document": p.get(1)})).collect();
+    client.fetch_csrf().await;
+    let refused =
+        client.send(axum::http::Method::PUT, &url, Some(&json!({"version": version, "data": {"items": items}}))).await;
+    assert_eq!(issues(refused)["items"][0]["code"], json!("too_many_media"));
+});
+
+db_test!(a_failed_media_check_takes_back_the_rows_jobs_and_audit, |db: TestDb| async move {
+    use sea_orm::PaginatorTrait;
+    let (app, admin) = setup(db).await;
+    let client = app.acting_as(&admin).await;
+    let png = stored_media(&app, admin.id, "image/png", 10, false).await;
+    let trashed = stored_media(&app, admin.id, "image/png", 10, true).await;
+    let conn = app.state().db();
+    let audit = rustcms_core::models::audit_log::Entity::find().count(conn).await.unwrap();
+    // Both rows' `after_save` queue a job; the media check runs after them and fails.
+    let album = json!({"title": "A", "photos": {"create": [
+        {"ref": "n1", "data": {"image": png}},
+        {"ref": "n2", "data": {"image": trashed}},
+    ]}});
+    let found = issues(create(&client, &app, "albums", album).await);
+    assert!(found["photos.n2.image"].is_array(), "{found}");
+    assert_eq!(rustcms_core::models::job::Entity::find().count(conn).await.unwrap(), 0);
+    assert!(photo::Entity::find().all(conn).await.unwrap().is_empty());
+    assert!(album::Entity::find().all(conn).await.unwrap().is_empty());
+    assert_eq!(rustcms_core::models::audit_log::Entity::find().count(conn).await.unwrap(), audit);
+    // Without the failure, the jobs are committed with the rows.
+    let album = json!({"title": "A", "photos": {"create": [{"ref": "n1", "data": {"image": png}}]}});
+    create(&client, &app, "albums", album).await.assert_status(StatusCode::CREATED);
+    assert_eq!(rustcms_core::models::job::Entity::find().count(conn).await.unwrap(), 1);
 });
