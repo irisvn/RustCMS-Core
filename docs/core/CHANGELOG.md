@@ -66,8 +66,8 @@ All notable changes are documented here. The format follows
 - `SelectFilter::none(label)`: a last choice for records without a value (nullable columns), sent as `~none`
   in the `in` list and matched as `IS NULL` (`FilterSchema.none`).
 - Repeaters, second round (vocabularies 24 and 25, ADR 0044; contributed by @giangittb112000, reworked after
-  review; its nested relationship repeaters, `validate_rows`, reactions on relationship rows and server
-  closures are not in this release):
+  review; its nested relationship repeaters, `validate_rows`, `shown_when_fn`, `required_fn` and `form/rules`
+  are not in this release; `options_fn` and reactions on relationship rows are, below):
   - Conditions on relationship repeaters (their own `shown_when`, or a layout's): a hidden repeater keeps its
     rows; a change sent for it is admitted and shape-checked, then ignored; `min_items` does not apply while
     hidden; `clear_when_hidden` is refused on it.
@@ -101,6 +101,29 @@ All notable changes are documented here. The format follows
     links take an icon. LMS: quiz questions with options (`where_null("blank_id")`, an image and an
     explanation each) or blanks (migrations `m20261119_000006_create_quiz_tables`,
     `m20261120_000007_add_media_to_quiz_options`), courses enroll learners in their form.
+- Options computed on the server (vocabulary 26, ADR 0044 part E; contributed by @giangittb112000, redesigned
+  after review): `SelectInput::options_fn(f)` / `CheckboxList::options_fn(f)` with `.depends_on([...])`
+  (required) and `.options_timeout(d)` (5 s, at most 30) compute a resource form's options from its state
+  (readable values only). New route `POST form/options` (authorized as `form/react`, sharing its bucket and
+  turns; answers checked: at most 500 options and 64 KiB, canonical, no value twice; `failed` keeps the declared
+  options); `InputSchema.optionsFrom`; the panel asks when the form opens and when a dependency changes
+  (debounced, latest answer only). Saves that could change the input run it again before the transaction, with
+  no lock held, after a committed-receipt replay check, then check under the lock that the dependencies the
+  user may read did not change (409 `stale`) and that the value is among the options (`not_option`; checkbox
+  lists keep their shape); new form error `options_failed`. Never decided by a value the user cannot read.
+  Imports retry `stale` and `options_failed` rows. Refused at boot in rows, on settings pages and action forms,
+  on `belongs_to` and encrypted fields, on children of relationship repeaters, and on a field with two inputs.
+  `SelectOption` is at the crate root.
+- Form reactions on relationship rows (vocabulary 27, ADR 0044 part D; contributed by @giangittb112000,
+  redesigned after review): a top-level relationship repeater may declare `.reacts()`; `FormState::relation_rows`
+  gives its rows (`StateRow`, by tagged identity `RowId::Key` / `RowId::Ref`, at most `[admin] repeater_rows`,
+  readable fields only); `FormPatch::add_relation_row` (`add_relation_row_as` with a ref),
+  `update_relation_row`, `remove_relation_row` and `flag_relation_row` are kept only when the user could make
+  the change: stored rows read for the user (scope, parent, the relation's filters, view policy; update and
+  delete allowed per record), fields readable and writable for the operation, never the parent key, a filter
+  or the order column, `addable`/`deletable`/`min_items`/`max_items` honoured, hidden row inputs dropped
+  (the repeater's condition mode over authorized values), keyed patches dropped on a parent create. Nothing
+  is written; saves are unchanged. Demo: a category's new published post without a title gets one.
 
 ### Changed
 - Panel colors (dark mode first): every text pair reaches WCAG AA and input borders and focus rings 3:1, in both
@@ -138,6 +161,10 @@ All notable changes are documented here. The format follows
   `Condition::all`/`any` are unchanged); `ListQuery` gains a hidden `relation_filters`;
   `DynResource::counted_by` takes the relation's filters and `field_locks_media_or_secret` is
   `field_is_encrypted`.
+- `FormPatch` gains four variants (relationship row patches): an exhaustive `match` needs arms for them.
+  `DynResource` gains `form_options`, `computes_options` and hidden methods for row reactions. An update
+  carrying an idempotency key whose first run committed is now answered from its receipt before its input is
+  checked, as creates are.
 - An upload with a part other than `file` and `collection` is refused with "must be one part named `file`,
   with at most one `collection`" (code `file_part`, as before; only its message changed). New code
   `media_collection`.

@@ -5,6 +5,7 @@
   review: no strict reactions, the state is the user's form (ADR 0037),
   bounded answers.
 - Date: 2026-11-17
+- Amended by ADR 0044 (0.14.0, vocabularies 26 and 27): see "Amendment (0.14.0)" at the end.
 
 ## Context
 
@@ -219,3 +220,20 @@ in `fixtures/authz/admin.toml`.
   for relationship repeaters (row keys), reactions inside rows, a bounded
   server-side consistency rule, and an SDK `registerFormReaction` for
   immediate feedback in the browser.
+
+## Amendment (0.14.0, ADR 0044 parts D and E)
+
+- **Row patches for relationship repeaters** (vocabulary 27). The state carries the rows of the form's
+  top-level relationship repeaters by tagged identity (`RowId::Key` / `RowId::Ref`, `FormState::relation_rows`),
+  and `FormPatch` gains `add_relation_row`, `update_relation_row`, `remove_relation_row` and
+  `flag_relation_row`. This ADR's rule holds: a row patch is kept only when the user could make the change,
+  checked against child records read for the user (scope, parent, the relation's filters, view policy; update
+  and delete allowed per record) and the child's field rules for the operation. A top-level relationship
+  repeater may now declare `.reacts()` (the boot check above no longer refuses it); row inputs still may not.
+  The "left for later" item on row patches for relationship repeaters is done. Details: ADR 0044, part D.
+- **Options computed on the server** (`options_fn`, vocabulary 26). The new `form/options` route is
+  authorized as `form/react` and shares its `form-react` bucket (120 per user per minute) and its turns. Unlike
+  reactions, a save does run `options_fn`: **outside the transaction**, before `begin()` (after a
+  committed-receipt replay check), and the value is checked under the lock against that answer, a dependency
+  changed meanwhile being 409 `stale`. "Saves never run reactions" still holds for reactions. Details: ADR 0044,
+  part E.

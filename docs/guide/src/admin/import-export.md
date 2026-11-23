@@ -170,7 +170,11 @@ start without one.
    constraints, audit). Each row's transaction checks the user's permissions
    as they are then (a role change waits for it) and records that the row was
    written: if the job runs again after a crash, rows already written are
-   skipped, and counted as before. An import is kept 24 hours from the time
+   skipped, and counted as before. A row refused because an input's
+   [computed options](forms.md#options-computed-on-the-server) could not be
+   checked (`options_failed`) or changed while it was written (409 `stale`)
+   is tried again with the job, as a busy write is; once the job's attempts
+   run out the row fails with that code. An import is kept 24 hours from the time
    it started; nothing is written after that. An import still running 6
    hours after it started is marked failed (`unfinished`) by the cleanup.
 4. **Outcome** (`GET {admin}/api/imports/{id}`): created, updated, failed, and
@@ -198,7 +202,9 @@ start without one.
 - Values are checked as in the forms, including the static options of a
   select or checkbox list ([options](forms.md#options-are-not-validated)): a
   row out of them fails (`not_option`, `given_twice`). A checkbox list cell is
-  a JSON list (`["red","blue"]`).
+  a JSON list (`["red","blue"]`). An input with
+  [`options_fn`](forms.md#options-computed-on-the-server) is checked against
+  its computed options when the row runs, not in the check step.
 - Encrypted fields are never offered for import.
 
 The job loads the user again at each batch of 100 rows (active, same

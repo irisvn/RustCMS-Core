@@ -1,12 +1,16 @@
 # ADR 0044: Repeaters, second round
 
-- Status: accepted for 0.14.0 (vocabularies 24 and 25): parts A and B, reworked after review. Parts C, D and E
-  were not accepted (see "Not accepted, or later").
+- Status: accepted for 0.14.0 (vocabularies 24 to 27): parts A and B, reworked after review; `options_fn`
+  (part E, vocabulary 26) and reactions on relationship rows (part D, vocabulary 27), redesigned after review.
+  Part C, `validate_rows`, `shown_when_fn`, `required_fn` and `form/rules` were not accepted (see "Not accepted,
+  or later").
 - Date: 2026-11-18 (proposed); 2026-11-23 (decided)
 - Contributed by @giangittb112000 (PR #4). Decisions: `docs/core/plans/repeater-v2-decisions.vi.md`; plan of the
-  rework: `docs/core/plans/contrib-0.14-part6.md`; review: `docs/core/reports/2026-11-22-pr4-review.vi.md`.
+  rework: `docs/core/plans/contrib-0.14-part6.md`, and for parts D and E `docs/core/plans/contrib-0.14-6de.md`
+  (its v2 and v2.1 sections); review: `docs/core/reports/2026-11-22-pr4-review.vi.md`.
 - Amends ADR 0037 (conditions in rows reading outer levels), ADR 0040 (repeaters) and ADR 0041 (points 4, 5 and
-  6). ADR 0018 (no `lock_parent` chains) and ADR 0043 (form reactions) are unchanged.
+  6), and ADR 0043 (form reactions: row patches, a save-time options check outside the transaction). ADR 0018
+  (no `lock_parent` chains) is unchanged.
 
 ## Context
 
@@ -38,8 +42,8 @@ The proposal had five parts. What was decided, and why, is in the decisions docu
 | A | Conditions on and in relationship repeaters, conditions reading the root form, filtered has-many relations, table layout, relationship rows on view pages | accepted, reworked (vocabulary 24) |
 | B | Media, rich text and `belongs_to` in rows (JSON and relationship) | accepted, fixed (vocabulary 25) |
 | C | Nested relationship repeaters (three levels), `inherit`, chained locks | not accepted |
-| D | `validate_rows`, reactions on relationship rows | not in 0.14 |
-| E | Server closures (`shown_when_fn`, `required_fn`, `options_fn`), `form/rules` | not in 0.14 |
+| D | `validate_rows`, reactions on relationship rows | reactions accepted, redesigned (vocabulary 27); `validate_rows` not accepted |
+| E | Server closures (`shown_when_fn`, `required_fn`, `options_fn`), `form/rules` | `options_fn` accepted, redesigned (vocabulary 26); the rest not accepted |
 
 ## Decision: part A (vocabulary 24)
 
@@ -280,6 +284,161 @@ explicit lock of the write.
 - Media pickers in rows open on the field's (or input's) collection.
 - View pages show JSON rows' files and documents (`MediaEntry`, `RichTextEntry`).
 
+## Decision: part E, `options_fn` (vocabulary 26)
+
+The proposal ran closures (`shown_when_fn`, `required_fn`, `options_fn`) inside the save, and a `form/rules`
+route answered every rule at once. Only `options_fn` is kept, redesigned so that application code never runs
+inside a write's transaction or with a lock held, and never decides on a value the user cannot read.
+
+### Declaring
+
+- `SelectInput::options_fn(f)` / `CheckboxList::options_fn(f)`, where `f` is
+  `for<'a> Fn(&'a Ctx, &'a FormState) -> BoxFuture<'a, AppResult<Vec<SelectOption>>>` (`SelectOption` is now at
+  the crate root).
+- `.depends_on([...])` is required: the inputs of the same form whose change asks again, and whose values a
+  save compares again under the lock (may be empty).
+- `.options_timeout(d)`: 5 s by default, more than zero and at most 30 s.
+- **The contract with the application** (in the guide): the closure gets the request's `Ctx` with **no
+  transaction** and the form's state (readable values only). Other reads it makes are not atomic with the
+  write: options are a form rule, not a data invariant; invariants belong in hooks.
+- **Boot refuses** (panics): `depends_on`/`options_timeout` without `options_fn`, `options_fn` without
+  `depends_on`; a timeout out of bounds; an input that is not a select or checkbox list, a `belongs_to` select,
+  an encrypted field; a field with `options_fn` bound to two inputs of the form; a dependency that is not an
+  input of the same form level with a scalar or list value (hidden, encrypted, link, repeater or JSON value
+  inputs refused); `options_fn` in JSON or relationship rows, on settings pages and in action forms; and any
+  resource with `options_fn` that is the child of a relationship repeater (its rows are written by
+  `create_row`/`update_row` inside the parent's transaction, where no preflight runs).
+
+### The state the closure reads
+
+One builder for the route, the preflight and the locked check:
+- the reaction state's authorization (ADR 0043): stored values only for a record the user may view, of fields
+  they may read; typed values only for fields they may write; the key a relation binds and its fixed values
+  over what was sent;
+- then the declarative conditions' normalization (hidden inputs `null`);
+- fields the user may read only.
+
+### `POST {admin}/api/resources/{slug}/form/options`
+
+- Request `{operation, key?, via?, input, state}`; answer `{options}` or `{failed: true}`.
+- **Authorized as `form/react`, before the body**: create or update admitted, the same `form-react` bucket
+  (120 per user per minute, shared with reactions) and the same turns (2 per user, 8 in all; 429 beyond).
+  Then create: `create` allowed (through `via`, the relation's `creatable`, part A's `relation_access`); edit:
+  `update` allowed on the record, in scope (no `via` on edit).
+- The input must be one the user's form holds: readable and writable for the operation, with `options_fn`,
+  not hidden by the conditions on the state, not set by the relation. Otherwise 404, the same as an unknown
+  input.
+- **The answer is checked**: at most 500 options and 64 KiB; no `null` value; a select's values decoded to the
+  column's kind, canonical and storable; no value twice; labels translated. A failure (error, timeout, a bad
+  answer) is logged and answered `failed: true`; the panel keeps the declared options.
+- Listed in `http::routes`, with cases in `fixtures/authz/admin.toml`.
+
+### Schema and panel
+
+- `InputSchema.optionsFrom: {dependsOn}`; the declared options are sent as they are, and no closure runs while
+  a schema is built.
+- The panel asks when the form opens and when a dependency changes, debounced (about 400 ms); only the latest
+  answer for the current dependency values is applied. A value no longer among the options stays shown,
+  disabled, until the user changes it.
+
+### On save (resource create and update; panel, API, import execution)
+
+1. **Triggers.** An input is evaluated when the save could change it: on create, or when the input or one of
+   its dependencies is sent. An old record is never refused for an input the save leaves alone.
+2. **Replay first.** Admission, then the idempotency claim from the original input, then a **committed-receipt
+   lookup** (a new fast path at the create and update entry points, before links, rows and validation): a
+   retry of a committed request is answered from its receipt and runs no closure. Concurrent duplicates may
+   still run read-only closures; the transactional acquire replays as before if another request committed
+   meanwhile. A relation create keeps its replay before the parent lookup.
+3. **Preflight, before `begin()`.** The state is built from the record read **without a lock** (update) with
+   the request over it, and each triggered input the user may access is run. One save-wide deadline, the
+   largest `options_timeout` of those inputs (at most 30 s), covers waiting for a global turn (saves wait up to
+   the deadline: no per-user refusal), every closure and the answers' checks; each closure keeps its own
+   timeout too. Failure: form error `options_failed` ("could not check the options; try again"), nothing
+   saved.
+4. **Under the lock.** The state is rebuilt from the locked record with the principal `begin` refreshed. If
+   the set of checked inputs or any dependency projection differs from the preflight's: 409 `stale`. An input
+   is never checked without an answer.
+5. **Membership** of the effective value (accepted, conditions applied; else the stored one) uses the existing
+   single/many checker with the evaluated options (`not_option`); an empty value is not checked. The declared
+   static options are not checked for that input, but a checkbox list's **shape** is: an array without
+   repeats, in saves and in reaction patches, with or without an answer (its own step, not done by clearing
+   the rule's options).
+6. **No oracle over unreadable values.** A save checks a value the client sent, and an omitted stored value
+   only when the user may read the field and view the record (the reaction state's rule). The dependency
+   projections compared under the lock hold readable values only. Otherwise the input is skipped: nothing is
+   accepted or refused (and no 409 is answered) because of a value the caller cannot observe. Blind updates
+   (no `view`) check sent values only.
+7. **Imports.** The dry run (no database) skips these checks. The run executes each row as a save; `stale` and
+   `options_failed` are retried with the job, as busy writes are (rows already written are skipped by their
+   receipts), and reported under their own codes once the attempts run out.
+8. No closure ever runs with the write's transaction or a lock held.
+
+## Decision: part D, reactions on relationship rows (vocabulary 27)
+
+The proposal's patches named rows by index or by an untagged id and were checked against what the client
+sent. The redesign keeps ADR 0043's rule, "a patch is kept only when the user could make the change", and
+checks it against records the server reads for the user.
+
+### State
+
+- `FormState::relation_rows(name) -> &[StateRow]`: the rows of a **top-level** relationship repeater, as the
+  form holds them (stored rows with unsaved edits, then new rows, in the form's order). On the wire:
+  `state[name] = [{"key": "8", "data": {…}}, {"ref": "n1", "data": {…}}]`.
+- **Tagged identities.** `RowId::Key(String)` (a stored row, edit forms only, canonical) and
+  `RowId::Ref(String)` (a new row, `^n[0-9]{1,9}$`) never compare equal, whatever their text: a key `"n1"` is
+  not the ref `n1`. `StateRow` gives `id()`, `key()`, `reference()`, `get`, `text`, `values`. `RowId` and
+  `StateRow` are at the crate root.
+- **Only repeaters the user's form holds**: relation readable (`relation_access`), child listable, not hidden
+  on the state. At most `[admin] repeater_rows` rows; more, an unknown member, a malformed id or a row given
+  twice leave the repeater out of the state.
+- In each row only the repeater's inputs, fields the user may read, values that decode, canonical.
+
+### Patches
+
+`FormPatch` gains `add_relation_row(field, data)` (or `add_relation_row_as(field, ref, data)`, naming the new
+row for later patches), `update_relation_row(field, id, data)`, `remove_relation_row(field, id)` and
+`flag_relation_row(field, id, message)`; `id` is a tagged `RowId` (`{"key": "8"}` / `{"ref": "n1"}`).
+
+A patch is kept only when:
+- **Every patch:** the repeater is one the user's form holds, whose rows the user may change, shown on the
+  state as the previous patches left it; the id names a row of the state (as the previous patches left it).
+- **Keyed patches** name a stored row loaded **read-only, without a lock**, in one query per repeater in key
+  order (bounded by the state), through the child's scope (not trashed), parent membership (the bound parent
+  key), the relation's filters and the view policy on each. A key not found that way drops the patch.
+- **Add:** the relation `creatable`, the child's `create` admitted and allowed with the parent bound (on a
+  parent create, without a parent record, as the panel's new-parent form does), `addable`, under `max_items`
+  and `repeater_rows`; a ref given must be valid and new.
+- **Update:** a ref is checked as an add; a key needs `update` admitted and allowed on that record.
+- **Remove:** a key needs `delete` admitted and allowed on the record; keys and refs both honour `deletable`
+  and `min_items`.
+- **Flag:** a message of at most 500 characters.
+- **Values** (adds and updates): each a row input, never the parent key, a filtered field or the order column;
+  the child field readable and writable for the operation the save would run (create for a ref, update for a
+  key), a value its input accepts (`accept_row_value`), canonical.
+- **One cleaner** for adds and updates drops the inputs hidden by the repeater's conditions, in its condition
+  mode (legacy: the child form's conditions over its inputs; explicit: the rows' rules, with the record's form
+  as `root`). The condition state is built from authorized values: the stored row's readable values (keyed) or
+  the child's declared defaults (new), the state's row and the patch over them, then the server's values as
+  `create_row` puts them before conditions: the bound parent key (`null` on a parent create) and the
+  relation's fixed values.
+- **Parent create:** only adds, updates and removals of refs, and flags; keyed patches are dropped (there are
+  no stored rows).
+- An update that changes nothing is dropped; dropped patches are logged.
+
+ADR 0043's limits (200 patches, one deadline) cover the reaction, the rows it loads and the patch checks.
+Nothing is written; the save checks everything again. The save's wire format (`order` with `{"new": ref}`) is
+unchanged: tagged ids exist only in the reaction state and patches. The panel maps a patch's ref to a
+reference of its own.
+
+### Triggers
+
+A top-level relationship repeater may declare `.reacts()` (boot accepts it; rows' inputs still may not). The
+schema says `reacts: true` when the user may change the repeater's rows; the panel asks when rows are added,
+removed, reordered or edited, sends each held repeater's rows (stored rows as its widget read them, with
+unsaved edits; new rows by ref; a repeater with more stored rows than the widget reads is left out), applies
+the four patches by tagged id, and shows a flag under its row.
+
 ## Wire
 
 - **Vocabulary 24:** `scope` on leaf conditions; `shownWhen` on relationship repeaters and conditions in their
@@ -288,7 +447,11 @@ explicit lock of the write.
 - **Vocabulary 25:** file uploads and rich editors in JSON rows carry `media`, `collection` and `richNodes` from
   the input; relationship rows may hold the child's media, rich text and `belongs_to` inputs;
   `InputSchema.toolbar`.
-- Issue codes: `too_many_rows` (new message), `too_many_media` (new).
+- **Vocabulary 26:** `InputSchema.optionsFrom` (`{dependsOn}`); the `form/options` route.
+- **Vocabulary 27:** relationship repeaters may carry `reacts`; `form/react` states carry relationship rows by
+  tagged id; patches `add_relation_row`, `update_relation_row`, `remove_relation_row`, `flag_relation_row`.
+- Issue codes: `too_many_rows` (new message), `too_many_media` (new), `options_failed` (new); 409 `stale`
+  (reason `options`).
 - An older SPA sees an unknown vocabulary and shows forms read-only (ADR 0002).
 
 ## Consequences
@@ -304,7 +467,14 @@ explicit lock of the write.
   the panel, the API and imports; JSON written by other code (hooks, migrations) is not. Media held only in JSON
   rows have no foreign key: deleting the media leaves the row showing it as unavailable.
 - Rust API: `Condition` leaves gain `scope`; `ListQuery` gains a hidden field; `DynResource` (implemented by
-  the engine only) changes signatures. Listed in the upgrade guide.
+  the engine only) changes signatures and gains methods; `FormPatch` (not `#[non_exhaustive]`) gains four
+  variants, a source break for exhaustive matches; `SelectOption`, `RowId` and `StateRow` are at the crate
+  root. Listed in the upgrade guide.
+- `options_fn` adds a read-only round trip to the application before a save that could change the input, and
+  a 409 `stale` when a dependency changed between the preflight and the lock; imports retry such rows.
+  Idempotent retries of a committed create or update are now answered before validation.
+- Row reactions read stored child rows for the user (one query per repeater) while the user types; they are
+  bounded by the reaction limits and write nothing.
 
 ## Not accepted, or later
 
@@ -317,12 +487,11 @@ explicit lock of the write.
   rows the user may not see included (a privileged API), and cannot hold a real invariant: a write of the
   parent alone, or of the child table directly, goes around it. Such invariants ("one correct option") belong
   in the application's hooks or services.
-- **Part D, reactions on relationship rows:** later, with a design of its own (fields readable and writable,
-  per-row permissions, reaction limits, patches by key or ref) and a review. ADR 0043 is unchanged.
-- **Part E, server closures:** `shown_when_fn` and `required_fn` are not accepted (`when(..)`, `required` and
-  validation hooks cover them). `options_fn` (options depending on another input) is later, with a design of
-  its own: run before the transaction and locks, under ADR 0043's limits, one input at a time; the
-  `form/rules` route returning every rule is not accepted.
+- **Part E, `shown_when_fn` and `required_fn`:** not accepted (`when(..)`, `required` and validation hooks
+  cover them); the `form/rules` route returning every rule is not accepted. `options_fn` is accepted as
+  decided above.
+- **Reactions declared on row inputs** (`.reacts()` inside rows), and `options_fn` in rows, on settings pages
+  and in action forms: not in 0.14.
 - **Deleting the rows of a hidden relationship repeater:** not accepted (above); an opt-in per repeater may be
   considered later.
 - **String `where_eq` filters:** later, with an exact comparison across databases.

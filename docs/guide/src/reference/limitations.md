@@ -33,6 +33,9 @@ does not surprise you in production.
   actions, media uploads, CSV import uploads and background export requests.
 - Managing API-guard roles from the panel (use `rustcms role:assign`).
 - Cron expressions in a time zone other than UTC.
+- Reactions on inputs inside repeater rows, on settings pages and in action
+  forms; computed options (`options_fn`) anywhere but a resource form's own
+  inputs ([Forms](../admin/forms.md#options-computed-on-the-server)).
 
 ## Fixed limits
 
@@ -48,6 +51,7 @@ does not surprise you in production.
 | Live idempotency keys per user | 1,000 (429 beyond) | [Admin API](admin-api.md#retrying-writes-safely) |
 | Rows of a relationship repeater | `max_items` in the form and [`[admin] repeater_rows`](../getting-started/configuration.md#admin-configadmintoml) (default 50, at most 500): rows read, rows reordered, entries of each part of a save | more rows: the repeater is read-only; a save beyond: 422 `too_many_rows` ([Forms](../admin/forms.md#child-records)) |
 | Files one save refers to | 2,000 distinct (fields, rich text and repeater rows together) | beyond: 422 `too_many_media` ([Media](../admin/media.md#media-fields)) |
+| Options computed on the server (`options_fn`) | 5 s each (`.options_timeout`, at most 30 s); 500 options and 64 KiB per answer; asking shares the reactions' 120 requests a minute per user | a save that cannot check them fails with `options_failed` ([Forms](../admin/forms.md#options-computed-on-the-server)) |
 | Computed values (`computed()`) | 5 s each (`.timeout`, at most 30 s); 60 view pages a minute per user, 2 at once per user, 8 at once in all | beyond: the value shows "Not available" ([Infolists](../admin/infolists.md#computed-values)) |
 
 ## Writes in flight

@@ -30,7 +30,8 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | GET | `/resources/{slug}/records?…` | `{data: [Envelope], meta}` |
 | POST | `/resources/{slug}/records` | 201 `{data: Envelope}` |
 | GET / PATCH / DELETE | `/resources/{slug}/records/{key}` | `{data: Envelope}` / `{data: Envelope}` / 204 |
-| POST | `/resources/{slug}/form/react` | `FormReactRequest` `{operation: "create" \| "edit", key?, changed, state, previous?, via?: {parent, record, relation}, seq}` → `FormReactResponse` `{seq, patches, failed?}`: the changes the reaction of input `changed` asks for (ADR 0043). Before the body is read: 403 unless the user may create or update records of the resource, and 120 requests per user per minute; then create: `create` (through `via`, as that relation creates), edit: `update` on the record, in scope; `view` is 422, as is an input without a reaction or a JSON repeater sent with more rows than it holds; 2 reactions at once per user and 8 in all (429 beyond) |
+| POST | `/resources/{slug}/form/react` | `FormReactRequest` `{operation: "create" \| "edit", key?, changed, state, previous?, via?: {parent, record, relation}, seq}` → `FormReactResponse` `{seq, patches, failed?}`: the changes the reaction of input `changed` asks for (ADR 0043). Before the body is read: 403 unless the user may create or update records of the resource, and 120 requests per user per minute; then create: `create` (through `via`, as that relation creates), edit: `update` on the record, in scope; `view` is 422, as is an input without a reaction or a JSON repeater sent with more rows than it holds; 2 reactions at once per user and 8 in all (429 beyond). Since vocabulary 27 the state carries relationship rows and the answer may hold row patches (below) |
+| POST | `/resources/{slug}/form/options` | `FormOptionsRequest` `{operation: "create" \| "edit", key?, via?, input, state}` → `FormOptionsResponse` `{options?: [{value, label}], failed?: true}`: the options of an input with `optionsFrom` for the form's state (ADR 0044 part E, vocabulary 26). Authorized as `form/react`, before the body (403; the same 120 per minute bucket, shared with `form/react`, and the same turns: 429); `via` on create only; an input the user's form does not hold with computed options (unknown, not readable or writable, hidden by its conditions, set by the relation, without `options_fn`) is 404; `view` is 422 |
 | GET | `/resources/{slug}/records/{key}/computed` | `ComputedValues` `{data: {name: value}, failed: [name]}`: the computed values the view page's infolist shows, for a user who may view the record (ADR 0039); 60 requests per user per minute and 8 pages computing at once (429 beyond) |
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
@@ -207,6 +208,47 @@ older documents (`document_needs_version`) and more than 500 nodes
 read-only (they read versions 1 and 2 only). Extensions draw and edit nodes
 with `registerRichTextNode` (host `ui` 4).
 
+Vocabulary 27 adds form reactions on relationship rows (ADR 0044 part D). A
+top-level relationship repeater may carry `reacts: true` (when the user may
+change its rows); clients post `form/react` when its rows are added, removed,
+reordered or edited. In `form/react`'s `state`, each relationship repeater the
+form holds is a list of rows in the form's order, `{"key": "8", "data": {…}}`
+(a stored row, edit forms only) or `{"ref": "n1", "data": {…}}` (a new row,
+`n` and 1 to 9 digits), `data` holding the row's inputs in wire format; a
+repeater whose stored rows the client did not read in full is left out. The
+server keeps a repeater only when the user's form holds it (relation readable,
+child listable, shown), with at most `rowLimit` rows, no row twice, and in
+each row only readable fields whose values decode. Four patches name rows by a
+tagged `id`, `{"key": "8"}` or `{"ref": "n1"}` (a key never matches a ref):
+`add_relation_row` (`field`, `ref?`, `data`: at the end; `ref` lets later
+patches of the answer name it, and clients map it to a reference of their
+own), `update_relation_row` (`field`, `id`, `data`: only the values that
+change), `remove_relation_row` (`field`, `id`) and `flag_relation_row`
+(`field`, `id`, `message`). The server keeps a patch only when the user could
+make the change: stored rows read for the user (scope, parent, the relation's
+filters, view policy; `update`/`delete` allowed on each), fields readable and
+writable for the operation (create for a ref, update for a key), never the
+parent key, a filtered field or the order column, `addable`, `deletable`,
+`min_items`, `max_items` and `rowLimit` honoured, hidden row inputs dropped;
+keyed patches are dropped on a create form. Saves are unchanged (`order` with
+`{"new": ref}`). Older clients never send rows and see an unknown vocabulary.
+
+Vocabulary 26 adds options computed on the server (ADR 0044 part E). A
+`select` or `checkbox_list` input of a create or edit form may carry
+`optionsFrom: {dependsOn: [name]}`; its `options` are the declared ones.
+Clients post `form/options` when the form opens and when an input of
+`dependsOn` changes (debounced, about 400 ms; only the latest answer for the
+current values applies), and show the answer's options; on `failed`, a
+network error or 429 they keep the declared ones. A value no longer among the
+options stays shown, disabled, until the user changes it. Answers hold at
+most 500 options and 64 KiB, values canonical, no value twice. Saves that
+could change such an input (a create, or the input or one of its
+dependencies sent) compute its options again before the transaction: failing,
+a form error `options_failed`; a dependency the user may read that changed
+before the record's lock, 409 `stale` (reason `options`); a value outside the
+answer, `not_option` (a checkbox list must still be a list without repeats).
+Older clients see an unknown vocabulary and show forms read-only.
+
 Vocabulary 25 adds files, documents and record selects in repeater rows (ADR
 0044, part B). A JSON repeater's rows may hold `file_upload` inputs (their
 `media` and `collection` from the input) and `rich_editor` inputs (their
@@ -285,8 +327,8 @@ follow the values. Older clients show the values.
 Vocabulary 19 adds form reactions (ADR 0043): inputs of create and edit
 forms may carry `reacts: true` (never on view schemas or repeater rows). After such an input
 changes and typing pauses (about 400 ms), clients post `form/react` with the
-form's values in wire format (as a save sends them, without secrets, links or
-relationship rows), the changed input's `previous` value (when the last
+form's values in wire format (as a save sends them, without secrets, links or,
+before vocabulary 27, relationship rows), the changed input's `previous` value (when the last
 answer was applied, or the form opened), `via` on a relation's create form,
 and an increasing `seq`, and apply the answer only if its
 `seq` is the latest and the form has not changed since. The server evaluates
@@ -297,8 +339,8 @@ left them): `set` and `set_if_empty` (`field`, `value`; the latter only when
 the field is `null`, `""` or `[]`), `add_row` (`field`, `row`, `index?`: the
 end when absent), `remove_row` (`field`, `index`), `move_row` (`field`,
 `from`, `to`), `flag_row` (`field`, `index`, `message`: a warning under the
-row until the next answer or a change of that repeater), `notice` (`message`). Row patches name JSON
-repeaters only. Values are canonical (as a save stores them); at most 200
+row until the next answer or a change of that repeater), `notice` (`message`). These row patches name JSON
+repeaters only (relationship rows: vocabulary 27). Values are canonical (as a save stores them); at most 200
 patches, messages of at most 500 characters. Patches do not trigger further
 reactions; network errors, 429 and `failed` are ignored. Saves never run
 reactions. Older clients never call them.
@@ -444,7 +486,8 @@ Record keys are strings in URLs and envelopes (`"42"`, a UUID, or a natural key)
 message, in the same order, for clients that translate them (codes:
 [Languages](../guide/src/admin/i18n.md#validation-messages)); messages stay English. A 409
 carries a stable `code` (`write_conflict`, or one named by its endpoint:
-`import_started`, `export_not_ready`, `mail_disabled`, …) and a `reason`;
+`import_started`, `export_not_ready`, `mail_disabled`, `stale` with reason
+`options` for computed options, …) and a `reason`;
 `write_conflict` reasons include `busy`, `upload_expired`,
 `receipt_expired`.
 

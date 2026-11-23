@@ -58,7 +58,7 @@ tags of a belongs-to-many relation and key/value attributes.
 | `TextInput` (`.email()`, `.password()`, `.url()`) | text |
 | `Textarea` | long text |
 | `NumberInput` | integers and decimals (kept exact); `.min(n)`, `.max(n)`, `.step(n)` ([below](#number-bounds)) |
-| `SelectInput` | static `.options([(value, label)])`, or the records of a `belongs_to` field |
+| `SelectInput` | static `.options([(value, label)])`, options [computed on the server](#options-computed-on-the-server), or the records of a `belongs_to` field |
 | `Toggle`, `Checkbox` | booleans (three states when nullable) |
 | `CheckboxList` | a JSON list of option values (`.options(…)`) |
 | `DatePicker`, `DateTimePicker` | dates, local date-times and instants (only instants are edited in UTC, local date-times as stored; shown on the record's page in the user's language, instants in their time zone, which is named) |
@@ -110,6 +110,8 @@ with its code). The value's **type** is checked first, as for any field.
   `BelongsToManySelect` check their own options.
 - A `belongs_to` select is different: its value must be a record the user may
   see, checked on every write; static options on it are not used.
+- An input with [`options_fn`](#options-computed-on-the-server) is checked
+  against the options its function answers, not its static ones.
 
 Declarations that cannot hold stop the application at boot: an option that is
 not a value of its column (`12` for an `i64` column), one that would be stored
@@ -134,6 +136,70 @@ enroll action and the seeder write enrollments through that service, not
 through the form.
 
 <<< @/../../../examples/lms/src/services/enrollment_service.rs#check [src/services/enrollment_service.rs]
+
+### Options computed on the server
+
+When a select's or checkbox list's choices depend on other inputs or on data
+(the topics of the chosen category, the rooms free on a date), compute them on
+the server with `.options_fn(f)` and name what they depend on with
+`.depends_on([...])`:
+
+```rust
+SelectInput::make("category").options([("news", "News"), ("guides", "Guides")]),
+SelectInput::make("topic").depends_on(["category"]).options_fn(|ctx, state| {
+    let category = state.text("category").to_owned();
+    Box::pin(async move {
+        let topics = topics_of(ctx, &category).await?; // your query
+        Ok(topics.into_iter().map(|t| SelectOption { value: json!(t.id), label: t.name }).collect())
+    })
+}),
+```
+
+`f` takes the request's `Ctx` and a [`FormState`](#reacting-to-changes) (the
+same values a reaction sees: fields the user may read, what they typed in
+inputs they may write, the conditions applied, a hidden input `null`), and
+returns `SelectOption`s. Its values are of the field's kind, as static
+options are; labels are translated per resource.
+
+- **In the panel.** The form asks for the options when it opens and when an
+  input of `depends_on` changes (once typing pauses; only the latest answer
+  is used). The declared `.options(…)` show until the answer comes, and stay
+  when asking fails. A value no longer among the options stays shown,
+  disabled, until the user changes it.
+- **On save.** A create, or an update that sends the input or one of its
+  dependencies, runs `f` again **before the write's transaction**, with no
+  transaction or lock held, then checks under the record's lock that the
+  dependencies have not changed meanwhile (else 409 `stale`: send it again)
+  and that the value is one of the answer's options (`not_option`; a
+  checkbox list is still a list without repeats). An empty value is not
+  checked, nor an update that leaves the input and its dependencies alone.
+  If `f` fails, times out or answers options the server refuses, the save
+  fails with the form error `options_failed` and nothing is saved. API
+  writes and [CSV imports](import-export.md#importing) are checked the same
+  way; a retry of a committed write answers its first result without running
+  `f`.
+- **Only what the user can see.** The check never depends on a value the
+  user may not read: a stored value of a field they may not read (or of a
+  record they may not view) is neither checked nor compared.
+- **Not a data invariant.** `f` runs outside the write's transaction: what
+  else it reads may change before the write commits, and hooks, actions and
+  other writes are not checked against it. `depends_on` names everything a
+  save compares again. A rule that must always hold belongs in a hook
+  (`mutate_before_create`, `mutate_before_update`) or a database constraint.
+- **Limits.** `.options_timeout(d)`: 5 seconds by default, at most 30. At
+  most 500 options and 64 KiB per answer, no value twice. Asking shares the
+  [reactions'](#reacting-to-changes) limits (120 requests per user per
+  minute, 2 at once). The route is `POST {admin}/api/resources/{slug}/form/options`
+  ([admin API](../reference/admin-api.md)); users who may not read or write
+  the input get 404.
+
+`options_fn` is for the own inputs of a resource's create and edit forms.
+The boot refuses it without `depends_on`, with a dependency that is not an
+input of the same form holding a value (hidden, encrypted, link, repeater or
+JSON inputs), on a `belongs_to` select or an encrypted field, on a field
+with two inputs, in repeater rows, on settings pages and in action forms,
+and on a resource that is the child of a relationship repeater (its rows are
+saved inside the parent's transaction, where `f` cannot run).
 
 ### Number bounds
 
@@ -285,6 +351,7 @@ with a text.
 
 `f` takes the request's `Ctx` (it may read the database; it should not
 write) and a `FormState` (`text(name)`, `get(name)`, `rows(name)`,
+`relation_rows(name)` ([below](#reactions-on-child-records)),
 `operation()`, `key()`, `changed()`, and `previous()`: the changed input's
 value when the panel last applied an answer, as the slug above uses it), and
 returns a list of `FormPatch`es:
@@ -297,6 +364,7 @@ returns a list of `FormPatch`es:
 | `FormPatch::remove_row(field, index)`, `move_row(field, from, to)` | removes or moves a row |
 | `FormPatch::flag_row(field, index, message)` | a warning under a row; changes nothing |
 | `FormPatch::notice(message)` | a message to the user |
+| `FormPatch::add_relation_row(field, data)`, `update_relation_row(field, id, data)`, `remove_relation_row(field, id)`, `flag_relation_row(field, id, message)` | [rows of a relationship repeater](#reactions-on-child-records) |
 
 ```rust
 Repeater::make("lines")
@@ -313,16 +381,18 @@ NumberInput::make("total"),
   the user may view the record), then what the user typed in the inputs they
   may write (a value that does not decode yet, a number half typed, is left
   out), and on a create form opened from a relation section, the key that
-  relation binds. Never encrypted fields, links or child records, nor a field
-  the user may not read. **These values are user input**: check an id the
+  relation binds. Never encrypted fields or links, nor a field the user may
+  not read; the rows of relationship repeaters are apart
+  (`relation_rows`). **These values are user input**: check an id the
   reaction looks up (a `belongs_to` key, a media id) against what the user may
   see, with `ctx.records(…)`.
 - **What it may change.** Patches apply in order (a row index is the row's
   place after the previous patches), conditions evaluated again after each
   one. The server drops, and logs, a patch the user could not make: a field
   not in the form, not readable and writable by the user, hidden by its
-  conditions, encrypted, or a value its input refuses; row patches name JSON
-  repeaters only. Patches that change nothing are dropped. Values are sent as
+  conditions, encrypted, or a value its input refuses; `add_row` and the other
+  index patches name JSON repeaters, the `*_relation_row` patches
+  relationship repeaters. Patches that change nothing are dropped. Values are sent as
   a save stores them (a decimal at the column's scale, rows without their
   hidden inputs). At most 200 patches, messages of at most 500 characters.
   Changes made by a patch do not set off other reactions.
@@ -341,6 +411,42 @@ NumberInput::make("total"),
 
 Reactions are for resource forms: settings pages and action forms do not take
 them yet, nor inputs inside repeater rows.
+
+### Reactions on child records
+
+A reaction also reads and changes the rows of the form's
+[relationship repeaters](#child-records), and a relationship repeater may
+react itself: the panel asks when rows are added, removed, reordered or
+edited. The demo's categories give a new post switched to published a title:
+
+<<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-reacts [src/admin/resources/category_resource.rs]
+
+- **Rows in the state.** `state.relation_rows(name)` gives the repeater's
+  rows as the form holds them (stored rows with the user's unsaved edits,
+  then new rows), each a `StateRow`: `id()`, `key()` (a stored row),
+  `reference()` (a new row, `n1`, `n2`, …), `get(name)`, `text(name)`,
+  `values()`. A row holds the repeater's inputs the user may read. The list is
+  empty when the user's form does not hold the repeater (the relation not
+  readable, the repeater hidden, more stored rows than the form edits).
+- **Rows by identity.** A row patch names its row by `RowId`: `RowId::Key`
+  for a stored row, `RowId::Ref` for a new one (pass `row.id().clone()`). A
+  key and a reference never name the same row, whatever their text.
+  `add_relation_row_as(field, "n1", data)` names the added row so later
+  patches of the same answer can change it.
+- **What is dropped.** As for other patches, the server keeps only what the
+  user could do in the form: adding needs `create` on the child (with the
+  parent bound) and the repeater `addable`, under `max_items`; changing a
+  stored row needs `update` on that record, removing it `delete` and the
+  repeater `deletable`, above `min_items`. A stored row is read for the user
+  (the child's scope, the parent's rows of the relation, its filters, the
+  view policy); a key not found that way drops the patch. Values go to
+  fields the user may read and write for that operation (create for a new
+  row, update for a stored one), never the parent key, a filtered field or
+  the order column, and inputs hidden by the rows' conditions are dropped.
+  On a create form there are no stored rows: only new rows are added,
+  changed or removed.
+- **Nothing is written.** The panel shows the changes as unsaved edits; the
+  save checks every row as usual.
 
 ## Leaving with unsaved changes
 
@@ -657,8 +763,12 @@ Besides the layout and encrypted-field rules above, the boot stops when:
   without a declared default;
 - `.reaction_timeout()` is on an input without `.reacts()`;
   the timeout is zero or over 30 seconds; `.reacts()` is on a hidden,
-  encrypted, link or relationship repeater input, an input that is not a
-  field, an input in a repeater's row, or a settings input.
+  encrypted or link input, an input that is not a field (or a relationship
+  repeater), an input in a repeater's row, or a settings input;
+- `.options_fn()` is used where it is refused
+  ([above](#options-computed-on-the-server)), `.depends_on()` or
+  `.options_timeout()` comes without it, or the timeout is zero or over 30
+  seconds.
 
 [Settings pages](settings.md) follow the same layout rules.
 

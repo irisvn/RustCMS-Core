@@ -107,6 +107,30 @@ JSON rows stay in their columns. What changes for existing applications:
   `toolbar` (`"compact"`), and file uploads and rich editors may appear in rows. A client on an older
   vocabulary shows forms read-only.
 
+Selects and checkbox lists may compute their options on the server
+([`options_fn`](admin/forms.md#options-computed-on-the-server)), and reactions may read and change the rows
+of relationship repeaters ([reactions on child records](admin/forms.md#reactions-on-child-records)). Both are
+opt-in and need no migration; nothing changes for a form that does not use them. **Rollback:** code using
+`options_fn`, `.reacts()` on a relationship repeater or the new patches goes back with the binary. Otherwise:
+
+- **Idempotent update retries are answered earlier.** An update carrying an idempotency key
+  (`Ctx::with_idempotency_key`, import rows) whose first run committed now answers with the record before its
+  input is checked, as creates do: a retry of a committed write no longer fails on a rule that changed
+  meanwhile, and runs no `options_fn`.
+- **New answers on saves with `options_fn`.** A save may fail with the form error `options_failed` (the
+  options could not be computed) or 409 `stale` (reason `options`: a dependency changed before the record was
+  locked; send it again). Imports retry such rows.
+- **Rust API.**
+  - `FormPatch` gains `AddRelationRow`, `UpdateRelationRow`, `RemoveRelationRow` and `FlagRelationRow`. It is
+    not `#[non_exhaustive]`: an exhaustive `match` on it needs arms for them (or `_`).
+  - `SelectOption`, `RowId` and `StateRow` are exported at the crate root (`rustcms::admin::…`); a glob import
+    that brings in another item of the same name needs a path.
+  - `DynResource` (implemented by the engine only) gains methods (`form_options`, `computes_options`, and
+    hidden ones for row reactions). Only code that implements it is affected.
+- **Schema (vocabularies 26 and 27).** `InputSchema` gains `optionsFrom` (`{dependsOn}`), with a new route
+  `form/options`; relationship repeaters may carry `reacts`, `form/react`'s state carries their rows, and its
+  answer may hold the four row patches. A client on an older vocabulary shows forms read-only.
+
 ## From 0.13.0 to 0.13.1
 
 No migration. To roll back, install 0.13.0 again; no data changes shape.
