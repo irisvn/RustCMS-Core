@@ -68,6 +68,25 @@ pub mod line {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+pub mod note {
+    use sea_orm::entity::prelude::*;
+
+    /// Notes of an order, with text keys: a stored note may be keyed `n1`.
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "order_notes")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub code: String,
+        pub order_id: i32,
+        pub body: Option<String>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 /// The patches the reactions answer with, and the state they last saw.
 static SCRIPT: Mutex<Vec<FormPatch>> = Mutex::new(Vec::new());
 static SEEN: Mutex<Option<FormState>> = Mutex::new(None);
@@ -134,6 +153,8 @@ impl Resource for OrderResource {
                     TextInput::make("ribbon"),
                 ])
                 .reacts(script),
+            // Rows with text keys (patched by the number's reaction).
+            Repeater::make("notes").relationship().schema(components![TextInput::make("body")]),
         ])
     }
 
@@ -141,6 +162,27 @@ impl Resource for OrderResource {
         vec![
             Relation::has_many("lines", "order_lines", "order_id").where_eq("kind", 1),
             Relation::has_many("extras", "order_lines", "order_id").where_eq("kind", 2),
+            Relation::has_many("notes", "order_notes", "order_id"),
+        ]
+    }
+}
+
+pub struct NoteResource;
+
+impl Resource for NoteResource {
+    type Entity = note::Entity;
+    const SLUG: &'static str = "order_notes";
+
+    fn meta() -> ResourceMeta {
+        ResourceMeta::new("Note").title("code").audit(false).key(KeyStrategy::Natural).lock_parent("order_id", "orders")
+    }
+
+    fn fields() -> Vec<Field> {
+        use note::Column as C;
+        vec![
+            Field::column(C::Code).required(),
+            Field::column(C::OrderId).required().belongs_to("orders"),
+            Field::column(C::Body),
         ]
     }
 }
@@ -157,7 +199,9 @@ impl Policy for LinePolicy {
             (ability, product),
             ("update", "noupdate") | ("delete", "nodelete") | ("view", "secret") | ("update" | "delete", "secret")
         );
-        ctx.can(&format!("order_lines.{ability}")) && !refused
+        // A new line needs its order, except for super admins (who create them anywhere).
+        let unbound = ability == "create" && record.is_none() && ctx.bound.is_none() && !ctx.principal.super_admin;
+        ctx.can(&format!("order_lines.{ability}")) && !refused && !unbound
     }
 
     async fn admits(&self, ctx: &Ctx, ability: &str) -> bool {
@@ -257,7 +301,9 @@ async fn fixture(db: TestDb) -> Fixture {
     let schema = Schema::new(db.conn().get_database_backend());
     rustcms_testing::create_table(db.conn(), &schema.create_table_from_entity(order::Entity)).await;
     rustcms_testing::create_table(db.conn(), &schema.create_table_from_entity(line::Entity)).await;
-    let registry = Registry::new().register::<OrderResource>().register::<LineResource>().finish();
+    rustcms_testing::create_table(db.conn(), &schema.create_table_from_entity(note::Entity)).await;
+    let registry =
+        Registry::new().register::<OrderResource>().register::<LineResource>().register::<NoteResource>().finish();
     let admin = Ctx::new(db.conn().clone(), support::admin(), registry.clone());
     let orders = registry.get("orders").unwrap();
     let create = |number: &str, product: &str| {
@@ -429,13 +475,18 @@ db_test!(row_patches_are_kept_when_the_user_could_make_them, |db: TestDb| async 
         FormPatch::remove_relation_row("lines", key(&nodelete)),                    // not deletable
         FormPatch::remove_relation_row("lines", key(&noupdate)),                    // deletable: kept
         update(key(&a.to_string()), json!({"quantity": 3})),                        // kept
-        update(key("n1"), json!({"product": "k"})),                                 // a key `n1` is not the ref `n1`
         update(reference("n1"), json!({"product": "k"})),                           // kept
         update(reference("n9"), json!({"product": "k"})),                           // no such row
         FormPatch::flag_relation_row("lines", reference("n5"), "Check"),
         FormPatch::flag_relation_row("lines", key(&noupdate), "Gone"), // removed above
+        // Stored rows are flagged when they are the user's rows of the relation.
+        FormPatch::flag_relation_row("lines", key(&nodelete), "Stays"),
+        FormPatch::flag_relation_row("lines", key(&hidden), "Out of scope"),
+        FormPatch::flag_relation_row("lines", key(&other), "Another order's"),
+        FormPatch::flag_relation_row("lines", key(&small), "An extra"),
+        FormPatch::flag_relation_row("lines", key(&secret), "Not viewable"),
         update(key(&a), json!({"product": "gift", "gift_note": "wrap it"})), // shown for gifts
-        update(key(&a), json!({"product": "plain", "gift_note": "no"})), // hidden: left out
+        update(key(&a), json!({"product": "plain", "gift_note": "no"})),     // hidden: left out
     ]);
     assert_eq!(
         patches(&ctx, Some(&order), "lines", state).await,
@@ -447,6 +498,7 @@ db_test!(row_patches_are_kept_when_the_user_could_make_them, |db: TestDb| async 
             {"op": "update_relation_row", "field": "lines", "id": {"key": a}, "data": {"quantity": 3}},
             {"op": "update_relation_row", "field": "lines", "id": {"ref": "n1"}, "data": {"product": "k"}},
             {"op": "flag_relation_row", "field": "lines", "id": {"ref": "n5"}, "message": "Check"},
+            {"op": "flag_relation_row", "field": "lines", "id": {"key": nodelete}, "message": "Stays"},
             {"op": "update_relation_row", "field": "lines", "id": {"key": a}, "data": {"product": "gift", "gift_note": "wrap it"}},
             {"op": "update_relation_row", "field": "lines", "id": {"key": a}, "data": {"product": "plain"}},
         ])
@@ -583,4 +635,86 @@ db_test!(row_patches_share_the_reactions_deadline, |db: TestDb| async move {
     let answer =
         react(&ctx, Some(&order), "lines", json!({"number": "A", "lines": [{"key": a, "data": {}}]})).await.unwrap();
     assert!(answer.failed && answer.patches.is_empty(), "{answer:?}");
+});
+
+db_test!(a_stored_key_n1_and_a_new_ref_n1_stay_distinct, |db: TestDb| async move {
+    let f = fixture(db).await;
+    let ctx = f.ctx(support::admin());
+    let order = f.order.clone();
+    f.db.conn()
+        .execute_unprepared(&format!("INSERT INTO order_notes (code, order_id, body) VALUES ('n1', {order}, 'stored')"))
+        .await
+        .unwrap();
+    let note = |id: RowId, body: &str| FormPatch::update_relation_row("notes", id, json!({"body": body}));
+    play(vec![
+        note(key("n1"), "stored, changed"),
+        note(reference("n1"), "new, changed"),
+        FormPatch::remove_relation_row("notes", reference("n1")),
+        note(reference("n1"), "gone"),
+        note(key("n1"), "stored, again"),
+        FormPatch::flag_relation_row("notes", key("n1"), "Kept"),
+    ]);
+    let state = json!({"number": "A", "notes": [
+        {"key": "n1", "data": {"body": "stored"}},
+        {"ref": "n1", "data": {"body": "new"}},
+    ]});
+    assert_eq!(
+        patches(&ctx, Some(&order), "number", state).await,
+        json!([
+            {"op": "update_relation_row", "field": "notes", "id": {"key": "n1"}, "data": {"body": "stored, changed"}},
+            {"op": "update_relation_row", "field": "notes", "id": {"ref": "n1"}, "data": {"body": "new, changed"}},
+            {"op": "remove_relation_row", "field": "notes", "id": {"ref": "n1"}},
+            {"op": "update_relation_row", "field": "notes", "id": {"key": "n1"}, "data": {"body": "stored, again"}},
+            {"op": "flag_relation_row", "field": "notes", "id": {"key": "n1"}, "message": "Kept"},
+        ])
+    );
+    assert_eq!(seen("notes"), [(key("n1"), json!({"body": "stored"})), (reference("n1"), json!({"body": "new"}))]);
+});
+
+db_test!(the_schema_and_the_route_agree_on_new_rows, |db: TestDb| async move {
+    let f = fixture(db).await;
+    let order = f.order.clone();
+    // Lines created only with their order bound; never updated or deleted.
+    let user = f.ctx(Principal { id: "7".into(), guard: "admin".into(), ..Default::default() }.with(&[
+        "orders.view_any",
+        "orders.view",
+        "orders.create",
+        "orders.update",
+        "order_lines.view_any",
+        "order_lines.view",
+        "order_lines.create",
+    ]));
+    let orders = f.registry.get("orders").unwrap();
+    let lines = |schema: &ResourceSchema| -> Value {
+        let form = serde_json::to_value(&schema.form).unwrap();
+        form["components"].as_array().unwrap().iter().find(|c| c["name"] == json!("lines")).unwrap().clone()
+    };
+    let edit = lines(&orders.schema(&user, SchemaOperation::Edit, Some(&order)).await.unwrap());
+    assert_eq!(
+        (edit["reacts"].clone(), edit["repeater"]["relationship"]["create"].clone()),
+        (json!(true), json!(true))
+    );
+    play(vec![FormPatch::add_relation_row("lines", json!({"product": "p"}))]);
+    let state = json!({"number": "A", "lines": [{"ref": "n1", "data": {}}]});
+    assert_eq!(
+        patches(&user, Some(&order), "lines", state.clone()).await,
+        json!([{"op": "add_relation_row", "field": "lines", "data": {"product": "p"}}])
+    );
+    // A new order has no key to bind: no new lines, so no reaction of its rows.
+    let create = lines(&orders.schema(&user, SchemaOperation::Create, None).await.unwrap());
+    assert_eq!(create["reacts"], Value::Null);
+    assert_eq!(create["disabled"], json!(true));
+    assert!(react(&user, None, "lines", state.clone()).await.is_err());
+    assert_eq!(patches(&user, None, "number", state).await, json!([]));
+});
+
+db_test!(an_answer_is_checked_up_to_its_patch_limit, |db: TestDb| async move {
+    let f = fixture(db).await;
+    let ctx = f.ctx(support::admin());
+    let order = f.order.clone();
+    let a = f.key("a").await;
+    play((0..300).map(|i| FormPatch::flag_relation_row("lines", key(&a), format!("flag {i}"))).collect());
+    let state = json!({"number": "A", "lines": [{"key": a, "data": {}}]});
+    let kept = patches(&ctx, Some(&order), "lines", state).await;
+    assert_eq!(kept.as_array().unwrap().len(), 200);
 });

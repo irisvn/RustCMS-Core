@@ -166,6 +166,12 @@ impl<R: Resource> ResourceAdapter<R> {
         crate::engine::validate::list_shape_problem(value)
     }
 
+    /// The value a create omitting field `name` stores: its column's
+    /// declared default, when not empty.
+    fn create_default(&self, name: &str) -> Option<&Value> {
+        self.column(name).default.as_ref().filter(|v| !is_empty(Some(v)))
+    }
+
     /// The state options read (see [`OptionsState`]). `strict`: a JSON
     /// repeater sent with more rows than it may hold is a 422 (the route);
     /// otherwise its value is left out (a save refuses it anyway).
@@ -380,7 +386,9 @@ impl<R: Resource> ResourceAdapter<R> {
                 let name = self.options_inputs[index].name.as_str();
                 let readable_stored =
                     op == Operation::Update && viewable && self.field(name).is_some_and(|f| f.can_read(ctx));
-                self.options_shown(ctx, op, built, name) && (sent.contains_key(name) || readable_stored)
+                // On create, an omitted input stores its declared default: checked as if sent.
+                let default = op == Operation::Create && self.create_default(name).is_some();
+                self.options_shown(ctx, op, built, name) && (sent.contains_key(name) || readable_stored || default)
             })
             .collect()
     }
@@ -494,6 +502,8 @@ impl<R: Resource> ResourceAdapter<R> {
             let name = options.name.as_str();
             let value = if check.sent.contains_key(name) {
                 input.get(name)
+            } else if op == Operation::Create {
+                input.get(name).or_else(|| self.create_default(name))
             } else {
                 stored.filter(|(_, viewable)| *viewable).and_then(|(record, _)| record.get(name))
             };

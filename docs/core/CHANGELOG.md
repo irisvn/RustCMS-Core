@@ -162,7 +162,7 @@ All notable changes are documented here. The format follows
   `DynResource::counted_by` takes the relation's filters and `field_locks_media_or_secret` is
   `field_is_encrypted`.
 - `FormPatch` gains four variants (relationship row patches): an exhaustive `match` needs arms for them.
-  `DynResource` gains `form_options`, `computes_options` and hidden methods for row reactions. An update
+  `DynResource` gains hidden methods (`form_options`, `computes_options`, row reactions). An update
   carrying an idempotency key whose first run committed is now answered from its receipt before its input is
   checked, as creates are.
 - An upload with a part other than `file` and `collection` is refused with "must be one part named `file`,

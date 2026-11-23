@@ -71,6 +71,7 @@
       },
       {
         "columnSpan": 1,
+        "default": "apple",
         "disabled": false,
         "label": "Topic",
         "name": "topic",

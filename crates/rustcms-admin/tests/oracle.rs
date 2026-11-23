@@ -25,6 +25,96 @@ struct Case {
     body: Option<String>,
 }
 
+/// Picks: a resource with options computed on the server (ADR 0044, part E),
+/// authorized with the posts' permissions and scoped to their author (the
+/// `form/options` cases).
+pub mod pick {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "oracle_picks")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i32,
+        pub author_id: i64,
+        pub kind: Option<String>,
+        pub choice: Option<String>,
+        pub note: Option<String>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+struct PickPolicy;
+
+#[async_trait::async_trait]
+impl rustcms_admin::Policy for PickPolicy {
+    async fn allows(&self, ctx: &rustcms_admin::Ctx, ability: &str, _: Option<&rustcms_admin::Data>) -> bool {
+        ctx.can(&format!("posts.{ability}"))
+    }
+}
+
+fn kinds<'a>(
+    _: &'a rustcms_admin::Ctx,
+    state: &'a rustcms_admin::FormState,
+) -> rustcms_admin::BoxFuture<'a, rustcms_core::AppResult<Vec<rustcms_admin::SelectOption>>> {
+    let kind = state.text("kind").to_owned();
+    Box::pin(
+        async move { Ok(vec![rustcms_admin::SelectOption { value: json!(format!("{kind}-1")), label: "One".into() }]) },
+    )
+}
+
+struct PickResource;
+
+impl rustcms_admin::Resource for PickResource {
+    type Entity = pick::Entity;
+    const SLUG: &'static str = "picks";
+
+    fn meta() -> rustcms_admin::ResourceMeta {
+        rustcms_admin::ResourceMeta::new("Pick").audit(false)
+    }
+
+    fn fields() -> Vec<rustcms_admin::Field> {
+        use rustcms_admin::Field;
+        vec![
+            Field::column(pick::Column::AuthorId).guarded().readable(|_| true),
+            Field::column(pick::Column::Kind),
+            Field::column(pick::Column::Choice),
+            // Read only with `posts.read_notes` (the editor may write it, not read it).
+            Field::column(pick::Column::Note).readable(|c| c.can("posts.read_notes")),
+        ]
+    }
+
+    fn form() -> rustcms_admin::Form {
+        use rustcms_admin::{SelectInput, components};
+        rustcms_admin::Form::new().schema(components![
+            SelectInput::make("kind").options([("a", "A"), ("b", "B")]),
+            SelectInput::make("choice").depends_on(["kind"]).options_fn(kinds),
+            SelectInput::make("note").depends_on(["kind"]).options_fn(kinds),
+        ])
+    }
+
+    fn policy() -> std::sync::Arc<dyn rustcms_admin::Policy> {
+        std::sync::Arc::new(PickPolicy)
+    }
+
+    fn scope(query: sea_orm::Select<pick::Entity>, ctx: &rustcms_admin::Ctx) -> sea_orm::Select<pick::Entity> {
+        use sea_orm::{ColumnTrait, QueryFilter};
+        if ctx.can("posts.manage_all") {
+            query
+        } else {
+            query.filter(pick::Column::AuthorId.eq(ctx.principal.id.parse::<i64>().unwrap_or(-1)))
+        }
+    }
+}
+
+fn build(config: rustcms_core::Config) -> rustcms_core::AppBuilder {
+    support::app::build_extended(config, |admin| admin.resource::<PickResource>())
+}
+
 fn oracle() -> Oracle {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/authz/admin.toml");
     toml::from_str(&std::fs::read_to_string(path).expect("oracle file")).expect("oracle syntax")
@@ -99,7 +189,20 @@ fn oracle_covers_every_admin_route() {
 db_test!(oracle_matches_the_admin_api, |db: TestDb| async move {
     // One anonymous session per guest case: more than a real browser makes in a minute.
     let config = rustcms_testing::test_config(db.url()).with("auth.anonymous_sessions_per_ip", 10_000).unwrap();
-    let (app, users) = support::app::setup_with(db, config).await;
+    let (app, users) = support::app::setup_built(db, config, build).await;
+    // The picks of the editor (`{own_pick}`) and of the admin (`{their_pick}`).
+    let picks = {
+        use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+        let conn = app.state().db();
+        let schema = sea_orm::Schema::new(conn.get_database_backend());
+        rustcms_testing::create_table(conn, &schema.create_table_from_entity(pick::Entity)).await;
+        let mut keys = Vec::new();
+        for author in [users.editor.id, users.admin.id] {
+            let row = pick::ActiveModel { author_id: Set(author), kind: Set(Some("a".into())), ..Default::default() };
+            keys.push(row.insert(conn).await.unwrap().id.to_string());
+        }
+        keys
+    };
     let post = async |user, title: &str| {
         let response = app
             .acting_as(user)
@@ -172,7 +275,9 @@ db_test!(oracle_matches_the_admin_api, |db: TestDb| async move {
             .replace("{theirs}", &theirs)
             .replace("{note}", &active_note)
             .replace("{trashed}", &trashed_note)
-            .replace("{media}", &media);
+            .replace("{media}", &media)
+            .replace("{own_pick}", &picks[0])
+            .replace("{their_pick}", &picks[1]);
         for (placeholder, value) in &ids {
             text = text.replace(placeholder, value);
         }

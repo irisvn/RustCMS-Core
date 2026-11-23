@@ -125,8 +125,8 @@ opt-in and need no migration; nothing changes for a form that does not use them.
     not `#[non_exhaustive]`: an exhaustive `match` on it needs arms for them (or `_`).
   - `SelectOption`, `RowId` and `StateRow` are exported at the crate root (`rustcms::admin::…`); a glob import
     that brings in another item of the same name needs a path.
-  - `DynResource` (implemented by the engine only) gains methods (`form_options`, `computes_options`, and
-    hidden ones for row reactions). Only code that implements it is affected.
+  - `DynResource` (implemented by the engine only) gains hidden methods (`form_options`, `computes_options`
+    and the row reactions'). Only code that implements it is affected.
 - **Schema (vocabularies 26 and 27).** `InputSchema` gains `optionsFrom` (`{dependsOn}`), with a new route
   `form/options`; relationship repeaters may carry `reacts`, `form/react`'s state carries their rows, and its
   answer may hold the four row patches. A client on an older vocabulary shows forms read-only.

@@ -171,7 +171,8 @@ options are; labels are translated per resource.
   transaction or lock held, then checks under the record's lock that the
   dependencies have not changed meanwhile (else 409 `stale`: send it again)
   and that the value is one of the answer's options (`not_option`; a
-  checkbox list is still a list without repeats). An empty value is not
+  checkbox list is still a list without repeats). On a create, an input left
+  out is checked with the default it would store; an empty value is not
   checked, nor an update that leaves the input and its dependencies alone.
   If `f` fails, times out or answers options the server refuses, the save
   fails with the form error `options_failed` and nothing is saved. API

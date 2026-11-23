@@ -198,7 +198,12 @@ impl<R: Resource> ResourceAdapter<R> {
         let outcome = match tokio::time::timeout_at(deadline, (reaction.run)(ctx, &state)).await {
             Ok(Ok(patches)) => {
                 // The stored rows keyed patches name, read within the same time limit.
-                match tokio::time::timeout_at(deadline, self.load_patched_rows(ctx, &mut rows, &patches)).await {
+                match tokio::time::timeout_at(
+                    deadline,
+                    self.load_patched_rows(ctx, &mut rows, &patches[..patches.len().min(MAX_PATCHES)]),
+                )
+                .await
+                {
                     Ok(Ok(())) => self.keep_patches(ctx, op, &state, values, &mut rows, patches, deadline).ok_or(None),
                     Ok(Err(err)) => Err(Some(err.to_string())),
                     Err(_) => Err(None),

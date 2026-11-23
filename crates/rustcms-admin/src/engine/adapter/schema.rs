@@ -393,11 +393,13 @@ impl<R: Resource> ResourceAdapter<R> {
     /// Fills in the rows of the relationship repeaters in `components`: the
     /// child's inputs for the operation and what the user may do; a repeater
     /// whose rows are left out for the user (`rows_shown`) is left out.
+    /// `key`: the edited record's.
     pub(super) async fn fill_row_repeaters(
         &self,
         ctx: &Ctx,
         components: Vec<ComponentSchema>,
         op: SchemaOperation,
+        key: Option<&str>,
     ) -> Vec<ComponentSchema> {
         let mut out = Vec::with_capacity(components.len());
         for component in components {
@@ -408,12 +410,10 @@ impl<R: Resource> ResourceAdapter<R> {
                     if !self.rows_shown(ctx, repeater).await {
                         continue;
                     }
-                    let creatable = self.relation_of_rows(ctx, repeater).is_some_and(|a| a.creatable);
-                    let create = creatable
-                        && child.admits(ctx, ability::CREATE).await
-                        && child.allows(ctx, ability::CREATE).await;
-                    let update = op == SchemaOperation::Edit && child.admits(ctx, ability::UPDATE).await;
-                    let delete = op == SchemaOperation::Edit && child.admits(ctx, ability::DELETE).await;
+                    // As reactions and the save decide: a new row's `create` with the parent bound on edit.
+                    let edit = op == SchemaOperation::Edit;
+                    let Some(ability) = self.rows_ability(ctx, repeater, edit, key).await else { continue };
+                    let (create, update, delete) = (ability.create, ability.update, ability.delete);
                     let rows = child.row_schema(ctx, &repeater.rules().components, op);
                     let t = |text: &str| ctx.t_in(R::SLUG, text);
                     let relationship = crate::schema::RepeaterRelationship {
@@ -447,7 +447,7 @@ impl<R: Resource> ResourceAdapter<R> {
                     out.push(ComponentSchema::Input(input));
                 }
                 ComponentSchema::Layout(mut layout) => {
-                    layout.components = Box::pin(self.fill_row_repeaters(ctx, layout.components, op)).await;
+                    layout.components = Box::pin(self.fill_row_repeaters(ctx, layout.components, op, key)).await;
                     if !layout.components.is_empty() {
                         out.push(ComponentSchema::Layout(layout));
                     }

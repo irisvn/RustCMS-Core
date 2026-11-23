@@ -77,6 +77,21 @@ describe("row patches", () => {
     expect(change).toMatchObject({ update: [{ key: "2", data: { quantity: 5 } }], delete: ["1"], create: [{ data: { product: "e", quantity: 4 } }] });
   });
 
+  it("map the answer's references per repeater", () => {
+    // A second relationship repeater on the same rows' schema: both may add an `n1`.
+    const extras = { ...lines, name: "extras", repeater: { ...repeater, relationship: { ...repeater.relationship!, relation: "extras" } } };
+    const both = [...inputs, extras];
+    const applied = applyPatches(both, { ...values(), extras: "" }, [
+      { op: "add_relation_row", field: "lines", ref: "n1", data: { product: "line" } },
+      { op: "add_relation_row", field: "extras", ref: "n1", data: { product: "extra" } },
+      { op: "update_relation_row", field: "lines", id: { ref: "n1" }, data: { product: "line, renamed" } },
+      { op: "update_relation_row", field: "extras", id: { ref: "n1" }, data: { quantity: 2 } },
+    ], () => ({ rows: [], deleted: [] }));
+    const added = (name: string) => parseState(applied.values[name]!)!.rows.map((r) => [r.values.product, r.values.quantity]);
+    expect(added("lines")).toEqual([["line, renamed", ""]]);
+    expect(added("extras")).toEqual([["extra", "2"]]);
+  });
+
   it("leave alone rows the user may not change and repeaters the form does not hold", () => {
     const locked = () => ({ ...stored(), rows: stored().rows.map((r) => ({ ...r, update: false, delete: false })) });
     const applied = applyPatches(inputs, values(), [

@@ -61,9 +61,9 @@ pub(crate) struct RowPatch<'a> {
 /// What the user may do with a relationship repeater's rows.
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct RowsAbility {
-    create: bool,
-    update: bool,
-    delete: bool,
+    pub(super) create: bool,
+    pub(super) update: bool,
+    pub(super) delete: bool,
 }
 
 impl RowsAbility {
@@ -250,18 +250,33 @@ impl<R: Resource> ResourceAdapter<R> {
             if !self.rows_shown(ctx, repeater).await {
                 continue;
             }
-            let Some(child) = ctx.registry.get(repeater.target) else { continue };
-            let creatable = self.relation_of_rows(ctx, repeater).is_some_and(|a| a.creatable);
-            let mut bound = ctx.clone();
-            bound.bound = key.map(|key| (R::SLUG.to_owned(), repeater.field.to_owned(), key.to_owned()));
-            let create =
-                creatable && child.admits(ctx, ability::CREATE).await && child.allows(&bound, ability::CREATE).await;
-            let edit = op == Operation::Update;
-            let update = edit && child.admits(ctx, ability::UPDATE).await;
-            let delete = edit && child.admits(ctx, ability::DELETE).await;
-            out.held.push((index, RowsAbility { create, update, delete }));
+            let Some(ability) = self.rows_ability(ctx, repeater, op == Operation::Update, key).await else { continue };
+            out.held.push((index, ability));
         }
         out
+    }
+
+    /// What the user may do with the rows of `repeater` (the schema and
+    /// reactions decide alike, as the save does): add (the relation
+    /// `creatable`, the child's `create` admitted and allowed with the parent
+    /// `key` bound on an edit form, without a parent on a create), update and
+    /// delete (`edit`, admitted; each row is checked on its own).
+    pub(super) async fn rows_ability(
+        &self,
+        ctx: &Ctx,
+        repeater: &RowRepeater,
+        edit: bool,
+        key: Option<&str>,
+    ) -> Option<RowsAbility> {
+        let child = ctx.registry.get(repeater.target)?;
+        let creatable = self.relation_of_rows(ctx, repeater).is_some_and(|a| a.creatable);
+        let mut bound = ctx.clone();
+        bound.bound = key.filter(|_| edit).map(|key| (R::SLUG.to_owned(), repeater.field.to_owned(), key.to_owned()));
+        let create =
+            creatable && child.admits(ctx, ability::CREATE).await && child.allows(&bound, ability::CREATE).await;
+        let update = edit && child.admits(ctx, ability::UPDATE).await;
+        let delete = edit && child.admits(ctx, ability::DELETE).await;
+        Some(RowsAbility { create, update, delete })
     }
 
     /// The held repeater `name`, if the user's form holds it.
@@ -319,7 +334,8 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 
     /// Reads the stored rows the keyed patches among `patches` name (rows of
-    /// the state only), one query per repeater (ADR 0044, part D).
+    /// the state only; updates, removals and flags), one query per repeater
+    /// (ADR 0044, part D). `patches` are those an answer may hold.
     pub(super) async fn load_patched_rows(
         &self,
         ctx: &Ctx,
@@ -332,7 +348,7 @@ impl<R: Resource> ResourceAdapter<R> {
             let (Some(rows), Some(child)) = (work.rows.get(repeater.name), ctx.registry.get(repeater.target)) else {
                 continue;
             };
-            if !(ability.update || ability.delete) {
+            if !ability.any() {
                 continue;
             }
             let mut keys: Vec<String> = patches
@@ -340,6 +356,7 @@ impl<R: Resource> ResourceAdapter<R> {
                 .filter_map(|patch| match patch {
                     FormPatch::UpdateRelationRow { field, id: RowId::Key(key), .. }
                     | FormPatch::RemoveRelationRow { field, id: RowId::Key(key) }
+                    | FormPatch::FlagRelationRow { field, id: RowId::Key(key), .. }
                         if field == repeater.name =>
                     {
                         child.canonical_key(key)
@@ -480,6 +497,10 @@ impl<R: Resource> ResourceAdapter<R> {
             }
             FormPatch::FlagRelationRow { id, message, .. } => {
                 let (id, _) = at(list, &id)?;
+                // A stored row is one of the user's rows of the relation, as for an update.
+                if id.key().is_some() {
+                    stored(&id)?;
+                }
                 let message = ctx.t_in(R::SLUG, &message);
                 if message.chars().count() > super::react::MAX_MESSAGE {
                     return Err(fail("a message longer than 500 characters"));

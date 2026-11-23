@@ -99,8 +99,14 @@ export function applyPatches(inputs: InputSchema[], values: FormValues, patches:
   };
   // Relationship repeaters' rows (ADR 0044, part D), changed in place and written once.
   const relations = new Map<string, { state: RelationState; flags: Map<RelationRow, string[]>; changed: boolean }>();
-  // A new row's reference in the answer → the one the form gives it (unique in this page).
-  const refs = new Map<string, string>();
+  // A new row's reference in the answer → the one the form gives it (unique in
+  // this page), by repeater: two repeaters may each add an `n1`.
+  const refs = new Map<string, Map<string, string>>();
+  const refsOf = (name: string) => {
+    let map = refs.get(name);
+    if (!map) refs.set(name, (map = new Map()));
+    return map;
+  };
   const relationOf = (input: InputSchema) => {
     let entry = relations.get(input.name);
     if (!entry) {
@@ -125,14 +131,14 @@ export function applyPatches(inputs: InputSchema[], values: FormValues, patches:
       const rows = entry.state.rows;
       if (patch.op === "add_relation_row") {
         const ref = newRef();
-        if (patch.ref) refs.set(patch.ref, ref);
+        if (patch.ref) refsOf(input.name).set(patch.ref, ref);
         rows.push({ ref, values: rowOf(createView(repeater), patch.data as Record<string, unknown>), changed: [] });
         entry.changed = true;
         continue;
       }
       // By tagged identity: a key never names a new row, nor a ref a stored one.
       const id = patch.id;
-      const at = rows.findIndex((r) => ("key" in id ? r.key === id.key : !r.key && r.ref === (refs.get(id.ref) ?? id.ref)));
+      const at = rows.findIndex((r) => ("key" in id ? r.key === id.key : !r.key && r.ref === (refsOf(input.name).get(id.ref) ?? id.ref)));
       const row = rows[at];
       if (!row) continue;
       if (patch.op === "update_relation_row") {

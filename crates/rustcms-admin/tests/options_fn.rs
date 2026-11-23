@@ -34,6 +34,7 @@ pub mod entry {
         pub group_id: Option<i32>,
         pub category: Option<String>,
         pub hint: Option<String>,
+        #[sea_orm(default_value = "apple")]
         pub topic: Option<String>,
         pub tags: Option<Json>,
         pub rank: Option<i64>,
@@ -313,7 +314,7 @@ db_test!(the_route_answers_the_options_of_the_form_state, |db: TestDb| async mov
     // On edit, the stored values (a record the user may view) under what was sent.
     let admin = Ctx::new(db.conn().clone(), support::admin(), registry.clone());
     let own = create(&admin, json!({"title": "Stored", "category": "veg", "topic": "kale"})).await.unwrap();
-    let hidden = create(&admin, json!({"title": "Hidden one"})).await.unwrap();
+    let hidden = create(&admin, json!({"title": "Hidden one", "category": "fruit"})).await.unwrap();
     let edit = |key: &str| json!({"operation": "edit", "key": key, "input": "topic", "state": {"title": "Renamed"}});
     assert_eq!(values(&ask(&ctx, edit(&own)).await.unwrap()), [json!("kale")]);
     assert!(matches!(ask(&ctx, edit(&hidden)).await, Err(AppError::NotFound)));
@@ -356,6 +357,11 @@ db_test!(saves_check_the_value_against_the_answer, |db: TestDb| async move {
     let key = create(&ctx, json!({"title": "Pear", "category": "fruit", "topic": "pear", "rank": "2"})).await.unwrap();
     let row = stored(&db, &key).await;
     assert_eq!((row.topic.as_deref(), row.rank), (Some("pear"), Some(2)));
+    // An omitted input stores its declared default (apple): checked as if sent.
+    let err = create(&ctx, json!({"title": "Default veg", "category": "veg"})).await.unwrap_err();
+    assert_eq!(issues(err), json!({"topic": not_option}));
+    let defaulted = create(&ctx, json!({"title": "Default fruit", "category": "fruit"})).await.unwrap();
+    assert_eq!(stored(&db, &defaulted).await.topic.as_deref(), Some("apple"));
     // A checkbox list keeps its shape (an array, each item once) whatever the answer.
     for (tags, issue) in [
         (json!(["sweet", "sweet"]), "may only be given once"),

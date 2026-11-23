@@ -315,7 +315,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
             form: FormSchema {
                 columns: self.form.columns,
                 components: self
-                    .fill_row_repeaters(ctx, self.components(ctx, &self.form.components, op, &links), op)
+                    .fill_row_repeaters(ctx, self.components(ctx, &self.form.components, op, &links), op, key)
                     .await,
                 width: self.form.width,
             },

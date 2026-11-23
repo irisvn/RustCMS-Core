@@ -200,12 +200,14 @@ pub trait DynResource: Send + Sync {
     /// The options computed on the server of an input of the create or edit
     /// form for the form's state (ADR 0044, part E), for a user who may
     /// write that form.
+    #[doc(hidden)]
     async fn form_options(
         &self,
         ctx: &Ctx,
         request: crate::schema::FormOptionsRequest,
     ) -> AppResult<crate::schema::FormOptionsResponse>;
     /// Whether an input of the form has `options_fn` (ADR 0044, part E).
+    #[doc(hidden)]
     fn computes_options(&self) -> bool;
     /// Creates a record from client input.
     async fn create(&self, ctx: &Ctx, input: Data) -> AppResult<Envelope>;

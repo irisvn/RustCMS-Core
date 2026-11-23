@@ -332,6 +332,87 @@ actor = "editor"
 body = '{"operation": "create", "input": "title", "state": {"title": "x"}}'
 status = 403
 
+# Picks have inputs with options_fn (authorized with the posts' permissions, scoped to their author).
+# Authorized: the options of a computed input.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/picks/form/options"
+actor = "editor"
+body = '{"operation": "create", "input": "choice", "state": {"kind": "a"}}'
+status = 200
+
+# Anonymous.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/picks/form/options"
+actor = "guest"
+body = '{"operation": "create", "input": "choice", "state": {"kind": "a"}}'
+status = 401
+
+# No create.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/picks/form/options"
+actor = "member"
+body = '{"operation": "create", "input": "choice", "state": {"kind": "a"}}'
+status = 403
+
+# A foreign Origin.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/picks/form/options"
+actor = "foreign"
+body = '{"operation": "create", "input": "choice", "state": {"kind": "a"}}'
+status = 403
+
+# Edit of a pick of the editor's.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/picks/form/options"
+actor = "editor"
+body = '{"operation": "edit", "key": "{own_pick}", "input": "choice", "state": {"kind": "b"}}'
+status = 200
+
+# Another user's pick: outside the member's scope.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/picks/form/options"
+actor = "member"
+body = '{"operation": "edit", "key": "{own_pick}", "input": "choice", "state": {"kind": "b"}}'
+status = 404
+
+# Edit of a pick outside the editor's scope.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/picks/form/options"
+actor = "editor"
+body = '{"operation": "edit", "key": "{their_pick}", "input": "choice", "state": {"kind": "b"}}'
+status = 404
+
+# A computed input the editor may write but not read.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/picks/form/options"
+actor = "editor"
+body = '{"operation": "create", "input": "note", "state": {"kind": "a"}}'
+status = 404
+
+# The same input, for who may read it.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/picks/form/options"
+actor = "admin"
+body = '{"operation": "create", "input": "note", "state": {"kind": "a"}}'
+status = 200
+
+# An input without options_fn.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/picks/form/options"
+actor = "editor"
+body = '{"operation": "create", "input": "kind", "state": {"kind": "a"}}'
+status = 404
+
 [[case]]
 route = "GET /admin/api/resources/{slug}/records/{key}/computed"
 path = "/admin/api/resources/posts/records/{own}/computed"
