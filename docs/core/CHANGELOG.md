@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-11-23
+
 ### Security
 - lettre 0.11.24 (RUSTSEC-2026-0560 to 0564: STARTTLS response injection,
   missing dot-stuffing after a bare CR or LF, panics on an `EHLO` reply or a

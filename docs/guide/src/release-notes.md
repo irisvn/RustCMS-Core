@@ -1,7 +1,39 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.13.1**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.14.0**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.14.0
+
+Read the [upgrade guide](upgrade.md#from-0131-to-0140) first: a framework
+migration (`rustcms migrate`), schema vocabularies 20 to 27, a few Rust API
+changes, and `[admin] repeater_rows` (50 by default) for relationship
+repeaters with more rows. Most features of this release were contributed by
+@giangittb112000 and reworked after review. It also takes security fixes of
+`lettre` and `url`.
+
+- **Option labels and date formats in tables and view pages**: columns show a
+  select's labels; `.date_format("dd/MM/yyyy HH:mm")` per column or entry, or
+  for the whole panel ([Tables](admin/tables.md#option-labels)).
+- **Image viewer**: a click on an image opens it over the page, with zoom and
+  the place's other images ([Media](admin/media.md#the-image-viewer)).
+- **Colors and dark mode**: every text pair reaches WCAG AA; new theme tokens;
+  themes and brandings under 4.5:1 are named in a warning
+  ([Theming](admin/theming.md#light-and-dark)).
+- **Media collections**: sort the library into declared collections, upload
+  into one from a field ([Media](admin/media.md#collections)).
+- **Repeaters, second round**: conditions reading the record's form
+  (`when_root`), filtered relations (`where_eq`, `where_null`), a table
+  layout, relationship rows on view pages, files, rich text and record
+  references in rows; a hidden relationship repeater keeps its rows
+  ([Forms](admin/forms.md#repeaters),
+  [Relationships](admin/relationships.md#filtered-relations)).
+- **Options computed on the server**: `options_fn` for selects whose choices
+  depend on other inputs or data, checked again on save
+  ([Forms](admin/forms.md#options-computed-on-the-server)).
+- **Reactions on child records**: a form's reaction can add, change, remove
+  or flag a relationship repeater's rows
+  ([Forms](admin/forms.md#reactions-on-child-records)).
 
 ## 0.13.1
 
