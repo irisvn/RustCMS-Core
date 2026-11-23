@@ -60,7 +60,9 @@ test("a category's posts follow its layout: a table, its view page, kept while i
   await page.getByLabel(/^Layout/).selectOption({ label: "A link" });
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(url);
-  await expect(page.getByRole("table", { name: "Posts" }).getByText(first)).toHaveCount(0);
+  // The view page follows the layout (no posts listed under it); the relation's section still has them.
+  await expect(main.getByRole("listitem").filter({ hasText: first })).toHaveCount(0);
+  await expect(page.getByRole("table", { name: "Posts" }).getByText(first)).toBeVisible();
   await expect(main.getByRole("link", { name: "https://example.test/elsewhere" })).toBeVisible();
 
   // Its posts again: they were kept. Removed here (to the trash), then left nowhere.
