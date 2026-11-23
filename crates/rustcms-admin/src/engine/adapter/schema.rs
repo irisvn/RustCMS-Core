@@ -426,6 +426,10 @@ impl<R: Resource> ResourceAdapter<R> {
                         row_limit: u32::try_from(ctx.registry.repeater_rows()).unwrap_or(u32::MAX),
                     };
                     input.disabled = !(create || update || delete);
+                    // Its rows react for a user who may change them (ADR 0044, part D).
+                    input.reacts = !input.disabled
+                        && op != SchemaOperation::View
+                        && self.reactions.iter().any(|r| r.name == input.name);
                     let mut schema =
                         crate::engine::repeater::options_schema(&repeater.spec, rows, &t, Some(relationship));
                     // Empty rows to start with are for new records only.

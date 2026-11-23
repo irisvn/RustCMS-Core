@@ -84,7 +84,12 @@ struct RowWrite<'a> {
 
 /// Whether `record` is one of the relation's rows: the parent's (`field`
 /// holds `parent`), with the filters' values (`fixed`, canonical) (ADR 0044).
-fn in_relation(record: &Data, field: &str, parent: &serde_json::Value, fixed: &[(&str, serde_json::Value)]) -> bool {
+pub(super) fn in_relation(
+    record: &Data,
+    field: &str,
+    parent: &serde_json::Value,
+    fixed: &[(&str, serde_json::Value)],
+) -> bool {
     record.get(field) == Some(parent)
         && fixed.iter().all(|(f, v)| record.get(*f).unwrap_or(&serde_json::Value::Null) == v)
 }
@@ -437,8 +442,19 @@ impl<R: Resource> ResourceAdapter<R> {
     /// The relation's rows: `target.field` equals the parent's key, and the
     /// relation's filters hold (ADR 0044).
     fn parent_filter(&self, target: &RowTarget<'_>, parent_value: &serde_json::Value) -> AppResult<sea_orm::Condition> {
-        let mut condition = self.parent_key_filter(target, parent_value)?;
-        for (field, filter) in target.filters {
+        self.relation_condition(target.field, target.filters, parent_value)
+    }
+
+    /// The rows of a relation: `field` equals the parent's key (`parent_value`),
+    /// and `filters` hold (ADR 0044).
+    pub(super) fn relation_condition(
+        &self,
+        field: &str,
+        filters: &[(&'static str, RelationFilter)],
+        parent_value: &serde_json::Value,
+    ) -> AppResult<sea_orm::Condition> {
+        let mut condition = self.key_condition(field, parent_value)?;
+        for (field, filter) in filters {
             let filter = self
                 .relation_filter_condition(field, filter)
                 .ok_or_else(|| AppError::internal(format!("`{}`: relation filter on `{field}`", R::SLUG)))?;
@@ -453,7 +469,12 @@ impl<R: Resource> ResourceAdapter<R> {
         target: &RowTarget<'_>,
         parent_value: &serde_json::Value,
     ) -> AppResult<sea_orm::Condition> {
-        let fk = self.column(target.field);
+        self.key_condition(target.field, parent_value)
+    }
+
+    /// `field` equals the parent's key `parent_value`.
+    fn key_condition(&self, field: &str, parent_value: &serde_json::Value) -> AppResult<sea_orm::Condition> {
+        let fk = self.column(field);
         let parent = fk
             .kind
             .decode(parent_value)

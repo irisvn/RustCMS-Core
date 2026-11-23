@@ -803,6 +803,8 @@ max?: number,
  */
 options?: Array<string>, };
 
+export type RowId = { "key": string } | { "ref": string };
+
 export type FormPatch = { "op": "set", 
 /**
  * The field.
@@ -866,6 +868,51 @@ index: number,
 message: string, } | { "op": "notice", 
 /**
  * The message (translated).
+ */
+message: string, } | { "op": "add_relation_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The new row's reference (`n` and 1 to 9 digits), when later
+ * patches of the answer name it.
+ */
+ref?: string, 
+/**
+ * The row's values, in wire format.
+ */
+data: Record<string, JsonValue>, } | { "op": "update_relation_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row.
+ */
+id: RowId, 
+/**
+ * The new values, in wire format.
+ */
+data: Record<string, JsonValue>, } | { "op": "remove_relation_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row.
+ */
+id: RowId, } | { "op": "flag_relation_row", 
+/**
+ * The repeater.
+ */
+field: string, 
+/**
+ * The row.
+ */
+id: RowId, 
+/**
+ * The warning (translated).
  */
 message: string, };
 

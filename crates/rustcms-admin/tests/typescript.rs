@@ -52,6 +52,7 @@ fn bindings() -> String {
         ComputedValues::decl(&cfg),
         RichNodeSchema::decl(&cfg),
         RichAttrSchema::decl(&cfg),
+        rustcms_admin::ui::RowId::decl(&cfg),
         rustcms_admin::ui::FormPatch::decl(&cfg),
         FormReactRequest::decl(&cfg),
         FormReactVia::decl(&cfg),

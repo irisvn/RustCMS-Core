@@ -13,6 +13,7 @@ mod operations;
 pub(crate) mod options;
 pub(crate) mod pivot;
 mod react;
+pub(crate) mod react_rows;
 mod read;
 mod references;
 pub(crate) mod rows;

@@ -50,15 +50,16 @@ pub(super) fn reactions(slug: &str, form: &Form, fields: &[Field]) -> Vec<InputR
             !reaction.timeout.is_zero() && reaction.timeout <= REACTION_MAX_TIMEOUT,
             "{here}: the reaction timeout must be above zero and at most {REACTION_MAX_TIMEOUT:?}"
         );
+        // A top-level relationship repeater reacts to its rows (ADR 0044, part D).
         let relationship = input.repeater.as_deref().is_some_and(|s| s.relationship);
         assert!(
-            fields.iter().any(|f| f.name == name && f.secret.is_none())
-                && !relationship
-                && !matches!(
-                    input.kind,
-                    InputType::Hidden | InputType::Secret | InputType::SecretMap | InputType::BelongsToMany
-                ),
-            "{here}: only inputs of fields react (not hidden, encrypted, link or relationship repeater inputs)"
+            relationship
+                || (fields.iter().any(|f| f.name == name && f.secret.is_none())
+                    && !matches!(
+                        input.kind,
+                        InputType::Hidden | InputType::Secret | InputType::SecretMap | InputType::BelongsToMany
+                    )),
+            "{here}: only inputs of fields react, and relationship repeaters (not hidden, encrypted or link inputs)"
         );
         out.push(InputReaction { name: name.to_owned(), run, timeout: reaction.timeout });
     }
@@ -120,10 +121,16 @@ impl<R: Resource> ResourceAdapter<R> {
             }
             _ => return Err(ValidationErrors::field("operation", "is invalid").into()),
         };
+        // The relationship repeaters the user's form holds (ADR 0044, part D).
+        let mut rows = self.held_rows(ctx, op, request.key.as_deref().filter(|_| op == Operation::Update)).await;
         let reaction = self
             .reactions
             .iter()
-            .find(|r| r.name == request.changed && self.writable(ctx, op, &r.name))
+            .find(|r| {
+                r.name == request.changed
+                    && (self.writable(ctx, op, &r.name)
+                        || self.held_repeater(&rows, &r.name).is_some_and(|(_, ability)| ability.any()))
+            })
             .ok_or_else(|| AppError::from(ValidationErrors::field("changed", "is invalid")))?;
         let empty = |failed| FormReactResponse { seq: request.seq, patches: Vec::new(), failed };
         let bound = ctx.bound.as_ref().map(|(_, field, parent)| (field.clone(), self.fk_value(field, parent)));
@@ -137,6 +144,15 @@ impl<R: Resource> ResourceAdapter<R> {
         let fixed = self.filter_values(&super::operations::bound_filters(ctx))?;
         let mut previous = None;
         for (name, value) in request.state {
+            // A relationship repeater's rows, tagged by identity (ADR 0044, part D).
+            if let Some(repeater) = self.row_repeaters.iter().find(|r| r.name == name) {
+                if self.held_repeater(&rows, &name).is_some()
+                    && let Some(list) = self.state_rows(ctx, op, repeater, &value)
+                {
+                    rows.rows.insert(name, list);
+                }
+                continue;
+            }
             if bound.as_ref().is_some_and(|(field, _)| *field == name)
                 || fixed.iter().any(|(field, _)| *field == name)
                 || !self.typed(ctx, op, &name, &value)?
@@ -152,9 +168,12 @@ impl<R: Resource> ResourceAdapter<R> {
             values.insert(field, value);
         }
         values.extend(fixed.into_iter().map(|(f, v)| (f.to_owned(), v)));
-        if self.conditions.hidden(&values).contains(&reaction.name) {
+        let hidden = self.conditions.hidden(&values);
+        if hidden.contains(&reaction.name) {
             return Ok(empty(false));
         }
+        // Rows of a repeater hidden on the state are not the form's.
+        rows.rows.retain(|name, _| !hidden.contains(name));
         // Bounded turns, after authorization and before running anything (the
         // route is also limited per user, see `http::react`).
         let _user = UserTurn::take(&ctx.principal.id).ok_or(AppError::TooManyRequests { retry_after: 1 })?;
@@ -172,11 +191,19 @@ impl<R: Resource> ResourceAdapter<R> {
                 .filter(|(n, _)| self.state_field(ctx, n))
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
+            relation_rows: rows.rows.clone(),
         };
         // One time limit for the reaction and the checking of its patches.
         let deadline = tokio::time::Instant::now() + reaction.timeout;
         let outcome = match tokio::time::timeout_at(deadline, (reaction.run)(ctx, &state)).await {
-            Ok(Ok(patches)) => self.keep_patches(ctx, op, &state, values, patches, deadline).ok_or(None),
+            Ok(Ok(patches)) => {
+                // The stored rows keyed patches name, read within the same time limit.
+                match tokio::time::timeout_at(deadline, self.load_patched_rows(ctx, &mut rows, &patches)).await {
+                    Ok(Ok(())) => self.keep_patches(ctx, op, &state, values, &mut rows, patches, deadline).ok_or(None),
+                    Ok(Err(err)) => Err(Some(err.to_string())),
+                    Err(_) => Err(None),
+                }
+            }
             Ok(Err(err)) => Err(Some(err.to_string())),
             Err(_) => Err(None),
         };
@@ -236,12 +263,14 @@ impl<R: Resource> ResourceAdapter<R> {
     /// logged and dropped (the application's bug, not the user's), as are
     /// patches that change nothing and those beyond [`MAX_PATCHES`]. `None`
     /// when the reaction's time runs out before they are all checked.
+    #[allow(clippy::too_many_arguments)]
     fn keep_patches(
         &self,
         ctx: &Ctx,
         op: Operation,
         state: &FormState,
         mut values: Data,
+        rows: &mut super::react_rows::ReactionRows,
         patches: Vec<FormPatch>,
         deadline: tokio::time::Instant,
     ) -> Option<Vec<FormPatch>> {
@@ -256,7 +285,12 @@ impl<R: Resource> ResourceAdapter<R> {
             if tokio::time::Instant::now() >= deadline {
                 return None;
             }
-            match self.keep_patch(ctx, op, &mut values, patch) {
+            let outcome = if patch.is_relation_row() {
+                self.keep_relation_patch(ctx, op, &values, rows, patch)
+            } else {
+                self.keep_patch(ctx, op, &mut values, patch)
+            };
+            match outcome {
                 Ok(Some(patch)) => kept.push(patch),
                 Ok(None) => {}
                 Err((field, reason)) => dropped(&field, reason),
@@ -412,9 +446,13 @@ impl<R: Resource> ResourceAdapter<R> {
                 let text = message(&text).ok_or_else(|| fail("a message longer than 500 characters"))?;
                 FormPatch::FlagRow { field, index, message: text }
             }
-            FormPatch::Set { .. } | FormPatch::SetIfEmpty { .. } | FormPatch::Notice { .. } => {
-                unreachable!("handled above")
-            }
+            FormPatch::Set { .. }
+            | FormPatch::SetIfEmpty { .. }
+            | FormPatch::Notice { .. }
+            | FormPatch::AddRelationRow { .. }
+            | FormPatch::UpdateRelationRow { .. }
+            | FormPatch::RemoveRelationRow { .. }
+            | FormPatch::FlagRelationRow { .. } => unreachable!("handled above"),
         }))
     }
 }

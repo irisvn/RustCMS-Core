@@ -395,6 +395,27 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         self.write_rows_in(ctx, txn, target, change).await
     }
 
+    fn state_row_value(&self, ctx: &Ctx, name: &str, value: &serde_json::Value) -> Option<serde_json::Value> {
+        self.state_row_value_in(ctx, name, value)
+    }
+
+    fn clean_row_patch(
+        &self,
+        ctx: &Ctx,
+        patch: crate::adapter::react_rows::RowPatch<'_>,
+    ) -> Result<Data, &'static str> {
+        self.clean_row_patch_in(ctx, patch)
+    }
+
+    async fn reaction_rows(
+        &self,
+        ctx: &Ctx,
+        parent: &crate::adapter::react_rows::RowsParent<'_>,
+        keys: &[String],
+    ) -> AppResult<HashMap<String, crate::adapter::react_rows::ReactionRow>> {
+        self.reaction_rows_in(ctx, parent, keys).await
+    }
+
     async fn computed(&self, ctx: &Ctx, key: &str) -> AppResult<crate::schema::ComputedValues> {
         self.computed_values(ctx, key).await
     }

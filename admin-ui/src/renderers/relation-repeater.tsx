@@ -114,6 +114,10 @@ export function RelationRepeaterWidget({ id, input, ctx, value, onChange, disabl
               </div>
               <div id={bodyId} className={table ? cn(TABLE_BODY, table.cols) : "grid grid-cols-1 gap-4 p-4 md:grid-cols-2"}>
                 {typeof server[rowId] === "string" && <p role="alert" className="col-span-full text-xs text-destructive">{String(server[rowId])}</p>}
+                {/* A reaction's warnings under the row (ADR 0044, part D). */}
+                {(ctx.rowFlags?.[input.name]?.[index] ?? []).map((flag) => (
+                  <p key={flag} role="status" className="col-span-full text-xs text-warning">{flag}</p>
+                ))}
                 <RowComponents components={row.key ? repeater.components : createView(repeater).components}
                   repeater={row.key ? repeater : createView(repeater)} row={row.values}
                   hidden={hiddenInRow(row.key ? repeater : createView(repeater), row.values, outer)}

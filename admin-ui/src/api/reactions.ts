@@ -3,13 +3,15 @@
 // applied only if it is the latest one and the form has not changed since
 // (a newer request is then on its way). Failures are ignored: the form works
 // without reactions (they never run on save).
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { pushToast } from "@/lib/toast";
-import type { FormReactRequest, FormReactResponse, InputSchema } from "./types";
+import type { FormReactRequest, FormReactResponse, InputSchema, LinkPage } from "./types";
 import { useApi } from "./context";
 import type { FormValues } from "@/schema/form";
-import { REACTION_DELAY_MS, type RowFlags, applyPatches, reactionState } from "@/schema/reactions";
+import { REACTION_DELAY_MS, type RowFlags, type StoredRows, applyPatches, reactionState } from "@/schema/reactions";
+import { stateOf } from "@/schema/relation-rows";
 
 const enc = encodeURIComponent;
 
@@ -34,6 +36,20 @@ export function useFormReactions({ slug, recordKey, via, inputs, form, paused, o
   onPatched: (name: string) => void;
 }): FormReactions {
   const api = useApi();
+  const queries = useQueryClient();
+  // A relationship repeater's stored rows, as its widget read them (ADR 0044, part D).
+  const stored: StoredRows = (input) => {
+    const repeater = input.repeater;
+    const relationship = repeater?.relationship;
+    if (!repeater || !relationship) return null;
+    if (recordKey === undefined) return { rows: [], deleted: [] };
+    const page = queries.getQueryData<LinkPage>(["records", relationship.resource, "relation", slug, recordKey, relationship.relation, "repeater"]);
+    // Not read yet, or more rows than the widget reads (edited in the relation section): not in the state.
+    if (!page || page.meta.total > page.data.length) return null;
+    return stateOf(repeater, page.data);
+  };
+  const storedRef = useRef(stored);
+  storedRef.current = stored;
   const [flags, setFlags] = useState<RowFlags>({});
   // Changes the user made so far, and the latest request.
   const changes = useRef(0);
@@ -45,7 +61,7 @@ export function useFormReactions({ slug, recordKey, via, inputs, form, paused, o
   // Each reacting input's value when the form opened or an answer was last applied
   // (`previous`: a slug follows the name while it still is the old name's).
   const baseline = useRef<Record<string, unknown> | null>(null);
-  if (baseline.current === null) baseline.current = reactionState(inputs, form.getValues());
+  if (baseline.current === null) baseline.current = reactionState(inputs, form.getValues(), stored);
   useEffect(() => {
     live.current = true;
     return () => {
@@ -68,7 +84,7 @@ export function useFormReactions({ slug, recordKey, via, inputs, form, paused, o
         ...(via ? { via: { parent: via.parent, record: via.record, relation: via.relation } } : {}),
         ...(previous === undefined ? {} : { previous: previous as FormReactRequest["previous"] }),
         changed,
-        state: reactionState(latest.current.inputs, form.getValues()),
+        state: reactionState(latest.current.inputs, form.getValues(), storedRef.current),
         seq: sent,
       };
       let answer: FormReactResponse;
@@ -79,13 +95,13 @@ export function useFormReactions({ slug, recordKey, via, inputs, form, paused, o
       }
       const { paused, onPatched, inputs } = latest.current;
       if (!live.current || api.epoch !== epoch || answer.seq !== seq.current || changes.current !== before || paused || answer.failed) return;
-      const applied = applyPatches(inputs, form.getValues(), answer.patches);
+      const applied = applyPatches(inputs, form.getValues(), answer.patches, storedRef.current);
       for (const [name, value] of Object.entries(applied.values)) {
         form.setValue(name, value, { shouldDirty: true });
         onPatched(name);
       }
       setFlags(applied.flags);
-      baseline.current = reactionState(inputs, form.getValues());
+      baseline.current = reactionState(inputs, form.getValues(), storedRef.current);
       for (const notice of applied.notices) pushToast("success", notice, epoch);
     },
     [api, form, recordKey, slug],

@@ -208,6 +208,7 @@ impl<R: Resource> ResourceAdapter<R> {
             changed: String::new(),
             previous: None,
             values: shown.into_iter().filter(|(n, _)| self.state_field(ctx, n)).collect(),
+            relation_rows: HashMap::new(),
         };
         Ok(OptionsState { state, hidden, set_by_relation })
     }

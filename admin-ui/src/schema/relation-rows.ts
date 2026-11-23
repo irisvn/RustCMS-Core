@@ -78,6 +78,27 @@ export function relationFormValue(input: InputSchema): FormValue {
   return JSON.stringify({ rows, deleted: [] } satisfies RelationState);
 }
 
+/**
+ * A row's values in wire format, as a form reaction reads them (ADR 0044,
+ * part D): a stored row's edit inputs, a new row's create inputs; values that
+ * do not convert (half typed) are left out, as the server would.
+ */
+export function rowWire(repeater: RepeaterSchema, row: RelationRow): Record<string, JsonValue> {
+  const out: Record<string, JsonValue> = {};
+  for (const i of inputsOf(row.key ? repeater.components : createView(repeater).components)) {
+    const form = row.values[i.name];
+    if (form === undefined) continue;
+    try {
+      const v = fromFormValue(i, form) as JsonValue | undefined;
+      // A number half typed reads as NaN: left out too.
+      if (v !== undefined && !(typeof v === "number" && !Number.isFinite(v))) out[i.name] = v;
+    } catch {
+      // Half typed.
+    }
+  }
+  return out;
+}
+
 /** The change a form value sends (undefined: nothing changed). */
 export function changeOf(input: InputSchema, value: FormValue): JsonValue | undefined {
   const repeater = input.repeater;

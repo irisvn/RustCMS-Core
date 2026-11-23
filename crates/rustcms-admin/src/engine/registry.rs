@@ -166,6 +166,26 @@ pub trait DynResource: Send + Sync {
         target: crate::adapter::rows::RowTarget<'_>,
         change: crate::adapter::rows::RowChange,
     ) -> AppResult<crate::adapter::rows::RowsOutcome>;
+    /// A state row's value of field `name` as a reaction reads it (ADR 0044,
+    /// part D): canonical, when the user may read the field and it decodes.
+    #[doc(hidden)]
+    fn state_row_value(&self, ctx: &Ctx, name: &str, value: &serde_json::Value) -> Option<serde_json::Value>;
+    /// A reaction's row patch values as the save would write them, or why
+    /// they are dropped (ADR 0044, part D).
+    #[doc(hidden)]
+    #[allow(private_interfaces)]
+    fn clean_row_patch(&self, ctx: &Ctx, patch: crate::adapter::react_rows::RowPatch<'_>)
+    -> Result<Data, &'static str>;
+    /// The stored rows of a relation a reaction's keyed patches name, read
+    /// for the user (ADR 0044, part D).
+    #[doc(hidden)]
+    #[allow(private_interfaces)]
+    async fn reaction_rows(
+        &self,
+        ctx: &Ctx,
+        parent: &crate::adapter::react_rows::RowsParent<'_>,
+        keys: &[String],
+    ) -> AppResult<HashMap<String, crate::adapter::react_rows::ReactionRow>>;
     /// The computed values record `key`'s view page shows (ADR 0039), for a
     /// user who may view it.
     async fn computed(&self, ctx: &Ctx, key: &str) -> AppResult<crate::schema::ComputedValues>;

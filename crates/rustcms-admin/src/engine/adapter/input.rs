@@ -280,7 +280,13 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 
     /// As [`Self::condition_values`], for `inputs` (a relationship row's).
-    fn condition_values_of(&self, ctx: &Ctx, op: Operation, stored: Option<(&Data, bool)>, inputs: &[&Input]) -> Data {
+    pub(super) fn condition_values_of(
+        &self,
+        ctx: &Ctx,
+        op: Operation,
+        stored: Option<(&Data, bool)>,
+        inputs: &[&Input],
+    ) -> Data {
         let mut out = Data::new();
         for input in inputs.iter().copied() {
             let name = &input.name;

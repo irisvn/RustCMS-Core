@@ -66,7 +66,32 @@ impl Resource for CategoryResource {
                         .table()
                         .schema(components![TextInput::make("title"), Toggle::make("published")])
                         .item_label("{title}")
-                        .add_action_label("Add a post"),
+                        .add_action_label("Add a post")
+                        // #region posts-reacts
+                        // A reaction on the rows (ADR 0044, part D): a new post switched
+                        // to published without a title gets one ("Untitled post 2"),
+                        // which the user may change.
+                        .reacts(|_ctx, state| {
+                            let patches: Vec<FormPatch> = state
+                                .relation_rows("posts")
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, row)| {
+                                    row.key().is_none()
+                                        && row.get("published") == Some(&json!(true))
+                                        && row.text("title").is_empty()
+                                })
+                                .map(|(index, row)| {
+                                    FormPatch::update_relation_row(
+                                        "posts",
+                                        row.id().clone(),
+                                        json!({"title": format!("Untitled post {}", index + 1)}),
+                                    )
+                                })
+                                .collect();
+                            Box::pin(async move { Ok(patches) })
+                        }),
+                    // #endregion posts-reacts
                     // #endregion posts-repeater
                 ])
                 .aside(components![Section::make("Display").compact().collapsible(false).schema(components![
