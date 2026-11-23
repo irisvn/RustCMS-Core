@@ -140,6 +140,11 @@ impl SettingField {
         assert!(!spec.relationship, "settings field `{}`: settings have no relationships", repeater.name);
         assert!(repeater.reaction.is_none(), "settings field `{}`: settings inputs cannot react", repeater.name);
         assert!(
+            repeater.options_fn.is_none(),
+            "settings field `{}`: settings inputs cannot have `options_fn` (it is for resource forms)",
+            repeater.name
+        );
+        assert!(
             !repeater.required && repeater.max_length.is_none() && !repeater.integer,
             "settings field `{}`: `required`, `max_length` and `integer` are for inputs of JSON repeater rows \
              (declare them on the SettingField)",
@@ -599,6 +604,12 @@ impl<T: SettingsPage> SettingsAdapter<T> {
             assert!(compatible, "settings `{group}`: input `{}` does not match its field's kind", input.name);
             // Reactions are for resource forms (ADR 0041).
             assert!(input.reaction.is_none(), "settings `{group}`: input `{}` cannot react", input.name);
+            // Computed options are for resource forms (ADR 0044, part E).
+            assert!(
+                input.options_fn.is_none(),
+                "settings `{group}`: input `{}` cannot have `options_fn` (it is for resource forms)",
+                input.name
+            );
             // A row's rules (ADR 0044): the SettingField decides here.
             assert!(
                 input.content.as_deref().is_none_or(|c| !c.has_rules() && !c.full),

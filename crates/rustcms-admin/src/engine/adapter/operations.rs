@@ -135,6 +135,13 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         for repeater in &self.row_repeaters {
             let Some(child) = registry.get(repeater.target) else { continue };
             let here = format!("resource `{}`: repeater `{}`", R::SLUG, repeater.name);
+            // Its rows are written inside this resource's transaction, where no
+            // preflight runs (ADR 0044, part E).
+            assert!(
+                !child.computes_options(),
+                "{here}: `{}` has inputs with `options_fn`, which the child of a relationship repeater cannot have                  (its rows are written inside the parent's transaction)",
+                repeater.target
+            );
             let row =
                 |name: &str| repeater.inputs.iter().any(|n| n == name).then(|| child.condition_kind(name)).flatten();
             let outer = crate::engine::conditions::Outer { parent: None, root: Some(&root) };
@@ -400,6 +407,18 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         ResourceAdapter::react(self, ctx, request).await
     }
 
+    async fn form_options(
+        &self,
+        ctx: &Ctx,
+        request: crate::schema::FormOptionsRequest,
+    ) -> AppResult<crate::schema::FormOptionsResponse> {
+        ResourceAdapter::form_options(self, ctx, request).await
+    }
+
+    fn computes_options(&self) -> bool {
+        !self.options_inputs.is_empty()
+    }
+
     async fn lookup(&self, ctx: &Ctx, search: Option<&str>, keys: &[String]) -> AppResult<Vec<(String, String)>> {
         let Some(title) = self.readable_title(ctx) else { return Ok(Vec::new()) };
         if !self.policy.allows(ctx, ability::VIEW_ANY, None).await {
@@ -625,6 +644,15 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         // The request as sent is what a retry must repeat: a receipt is found
         // before validating, which may have changed (field permissions) since.
         let claim = self.create_claim(ctx, &input);
+        // A committed retry is answered before anything else runs (options included).
+        if let Some(claim) = &claim
+            && let Some(receipt) = crate::idempotency::existing(&ctx.db, claim).await?
+        {
+            let key = receipt["key"].as_str().ok_or_else(|| AppError::internal("create receipt without a key"))?;
+            return Ok(self.committed_key_envelope(ctx, key.to_owned()).await);
+        }
+        // Computed options (ADR 0044, part E): run before the transaction, checked under it.
+        let options = self.options_preflight(ctx, Operation::Create, None, &input).await?;
         let (txn, wctx) = self.begin(ctx).await?;
         if let Some(claim) = &claim
             && !crate::idempotency::acquire(txn.as_ref(), claim).await?
@@ -659,6 +687,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let bound_field = bound.as_ref().map(|(field, _)| field.as_str());
         let (_, hidden) = self.apply_conditions(&wctx, Operation::Create, &mut input, None, bound_field)?;
         input.extend(fixed.iter().map(|(f, v)| ((*f).to_owned(), v.clone())));
+        self.options_locked(&wctx, Operation::Create, options, None, None, &input)?;
         // Relationship repeaters hidden by the form's conditions (ADR 0044).
         let rows = self.settle_rows(&wctx, Operation::Create, rows, &hidden).await?;
         let root = self.row_root(&wctx, Operation::Create, None, &input);
@@ -727,12 +756,26 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
                 &serde_json::Value::Object(self.claim_input(ctx, &input)),
             )
         });
+        // A committed retry is answered before anything else runs (options included).
+        if let Some(claim) = &claim
+            && let Some(receipt) = crate::idempotency::existing(&ctx.db, claim).await?
+        {
+            let key = receipt["key"].as_str().ok_or_else(|| AppError::internal("update receipt without a key"))?;
+            return Ok(self.committed_key_envelope(ctx, key.to_owned()).await);
+        }
+        // The request as sent, which computed options read (ADR 0044, part E).
+        let sent = (!self.options_inputs.is_empty()).then(|| input.clone());
         let mut input = input;
         // Links chosen in the form (ADR 0035): admitted and checked, written after the record.
         let links = self.take_links(ctx, Operation::Update, &mut input).await?;
         // Relationship repeaters (ADR 0040): admitted and checked, written after the record.
         let rows = self.take_rows(ctx, Operation::Update, &mut input).await?;
         let input = self.accept_input(ctx, Operation::Update, input)?;
+        // Computed options: run before the transaction, checked under the lock.
+        let options = match &sent {
+            Some(sent) => self.options_preflight(ctx, Operation::Update, Some(key), sent).await?,
+            None => None,
+        };
         let (txn, wctx) = self.begin(ctx).await?;
         if let Some(claim) = &claim
             && !crate::idempotency::acquire(txn.as_ref(), claim).await?
@@ -754,6 +797,7 @@ impl<R: Resource> DynResource for ResourceAdapter<R> {
         let viewable = self.policy.allows(&wctx, ability::VIEW, Some(&record)).await;
         let (_, hidden) =
             self.apply_conditions(&wctx, Operation::Update, &mut input, Some((&record, viewable)), None)?;
+        self.options_locked(&wctx, Operation::Update, options, Some(key), Some((&record, viewable)), &input)?;
         // Relationship repeaters hidden by the form's conditions keep their rows (ADR 0044).
         let rows = self.settle_rows(&wctx, Operation::Update, rows, &hidden).await?;
         let root = self.row_root(&wctx, Operation::Update, Some((&record, viewable)), &input);

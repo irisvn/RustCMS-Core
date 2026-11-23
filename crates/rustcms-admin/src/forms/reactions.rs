@@ -68,7 +68,8 @@ impl FormState {
         self.key.as_deref()
     }
 
-    /// The input whose change asked for the reaction.
+    /// The input whose change asked for the reaction; for an `options_fn`,
+    /// the input whose options are asked for (ADR 0044, part E).
     pub fn changed(&self) -> &str {
         &self.changed
     }

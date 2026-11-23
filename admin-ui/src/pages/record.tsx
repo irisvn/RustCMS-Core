@@ -21,6 +21,8 @@ import { MEDIA_SLUG, MediaPreview } from "@/renderers/media-library";
 import { InfolistRenderer, hasComputed } from "@/renderers/infolist";
 import { ActionNoticeView, RecordActions, useActionRunner } from "@/components/actions";
 import { useFormReactions } from "@/api/reactions";
+import { useFormOptions } from "@/api/options";
+import { withOptions } from "@/schema/options";
 import { type FormValues, defaultValues, hiddenNames, inputsOf, payloadOf, protectLossyJson, relabel, serverErrors } from "@/schema/form";
 import { errorText, show, type Text, useLocale, useT } from "@/i18n";
 import { editResolver } from "@/schema/resolver";
@@ -171,6 +173,8 @@ function RecordForm({
   }, []);
   // After a write with an unknown outcome, resubmitting could create a duplicate.
   const uncertain = useUncertain(slug);
+  // Options computed on the server (ADR 0044, part E): shown in place of the declared ones.
+  const formOptions = useFormOptions({ slug, recordKey, via, inputs, form, paused: readOnly || save.isPending || uncertain });
   // Reactions of the form (ADR 0043); what they change is sent as if typed.
   const reactions = useFormReactions({
     slug,
@@ -179,7 +183,10 @@ function RecordForm({
     inputs,
     form,
     paused: readOnly || save.isPending || uncertain,
-    onPatched: (name) => touched.current.add(name),
+    onPatched: (name) => {
+      touched.current.add(name);
+      formOptions.onChange(name);
+    },
   });
 
   // After a failed save, the first input with an error (in form order) gets the
@@ -276,7 +283,7 @@ function RecordForm({
     ? t("record.editTitle", { record: record?.title ?? schema.resource.label.toLocaleLowerCase() })
     : t("list.new", { resource: schema.resource.label.toLocaleLowerCase() });
   // The language changed: same form and values, labels of the latest schema.
-  const shown = relabel(components, schema.form.components);
+  const shown = relabel(withOptions(components, formOptions.options), schema.form.components);
   return (
     <Page className={formWidthClass(schema.form.width)}>
     <form className="flex min-w-0 flex-col gap-6" onSubmit={(e) => void submit(e)} noValidate>
@@ -318,6 +325,7 @@ function RecordForm({
               onUserChange: (name) => {
                 touched.current.add(name);
                 reactions.onUserChange(name);
+                formOptions.onChange(name);
               },
               rowFlags: reactions.flags,
             }}

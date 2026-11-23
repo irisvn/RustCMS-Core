@@ -104,6 +104,8 @@ pub struct Input {
     pub(crate) repeater: Option<Box<super::repeater::RepeaterSpec>>,
     /// The input's reaction (ADR 0043; boxed: most inputs have none).
     pub(crate) reaction: Option<Box<super::reactions::Reaction>>,
+    /// Options computed on the server (ADR 0044 part E; boxed: most inputs have none).
+    pub(crate) options_fn: Option<Box<super::options::OptionsSource>>,
     /// JSON repeater rows: rules a field gives elsewhere.
     pub(crate) required: bool,
     pub(crate) max_length: Option<usize>,
@@ -184,6 +186,7 @@ impl Input {
             clear_when_hidden: false,
             repeater: None,
             reaction: None,
+            options_fn: None,
             required: false,
             max_length: None,
             integer: false,
@@ -366,6 +369,58 @@ impl Input {
     /// How long the reaction may take (default 5 seconds, at most 30).
     pub fn reaction_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.reaction.get_or_insert_default().timeout = timeout;
+        self
+    }
+
+    /// The options of a select or checkbox list, computed on the server from
+    /// the form's state (ADR 0044, part E): for choices that depend on other
+    /// inputs or on data. The panel asks for them when the form opens and
+    /// when an input of [`depends_on`](Self::depends_on) changes (the options
+    /// declared with [`options`](Self::options) show until the answer comes,
+    /// and when asking fails). Before a save that could change the input (a
+    /// create, or the input or one of its dependencies sent), the function
+    /// runs again, with no transaction, and the value must be one of its
+    /// options; the dependencies are compared again under the record's lock
+    /// (changed meanwhile: 409). Options are a form rule, not a data
+    /// invariant: other reads the function makes are not atomic with the
+    /// write (invariants belong in hooks). Resource forms' own inputs only,
+    /// not `belongs_to`; needs `depends_on`.
+    ///
+    /// ```rust,ignore
+    /// SelectInput::make("topic").depends_on(["category"]).options_fn(|ctx, state| {
+    ///     let category = state.text("category").to_owned();
+    ///     Box::pin(async move { topics_of(ctx, &category).await })
+    /// })
+    /// ```
+    pub fn options_fn<F>(mut self, options: F) -> Self
+    where
+        F: for<'a> Fn(
+                &'a crate::Ctx,
+                &'a super::FormState,
+            ) -> crate::BoxFuture<'a, rustcms_core::AppResult<Vec<SelectOption>>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.options_fn.get_or_insert_default().run = Some(std::sync::Arc::new(options));
+        self
+    }
+
+    /// The inputs of the same form whose change asks for the options of
+    /// [`options_fn`](Self::options_fn) again, and whose values a save
+    /// compares again under the record's lock (required with it; may be empty).
+    pub fn depends_on<I, S>(mut self, inputs: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.options_fn.get_or_insert_default().depends_on = Some(inputs.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// How long [`options_fn`](Self::options_fn) may take (default 5 seconds, at most 30).
+    pub fn options_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.options_fn.get_or_insert_default().timeout = timeout;
         self
     }
 

@@ -146,8 +146,8 @@ pub(super) async fn computed(
     Ok(Json(resource(&ctx, &slug)?.computed(&ctx, &key).await?))
 }
 
-/// Form reaction requests per user per minute (each runs application code
-/// while the user types).
+/// Form reaction and options requests per user per minute (each runs
+/// application code while the user types).
 const REACTIONS_PER_MINUTE: u32 = 120;
 
 /// The changes a form's reaction asks for (ADR 0043), limited per user. Who
@@ -159,33 +159,64 @@ pub(super) async fn react(
     Path(slug): Path<String>,
     request: axum::extract::Request,
 ) -> AppResult<Json<crate::schema::FormReactResponse>> {
-    let target = resource(&ctx, &slug)?;
-    if !target.admits(&ctx, ability::CREATE).await && !target.admits(&ctx, ability::UPDATE).await {
+    let target = form_writer(&app, &ctx, &slug).await?;
+    let request: crate::schema::FormReactRequest = super::extract::json_body(request, &app).await?;
+    let ctx = through(ctx, target.as_ref(), &slug, request.via.as_ref(), request.operation).await?;
+    Ok(Json(target.react(&ctx, request).await?))
+}
+
+/// The options computed on the server of a form's input (ADR 0044, part E),
+/// authorized and limited as reactions are (one bucket for both).
+pub(super) async fn form_options(
+    State(app): State<AppState>,
+    AdminCtx(ctx): AdminCtx,
+    Path(slug): Path<String>,
+    request: axum::extract::Request,
+) -> AppResult<Json<crate::schema::FormOptionsResponse>> {
+    let target = form_writer(&app, &ctx, &slug).await?;
+    let request: crate::schema::FormOptionsRequest = super::extract::json_body(request, &app).await?;
+    let ctx = through(ctx, target.as_ref(), &slug, request.via.as_ref(), request.operation).await?;
+    Ok(Json(target.form_options(&ctx, request).await?))
+}
+
+/// The resource `slug` when the user may fill one of its forms (create or
+/// update admitted), the request counted in the user's `form-react` bucket.
+async fn form_writer(
+    app: &AppState,
+    ctx: &crate::Ctx,
+    slug: &str,
+) -> AppResult<std::sync::Arc<dyn crate::registry::DynResource>> {
+    let target = resource(ctx, slug)?;
+    if !target.admits(ctx, ability::CREATE).await && !target.admits(ctx, ability::UPDATE).await {
         return Err(AppError::Forbidden);
     }
     let auth =
         app.service::<rustcms_auth::AuthState>().ok_or_else(|| AppError::internal("AuthProvider not registered"))?;
     auth.limiter.reserve(&[(&format!("form-react:{}", ctx.principal.id), REACTIONS_PER_MINUTE)]).await?;
-    let request: crate::schema::FormReactRequest = super::extract::json_body(request, &app).await?;
-    // A create form opened through a relation: authorized as that create is
-    // (`relation_create`), the relation's key bound as the save binds it.
-    let ctx = match &request.via {
-        None => ctx,
-        Some(via) => {
-            let (parent, relation, _) = super::relations::relation_of(&ctx, &via.parent, &via.relation)?;
-            if relation.is_many()
-                || relation.target != slug
-                || request.operation != SchemaOperation::Create
-                || !crate::registry::relation_access(&ctx, target.as_ref(), &relation).creatable
-                || !parent.admits(&ctx, ability::VIEW).await
-            {
-                return Err(AppError::Forbidden);
-            }
-            let canonical = parent.visible_key(&ctx, &via.record).await?;
-            ctx.with_bound((format!("{}.{}", via.parent, via.relation), relation.field.to_owned(), canonical))
-        }
-    };
-    Ok(Json(target.react(&ctx, request).await?))
+    Ok(target)
+}
+
+/// A create form opened through a relation: authorized as that create is
+/// (`relation_create`), the relation's key bound as the save binds it.
+async fn through(
+    ctx: crate::Ctx,
+    target: &dyn crate::registry::DynResource,
+    slug: &str,
+    via: Option<&crate::schema::FormReactVia>,
+    operation: SchemaOperation,
+) -> AppResult<crate::Ctx> {
+    let Some(via) = via else { return Ok(ctx) };
+    let (parent, relation, _) = super::relations::relation_of(&ctx, &via.parent, &via.relation)?;
+    if relation.is_many()
+        || relation.target != slug
+        || operation != SchemaOperation::Create
+        || !crate::registry::relation_access(&ctx, target, &relation).creatable
+        || !parent.admits(&ctx, ability::VIEW).await
+    {
+        return Err(AppError::Forbidden);
+    }
+    let canonical = parent.visible_key(&ctx, &via.record).await?;
+    Ok(ctx.with_bound((format!("{}.{}", via.parent, via.relation), relation.field.to_owned(), canonical)))
 }
 
 /// The request's `Idempotency-Key`, validated.

@@ -10,6 +10,7 @@ pub(crate) mod infolist;
 mod input;
 mod many;
 mod operations;
+pub(crate) mod options;
 pub(crate) mod pivot;
 mod react;
 mod read;
@@ -107,6 +108,8 @@ pub(crate) struct ResourceAdapter<R: Resource> {
     row_repeaters: Vec<rows::RowRepeater>,
     /// Inputs that react, in form order (ADR 0043).
     reactions: Vec<react::InputReaction>,
+    /// Inputs whose options are computed on the server, in form order (ADR 0044, part E).
+    options_inputs: Vec<options::OptionsInput>,
     /// The record title (ADR 0038).
     title: Option<crate::engine::title::TitleTemplate>,
     /// The view page's entries, when declared (ADR 0039).
@@ -334,6 +337,7 @@ impl<R: Resource> ResourceAdapter<R> {
         let repeaters = input::json_repeaters(slug, &form, &columns, &secrets);
         let row_repeaters = rows::row_repeaters(slug, &form, &relations);
         let reactions = react::reactions(slug, &form, &fields);
+        let options_inputs = options::options_inputs(slug, &form, &fields, &columns);
         for input in form.inputs().into_iter().filter(|i| i.kind == InputType::Custom) {
             let widget = input.widget.as_deref().unwrap_or_default();
             assert!(crate::ui::valid_widget(widget), "resource `{slug}`: invalid widget name `{widget}`");
@@ -579,6 +583,7 @@ impl<R: Resource> ResourceAdapter<R> {
             repeaters,
             row_repeaters,
             reactions,
+            options_inputs,
             action_conditions,
             title,
             table_ui,

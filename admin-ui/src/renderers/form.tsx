@@ -527,6 +527,10 @@ export function Widget({ id, input, ctx, value, onChange, onBlur, disabled, inva
       );
     case "checkbox_list": {
       const selected = Array.isArray(value) ? value : [];
+      // Checked values no longer among the options (computed ones changed, say)
+      // stay shown, as they are, until the user unchecks them.
+      const known = new Set((input.options ?? []).map(encodeOption));
+      const stray = selected.filter((s) => !known.has(s));
       return (
         <div id={id} tabIndex={-1} role="group" aria-label={input.label} aria-invalid={invalid || undefined} aria-describedby={describedBy} className="flex flex-col gap-2.5 focus-visible:outline-none">
           {(input.options ?? []).map((o) => {
@@ -547,6 +551,19 @@ export function Widget({ id, input, ctx, value, onChange, onBlur, disabled, inva
               </label>
             );
           })}
+          {stray.map((encoded) => (
+            <label key={encoded} className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Checkbox
+                checked
+                onBlur={onBlur}
+                aria-invalid={invalid || undefined}
+                aria-describedby={describedBy}
+                disabled={disabled}
+                onChange={() => onChange(selected.filter((s) => s !== encoded))}
+              />
+              {optionText(encoded)}
+            </label>
+          ))}
         </div>
       );
     }

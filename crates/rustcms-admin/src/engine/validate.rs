@@ -147,7 +147,17 @@ fn shape_problem(rule: &InputRule<'_>, value: &Value) -> Option<String> {
     }
 }
 
-fn option_problem(rule: &InputRule<'_>, value: &Value) -> Option<String> {
+/// Whether a checkbox list's value has its shape whatever its options: a
+/// list, each item at most once (inputs with options computed on the
+/// server, whose membership is checked against their answer, ADR 0044 part E).
+pub(crate) fn list_shape_problem(value: &Value) -> Option<String> {
+    let Some(items) = value.as_array() else { return Some("is invalid".to_owned()) };
+    let mut seen = std::collections::HashSet::new();
+    (!items.iter().all(|item| seen.insert(item.to_string()))).then(|| "may only be given once".to_owned())
+}
+
+/// Membership in `rule.options` (none: `None`).
+pub(crate) fn option_problem(rule: &InputRule<'_>, value: &Value) -> Option<String> {
     const NOT_OPTION: &str = "is not one of the options";
     match rule.options? {
         Options::One { values, scale } => {

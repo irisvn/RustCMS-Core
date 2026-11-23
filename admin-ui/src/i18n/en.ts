@@ -85,6 +85,7 @@ export const en = {
   "issue.rows_not_deletable": "rows cannot be removed here",
   "issue.too_many_rows": "has more than {max} rows (`[admin] repeater_rows`)",
   "issue.positions_exhausted": "has no positions left; renumber the rows",
+  "issue.options_failed": "could not check the options; try again",
   "issue.stale": "This was changed by someone else meanwhile. Reload and try again.",
   "issue.last_super_admin": "At least one active super admin is required for the `{guard}` guard.",
   "issue.duplicate_file": "may not list the same file twice",

@@ -54,7 +54,12 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 
     /// The static options client input of field `name` must match, if any.
+    /// Not for an input whose options are computed (ADR 0044, part E): its
+    /// answer is checked instead, before the save.
     pub(super) fn input_options(&self, name: &str) -> Option<Options<'_>> {
+        if self.computes_options(name) {
+            return None;
+        }
         self.static_options.get(name).map(|options| {
             if options.many {
                 Options::Many(&options.values)
@@ -104,7 +109,26 @@ impl<R: Resource> ResourceAdapter<R> {
             let conditional = conditions.is_conditional(name);
             let mut rule = InputRule { options, bounds, ..self.rule(name, field.required && !conditional) };
             rule.nullable |= conditional;
-            let accepted = check_input(name, &rule, value, &mut errors);
+            let mut accepted = check_input(name, &rule, value, &mut errors);
+            // Computed options (ADR 0044, part E): a checkbox list keeps its
+            // shape here, a select's value is stored canonical; membership is
+            // checked against the answer before the save.
+            if accepted && let Some(problem) = self.computed_list_problem(name, value) {
+                errors.add(name.as_str(), problem);
+                accepted = false;
+            }
+            if accepted
+                && !value.is_null()
+                && rule.kind != FieldKind::Json
+                && self.computes_options(name)
+                && let Ok(value) = crate::wire::canonical(
+                    rule.kind,
+                    crate::wire::decimal_scale(self.column(name).column.def().get_column_type()),
+                    value,
+                )
+            {
+                canonical.push((name.clone(), value));
+            }
             // A JSON repeater: each row checked, stored without its hidden inputs.
             if accepted && let Some(rows) = self.repeaters.get(name.as_str()) {
                 if let Some(list) = rows.check(name, value, &mut errors) {
@@ -772,7 +796,7 @@ pub(super) fn cleared_value<C>(column: &ColumnInfo<C>) -> Option<serde_json::Val
 /// exactly, so that the value read back is still that option: an `f32`
 /// keeps few digits, timestamps keep microseconds (PostgreSQL, MySQL), a
 /// decimal at most its precision.
-fn storable(
+pub(super) fn storable(
     column_type: &sea_orm::sea_query::ColumnType,
     kind: FieldKind,
     canonical: &serde_json::Value,

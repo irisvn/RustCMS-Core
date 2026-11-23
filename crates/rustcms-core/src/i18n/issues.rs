@@ -129,6 +129,7 @@ pub const TEMPLATES: &[(&str, &str)] = &[
     ("too_many_rows", "has more than {max} rows (`[admin] repeater_rows`)"),
     ("positions_exhausted", "has no positions left; renumber the rows"),
     ("stale", "This was changed by someone else meanwhile. Reload and try again."),
+    ("options_failed", "could not check the options; try again"),
     ("last_super_admin", "At least one active super admin is required for the `{guard}` guard."),
     ("no_super_admin_role", "no super_admin role for guard `{guard}`"),
     ("unknown_permissions", "unknown permissions: {list}"),

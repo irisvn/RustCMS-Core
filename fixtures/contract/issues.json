@@ -272,6 +272,9 @@
   "one_record_only": [
     "Run this action on one record at a time."
   ],
+  "options_failed": [
+    "could not check the options; try again"
+  ],
   "out_of_range": [
     "is out of range"
   ],

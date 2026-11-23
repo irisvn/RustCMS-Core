@@ -13,7 +13,7 @@ use crate::ui::{
 /// Version of the schema structure.
 pub const SCHEMA_VERSION: u32 = 2;
 /// Version of the component, column and filter vocabulary.
-pub const VOCABULARY_VERSION: u32 = 25;
+pub const VOCABULARY_VERSION: u32 = 26;
 
 /// Navigation entry and identity of a resource.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -221,6 +221,13 @@ pub struct InputSchema {
     #[cfg_attr(feature = "ts", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub toolbar: Option<RichToolbar>,
+    /// Options computed on the server (vocabulary 26, ADR 0044 part E): the
+    /// panel asks `POST form/options` when the form opens and when an input
+    /// of `dependsOn` changes; `options` are the declared ones meanwhile.
+    /// Create and edit forms, for users who may read and change the input.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options_from: Option<OptionsFromSchema>,
     /// Rich text: the application nodes the document may hold (vocabulary
     /// 18, ADR 0042); absent when none.
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<RichNodeSchema>>", optional))]
@@ -682,6 +689,55 @@ pub struct FormReactVia {
     pub record: String,
     /// The relation's name.
     pub relation: String,
+}
+
+/// Where an input's options come from when the server computes them
+/// (`InputSchema.optionsFrom`, ADR 0044 part E).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct OptionsFromSchema {
+    /// The inputs whose change asks for the options again.
+    pub depends_on: Vec<String>,
+}
+
+/// `POST form/options`: the options of an input with `optionsFrom` for the
+/// form's state (vocabulary 26, ADR 0044 part E); authorized as
+/// [`FormReactRequest`].
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct FormOptionsRequest {
+    /// `create` or `edit` (`view` is refused).
+    pub operation: SchemaOperation,
+    /// The record's key (`edit` only).
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(default)]
+    pub key: Option<String>,
+    /// A create form opened through a relation of another record.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(default)]
+    pub via: Option<FormReactVia>,
+    /// The input whose options are asked for.
+    pub input: String,
+    /// The form's values, in wire format (as a save sends them).
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, JsonValue>"))]
+    pub state: crate::Data,
+}
+
+/// The answer to a [`FormOptionsRequest`]: the options, or `failed`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FormOptionsResponse {
+    /// The options, values canonical, labels translated.
+    #[cfg_attr(feature = "ts", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<SelectOption>>,
+    /// Computing them failed (error, timeout, an answer the server refuses):
+    /// the panel keeps the declared options.
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub failed: bool,
 }
 
 /// The answer to a [`FormReactRequest`].

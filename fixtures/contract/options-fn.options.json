@@ -1,0 +1,12 @@
+{
+  "options": [
+    {
+      "label": "Apple",
+      "value": "apple"
+    },
+    {
+      "label": "Pear",
+      "value": "pear"
+    }
+  ]
+}

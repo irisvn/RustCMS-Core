@@ -322,6 +322,13 @@ impl<R: Resource> ResourceAdapter<R> {
             // Never on view pages, nor for a user who cannot change the input (ADR 0043).
             reacts: !disabled && op != SchemaOperation::View && input.reaction.is_some(),
             toolbar: None,
+            // Asked for by users who may read and change the input (ADR 0044, part E).
+            options_from: self
+                .options_inputs
+                .iter()
+                .find(|o| o.name == input.name)
+                .filter(|_| !disabled && !write_only && op != SchemaOperation::View)
+                .map(|o| crate::schema::OptionsFromSchema { depends_on: o.depends_on.clone() }),
         })
     }
 
@@ -379,6 +386,7 @@ impl<R: Resource> ResourceAdapter<R> {
             rich_nodes: Vec::new(),
             reacts: false,
             toolbar: None,
+            options_from: None,
         }
     }
 
@@ -519,6 +527,7 @@ impl<R: Resource> ResourceAdapter<R> {
             rich_nodes: Vec::new(),
             reacts: false,
             toolbar: None,
+            options_from: None,
         })
     }
 
@@ -753,6 +762,7 @@ fn pivot_input_schema(
         rich_nodes: Vec::new(),
         reacts: false,
         toolbar: None,
+        options_from: None,
     }
 }
 

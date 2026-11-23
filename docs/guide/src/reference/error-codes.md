@@ -112,6 +112,7 @@ keeps it complete.
 | `too_many_rows` | has more than `{max}` rows (`[admin] repeater_rows`): a relationship repeater's change orders more rows of one parent, or sends more entries in one part, than [`repeater_rows`](../getting-started/configuration.md#admin-configadmintoml) |
 | `positions_exhausted` | `has no positions left; renumber the rows` (the order column reached its type's largest value) |
 | `stale` | `This was changed by someone else meanwhile. Reload and try again.` |
+| `options_failed` | `could not check the options; try again` (a form error: an input's `options_fn` failed, timed out or answered options the server refuses before a save; nothing was saved) |
 | `last_super_admin` | At least one active super admin is required for the `{guard}` guard. |
 | `no_super_admin_role` | no super_admin role for guard `{guard}` |
 | `unknown_permissions` | `unknown permissions: {list}` |
@@ -161,6 +162,7 @@ keeps it complete.
 | `export_stale` | 409 | `stale` (access changed since the export was made: export again) |
 | `secret_stale` | 409 | `stale` (an encrypted map changed meanwhile: reload before retrying) |
 | `import_started` | 409 | `started` (the import has already started) |
+| `stale` | 409 | `options` (what an input's `options_fn` read changed between its run and the save's lock: reload or save again) |
 | `payload_too_large` | 413 | |
 | `validation_failed` | 422 | |
 | `too_many_requests` | 429 | |

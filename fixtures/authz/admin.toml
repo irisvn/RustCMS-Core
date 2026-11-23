@@ -243,6 +243,95 @@ actor = "editor"
 body = '{"operation": "create", "changed": "title", "state": {"title": "x"}, "seq": 1}'
 status = 403
 
+# Options computed on the server (ADR 0044, part E): authorized and limited as form/react;
+# the posts here have no input with options_fn, so an admitted request answers 404.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/posts/form/options"
+actor = "guest"
+body = '{"operation": "create", "input": "title", "state": {"title": "x"}}'
+status = 401
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/posts/form/options"
+actor = "member"
+body = '{"operation": "create", "input": "title", "state": {"title": "x"}}'
+status = 403
+
+# Admitted: title has no options_fn.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/posts/form/options"
+actor = "editor"
+body = '{"operation": "create", "input": "title", "state": {"title": "x"}}'
+status = 404
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/posts/form/options"
+actor = "foreign"
+body = '{"operation": "create", "input": "title", "state": {"title": "x"}}'
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/posts/form/options"
+actor = "token"
+body = '{"operation": "create", "input": "title", "state": {"title": "x"}}'
+status = 403
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/posts/form/options"
+actor = "member"
+body = '{"operation": "edit", "key": "{own}", "input": "title", "state": {"title": "x"}}'
+status = 404
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/posts/form/options"
+actor = "editor"
+body = '{"operation": "edit", "key": "{own}", "input": "title", "state": {"title": "x"}}'
+status = 404
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/posts/form/options"
+actor = "editor"
+body = '{"operation": "edit", "key": "{theirs}", "input": "title", "state": {"title": "x"}}'
+status = 404
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/posts/form/options"
+actor = "editor"
+body = '{"operation": "view", "key": "{own}", "input": "title", "state": {}}'
+status = 422
+
+# An input the user cannot read (not a field of the form).
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/posts/form/options"
+actor = "editor"
+body = '{"operation": "create", "input": "secret", "state": {}}'
+status = 404
+
+# A select without options_fn.
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/posts/form/options"
+actor = "editor"
+body = '{"operation": "create", "input": "category_id", "state": {}}'
+status = 404
+
+[[case]]
+route = "POST /admin/api/resources/{slug}/form/options"
+path = "/admin/api/resources/categories/form/options"
+actor = "editor"
+body = '{"operation": "create", "input": "title", "state": {"title": "x"}}'
+status = 403
+
 [[case]]
 route = "GET /admin/api/resources/{slug}/records/{key}/computed"
 path = "/admin/api/resources/posts/records/{own}/computed"

@@ -1,0 +1,212 @@
+{
+  "abilities": {
+    "create": true,
+    "history": false,
+    "import": true,
+    "viewAny": true
+  },
+  "form": {
+    "columns": 1,
+    "components": [
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Title",
+        "name": "title",
+        "nullable": false,
+        "rules": [
+          {
+            "rule": "required"
+          }
+        ],
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Group",
+        "name": "group_id",
+        "nullable": true,
+        "relationship": {
+          "resource": "option_groups"
+        },
+        "rules": [],
+        "type": "select",
+        "valueType": "i32"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Category",
+        "name": "category",
+        "nullable": true,
+        "options": [
+          {
+            "label": "Fruit",
+            "value": "fruit"
+          },
+          {
+            "label": "Veg",
+            "value": "veg"
+          },
+          {
+            "label": "Group",
+            "value": "group"
+          }
+        ],
+        "rules": [],
+        "type": "select",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Hint",
+        "name": "hint",
+        "nullable": true,
+        "rules": [],
+        "type": "text_input",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Topic",
+        "name": "topic",
+        "nullable": true,
+        "options": [
+          {
+            "label": "Apple",
+            "value": "apple"
+          }
+        ],
+        "optionsFrom": {
+          "dependsOn": [
+            "category",
+            "hint"
+          ]
+        },
+        "rules": [],
+        "type": "select",
+        "valueType": "string"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Tags",
+        "name": "tags",
+        "nullable": true,
+        "optionsFrom": {
+          "dependsOn": [
+            "category"
+          ]
+        },
+        "rules": [],
+        "type": "checkbox_list",
+        "valueType": "json"
+      },
+      {
+        "columnSpan": 1,
+        "disabled": false,
+        "label": "Rank",
+        "name": "rank",
+        "nullable": true,
+        "rules": [],
+        "shownWhen": {
+          "name": "category",
+          "op": "ne",
+          "value": "veg"
+        },
+        "type": "select",
+        "valueType": "i64",
+        "writeOnly": true
+      }
+    ]
+  },
+  "operation": "create",
+  "resource": {
+    "label": "Entry",
+    "pluralLabel": "Entrys",
+    "slug": "option_entries",
+    "titleField": "title"
+  },
+  "schemaVersion": 2,
+  "table": {
+    "actions": [],
+    "columns": [
+      {
+        "label": "Title",
+        "name": "title",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Group",
+        "name": "group_id",
+        "relationship": {
+          "resource": "option_groups"
+        },
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "i32"
+      },
+      {
+        "label": "Category",
+        "name": "category",
+        "options": [
+          {
+            "label": "Fruit",
+            "value": "fruit"
+          },
+          {
+            "label": "Veg",
+            "value": "veg"
+          },
+          {
+            "label": "Group",
+            "value": "group"
+          }
+        ],
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Hint",
+        "name": "hint",
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      },
+      {
+        "label": "Topic",
+        "name": "topic",
+        "options": [
+          {
+            "label": "Apple",
+            "value": "apple"
+          }
+        ],
+        "searchable": false,
+        "sortable": false,
+        "type": "text",
+        "valueType": "string"
+      }
+    ],
+    "filters": [],
+    "perPageOptions": [
+      10,
+      25,
+      50,
+      100
+    ],
+    "searchable": false
+  },
+  "vocabularyVersion": 26
+}

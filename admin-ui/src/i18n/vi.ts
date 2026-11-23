@@ -84,6 +84,7 @@ export const vi: Record<keyof typeof en, string> = {
   "issue.rows_not_deletable": "không được xóa dòng ở đây",
   "issue.too_many_rows": "có hơn {max} dòng (`[admin] repeater_rows`)",
   "issue.positions_exhausted": "đã hết vị trí; hãy đánh số lại các dòng",
+  "issue.options_failed": "không kiểm tra được các lựa chọn; hãy thử lại",
   "issue.stale": "Dữ liệu vừa được người khác thay đổi. Hãy tải lại và thử lại.",
   "issue.last_super_admin": "Cần ít nhất một super admin đang hoạt động cho guard `{guard}`.",
   "issue.duplicate_file": "không được chọn cùng một tệp hai lần",

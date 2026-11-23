@@ -520,6 +520,16 @@ fn row_data(resource: &dyn DynResource, header: &[String], mapping: &BTreeMap<St
         .collect()
 }
 
+/// Whether `err` is a save's computed options changed meanwhile (409
+/// `stale`) or not checked (`options_failed`): worth trying again.
+fn options_retryable(err: &AppError) -> bool {
+    match err {
+        AppError::Conflict { code: "stale", .. } => true,
+        AppError::Validation(errors) => errors.form_errors.iter().any(|m| m == crate::adapter::options::OPTIONS_FAILED),
+        _ => false,
+    }
+}
+
 /// The problems of an error, by field (no values).
 fn issues(row: u32, err: &AppError) -> Vec<RowIssue> {
     match err {
@@ -533,6 +543,7 @@ fn issues(row: u32, err: &AppError) -> Vec<RowIssue> {
             out
         }
         AppError::Forbidden => vec![RowIssue::new(row, None, "is not allowed")],
+        AppError::Conflict { code: "stale", message, .. } => vec![RowIssue::new(row, None, message)],
         AppError::NotFound => vec![RowIssue::new(row, None, "was not found")],
         _ => vec![RowIssue::new(row, None, "could not be imported")],
     }
@@ -824,6 +835,11 @@ async fn write(job: &JobCtx, row: &entity::Model) -> Result<(), Result<Stopped, 
                     }
                 }
                 Err(AppError::Conflict { code: "import_stopped", .. }) => return Err(Ok(Stopped("unfinished"))),
+                // Computed options (ADR 0044, part E) changed meanwhile or could not be
+                // checked: retried as busy writes are, reported once retries run out.
+                Err(err) if options_retryable(&err) && job.attempt < ImportJob::max_attempts() => {
+                    return Err(Err(err));
+                }
                 // Busy or unavailable: the whole job is retried (written rows are skipped).
                 Err(
                     err @ (AppError::Internal(_)

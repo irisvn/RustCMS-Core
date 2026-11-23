@@ -44,6 +44,7 @@ fn the_admin_route_list_is_unchanged() {
         "GET /admin/api/panel",
         "GET /admin/api/resources/{slug}/schema",
         "POST /admin/api/resources/{slug}/form/react",
+        "POST /admin/api/resources/{slug}/form/options",
         "GET /admin/api/resources/{slug}/records",
         "POST /admin/api/resources/{slug}/records",
         "GET /admin/api/resources/{slug}/records/{key}",

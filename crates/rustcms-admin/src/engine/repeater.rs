@@ -618,11 +618,19 @@ pub(crate) fn check_spec(here: &str, spec: &RepeaterSpec) {
                 }
                 Component::Entry(_) => panic!("{here}: a row holds inputs, not entries"),
                 // Reactions belong to the form's own inputs (ADR 0041).
-                Component::Input(input) => assert!(
-                    input.reaction.is_none(),
-                    "{here}: row input `{}` cannot react (`.reacts()` is for the form's own inputs)",
-                    input.name
-                ),
+                Component::Input(input) => {
+                    assert!(
+                        input.reaction.is_none(),
+                        "{here}: row input `{}` cannot react (`.reacts()` is for the form's own inputs)",
+                        input.name
+                    );
+                    // Computed options are the form's own inputs' (ADR 0044, part E).
+                    assert!(
+                        input.options_fn.is_none(),
+                        "{here}: row input `{}` cannot have `options_fn` (it is for the form's own inputs)",
+                        input.name
+                    );
+                }
             }
         }
     }
@@ -743,6 +751,7 @@ pub(crate) fn rows_schema(
                         toolbar: (input.kind == InputType::RichEditor)
                             .then(|| crate::ui::RowContent::toolbar(input.content.as_deref()))
                             .flatten(),
+                        options_from: None,
                     }))
                 }
             })

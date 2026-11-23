@@ -16,12 +16,12 @@ use crate::schema::{FormReactRequest, FormReactResponse};
 use crate::ui::{FormPatch, FormState, REACTION_MAX_TIMEOUT};
 
 /// Reactions running at once, across users.
-static REACTING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
+pub(super) static REACTING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
 /// Reactions running at once for one user (the panel needs only the latest).
 const REACTING_PER_USER: usize = 2;
 static PER_USER: Mutex<Option<HashMap<String, usize>>> = Mutex::new(None);
 /// Longest wait for a turn before answering 429 (the user is typing).
-const REACTING_WAIT: Duration = Duration::from_secs(5);
+pub(super) const REACTING_WAIT: Duration = Duration::from_secs(5);
 /// Patches one answer may hold; the rest are dropped (and logged).
 pub(crate) const MAX_PATCHES: usize = 200;
 /// Characters of a notice or a row's warning.
@@ -66,10 +66,10 @@ pub(super) fn reactions(slug: &str, form: &Form, fields: &[Field]) -> Vec<InputR
 }
 
 /// A turn of one user, given back when dropped.
-struct UserTurn(String);
+pub(super) struct UserTurn(String);
 
 impl UserTurn {
-    fn take(user: &str) -> Option<Self> {
+    pub(super) fn take(user: &str) -> Option<Self> {
         let mut map = PER_USER.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let count = map.get_or_insert_with(HashMap::new).entry(user.to_owned()).or_default();
         if *count >= REACTING_PER_USER {
@@ -194,7 +194,7 @@ impl<R: Resource> ResourceAdapter<R> {
     /// form: an input of the form for a field the user may write, not
     /// encrypted, whose value decodes (`null` included). A JSON repeater
     /// holding more rows than it may is refused (422).
-    fn typed(&self, ctx: &Ctx, op: Operation, name: &str, value: &Value) -> AppResult<bool> {
+    pub(super) fn typed(&self, ctx: &Ctx, op: Operation, name: &str, value: &Value) -> AppResult<bool> {
         let input_of_form = self.form.inputs().iter().any(|i| i.name == name);
         let field = self.field(name).filter(|f| f.secret.is_none());
         if !input_of_form || field.is_none() || !self.writable(ctx, op, name) {
@@ -212,19 +212,19 @@ impl<R: Resource> ResourceAdapter<R> {
     }
 
     /// Whether a reaction may see field `name`: readable, not encrypted.
-    fn state_field(&self, ctx: &Ctx, name: &str) -> bool {
+    pub(super) fn state_field(&self, ctx: &Ctx, name: &str) -> bool {
         self.field(name).is_some_and(|f| f.secret.is_none() && f.can_read(ctx))
     }
 
     /// Whether the user may write field `name` in `op` (as `accept_input`).
-    fn writable(&self, ctx: &Ctx, op: Operation, name: &str) -> bool {
+    pub(super) fn writable(&self, ctx: &Ctx, op: Operation, name: &str) -> bool {
         let natural_create = op == Operation::Create && matches!(self.meta.key, KeyStrategy::Natural);
         self.field(name).is_some_and(|f| f.can_write(op, ctx)) && (name != self.pk_name || natural_create)
     }
 
     /// `value` as the column stores it (ADR 0003: a decimal at the column's
     /// scale), for comparing and sending.
-    fn canonical_value(&self, name: &str, value: &Value) -> Value {
+    pub(super) fn canonical_value(&self, name: &str, value: &Value) -> Value {
         let column = self.column(name);
         let scale = crate::wire::decimal_scale(column.column.def().get_column_type());
         crate::wire::canonical(column.kind, scale, value).unwrap_or_else(|_| value.clone())
@@ -322,6 +322,11 @@ impl<R: Resource> ResourceAdapter<R> {
                 ..self.rule(&field, false)
             };
             if !check_input(&field, &rule, value, &mut errors) {
+                return Err(fail("a value its input refuses"));
+            }
+            // Computed options (ADR 0044, part E): not the declared ones, but a
+            // checkbox list's shape still holds.
+            if self.computed_list_problem(&field, value).is_some() {
                 return Err(fail("a value its input refuses"));
             }
             // As a save would store it: rows checked, values canonical.

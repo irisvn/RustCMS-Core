@@ -440,6 +440,13 @@ reacts?: boolean,
  */
 toolbar?: RichToolbar, 
 /**
+ * Options computed on the server (vocabulary 26, ADR 0044 part E): the
+ * panel asks `POST form/options` when the form opens and when an input
+ * of `dependsOn` changes; `options` are the declared ones meanwhile.
+ * Create and edit forms, for users who may read and change the input.
+ */
+optionsFrom?: OptionsFromSchema, 
+/**
  * Rich text: the application nodes the document may hold (vocabulary
  * 18, ADR 0042); absent when none.
  */
@@ -919,6 +926,45 @@ seq: number,
 patches: Array<FormPatch>, 
 /**
  * The reaction failed (error, timeout): nothing to apply.
+ */
+failed?: boolean, };
+
+export type OptionsFromSchema = { 
+/**
+ * The inputs whose change asks for the options again.
+ */
+dependsOn: Array<string>, };
+
+export type FormOptionsRequest = { 
+/**
+ * `create` or `edit` (`view` is refused).
+ */
+operation: SchemaOperation, 
+/**
+ * The record's key (`edit` only).
+ */
+key?: string, 
+/**
+ * A create form opened through a relation of another record.
+ */
+via?: FormReactVia, 
+/**
+ * The input whose options are asked for.
+ */
+input: string, 
+/**
+ * The form's values, in wire format (as a save sends them).
+ */
+state: Record<string, JsonValue>, };
+
+export type FormOptionsResponse = { 
+/**
+ * The options, values canonical, labels translated.
+ */
+options?: Array<SelectOption>, 
+/**
+ * Computing them failed (error, timeout, an answer the server refuses):
+ * the panel keeps the declared options.
  */
 failed?: boolean, };
 
