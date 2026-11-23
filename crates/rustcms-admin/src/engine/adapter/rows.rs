@@ -693,9 +693,10 @@ fn too_many_rows(relation: &str, max: usize) -> AppError {
 /// Whether a part of `value` (a repeater's change) holds more than `max`
 /// entries. Checked before the shape: over the limit is its own 422.
 fn over_row_limit(value: &serde_json::Value, max: usize) -> bool {
-    ["create", "update", "delete", "order"]
-        .iter()
-        .any(|part| value.get(part).and_then(|v| v.as_array()).is_some_and(|a| a.len() > max))
+    let len = |part: &str| value.get(part).and_then(|v| v.as_array()).map_or(0, Vec::len);
+    // Each part, and the stored rows named by updates and deletes together (looked
+    // up and locked at once: `repeater_rows` is at most `limits.keys`).
+    ["create", "update", "delete", "order"].iter().any(|part| len(part) > max) || len("update") + len("delete") > max
 }
 
 /// A relationship repeater of a resource's form, checked at boot.

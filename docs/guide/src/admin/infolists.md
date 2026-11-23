@@ -99,8 +99,10 @@ the form's repeater when the child's lists may sort by it (`sortable()`),
 else in the list's order. Each row's entries name fields of the child
 (checked at boot with the child's fields; those the user may not read are
 left out). At most `limit(n)` rows (100 by default and at most), then a link
-to the relation's section. A user who may not list the child does not see
-the entry. The demo's categories show their posts this way:
+to the relation's section. A user who may not list the child, or may not
+read the fields a [filtered relation](relationships.md#filtered-relations)
+filters on, does not see the entry. Conditions in its rows read the row and,
+with `when_root`, the record. The demo's categories show their posts this way:
 
 <<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-entry [src/admin/resources/category_resource.rs]
 

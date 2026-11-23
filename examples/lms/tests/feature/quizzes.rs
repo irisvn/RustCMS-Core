@@ -16,7 +16,7 @@ async fn first_lesson(app: &rustcms_testing::TestApp) -> i64 {
     lesson::Entity::find().order_by_asc(lesson::Column::Id).one(app.state().db()).await.unwrap().unwrap().id
 }
 
-db_test!(a_question_switched_to_blanks_loses_its_options, migrate = Migrator, |db: TestDb| async move {
+db_test!(a_question_switched_to_blanks_keeps_its_options, migrate = Migrator, |db: TestDb| async move {
     let app = seeded(db).await;
     let admin = as_user(&app, "admin@example.test").await;
     let lesson = first_lesson(&app).await;
@@ -48,8 +48,8 @@ db_test!(a_question_switched_to_blanks_loses_its_options, migrate = Migrator, |d
         )
         .await;
     blank.assert_status(StatusCode::OK);
-    // The switch removed the options; the blank is there.
-    assert_eq!(quiz_option::Entity::find().all(app.state().db()).await.unwrap().len(), 0);
+    // Hidden is not deleted: the options stay (shown again if the question is switched back); the blank is there.
+    assert_eq!(quiz_option::Entity::find().all(app.state().db()).await.unwrap().len(), 2);
     let blanks = admin.get(&format!("{}/relations/blanks", record(&app, "quiz_questions", &question))).await.json();
     assert_eq!(blanks["data"][0]["data"]["label"], json!("first"));
     // A choice of that blank, stored meanwhile, is not one of the options.
@@ -58,12 +58,12 @@ db_test!(a_question_switched_to_blanks_loses_its_options, migrate = Migrator, |d
         .db()
         .execute_unprepared(&format!(
             "INSERT INTO quiz_options (quiz_question_id, blank_id, content, correct, position) VALUES ({question}, \
-             {blank_id}, 'four', true, 1)"
+             {blank_id}, 'four', true, 3)"
         ))
         .await
         .unwrap();
     let listed = admin.get(&format!("{}/relations/options", record(&app, "quiz_questions", &question))).await.json();
-    assert_eq!(listed["meta"]["total"], json!(0));
+    assert_eq!(listed["meta"]["total"], json!(2));
 });
 
 db_test!(a_courses_form_enrolls_learners_in_rows, migrate = Migrator, |db: TestDb| async move {

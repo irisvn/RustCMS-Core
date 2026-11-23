@@ -164,7 +164,22 @@ impl Resource for OptionResource {
         Form::new().schema(components![
             SelectInput::make("question_id"),
             NumberInput::make("kind"),
-            TextInput::make("content"),
+            // Tells what it sees, then tries to move the option to the
+            // distractors before writing the answer's note.
+            TextInput::make("content").reacts(|_, state| {
+                let seen = format!(
+                    "kind: {}, question: {}",
+                    state.get("kind").cloned().unwrap_or_default(),
+                    state.get("question_id").cloned().unwrap_or_default()
+                );
+                Box::pin(async move {
+                    Ok(vec![
+                        FormPatch::notice(seen),
+                        FormPatch::set("kind", DISTRACTOR),
+                        FormPatch::set("note", "an answer's note"),
+                    ])
+                })
+            }),
             TextInput::make("note").shown_when(when("kind").eq(ANSWER)),
         ])
     }
@@ -686,3 +701,64 @@ refused_at_boot!(
             .schema(components![TextInput::make("content"), TextInput::make("kind")])
     ]
 );
+
+/// A form reaction of the option's create form opened through `relation` of
+/// question `key` (ADR 0043, 0044), its state forging the relation's values.
+async fn react_via(client: &TestClient<'_>, app: &TestApp, key: &str, relation: Option<&str>) -> TestResponse {
+    let mut body = json!({
+        "operation": "create",
+        "changed": "content",
+        "state": {"content": "x", "kind": 3, "question_id": 0},
+        "seq": 1,
+    });
+    if let Some(relation) = relation {
+        body["via"] = json!({"parent": "questions", "record": key, "relation": relation});
+    }
+    client.post_json(&app.admin_api("resources/question_options/form/react"), &body).await
+}
+
+db_test!(a_reaction_through_a_filtered_relation_sees_and_keeps_its_values, |db: TestDb| async move {
+    let (app, user) = setup(db).await;
+    let admin = app.acting_as(&user).await;
+    let key = question(&app, &admin).await;
+    // The reaction sees the relation's values, not the forged ones; its patch
+    // to a filtered field is dropped, so the answer's note stays shown.
+    for (relation, kind) in [("answers", json!(ANSWER)), ("distractors", json!(DISTRACTOR)), ("loose", Value::Null)] {
+        let answer = react_via(&admin, &app, &key, Some(relation)).await;
+        answer.assert_status(StatusCode::OK);
+        let mut expected = vec![json!({"op": "notice", "message": format!("kind: {kind}, question: {key}")})];
+        if relation == "answers" {
+            expected.push(json!({"op": "set", "field": "note", "value": "an answer's note"}));
+        }
+        assert_eq!(answer.json()["patches"], json!(expected), "{relation}");
+    }
+    // Outside a relation, the same patch is the super admin's to make (and
+    // hides the note).
+    let answer = react_via(&admin, &app, &key, None).await;
+    answer.assert_status(StatusCode::OK);
+    assert_eq!(
+        answer.json()["patches"],
+        json!([
+            {"op": "notice", "message": "kind: 3, question: 0"},
+            {"op": "set", "field": "kind", "value": DISTRACTOR},
+        ])
+    );
+});
+
+db_test!(a_reaction_through_a_filtered_relation_needs_its_create, |db: TestDb| async move {
+    let (app, user) = setup(db).await;
+    let admin = app.acting_as(&user).await;
+    let key = question(&app, &admin).await;
+    // A filter the user may not read: refused, as the relation's create is.
+    let reader = editor(&app, false).await;
+    let reader = app.acting_as(&reader).await;
+    react_via(&reader, &app, &key, Some("answers")).await.assert_status(StatusCode::FORBIDDEN);
+    // A filter the user may read but not write on create: 403.
+    let writer = editor(&app, true).await;
+    let writer = app.acting_as(&writer).await;
+    react_via(&writer, &app, &key, Some("answers")).await.assert_status(StatusCode::FORBIDDEN);
+    // A relation without filters on what they may write: answered.
+    for client in [&reader, &writer] {
+        react_via(client, &app, &key, Some("flagged")).await.assert_status(StatusCode::OK);
+    }
+});

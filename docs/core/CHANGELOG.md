@@ -65,33 +65,42 @@ All notable changes are documented here. The format follows
   its `down` drops both). Demo: post covers, post content and branding collections; LMS: news covers.
 - `SelectFilter::none(label)`: a last choice for records without a value (nullable columns), sent as `~none`
   in the `in` list and matched as `IS NULL` (`FilterSchema.none`).
-- Repeaters, second round, part A (vocabulary 24, ADR 0044):
-  - Conditions on relationship repeaters (their own `shown_when`, or a layout's): a save that hides one removes
-    the rows the user sees (each needing the child's `delete`, else 403 and nothing saved; to the trash with
-    soft deletes), only when that save hides it; changes sent for a hidden repeater are ignored; the panel
-    says how many rows saving removes. New code `too_many_rows_to_remove` (more than 1,000 rows).
+- Repeaters, second round (vocabularies 24 and 25, ADR 0044; contributed by @giangittb112000, reworked after
+  review; its nested relationship repeaters, `validate_rows`, reactions on relationship rows and server
+  closures are not in this release):
+  - Conditions on relationship repeaters (their own `shown_when`, or a layout's): a hidden repeater keeps its
+    rows; a change sent for it is admitted and shape-checked, then ignored; `min_items` does not apply while
+    hidden; `clear_when_hidden` is refused on it.
   - Conditions in rows of both kinds of repeater: `when_root(name)` reads the record's form (a settings page's
-    fields), `when_parent(name)` the enclosing row of a nested JSON repeater; `Scope`; conditions in
-    relationship rows are the repeater's own.
-  - Filtered has-many relations: `Relation::where_null(field)` / `where_eq(field, value)` restrict the
-    relation's section, counts, repeater and view-page rows, and set their values on records created through
-    it; several repeaters may edit one child resource through relations that cannot share a row.
-    `RelationSchema` gains `fixed`.
+    fields), `when_parent(name)` the enclosing row of a nested JSON repeater (`Scope`). Relationship rows that
+    declare conditions follow them (the panel evaluates them too); rows declaring none keep the child form's
+    conditions, as in 0.13.
+  - Filtered has-many relations: `Relation::where_null(field)` / `where_eq(field, value)` (`where_eq` on
+    boolean, integer, UUID and date fields) restrict the relation's section, counts, repeater and view-page
+    rows, and set their values on records created through it (before `required` and conditions are checked).
+    Users who may not read every filtered field do not get the relation (404 on its routes, 403 on a repeater
+    change, no count column, no minimum to meet); users who may not write them on create get no New (403). A
+    hook removing or changing a filtered value is a 500. Several repeaters may edit one child resource through
+    relations that cannot share a row. `RelationSchema` gains `fixed`.
   - `Repeater::table()`: rows as table rows from `md` (`RepeaterSchema.layout`).
   - `RepeatableEntry::relationship()`: a has-many relation's records on the view page, through its list,
     at most `limit(n)` (100) rows; the default view page shows relationship repeaters this way
     (`EntrySchema.rows`).
-  - Part B (vocabulary 25): JSON rows take file uploads (`.accept`, `.max_size`, `.multiple(n)`,
-    `.collection` on the input) and rich editors (`.nodes`); relationship rows take the child's media, rich text
-    and `belongs_to` fields. A write's media references (fields, JSON rows at any depth, relationship rows after
-    the child's hooks) are checked once, last, errors at the row's path. Rich editors in rows show a compact
-    toolbar (`InputSchema.toolbar`), `.full()` for the full one. View pages show rows' files and documents
-    (`MediaEntry`, `RichTextEntry` in JSON rows). Demo: footer links take an icon; LMS: quiz options take an
-    image and an explanation (migration `m20261120_000007_add_media_to_quiz_options`), courses enroll learners
-    in their form.
+  - Files, documents and record selects in rows: JSON rows take file uploads (`.accept`, `.max_size`,
+    `.multiple(n)`, `.collection` on the input) and rich editors (`.nodes`), settings rows too; relationship
+    rows take the child's media, rich text and `belongs_to` fields. A write's media references (fields, JSON
+    rows at any depth, relationship rows after the child's hooks) are checked once, last, in batches of 500
+    ids, at most 2,000 distinct (new code `too_many_media`), errors at the row's path. Rich editors in rows
+    show a compact toolbar (`InputSchema.toolbar`), `.full()` for the full one; table rows refuse file
+    uploads and rich editors. View pages show JSON rows' files and documents (`MediaEntry`, `RichTextEntry`).
+  - `[admin] repeater_rows` (default 50, 1 to 500): the most rows of one parent a relationship repeater reads
+    and reorders, and the most entries of each part of its change (`RepeaterRelationship.rowLimit`); relation
+    lists page up to it.
   - Demo: categories are their posts or a link (migration `m20261119_000001_add_layout_to_categories`), posts
-    edited as a table and shown on the view page, a "Drafts" section. LMS: quiz questions with options
-    (`where_null("blank_id")`) and blanks, three tables (migration `m20261119_000006_create_quiz_tables`).
+    edited as a table and shown on the view page, a "Drafts" section (`where_eq("published", false)`), footer
+    links take an icon. LMS: quiz questions with options (`where_null("blank_id")`, an image and an
+    explanation each) or blanks (migrations `m20261119_000006_create_quiz_tables`,
+    `m20261120_000007_add_media_to_quiz_options`), courses enroll learners in their form.
 
 ### Changed
 - Panel colors (dark mode first): every text pair reaches WCAG AA and input borders and focus rings 3:1, in both
@@ -120,14 +129,15 @@ All notable changes are documented here. The format follows
 - `media::entity::Model` (and its `ActiveModel`) gains `collection`: application code that builds one with a
   struct literal adds `collection: None` (or `Set(None)`), as for `alt` in 0.10.1. `MediaItem`, `InputSchema`,
   `FilterSchema` and `PanelResponse` gain fields too.
-
-- A hook of a relationship repeater's child that adds media to a row no longer fails (500): the row's media are
-  checked with the parent's. `media::check_references` takes owned paths; `DynResource::field_locks_media_or_secret`
-  is `field_is_encrypted`.
-- Relationship repeater rows follow the repeater's own conditions; the child form's conditions no longer apply
-  to them (ADR 0044). `Condition`'s variants gain `scope` (code building or matching them by hand adds it;
-  `when`, `Condition::all`/`any` are unchanged). `ListQuery` gains `relation_filters` and
-  `DynResource::counted_by` a `filters` argument.
+- Relationship repeaters (ADR 0044): at most `[admin] repeater_rows` rows (default 50) read, reordered and
+  sent per part of a change, where 0.13 read 100, took 100 entries per part and reordered 1,000 (`too_many_rows`
+  now reads "has more than {max} rows (`[admin] repeater_rows`)"). The default view page shows their rows. A
+  child's hook that adds media to a row no longer fails (500): the row's media are checked with the parent's,
+  last, so a row's `after_save` may run before that check (outside work goes through jobs dispatched in the
+  transaction). `Condition`'s leaves gain `scope` (code building or matching them by hand adds it; `when`,
+  `Condition::all`/`any` are unchanged); `ListQuery` gains a hidden `relation_filters`;
+  `DynResource::counted_by` takes the relation's filters and `field_locks_media_or_secret` is
+  `field_is_encrypted`.
 - An upload with a part other than `file` and `collection` is refused with "must be one part named `file`,
   with at most one `collection`" (code `file_part`, as before; only its message changed). New code
   `media_collection`.

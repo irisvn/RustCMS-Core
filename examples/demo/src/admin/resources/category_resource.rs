@@ -58,8 +58,8 @@ impl Resource for CategoryResource {
                     // #region posts-repeater
                     // The category's posts, edited in its form: each row is a post
                     // (the posts resource's rules, policy and hooks apply), one
-                    // table row each. A category made a link has none: saving
-                    // that change removes the posts the user sees.
+                    // table row each. A category made a link hides them (its
+                    // posts are kept).
                     Repeater::make("posts")
                         .relationship()
                         .shown_when(when("layout").eq("posts"))

@@ -95,20 +95,37 @@ replay.
 
 `.where_null(field)` and `.where_eq(field, value)` restrict a has-many
 relation to the target's records whose `field` holds no value, or `value`
-(every filter must hold). One child resource can then hold several relations
-of the parent: the options of a quiz question are the rows without a blank,
-the choices of a blank those with it.
+(every filter must hold). The LMS's quiz options are the rows of
+`quiz_options` without a blank (`where_null("blank_id")`); the demo's
+**Drafts** section lists a category's unpublished posts
+(`where_eq("published", false)`). One child resource can then back several
+relations of a parent.
 
 <<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-relations [src/admin/resources/quiz_question_resource.rs]
 
 - **Wherever the relation is read** the filters apply: its section and
   count columns, its [repeater](forms.md#child-records), its rows on view
-  pages. The child's own pages list every record.
+  pages (counts too when the child's view policy depends on the record). The
+  child's own pages list every record.
+- **Reading needs every filtered field.** A user who may not read one of
+  them (the child's field rules) does not get the relation: no section, no
+  count column, no rows on the view page, its repeater left out of the form
+  (with no `min_items` to meet); its routes answer 404, and a repeater change
+  sent for it 403.
 - **Records created through the relation get its values**, set by the
   server as the foreign key is: **New** in its section, and rows added by its
-  repeater. A client that sends the field gets a 422 (`is set by the
-  relation` in the section, `is not allowed` in a row); a hook that changes it
-  is a server error (500).
+  repeater. The values are in the record before `required` and the
+  conditions are checked, so a required filtered field is no obstacle. The
+  user must be allowed to write every filtered field on create (as the
+  foreign key): otherwise the section has no **New**, the repeater adds no
+  rows, and a create sent is a 403. A field the user may never write
+  (`.guarded()`, or `.creatable(…)` refusing them) can still filter a
+  relation that is read and edited, not created through. A client that sends
+  the field gets a 422 (`is set by the relation` in the section, `is not
+  allowed` in a row).
+- **Records stay in the relation.** A hook that removes or changes a
+  filtered value of a record created or updated through the relation is a
+  server error (500), nothing saved.
 - A row of another relation is not one of this one's (`not_a_row`); its field
   cannot be an input of the repeater's rows.
 - **Several repeaters** may edit one child resource when their relations
@@ -117,8 +134,11 @@ the choices of a blank those with it.
   after every row of the parent, so a unique `(parent, position)` holds
   across relations.
 - At boot: `field` is a field of the target (not encrypted, not the foreign
-  key or the key), `where_null` needs a nullable column, `where_eq` a value
-  of the field's kind; filters are for has-many relations only.
+  key or the key); `where_null` needs a nullable column; `where_eq` takes a
+  boolean, integer, UUID or date field and a value of its kind (text,
+  decimals, floats and JSON are refused: a database collation or rounding
+  could match records the relation's own check does not); filters are for
+  has-many relations only.
 
 ## Belongs-to-many (pivot tables)
 

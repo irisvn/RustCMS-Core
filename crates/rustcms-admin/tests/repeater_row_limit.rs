@@ -196,6 +196,9 @@ db_test!(the_default_refuses_51_rows_in_a_part_or_to_order, |db: TestDb| async m
     let updates: Vec<Value> = items.iter().map(|k| json!({"key": k, "data": {"label": "x"}})).collect();
     assert_too_many(update_list(&client, &app, &list, json!({"update": updates})).await, "50");
     assert_too_many(update_list(&client, &app, &list, json!({"delete": items})).await, "50");
+    // Updates and deletes name stored rows together: 30 + 30 is over 50.
+    let mixed = json!({"update": updates[..30].to_vec(), "delete": items[30..].to_vec()});
+    assert_too_many(update_list(&client, &app, &list, mixed).await, "50");
     assert_eq!(keys(&app, &list).await, items, "nothing reordered");
 });
 

@@ -34,8 +34,8 @@ in runtime mode the page is rendered per request (static mode renders it once); 
 | GET | `/resources/{slug}/records/{key}/computed` | `ComputedValues` `{data: {name: value}, failed: [name]}`: the computed values the view page's infolist shows, for a user who may view the record (ADR 0039); 60 requests per user per minute and 8 pages computing at once (429 beyond) |
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
-| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `LinkPage` `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable pivot columns by target key, belongs-to-many; a filtered has-many lists only its records) |
-| POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key (and a filtered relation's fields: 422 `set_by_relation` when sent) set by the server (has-many; belongs-to-many: 405) |
+| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `LinkPage` `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable pivot columns by target key, belongs-to-many; a filtered has-many lists only its records, and answers 404 before reading anything to a user who may not read every filtered field; `per_page` up to `[admin] repeater_rows` when that is above the resource's page size) |
+| POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key (and a filtered relation's fields: 422 `set_by_relation` when sent) set by the server (has-many; belongs-to-many: 405); a filtered field the user may not read: 404; the foreign key or a filtered field the user may not write on create: 403 |
 | POST | `…/relations/{relation}/attach` `{keys, pivot?}` | `LinkOutcome {processed, missing}`; admitted by `attach_{relation}` before the body (403), then 422 (1–100 keys, pivot by field rules), then parent 404/403 |
 | POST | `…/relations/{relation}/detach` `{keys}` | `LinkOutcome`; `detach_{relation}`; links to targets not visible are kept and listed in `missing` |
 | PATCH | `…/relations/{relation}/links/{target}` `{…pivot}` | `LinkOutcome`; `update_pivot_{relation}`; 404 when not linked or not visible |
@@ -83,7 +83,8 @@ decided by the target resource's scope and policy.
 
 ### List query string
 
-`page`, `per_page` (≤ 100), `sort` (`title` or `-title`), `search`
+`page`, `per_page` (≤ 100; relation lists up to `[admin] repeater_rows` when
+higher), `sort` (`title` or `-title`), `search`
 (case-insensitive as the database folds case: Unicode on PostgreSQL, ASCII on
 SQLite; `%` and `_` are literal), and filters
 `filter[<field>][<op>]=<value>` with `op` in `eq`, `in`, `gt`, `gte`, `lt`,
@@ -173,7 +174,8 @@ row inputs are the child's. Clients read the rows from
 `records/{key}/relations/{relation}?per_page=…` (each row's `abilities` say
 whether it may be changed or removed) and send a change, never the list:
 `{create?: [{ref, data}], update?: [{key, data}], delete?: [keys], order?:
-[keys and refs]}` (`ref`: `[a-z0-9-]{1,16}`; at most 100 entries per part;
+[keys and refs]}` (`ref`: `[a-z0-9-]{1,16}`; at most 100 entries per part,
+`repeater.relationship.rowLimit` since vocabulary 24;
 `order` lists every row the user sees, once). Error paths: `name.key.input`
 and `name.ref.input`; `name.key` for a row; `name` for the change. Issue
 codes `not_a_row` (a key that is not a visible child of this record) and
@@ -181,7 +183,7 @@ codes `not_a_row` (a key that is not a visible child of this record) and
 lists `relation`, `created`, `updated`, `deleted` (counts, never child keys)
 and `reordered`. Vocabulary 16: in `order`, a stored row is its key and a new
 row is tagged `{"new": ref}` (a reference never reads as a key; at most 1,000
-rows); edit schemas add `repeater.createComponents`, the inputs of a new row
+rows, `rowLimit` rows of the parent since vocabulary 24); edit schemas add `repeater.createComponents`, the inputs of a new row
 (the child's create form), `components` being those of a stored row.
 
 Vocabulary 18 adds rich text document version 3 (ADR 0042): marks
@@ -212,21 +214,37 @@ Vocabulary 25 adds files, documents and record selects in repeater rows (ADR
 child's media, rich text and `belongs_to` inputs (`relationship` set). A
 `rich_editor` input may carry `toolbar: "compact"` (rows: bold, italic,
 underline, superscript, subscript, images, application elements); the
-document's rules do not change with it. Media errors of rows name the row
-(`faq.2.icon`, `photos.n1.image`).
+document's rules do not change with it. A write's media (fields, rich text,
+rows) are checked once, last; errors of rows name the row (`faq.2.icon`,
+`photos.n1.image`); more than 2,000 distinct media in one write is 422
+`too_many_media` at the input whose references pass the limit. Restores do
+not check the media of JSON rows.
 
 Vocabulary 24 adds repeaters' second round (ADR 0044). A leaf condition may
 carry `scope`: `"root"` (an input of the record's form, read from a repeater's
-row) or `"parent"` (the enclosing row); absent, the same level. A
-relationship repeater may carry `shownWhen` and conditions in its rows; when a
-save hides it, the server removes the rows the user sees, and ignores what was
-sent for it. `RepeaterSchema.layout` may be `"table"` (rows as table rows from
+row) or `"parent"` (the enclosing row of a nested JSON repeater); absent, the
+same level. A relationship repeater may carry `shownWhen`; hidden, it keeps
+its stored rows, and a change sent for it is admitted (403) and shape-checked
+(422), then ignored. Conditions in its rows are evaluated by clients only when
+the rows declare them; rows without any are checked by the server with the
+child form's conditions (as in vocabulary 23), which clients do not evaluate
+in rows. `repeater.relationship.rowLimit` (`[admin] repeater_rows`, 1–500,
+default 50) is the most stored rows a client reads (`per_page`), the most
+entries of each part of a change and the most rows of a parent an `order` may
+cover (422 `too_many_rows` beyond); with more stored rows, clients show the
+repeater read-only. A relationship repeater over a filtered relation whose
+filtered fields the user may not read is left out of the schema (a change sent
+for it: 403); one whose foreign key or filtered fields the user may not write
+on create has `create: false` (a create part: 403). `RepeaterSchema.layout` may be `"table"` (rows as table rows from
 `md`). A has-many `RelationSchema` may carry `fixed` (`{field: value}`, `null`
 for none): the values the filtered relation sets on records created through
 it, kept out of the create form like its foreign key. A `repeatable_entry` may
 carry `rows` (`{resource, relation, orderBy?, limit}`): its rows are read
 from `GET …/relations/{relation}` (`per_page=limit`), sorted by `orderBy`, and
-`components` name the child's fields. Older clients see an unknown vocabulary
+`components` name the child's fields; it is left out for users who may not
+list the child or read the relation's filtered fields. A has-many relation
+whose filtered fields the user may not read is absent from `relations`, and
+count columns over it are left out. Older clients see an unknown vocabulary
 and show forms read-only.
 
 Vocabulary 23 adds media collections. `GET /panel` may carry

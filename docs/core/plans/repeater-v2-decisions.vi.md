@@ -90,7 +90,7 @@ Không tránh được (ghi trong upgrade guide):
 
 1. **0.13.2:** sửa bảo mật dependency. Xong, nhánh `fix/security-0.13.2`.
 2. **0.14.0:** phần 1–5 của PR. Xong, nhánh `integrate/pr4-0.14`.
-3. **0.15.0:** phần A (theo Q1, Q3, Q6 ở trên, gồm cả bảng và dòng trên trang xem), phần B, reaction trên dòng,
-   `options_fn` rút gọn. Viết lại ADR 0044 thành quyết định thật: bỏ ghi "taken with the owner" và khôi phục
+3. **0.14.0 (anh Đức chọn gộp một bản release, 2026-11-23):** phần A (theo Q1, Q3, Q6 ở trên, gồm cả bảng và dòng trên trang xem), phần B. Reaction trên dòng và
+   `options_fn` rút gọn dời sang bản sau, mỗi phần có thiết kế và Codex riêng (kế hoạch v2.1). Viết lại ADR 0044 thành quyết định thật: bỏ ghi "taken with the owner" và khôi phục
    hợp đồng của ADR 0018, 0041, 0043.
 4. **Chưa xếp lịch:** phần C, `inherit`, `validate_rows`.

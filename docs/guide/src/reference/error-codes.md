@@ -109,7 +109,7 @@ keeps it complete.
 | `incomplete` | `is incomplete` (a column the form does not set may not be empty: the application must set it, e.g. in a hook) |
 | `rows_not_addable` | `rows cannot be added here` (a relationship repeater with `addable(false)`) |
 | `rows_not_deletable` | `rows cannot be removed here` (`deletable(false)`) |
-| `too_many_rows` | `has too many rows to order here` (more than 1,000 rows of one parent) |
+| `too_many_rows` | has more than `{max}` rows (`[admin] repeater_rows`): a relationship repeater's change orders more rows of one parent, or sends more entries in one part, than [`repeater_rows`](../getting-started/configuration.md#admin-configadmintoml) |
 | `positions_exhausted` | `has no positions left; renumber the rows` (the order column reached its type's largest value) |
 | `stale` | `This was changed by someone else meanwhile. Reload and try again.` |
 | `last_super_admin` | At least one active super admin is required for the `{guard}` guard. |
@@ -126,6 +126,7 @@ keeps it complete.
 | `image` | `is not a valid image` |
 | `too_many_pixels` | `has too many pixels` |
 | `media_collection` | `is not a media collection` |
+| `too_many_media` | `refers to too many files at once` (one save refers to more than 2,000 distinct files: its fields, rich text and repeater rows together) |
 | `document` | `is not a document` |
 | `document_invalid` | `is not a valid document` |
 | `document_version` | `is not a valid document (version 1 to 3)` |

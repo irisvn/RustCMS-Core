@@ -46,7 +46,8 @@ does not surprise you in production.
 | Recipients of one mail | 50 | [Mail](../digging-deeper/mail.md) |
 | An encrypted value (its JSON) | 32 KiB; never searched, sorted or filtered | [Encrypted columns](../digging-deeper/encryption.md#pitfalls-and-limits) |
 | Live idempotency keys per user | 1,000 (429 beyond) | [Admin API](admin-api.md#retrying-writes-safely) |
-| Rows of a relationship repeater | `max_items` in the form (at most 100); a save reorders at most 1,000 rows of one parent | more rows: the repeater is read-only; beyond 1,000: 422 `too_many_rows` ([Forms](../admin/forms.md#repeaters)) |
+| Rows of a relationship repeater | `max_items` in the form and [`[admin] repeater_rows`](../getting-started/configuration.md#admin-configadmintoml) (default 50, at most 500): rows read, rows reordered, entries of each part of a save | more rows: the repeater is read-only; a save beyond: 422 `too_many_rows` ([Forms](../admin/forms.md#child-records)) |
+| Files one save refers to | 2,000 distinct (fields, rich text and repeater rows together) | beyond: 422 `too_many_media` ([Media](../admin/media.md#media-fields)) |
 | Computed values (`computed()`) | 5 s each (`.timeout`, at most 30 s); 60 view pages a minute per user, 2 at once per user, 8 at once in all | beyond: the value shows "Not available" ([Infolists](../admin/infolists.md#computed-values)) |
 
 ## Writes in flight

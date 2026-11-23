@@ -61,6 +61,52 @@ in place (it ignores it), so rolling back the binary alone is safe.
 - **Extensions.** The SDK's `Badge` takes `color` (`"gray"`, `"primary"`, `"info"`, `"success"`, `"warning"`,
   `"danger"`, any other string shows gray); copy the SDK again (`rustcms make:sdk`) to get the type.
 
+Repeaters gain conditions, filtered relations, a table layout, rows on view pages and files in rows (see
+[forms](admin/forms.md#repeaters) and [relationships](admin/relationships.md#filtered-relations)). They need no
+migration. **Rollback:** application code using the new builders goes back with the binary; files written into
+JSON rows stay in their columns. What changes for existing applications:
+
+- **Relationship repeaters hold fewer rows by default.** The new setting
+  [`[admin] repeater_rows`](getting-started/configuration.md#admin-configadmintoml) (default 50, 1 to 500)
+  bounds the rows of one parent a relationship repeater reads and reorders, and the rows one save adds,
+  changes or removes in it (422 `too_many_rows` beyond). 0.13 read up to 100 rows (or `max_items`), took up to
+  100 entries per part of a change and reordered up to 1,000 rows. A parent with more rows than the setting
+  shows its repeater read-only (edit the rows in the relation's section): applications with larger repeaters
+  raise it. Relation lists (`GET …/relations/{relation}`) now take `per_page` up to that setting when it is
+  above the resource's page size.
+- **The default view page shows relationship repeaters.** A resource without `infolist()` now lists a
+  relationship repeater's rows under the record (a `RepeatableEntry` of the relation, its rows' inputs as
+  entries) instead of nothing. Declare an `infolist()` to choose otherwise.
+- **Rows keep the child form's conditions.** Rows of a relationship repeater whose `.schema()` declares no
+  condition are checked with the child form's conditions, as in 0.13. Declaring a condition in the rows
+  (`shown_when`, `when_root`) makes the rows follow the repeater's conditions instead of the child form's.
+- **Filtered relations** (`Relation::where_null`, `where_eq`) are new. `where_eq` takes a boolean, integer,
+  UUID or date field only (others stop the boot). A user who may not read every filtered field does not get
+  the relation (its routes answer 404, a repeater change for it 403); one who may not write them on create
+  cannot create through it (403). A hook that removes or changes a filtered value of a record created or
+  updated through the relation is a 500.
+- **Hooks of repeater rows.** A row's `after_save` runs before the save's file check, which comes last: an
+  unavailable file then rolls the whole save back. Do outside work through a job dispatched in the
+  transaction (`ctx.dispatch(txn, …)` or `queue::dispatch(txn, …)`), never `queue::enqueue(db, …)` nor a
+  direct call (see [hooks after a write](admin/resources.md#hooks-after-a-write)). A child's hook that adds a
+  file to a row no longer fails with a 500: the file is checked with the parent's.
+- **Files per save.** One save refers to at most 2,000 distinct files (fields, rich text and rows together;
+  422 `too_many_media`, a new code).
+- **Rust API.**
+  - The leaves of `Condition` (`Eq`, `Ne`, `IsIn`, `Filled`, `IsTrue`) gain a `scope` member. The builders
+    (`when`, `Condition::all`, `Condition::any`) are unchanged; code that builds a variant by hand sets
+    `scope: Scope::Row`, and code matching a variant by all its fields adds `..`.
+  - `ListQuery` gains a hidden `relation_filters` field, set by the engine: code that builds it with
+    `..Default::default()` is unaffected, a struct literal listing every field adds it.
+  - `DynResource` (implemented by the engine only) changes: `counted_by` takes the relation's filters
+    before the parents (`&[]` for none), `field_locks_media_or_secret` is `field_is_encrypted`, and it gains
+    methods. Only code that calls these is affected.
+- **Schema (vocabularies 24 and 25).** Leaf conditions gain `scope` (`"root"`, `"parent"`; absent: the same
+  level), relationship repeaters may carry `shownWhen`, `RepeaterSchema` gains `layout` (`"table"`),
+  `RepeaterRelationship` `rowLimit`, `RelationSchema` `fixed`, `EntrySchema` `rows`, `InputSchema`
+  `toolbar` (`"compact"`), and file uploads and rich editors may appear in rows. A client on an older
+  vocabulary shows forms read-only.
+
 ## From 0.13.0 to 0.13.1
 
 No migration. To roll back, install 0.13.0 again; no data changes shape.

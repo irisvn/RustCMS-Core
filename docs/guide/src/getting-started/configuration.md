@@ -148,13 +148,15 @@ See [Authentication](../security/authentication.md).
 
 ### `[admin]` (`config/admin.toml`)
 
-[Runtime branding](../admin/customizing.md#runtime-branding) of the panel.
+[Runtime branding](../admin/customizing.md#runtime-branding) of the panel, and
+the size of [relationship repeaters](../admin/forms.md#child-records).
 
 | Key | Default | |
 |---|---|---|
 | `admin.branding` | `"runtime"` | `"static"` ignores the `BrandingSource` (recovery: `RUSTCMS_ADMIN__BRANDING=static`) |
 | `admin.branding_ttl_secs` | `30` | how long an instance keeps the loaded branding (1–3600) |
 | `admin.branding_timeout_ms` | `2000` | a slower load shows the static theme (1–30000) |
+| `admin.repeater_rows` | `50` | the most rows of one parent a relationship repeater reads and reorders, and the most rows one save may add, change or remove in it (1–500; a value outside stops the boot) |
 
 ### `[audit]` (`config/audit.toml`)
 

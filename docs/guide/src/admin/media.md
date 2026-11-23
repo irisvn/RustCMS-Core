@@ -319,7 +319,11 @@ text alike.
 Files and documents in [repeater rows](forms.md#repeaters) are checked the
 same way, once per save with the record's own: a JSON row's file upload takes
 its rules on the input (`FileUpload::make("icon").accept(&["image/*"])`), a
-relationship row's from the child's field.
+relationship row's from the child's field. Errors name the row
+(`faq.2.icon`). One save may refer to at most 2,000 distinct files (fields,
+rich text and rows together; 422 `too_many_media` beyond). Restoring a record
+checks its media and rich text fields again, not the files of its JSON rows:
+a row's file gone meanwhile shows as unavailable.
 
 Media and rich text columns may not declare a default on the entity (any
 `default_value`, checked when the panel starts). A default written in a
@@ -705,7 +709,8 @@ its id in the records (media fields, rich text) and settings
   file;
 - restoring a record from the trash checks its media and rich text
   references again: a record that points to a trashed file cannot be
-  restored (422) until the file is.
+  restored (422) until the file is. The files of its JSON repeater rows are
+  not checked: they show as unavailable.
 
 Applications that render references themselves (`rich_text::to_html`, their
 own pages) should treat an id they cannot resolve the same way.

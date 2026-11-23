@@ -22,8 +22,8 @@ values follow the [wire format](wire-format.md).
 | GET / PATCH / DELETE | `/resources/{slug}/records/{key}` | `{data: Envelope}` / `{data: Envelope}` / 204 |
 | POST | `/resources/{slug}/records/{key}/restore` | `{data: Envelope}` (soft deletes; trashed records only) |
 | DELETE | `/resources/{slug}/records/{key}/force` | 204 (soft deletes; trashed records only) |
-| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable belongs-to-many pivot columns by target key) |
-| POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key set by the server |
+| GET | `/resources/{slug}/records/{key}/relations/{relation}?…` | `{data: [Envelope], meta, pivot?}` of the target (list query string; `pivot`: readable belongs-to-many pivot columns by target key; a [filtered relation](../admin/relationships.md#filtered-relations) lists its records only, 404 to a user who may not read its filtered fields; `per_page` up to `[admin] repeater_rows` when higher than 100) |
+| POST | `/resources/{slug}/records/{key}/relations/{relation}` | 201 `{data: Envelope}` of the target, foreign key (and a filtered relation's values) set by the server |
 | POST | `/resources/{slug}/records/{key}/relations/{relation}/attach` `{keys, pivot?}`, `…/detach` `{keys}` | `{processed, missing}`: belongs-to-many links, see [Relationships](../admin/relationships.md#belongs-to-many-pivot-tables) |
 | PATCH | `/resources/{slug}/records/{key}/relations/{relation}/links/{target}` `{…pivot columns}` | `{processed, missing}`: one link's pivot values (`update_pivot_{relation}`) |
 | POST | `/resources/{slug}/actions/{action}` `{keys, data?}` | `{processed, denied, missing, replayed?, message?, open?}`: a run on one record hidden by `visible_when` is 403 (nothing runs), hidden records of a run on several are `denied`; `open` only on a run on one record (422 `one_record_only` otherwise) |

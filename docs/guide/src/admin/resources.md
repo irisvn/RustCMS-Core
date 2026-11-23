@@ -320,6 +320,17 @@ async fn after_trash(ctx: &Ctx, txn: &DatabaseTransaction, post: &post::Model) -
 
 Dispatch a job there to undo what the record configured outside the database,
 or to publish and unpublish it: the job runs only if the write commits.
+
+A hook may run before its write is final. When a parent is saved with its
+[relationship repeater's rows](forms.md#child-records), each row's
+`after_save` runs as the row is written, and the save's file check (every
+file and image of the parent and its rows) comes last: an unavailable file
+then rolls back the whole save, rows and hooks' writes included. So do
+anything outside the database through a job dispatched in the transaction,
+`ctx.dispatch(txn, &job)` or `rustcms::queue::dispatch(txn, &job)`, which
+is dropped with the rollback; never `queue::enqueue(db, &job)` (queued on its
+own, it stays) nor a direct call (a mail sent, an API called) from
+`after_save`.
 Trashing does not call `after_delete`. The default `after_restore` calls
 `after_save`; overriding `after_restore` replaces that call (call
 `Self::after_save(ctx, txn, record).await` from it to keep both).

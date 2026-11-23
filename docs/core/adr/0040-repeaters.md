@@ -1,7 +1,8 @@
 # ADR 0040: Repeaters
 
 - Status: accepted (0.13.0, vocabulary 15; relationship repeaters amended by ADR 0041, vocabulary 16, and by ADR
-  0044: conditions, filtered relations, view pages, vocabulary 24)
+  0044 in 0.14.0: conditions, filtered relations, view pages, media in rows, `[admin] repeater_rows`,
+  vocabularies 24 and 25)
 - Date: 2026-11-15
 
 > **0.13:** relationship repeaters (part 2) follow the lock contract of ADR 0041 (child `lock_parent` required, one locking pass, rows without references or media, counts-only history, tagged refs).
@@ -98,9 +99,9 @@ Repeater::make("lines")
 - **Relationship rows are the child's fields.** `relationship()` names the
   `Relation::has_many` of the repeater's name; each input of its schema names
   a field of the child resource, with that field's rules. The child's foreign
-  key to the parent and the order column are never inputs. One level only,
-  and no repeater of any kind in a relationship row yet (ADR 0044, parts B
-  and C).
+  key to the parent and the order column are never inputs. One level only:
+  no repeater of any kind in a relationship row (nested relationship
+  repeaters, ADR 0044 part C, were not accepted).
 
 ### JSON repeaters
 
@@ -139,7 +140,8 @@ Repeater::make("lines")
 }
 ```
 
-- Each part is optional; at most `max_items` (and 100) entries per part;
+- Each part is optional; at most `max_items` (and `[admin] repeater_rows`,
+  ADR 0044; 100 before 0.14) entries per part;
   `ref`s are `[a-z0-9-]{1,16}` and unique; a key appears in at most one of
   `update` and `delete`; `delete` and `update` on create are a 422. Rows not
   named are never touched, so a save never deletes a row another user added
@@ -178,13 +180,15 @@ Repeater::make("lines")
   (`created`, `updated`, `deleted`, `reordered`; never child keys, ADR 0041),
   and each child gets its own entry, as when written from the relation manager.
 - **Reads go through the relation's list** (`GET …/relations/{rel}`: child
-  scope, view policy, read rules), up to `max_items` (at most 100); with more
+  scope, view policy, read rules), up to `max_items` (at most `[admin]
+  repeater_rows`, default 50, ADR 0044; 100 before 0.14); with more
   rows the repeater is read-only and points to the relation section.
 - **Errors are keyed by row**: `lines.8.quantity`, `lines.n1.quantity`.
 - A create's `Idempotency-Key` claim covers the rows (it hashes the whole
   input).
 - Conditions on a relationship repeater and in its rows came with ADR 0044
-  (part A); JSON repeaters in its rows are still refused at boot (part B). New rows take positions after every row
+  (part A; a hidden repeater keeps its rows); JSON repeaters in its rows are
+  still refused at boot. New rows take positions after every row
   of the parent (trashed ones included) before the order is applied.
 - The parent's history entry is `rows_changed`, its `meta` holding the
   relation, how many rows were created, updated and deleted, and whether rows

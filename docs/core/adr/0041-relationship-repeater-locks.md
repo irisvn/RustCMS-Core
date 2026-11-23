@@ -1,8 +1,10 @@
 # ADR 0041: The lock contract of relationship repeaters (and media last)
 
 Status: accepted (0.13.0). Design reviews: `docs/core/plans/contrib-0.13-d2.md` (v1–v4, four Codex rounds).
-Amended by ADR 0044 (point 4: several repeaters on one child resource, through filtered relations; point 5:
-media, rich text and `belongs_to` fields in rows, their media checked with the parent's, last).
+Amended by ADR 0044 in 0.14.0 (points 4 and 6: several repeaters on one child resource, through filtered
+relations, each with its own locking pass; point 5: media, rich text and `belongs_to` fields in rows, their media
+checked with the parent's, last; point 6 and Consequences: the 1,000-row bound is `[admin] repeater_rows`, default
+50, at most 500).
 
 ## Context
 

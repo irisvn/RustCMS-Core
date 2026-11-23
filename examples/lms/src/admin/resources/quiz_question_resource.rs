@@ -1,7 +1,7 @@
 //! Quiz questions of a lesson. One form edits the
-//! question and its rows: a choice question's options (one table row each),
-//! or a fill-in-the-blank question's blanks. Switching a question to the
-//! other kind removes the rows its form no longer shows, when saved.
+//! question and its rows: a choice question's options, or a
+//! fill-in-the-blank question's blanks. Switching a question to the other
+//! kind hides the rows its form no longer shows; they are kept.
 //! Administrators only (instructors get no `quiz_*` permission).
 
 use rustcms::admin::*;
@@ -109,8 +109,9 @@ impl Resource for QuizOptionResource {
         use quiz_option::Column as C;
         vec![
             Field::column(C::QuizQuestionId).belongs_to("quiz_questions").required(),
-            // Set by the relation the option is created through.
-            Field::column(C::BlankId).guarded().readable(|_| true),
+            // Set by the relation the option is created through (written on create
+            // only: a filtered relation needs its field writable there), never moved.
+            Field::column(C::BlankId).updatable(|_| false),
             Field::column(C::Content).required().max_length(500),
             Field::column(C::Correct),
             Field::column(C::Hint).required().max_length(500),

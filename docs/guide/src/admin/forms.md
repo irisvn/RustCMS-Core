@@ -411,7 +411,9 @@ Repeater::make("faq")
   type and size; a document is checked as rich text, and its images as files.
   Errors name the row (`faq.2.icon`). A file only a row names has no foreign
   key in the database: deleting it from the library leaves the row showing it
-  as unavailable. A row's rich editor shows a compact toolbar (bold, italic,
+  as unavailable, and [restoring](resources.md#soft-deletes) a record does not
+  check its rows' files again. One save refers to at most 2,000 distinct files
+  ([media fields](media.md#media-fields)). A row's rich editor shows a compact toolbar (bold, italic,
   underline, superscript, subscript, images, application elements);
   `.full()` gives the full one. The document's rules do not change with the
   toolbar.
@@ -482,9 +484,14 @@ ResourceMeta::new("Line").lock_parent("order_id", "orders")
   show the compact toolbar (`.full()` for the full one).
 - **Not in rows:** encrypted and belongs-to-many fields (edit them on the
   child's page). Hooks of the child should not write other resources.
+- **A row's `after_save` runs before the save's file check**, which comes
+  last: if a file turns out to be unavailable, the whole save is rolled back
+  after the hook ran. Do work outside the database from a
+  [job dispatched in the transaction](resources.md#hooks-after-a-write)
+  (`ctx.dispatch(txn, …)`), never directly from the hook.
 - **Several repeaters on one child resource** need [filtered relations](relationships.md#filtered-relations)
-  that cannot share a row (the options of a question and the choices of its
-  blanks, in one table). A resource with relationship repeaters cannot link
+  that cannot share a row (a question's right and wrong answers, one table
+  filtered by `where_eq("correct", true)` and `where_eq("correct", false)`). A resource with relationship repeaters cannot link
   media records (belongs-to-many), and cannot lock a parent of its own
   (`lock_parent` has no chains).
 - **Concurrent saves** of one parent and its children wait for each other;
@@ -520,35 +527,39 @@ ResourceMeta::new("Line").lock_parent("order_id", "orders")
 - **History:** the parent's history shows "Rows changed" (how many rows were
   added, changed, removed, and whether they moved); each row has its own
   entries in the child's history.
-- The form edits up to `max_items` rows (at most 100); with more, the
-  repeater is read-only and the relation section edits them. A save reorders
-  at most 1,000 rows of one parent. The [default view page](infolists.md#the-default-view-page)
+- **How many rows:** the form edits up to `max_items` rows, and at most
+  [`[admin] repeater_rows`](../getting-started/configuration.md#admin-configadmintoml)
+  (50 by default, up to 500); with more stored rows, the repeater is
+  read-only and the relation section edits them. A save may add, change or
+  remove at most that many rows in each part, and reorder a parent with at
+  most that many rows (422 `too_many_rows` beyond). Applications whose
+  parents hold more rows raise the setting. The [default view page](infolists.md#the-default-view-page)
   shows the rows under the record, as a `RepeatableEntry` of the relation.
-- **Conditions in rows** are the repeater's own (`shown_when` in its
-  `.schema()`, reading the row and, with `when_root`, the record's form); the
-  child's own form's conditions do not apply to rows. A row input under a
-  condition needs a child column that stores a hidden value (nullable, or
-  with a default), as on forms.
+- **Conditions in rows.** When the repeater's `.schema()` declares no
+  condition, rows are checked with the child form's own conditions, as on the
+  child's page (the panel does not evaluate them in the rows). When it
+  declares any (`shown_when` on a row input or a layout, reading the row and,
+  with `when_root`, the record's form), those are the rows' conditions, also
+  evaluated by the panel, and the child form's no longer apply to the rows. A
+  row input under a condition needs a child column that stores a hidden value
+  (nullable, or with a default), as on forms.
 - **A condition on the repeater** (its own `shown_when`, or a layout's around
-  it) hides it as any input, with one difference: **a save that hides it
-  removes its rows**. Switching a question from "single choice" to "fill in
-  the blanks" removes its options. Only rows the user can see are removed,
-  each needing the child's `delete` (403 otherwise, nothing saved), to the
-  trash with soft deletes; only when the save hides it (shown before the
-  user's changes, hidden after), so rows added elsewhere while it was hidden
-  stay through other edits. Changes sent for a hidden repeater are ignored.
-  The panel says how many rows saving removes where the repeater was. Never
-  hide a repeater on a value whose change should keep its rows. A repeater
-  with `deletable(false)` cannot be under a condition, and
-  `clear_when_hidden` does not apply.
-- **Not yet:** repeaters inside relationship rows.
+  it) hides it as any input. **Its rows are kept**: switching a question from
+  "single choice" to "fill in the blanks" hides its options but does not
+  delete them, and they are back if the question is switched again. A change
+  sent for a hidden repeater is still checked (permissions, shape), then
+  ignored; `min_items` does not apply while it is hidden.
+  `clear_when_hidden` does not apply. To remove the rows when the repeater is
+  hidden, do it in the parent's `mutate_before_update` or `after_save` hook.
+- **Not in rows:** repeaters (JSON or relationship) inside relationship rows.
 
 The demo's categories edit their posts this way (each row is a post):
 
 <<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-repeater [src/admin/resources/category_resource.rs]
 
-The LMS's quiz questions edit their options (a table, hints read from the
-question's form) or their blanks, depending on the question's kind:
+The LMS's quiz questions edit their options (each with an image and an
+explanation, hints read from the question's form) or their blanks, depending
+on the question's kind:
 
 <<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-form [src/admin/resources/quiz_question_resource.rs]
 
