@@ -1,7 +1,16 @@
 # Release notes
 
-RustCMS is in pre-release. The current version is **0.14.0**; 0.1.0-alpha.0
+RustCMS is in pre-release. The current version is **0.14.1**; 0.1.0-alpha.0
 was the first published one.
+
+## 0.14.1
+
+A fix and the guide's pictures; nothing to change in an application
+([upgrade guide](upgrade.md#from-0140-to-0141)).
+
+- **Image viewer**: the counter ("1 / 6") no longer covers the image's title.
+- **Guide**: screenshots from the demo for every 0.14.0 feature, and the
+  demo's other screenshots taken again with 0.14.0's colors.
 
 ## 0.14.0
 

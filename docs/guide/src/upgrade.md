@@ -29,6 +29,11 @@
    To upgrade to another version than the command's, install that command
    first (`rustcms self-update --version vX.Y.Z`).
 
+## From 0.14.0 to 0.14.1
+
+No migration of the framework and no API change: `rustcms upgrade`, then build.
+To roll back, install 0.14.0 again.
+
 ## From 0.13.1 to 0.14.0
 
 Run `rustcms migrate`: framework migration `m20261202_000023_add_collection_to_media` adds a nullable

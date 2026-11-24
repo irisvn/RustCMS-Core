@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.14.1] — 2026-11-24
+
 ### Fixed
 - Image viewer: the counter ("1 / 6") is drawn bottom right; it covered the image's title, top left.
 
