@@ -348,6 +348,8 @@ export const SHOTS = [
     actions: async (page) => {
       await page.getByRole('main').getByRole('button', { name: /^Media library$/ }).click()
       const dialog = page.getByRole('dialog')
+      // The picker opens on the logo's collection (branding): every file instead.
+      await dialog.getByLabel('Collection').selectOption({ label: 'All files' })
       await dialog.getByText('Mountain lake').click()
       await dialog.getByRole('button', { name: /^Use$/ }).click()
       await dialog.waitFor({ state: 'hidden' })
@@ -381,6 +383,18 @@ export const SHOTS = [
       await page.getByLabel('Tagline').fill('News and guides')
       await page.getByRole('button', { name: 'Save settings' }).click()
       await page.getByText('Someone else saved these settings meanwhile.').waitFor()
+    },
+    // No tagline again (other shots show the page).
+    after: async (page) => {
+      await page.evaluate(async () => {
+        const { csrfToken } = await (await fetch('/admin/api/auth/csrf')).json()
+        const current = await (await fetch('/admin/api/settings/site')).json()
+        await fetch('/admin/api/settings/site', {
+          method: 'PUT',
+          headers: { 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version: current.version, data: { tagline: null } }),
+        })
+      })
     },
   },
   { id: 'admin/settings-mail', site: 'local', path: '/settings/mail', fullPage: true },
@@ -473,6 +487,92 @@ export const SHOTS = [
       await page.getByRole('main').locator('form').getByText(/không được để trống/).first().waitFor()
     },
     after: english,
+  },
+  // admin/tables.md: option labels (the tags' kinds as colored badges) and a date format.
+  { id: 'admin/tables-option-labels', site: 'local', path: '/r/tags', element: 'main' },
+  {
+    id: 'admin/tables-date-format',
+    site: 'local',
+    path: '/r/posts?per_page=10',
+    element: 'main table',
+    actions: async (page) => {
+      await page.getByRole('main').getByRole('row').nth(1).waitFor()
+    },
+  },
+  // admin/theming.md: the demo in dark mode.
+  { id: 'admin/theme-dark', site: 'local', path: '/r/posts', theme: 'dark' },
+  // admin/media.md: collections (the list view, filtered by collection) and the image viewer.
+  // The library holds the guide's landscapes, sorted into the demo's collections.
+  {
+    id: 'admin/media-collections',
+    site: 'local',
+    path: '/r/media',
+    actions: async (page) => {
+      await page.getByRole('main').getByRole('button', { name: 'List' }).click()
+      await page.getByRole('main').getByRole('columnheader', { name: 'Collection' }).waitFor()
+    },
+  },
+  {
+    id: 'admin/media-viewer',
+    site: 'local',
+    path: '/r/media',
+    settle: 800,
+    actions: async (page) => {
+      // The grid (media-collections leaves the list chosen in this browser).
+      await page.getByRole('main').getByRole('button', { name: 'Grid' }).click()
+      await page.getByRole('main').getByRole('button', { name: /^View Mountain lake/ }).first().click()
+      await page.getByLabel('Image viewer').getByText(/\d+ \/ \d+/).waitFor()
+    },
+  },
+  // admin/forms.md: the categories' posts repeater (a table), a reaction on its
+  // rows (a new post switched to published gets a title; not saved), and the
+  // tags' options computed on the server (the select drawn open).
+  { id: 'admin/forms-repeater-table', site: 'local', path: '/r/categories/records/1/edit', element: 'main form' },
+  {
+    id: 'admin/forms-child-reactions',
+    site: 'local',
+    path: '/r/categories/records/1/edit',
+    actions: async (page) => {
+      const main = page.getByRole('main')
+      await main.getByRole('button', { name: 'Add a post' }).click()
+      const rows = main.getByRole('listitem')
+      await rows.last().getByRole('switch', { name: 'Published' }).click()
+      await page.waitForFunction(() => [...document.querySelectorAll('main input')].some((i) => i.value.startsWith('Untitled post')))
+      await main.getByRole('button', { name: 'Add a post' }).evaluate((el) => {
+        el.scrollIntoView({ block: 'center' })
+      })
+    },
+  },
+  {
+    id: 'admin/forms-options-fn',
+    site: 'local',
+    path: '/r/tags/records/4/edit',
+    element: 'main form',
+    actions: async (page) => {
+      const parent = page.getByRole('main').getByRole('combobox', { name: 'Part of' })
+      await parent.locator('option', { hasText: 'Rust' }).waitFor({ state: 'attached' })
+      await parent.selectOption({ label: 'Rust' })
+      // A native select cannot be captured open: shown as a list.
+      await parent.evaluate((el) => {
+        el.size = el.options.length
+        el.style.height = 'auto'
+        el.style.backgroundImage = 'none'
+      })
+    },
+  },
+  // admin/relationships.md: the Drafts section (a filtered relation).
+  {
+    id: 'admin/relationships-drafts',
+    site: 'local',
+    path: '/r/categories/records/1',
+    element: 'div.rounded-xl:has(h2:text-is("Drafts"))',
+  },
+  // admin/infolists.md: a category's posts under it (relationship rows).
+  {
+    id: 'admin/infolists-relation-rows',
+    site: 'local',
+    path: '/r/categories/records/1',
+    element: 'main div.rounded-xl:has(dt:text-is("Its posts"))',
   },
   // examples/lms (enrollment progress and a withdrawal set up for the shots; lessons moved).
   { id: 'admin/slot', site: 'lms', path: '/r/courses/records/1', waitFor: 'text=Average progress' },

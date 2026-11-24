@@ -126,6 +126,11 @@ async function capture(context, site, shot) {
     const png = join(tmp, `${shot.id}.png`)
     const mask = (shot.mask ?? []).map((m) => page.locator(m))
     const target = shot.element ? page.locator(shot.element).first() : page
+    // An element taller than the window is scrolled: the sticky top bar would cover it.
+    if (shot.element)
+      await page.evaluate(() => {
+        for (const el of document.querySelectorAll('header')) el.style.position = 'static'
+      })
     await target.screenshot({ path: png, mask, maskColor: '#d4d4d8', animations: 'disabled', fullPage: !shot.element && shot.fullPage })
     const webp = join(out, `${shot.id}.webp`)
     mkdirSync(dirname(webp), { recursive: true })
