@@ -6,6 +6,9 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Image viewer: the counter ("1 / 6") is drawn bottom right; it covered the image's title, top left.
+
 ### Added
 - Demo: a tag's **Part of** (`tags.parent_id`, demo migration
   `m20261124_000001_add_parent_to_tags`), a select whose options are computed
