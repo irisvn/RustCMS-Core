@@ -79,6 +79,9 @@ export default function ImageViewer({ images, index, onClose }: { images: Viewer
       controller={{ closeOnBackdropClick: true }}
       zoom={{ maxZoomPixelRatio: 4, scrollToZoom: true }}
       captions={{ descriptionMaxLines: 4, descriptionTextAlign: "start" }}
+      // The counter sits bottom right: top left is the title's (the library
+      // draws both there). Styles through React (the CSSOM), as the library's.
+      counter={{ container: { style: { top: "unset", left: "unset", bottom: 0, right: 0 } } }}
       // Escape closes the viewer only, not a <dialog> it is drawn in (the
       // media picker): its key stops here, as a menu's does.
       portal={{ root, container: { onKeyDownCapture: (e) => { if (e.key === "Escape") e.preventDefault(); } } }}
