@@ -91,6 +91,9 @@ kept in that browser (other tabs follow), and the application's
 ![The Light, Dark and System switch at the bottom of the sidebar](/img/admin/theme-scheme-switch.webp)
 *A RustCMS LMS example: choosing the color scheme.*
 
+![The demo's posts list in dark mode](/img/admin/theme-dark.webp)
+*A RustCMS demo application: the panel in dark mode.*
+
 ### Where the theme is served
 
 The theme becomes a stylesheet and images served from

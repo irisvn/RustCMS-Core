@@ -106,6 +106,9 @@ with `when_root`, the record. The demo's categories show their posts this way:
 
 <<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-entry [src/admin/resources/category_resource.rs]
 
+![A category's view page: its posts listed under it, each with its title and whether it is published](/img/admin/infolists-relation-rows.webp)
+*A RustCMS demo application: relationship rows on a view page.*
+
 ### Conditions
 
 `shown_when` works as in forms (see [Showing inputs under conditions](forms.md#showing-inputs-under-conditions)),

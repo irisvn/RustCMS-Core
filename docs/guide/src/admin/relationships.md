@@ -103,6 +103,9 @@ relations of a parent.
 
 <<< @/../../../examples/lms/src/admin/resources/quiz_question_resource.rs#quiz-relations [src/admin/resources/quiz_question_resource.rs]
 
+![The demo category's Drafts section: only its unpublished posts, with New](/img/admin/relationships-drafts.webp)
+*A RustCMS demo application: a filtered relation's section.*
+
 - **Wherever the relation is read** the filters apply: its section and
   count columns, its [repeater](forms.md#child-records), its rows on view
   pages (counts too when the child's view policy depends on the record). The

@@ -71,6 +71,9 @@ their kind this way, colored by value:
 
 <<< @/../../../examples/demo/src/admin/resources/tag_resource.rs#table [src/admin/resources/tag_resource.rs]
 
+![The demo's tags list: each kind shown by its label, Topic and Series in their colors](/img/admin/tables-option-labels.webp)
+*A RustCMS demo application: the tags' kinds by label.*
+
 `.options([(value, label), …])` gives a column its own labels, over the
 form's: `BadgeColumn::make("level").options([("1", "Minor"), ("2", "Major")])`
 for an `i64` field (its values are strings on the wire). `.raw()` keeps the
@@ -88,6 +91,9 @@ field shows its values with `pattern`; the demo's posts above use
 `"MMM d, yyyy, h:mm a"`. Instants are shown in the user's time zone, dates and
 local date-times as they are; month and weekday names, and AM/PM, are in the
 user's language.
+
+![The demo's posts table: the Published at column as Nov 22, 2026, 7:34 AM](/img/admin/tables-date-format.webp)
+*A RustCMS demo application: a date-time column with its pattern.*
 
 | Pattern | Shows | Example |
 |---|---|---|

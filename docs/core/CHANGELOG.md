@@ -6,6 +6,20 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Demo: a tag's **Part of** (`tags.parent_id`, demo migration
+  `m20261124_000001_add_parent_to_tags`), a select whose options are computed
+  on the server (`options_fn`, `depends_on(["kind"])`): a series is part of a
+  topic, an event of a series.
+
+### Documentation
+- Screenshots of 0.14.0's features from the demo (option labels, date
+  formats, dark mode, media collections, the image viewer, the repeater table,
+  reactions on child records, options computed on the server, filtered
+  relations, relationship rows on view pages); the demo's other shots
+  recaptured with 0.14.0's colors. `shots.mjs` keeps the sticky top bar out
+  of element shots taller than the window.
+
 ## [0.14.0] — 2026-11-23
 
 ### Security

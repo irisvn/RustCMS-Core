@@ -161,6 +161,9 @@ inputs they may write, the conditions applied, a hidden input `null`), and
 returns `SelectOption`s. Its values are of the field's kind, as static
 options are; labels are translated per resource.
 
+![The demo's tag form: a series is part of one of the topics, the options the server answered](/img/admin/forms-options-fn.webp)
+*A RustCMS demo application: a tag's Part of select, its options computed from its kind (drawn open).*
+
 - **In the panel.** The form asks for the options when it opens and when an
   input of `depends_on` changes (once typing pauses; only the latest answer
   is used). The declared `.options(…)` show until the answer comes, and stay
@@ -422,6 +425,9 @@ edited. The demo's categories give a new post switched to published a title:
 
 <<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-reacts [src/admin/resources/category_resource.rs]
 
+![A new post row switched to published: the reaction filled its title, Untitled post 11](/img/admin/forms-child-reactions.webp)
+*A RustCMS demo application: a reaction on a repeater's rows (not saved yet).*
+
 - **Rows in the state.** `state.relation_rows(name)` gives the repeater's
   rows as the form holds them (stored rows with the user's unsaved edits,
   then new rows), each a `StateRow`: `id()`, `key()` (a stored row),
@@ -663,6 +669,9 @@ ResourceMeta::new("Line").lock_parent("order_id", "orders")
 The demo's categories edit their posts this way (each row is a post):
 
 <<< @/../../../examples/demo/src/admin/resources/category_resource.rs#posts-repeater [src/admin/resources/category_resource.rs]
+
+![The demo's category form: its posts as table rows, a title and a Published switch each](/img/admin/forms-repeater-table.webp)
+*A RustCMS demo application: a relationship repeater laid out as a table.*
 
 The LMS's quiz questions edit their options (each with an image and an
 explanation, hints read from the question's form) or their blanks, depending

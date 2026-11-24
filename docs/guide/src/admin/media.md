@@ -218,6 +218,9 @@ the panel shows no column, filter or choice at all. The column comes with the
 framework migration `m20261202_000023_add_collection_to_media` (nullable,
 indexed with the upload time).
 
+![The Media page as a list: a Collection column and filter, files in Post covers, Post content or none](/img/admin/media-collections.webp)
+*A RustCMS demo application: the Media page sorted into collections.*
+
 ## The image viewer
 
 A click on an image opens it over the page, wherever the panel shows one: the
@@ -240,6 +243,9 @@ Other files (a PDF) still open in a new tab. The viewer loads the same
 authorized URL as the thumbnail. `MediaEntry::make("cover").preview(false)`
 and `FileUpload::make("cover").preview(false)` keep a field's images still;
 images in rich text and on the Media page always open.
+
+![The image viewer over the Media page: the image fitted, its name, alternative text, size, zoom, download and arrows](/img/admin/media-viewer.webp)
+*A RustCMS demo application: an image of the Media page in the viewer.*
 
 ## Media hooks
 
