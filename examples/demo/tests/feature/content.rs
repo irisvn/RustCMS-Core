@@ -49,9 +49,9 @@ db_test!(migrations_roll_back_and_forward_keeping_ids, migrate = Migrator, |db: 
     db.conn().execute_unprepared(insert).await.unwrap();
     db.conn().execute_unprepared("DELETE FROM posts WHERE id = 2").await.unwrap();
     // Back to before the categories migration (categories, deleted_at, media, color,
-    // attributes, tags, integrations, tag kinds, category layouts): its rebuild (SQLite,
+    // attributes, tags, integrations, tag kinds, category layouts, tag parents): its rebuild (SQLite,
     // PostgreSQL) or in-place change (MySQL) is undone.
-    Migrator::down(db.conn(), Some(9)).await.unwrap();
+    Migrator::down(db.conn(), Some(10)).await.unwrap();
     assert!(!sea_orm_migration::SchemaManager::new(db.conn()).has_table("categories").await.unwrap());
     db.conn().execute_unprepared(insert).await.unwrap();
     assert_eq!(max_id().await, Some(3), "rollback keeps the id high-water mark");
@@ -146,6 +146,7 @@ fn migration_names_never_change() {
             "m20261101_000001_create_integrations".to_owned(),
             "m20261118_000001_add_kind_to_tags".to_owned(),
             "m20261119_000001_add_layout_to_categories".to_owned(),
+            "m20261124_000001_add_parent_to_tags".to_owned(),
         ]),
         "{names:?}"
     );

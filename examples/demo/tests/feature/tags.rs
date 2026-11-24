@@ -60,3 +60,38 @@ db_test!(editors_tag_and_move_their_own_posts_only, migrate = Migrator, |db: Tes
     let post = editor.send(Method::GET, &app.admin_api(&format!("resources/posts/records/{mine}")), None).await;
     assert_eq!(post.json()["data"]["labels"]["category_id"], json!("Guides"));
 });
+
+db_test!(a_tag_is_part_of_a_tag_of_the_kind_above, migrate = Migrator, |db: TestDb| async move {
+    let app = TestApp::new(bootstrap::build, db).await;
+    seed(app.state()).await;
+    let admin = app.login_as("admin@example.test", demo::database::seeders::user_seeder::PASSWORD).await;
+    let key = |name: &'static str| {
+        let admin = &admin;
+        let app = &app;
+        async move {
+            let found = admin.get(&app.admin_api(&format!("resources/tags/records?search={name}"))).await.json();
+            found["data"][0]["key"].as_str().unwrap().parse::<i64>().unwrap()
+        }
+    };
+    let (rust, security) = (key("Rust").await, key("Security").await);
+    let options = |kind: &str| json!({"operation": "create", "input": "parent_id", "state": {"kind": kind}});
+    let url = app.admin_api("resources/tags/form/options");
+
+    // A series is part of a topic, an event of a series, a topic of nothing.
+    let labels = |answer: serde_json::Value| -> Vec<String> {
+        answer["options"].as_array().unwrap().iter().map(|o| o["label"].as_str().unwrap().to_owned()).collect()
+    };
+    assert_eq!(labels(admin.post_json(&url, &options("series")).await.json()), ["Databases", "Design", "Rust"]);
+    assert_eq!(labels(admin.post_json(&url, &options("event")).await.json()), ["Security"]);
+    assert!(labels(admin.post_json(&url, &options("topic")).await.json()).is_empty());
+
+    // Checked again on save: an event under a topic is refused, under a series kept.
+    let records = app.admin_api("resources/tags/records");
+    admin
+        .post_json(&records, &json!({"name": "RustConf", "kind": "event", "parent_id": rust}))
+        .await
+        .assert_validation_error("parent_id");
+    let created = admin.post_json(&records, &json!({"name": "RustConf", "kind": "event", "parent_id": security})).await;
+    created.assert_status(StatusCode::CREATED);
+    assert_eq!(created.json()["data"]["data"]["parent_id"], json!(security));
+});

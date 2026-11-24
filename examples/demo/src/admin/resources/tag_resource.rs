@@ -1,6 +1,8 @@
 //! Tags, attached to posts from a post's page (a belongs-to-many relation).
 
 use rustcms::admin::*;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use serde_json::json;
 
 use crate::models::tag;
 
@@ -31,11 +33,35 @@ impl Resource for TagResource {
         vec![
             Field::column(tag::Column::Name).required().searchable().sortable().max_length(60),
             Field::column(tag::Column::Kind),
+            Field::column(tag::Column::ParentId).label("Part of"),
         ]
     }
 
     fn form() -> Form {
-        Form::new().schema(components![TextInput::make("name"), SelectInput::make("kind").options(KINDS)])
+        Form::new().schema(components![
+            TextInput::make("name"),
+            SelectInput::make("kind").options(KINDS),
+            // #region parent-options
+            // Options computed on the server: a series is part of a topic, an
+            // event of a series; asked again when the kind changes, checked on save.
+            SelectInput::make("parent_id").depends_on(["kind"]).options_fn(|ctx, state| {
+                let parent_kind = match state.text("kind") {
+                    "series" => Some("topic"),
+                    "event" => Some("series"),
+                    _ => None,
+                };
+                Box::pin(async move {
+                    let Some(parent_kind) = parent_kind else { return Ok(vec![]) };
+                    let tags = tag::Entity::find()
+                        .filter(tag::Column::Kind.eq(parent_kind))
+                        .order_by_asc(tag::Column::Name)
+                        .all(&ctx.conn())
+                        .await?;
+                    Ok(tags.into_iter().map(|t| SelectOption { value: json!(t.id), label: t.name }).collect())
+                })
+            }),
+            // #endregion parent-options
+        ])
     }
 
     // #region table
